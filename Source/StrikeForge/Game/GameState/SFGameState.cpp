@@ -2,6 +2,7 @@
 
 
 #include "SFGameState.h"
+#include "Logging/SFLog.h"
 
 ASFGameState::ASFGameState()
 {
@@ -15,11 +16,9 @@ bool ASFGameState::StartStage()
 	// 스테이지 시작 부분
 	if (StageState != ESFStageState::Initializing)
 	{
-		UE_LOG(
-			LogTemp,
+		SF_LOG(
 			Warning,
-			TEXT("[SFGameState] StartStage failed: "
-				"Stage is not Initializing.")
+			"[SFGameState] StartStage failed: Stage is not Initializing."
 		);
 
 		return false;
@@ -27,10 +26,9 @@ bool ASFGameState::StartStage()
 
 	StageState = ESFStageState::Playing;
 
-	UE_LOG(
-		LogTemp,
+	SF_LOG(
 		Log,
-		TEXT("[SFGameState] Stage started.")
+		"[SFGameState] Stage started."
 	);
 
 	OnStageStateChanged.Broadcast(StageState);
@@ -42,11 +40,9 @@ bool ASFGameState::FinishStage(ESFStageResult NewStageResult)
 {
 	if (StageState != ESFStageState::Playing)
 	{
-		UE_LOG(
-			LogTemp,
+		SF_LOG(
 			Warning,
-			TEXT("[SFGameState] FinishStage failed: "
-				"Stage is not Playing.")
+			"[SFGameState] FinishStage failed: Stage is not Playing."
 		);
 
 		return false;
@@ -54,11 +50,9 @@ bool ASFGameState::FinishStage(ESFStageResult NewStageResult)
 
 	if (NewStageResult == ESFStageResult::Undetermined)
 	{
-		UE_LOG(
-			LogTemp,
+		SF_LOG(
 			Warning,
-			TEXT("[SFGameState] FinishStage failed: "
-				"Result is Undetermined.")
+			"[SFGameState] FinishStage failed: Result is Undetermined."
 		);
 
 		return false;
@@ -72,10 +66,9 @@ bool ASFGameState::FinishStage(ESFStageResult NewStageResult)
 	StageResult = NewStageResult;
 	StageState = ESFStageState::Finished;
 
-	UE_LOG(
-		LogTemp,
+	SF_LOG(
 		Log,
-		TEXT("[SFGameState] Stage finished. Result: %s"),
+		"[SFGameState] Stage finished. Result: %s",
 		*UEnum::GetValueAsString(StageResult)
 	);
 

@@ -6,6 +6,8 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Actor.h"
+#include "SFSelectInfo/SFSelectionPanelWidget.h"
+
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -142,6 +144,13 @@ void USFInGameHUDWidget::PerformSelectionTrace()
     SelectedActor = HitActor;
     SelectedInfo = SelectableInfo;
 
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
+        );
+    }
+
     UE_LOG(
         LogTemp,
         Warning,
@@ -173,6 +182,11 @@ void USFInGameHUDWidget::ClearSelection()
 {
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->HideSelection();
+    }
 
     UE_LOG(
         LogTemp,

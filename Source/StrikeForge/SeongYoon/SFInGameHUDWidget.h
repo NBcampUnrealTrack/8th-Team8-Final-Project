@@ -5,14 +5,17 @@
 #include "SFSelectInfo/SFSelectableInfo.h"
 #include "SFInGameHUDWidget.generated.h"
 
+class AActor;
+class USFSelectionPanelWidget;
+
 UCLASS(Blueprintable)
-class STRIKEFORGE_API USFInGameHUDWidget : public UUserWidget
+class STRIKEFORGE_API USFInGameHUDWidget
+    : public UUserWidget
 {
     GENERATED_BODY()
 
 protected:
     virtual void NativeConstruct() override;
-
     virtual void NativeDestruct() override;
 
     UPROPERTY(
@@ -26,6 +29,13 @@ protected:
         Category = "SF|Selection"
     )
     FSFSelectableInfo SelectedInfo;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        meta = (BindWidgetOptional),
+        Category = "SF|HUD"
+    )
+    TObjectPtr<USFSelectionPanelWidget> SelectionPanel;
 
 private:
     UFUNCTION()

@@ -1,8 +1,11 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Building/BuildingAppearance.h"
 #include "GameFramework/Actor.h"
 #include "BuildingBase.generated.h"
+
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FChangedBuildingState, EBuildingState, InCurrentState);
 
 class UProgressComponent;
 class UHealthComponent;
@@ -10,8 +13,9 @@ class UHealthComponent;
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
 {
-	SettingMode,
-	BuildingMode
+	Placing,
+	Building,
+	Completed
 };
 
 UCLASS()
@@ -22,28 +26,53 @@ class STRIKEFORGE_API ABuildingBase : public AActor
 public:
 	ABuildingBase();
 	
-	void ApplyPreviewMesh();
+	//FChangedBuildingState OnChangedBuildingState;
 	
 	void GetTierMeshList(int32 InCurrentTier);
+	void GetTierRatioList(int32 InCurrentTier);
 	
-	void SetMesh(UStaticMesh* InStaticMesh);
+	void BindFunction();
+	void UnBindFunction();
+	UFUNCTION()
+	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
+	UFUNCTION()
+	void CompletedBuilding();
+	void SetBuildingState(const EBuildingState InState);
+	
+	void InitInfo(const FBuildingAppearance* InData);
+	UFUNCTION(BlueprintCallable)
+	void UpgradeBuilding(int32 UpgradeValue = 1);
+	UFUNCTION(BlueprintCallable)
+	void StartBuilding();
+	void SetMesh(UStaticMesh* InMesh);
 protected:
 	virtual void BeginPlay() override;
-	
-	UPROPERTY()
-	UStaticMeshComponent* StaticMesh;
-	UPROPERTY()
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
+	UStaticMeshComponent* StaticMeshComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
 	UHealthComponent* HealthComponent;
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
 	UProgressComponent* ProgressComponent;
 private:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
+	FName RowFName;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	FName BuildingName;
+	FText DisplayName;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	int32 TeamIndex;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
 	
+	
+	UPROPERTY()
+	FBuildingTierData AllTierMeshesSoftArray;
+	UPROPERTY()
+	TArray<UStaticMesh*> CurrentTierMeshes;
+	UPROPERTY()
+	TArray<float> CurrentTierRatios;
+	UPROPERTY()
+	TObjectPtr<USoundBase> BuildingCompleteSound;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
-	EBuildingState CurrentMode = EBuildingState::SettingMode;
+	EBuildingState CurrentMode = EBuildingState::Placing;
 };

@@ -4,6 +4,9 @@
 #include "Components/ActorComponent.h"
 #include "ProgressComponent.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FChangedProgressRatio, int32, RatioIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCompletedBuilding);
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProgressComponent : public UActorComponent
 {
@@ -12,7 +15,16 @@ class STRIKEFORGE_API UProgressComponent : public UActorComponent
 public:
 	UProgressComponent();
 	
-	void InitProgress();
+	FChangedProgressRatio OnChangedRatio;
+	FCompletedBuilding OnCompletedBuilding;
+	
+	void StartProgress();
+	int32 FindRatioIndex(float InRatio) const;
+	void StopProgress();
+	
+	void InitializeProperties();
+	
+	void SetQuarterOfRatios(TArray<float> InQuarterOfRatios);
 protected:
 	virtual void BeginPlay() override;
 
@@ -21,9 +33,16 @@ public:
 	FTimerHandle TimerHandle;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float CurrentProgress = 0.f;
+	float Accumulate = 0.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float MaxProgress = 100.f;
+	float CompleteAmount = 100.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float AddProgressValue = 10.f;
+	float AccumulateSpeed = 10.f;
+	
+	UPROPERTY()
+	int32 CurrentRatioIndex = 0;
+	UPROPERTY()
+	float CurrentRatio = 0.f;
+	UPROPERTY()
+	TArray<float> QuarterofRatios;
 };

@@ -14,7 +14,7 @@ public class StrikeForge : ModuleRules
 			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
 			
 			// ai
-			"AIModule", "NavigationSystem",
+			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
 			"UMG", "Slate", "SlateCore",

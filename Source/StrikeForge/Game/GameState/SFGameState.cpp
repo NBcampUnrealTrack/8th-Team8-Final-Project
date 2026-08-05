@@ -11,25 +11,42 @@ ASFGameState::ASFGameState()
 	StageResult = ESFStageResult::Undetermined;
 }
 
+bool ASFGameState::InitializeStage(FName StageRowName)
+{
+	if (StageRowName.IsNone())
+	{
+		SF_LOG(Warning, "[SFGameState] InitializeStage failed : Stage Row Name is None.");
+
+		return false;
+	}
+
+	if (StageState != ESFStageState::Initializing)
+	{
+		SF_LOG(Warning, "[SFGameState] InitializeStage failed : Stage is not Initializing.");
+
+		return false;
+	}
+
+	CurrentStageRowName = StageRowName;
+
+	SF_LOG(Log, "[SFGameState] Stage initialized : % s", *CurrentStageRowName.ToString());
+
+	return true;
+}
+
 bool ASFGameState::StartStage()
 {
 	// 스테이지 시작 부분
 	if (StageState != ESFStageState::Initializing)
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameState] StartStage failed: Stage is not Initializing."
-		);
+		SF_LOG(Warning, "[SFGameState] StartStage failed: Stage is not Initializing.");
 
 		return false;
 	}
 
 	StageState = ESFStageState::Playing;
 
-	SF_LOG(
-		Log,
-		"[SFGameState] Stage started."
-	);
+	SF_LOG(Log, "[SFGameState] Stage started.");
 
 	OnStageStateChanged.Broadcast(StageState);
 
@@ -40,20 +57,14 @@ bool ASFGameState::FinishStage(ESFStageResult NewStageResult)
 {
 	if (StageState != ESFStageState::Playing)
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameState] FinishStage failed: Stage is not Playing."
-		);
+		SF_LOG(Warning, "[SFGameState] FinishStage failed: Stage is not Playing.");
 
 		return false;
 	}
 
 	if (NewStageResult == ESFStageResult::Undetermined)
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameState] FinishStage failed: Result is Undetermined."
-		);
+		SF_LOG(Warning, "[SFGameState] FinishStage failed: Result is Undetermined.");
 
 		return false;
 	}
@@ -66,16 +77,17 @@ bool ASFGameState::FinishStage(ESFStageResult NewStageResult)
 	StageResult = NewStageResult;
 	StageState = ESFStageState::Finished;
 
-	SF_LOG(
-		Log,
-		"[SFGameState] Stage finished. Result: %s",
-		*UEnum::GetValueAsString(StageResult)
-	);
+	SF_LOG(Log, "[SFGameState] Stage finished. Result: %s", *UEnum::GetValueAsString(StageResult));
 
 	OnStageResultChanged.Broadcast(StageResult);
 	OnStageStateChanged.Broadcast(StageState);
 
 	return true;
+}
+
+FName ASFGameState::GetCurrentStageRowName() const
+{
+	return CurrentStageRowName;
 }
 
 ESFStageState ASFGameState::GetStageState() const

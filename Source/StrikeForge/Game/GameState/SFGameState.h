@@ -46,10 +46,16 @@ class STRIKEFORGE_API ASFGameState : public AGameStateBase
 public:
     ASFGameState();
 
+    // GamaMode가 현재 선택된 스테이지 ID를 전달
+    bool InitializeStage(FName StageRowName);
+
     bool StartStage(); // 스테이지 초기화 부분 -> GameMode에서 호출
 
     // 스테이지 승 or 패 부분 -> GameMode에서 호출
     bool FinishStage(ESFStageResult NewStageResult);
+
+    UFUNCTION(BlueprintPure, Category = "SF|Stage")
+    FName GetCurrentStageRowName() const;
 
     UFUNCTION(BlueprintPure, Category = "SF|Stage")
     ESFStageState GetStageState() const;
@@ -75,20 +81,13 @@ public:
     FSFOnStageResultChanged OnStageResultChanged;
 
 private:
-    UPROPERTY(
-        VisibleAnywhere,
-        BlueprintReadOnly,
-        Category = "SF|Stage",
-        meta = (AllowPrivateAccess = "true")
-    )
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageState StageState;
 
-    UPROPERTY(
-        VisibleAnywhere,
-        BlueprintReadOnly,
-        Category = "SF|Stage",
-        meta = (AllowPrivateAccess = "true")
-    )
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageResult StageResult;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+    FName CurrentStageRowName = NAME_None;
 	
 };

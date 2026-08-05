@@ -14,19 +14,15 @@ class STRIKEFORGE_API UBuildingPlacement : public UActorComponent
 public:
 	UBuildingPlacement();
 	
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+						   FActorComponentTickFunction* ThisTickFunction) override;
+	
 	UFUNCTION(BlueprintCallable)
 	void StartPlacementMode(AActor* InTargetActor);
 	UFUNCTION(BlueprintCallable)
 	void UpdatePlacementMode();
 	UFUNCTION(BlueprintCallable)
 	void ConfrimPlacementMode();
-protected:
-
-
-public:
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* ThisTickFunction) override;
-	
 private:
 	
 	UPROPERTY()

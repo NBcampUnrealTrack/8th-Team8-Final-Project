@@ -16,7 +16,7 @@ void UProgressComponent::StartProgress()
 	OnChangedRatio.Broadcast(CurrentRatioIndex); // currentratio = 0 fill mesh 0 index
 	
 	GetWorld()->GetTimerManager().SetTimer(
-	TimerHandle,
+	ProgressTimerHandle,
 	[this]()
 	{
 		// float ++
@@ -63,12 +63,11 @@ int32 UProgressComponent::FindRatioIndex(float Ratio) const
 
 void UProgressComponent::StopProgress()
 {
-	GetWorld()->GetTimerManager().ClearTimer(TimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(ProgressTimerHandle);
 }
 
 void UProgressComponent::InitializeProperties()
 {
-	
 	CurrentRatioIndex = 0;
 	CurrentRatio = 0.f;
 	Accumulate = 0.f;
@@ -82,6 +81,11 @@ void UProgressComponent::SetQuarterOfRatios(TArray<float> InQuarterOfRatios)
 void UProgressComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	InitializeProperties();
+	//InitializeProperties(); when save load maybe this logic make trouble
+}
+
+void UProgressComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopProgress(); // defence code
+	Super::EndPlay(EndPlayReason);
 }

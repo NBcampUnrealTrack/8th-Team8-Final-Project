@@ -17,7 +17,7 @@ ABuildingBase::ABuildingBase()
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 }
 
-void ABuildingBase::GetTierRatioList(int32 InCurrentTier)
+void ABuildingBase::LoadTierRatioList(int32 InCurrentTier)
 {
 	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
 	CurrentTierRatios.Sort([](const float A, const float B)
@@ -84,7 +84,7 @@ void ABuildingBase::SetBuildingState(const EBuildingState InState)
 	//OnChangedBuildingState.Broadcast(CurrentMode);
 }
 
-void ABuildingBase::GetTierMeshList(int32 InCurrentTier)
+void ABuildingBase::LoadTierMeshList(int32 InCurrentTier)
 {
 	// load > will change assetmanager
 	CurrentTierMeshes.Empty();
@@ -123,8 +123,8 @@ void ABuildingBase::UpgradeBuilding(int32 UpgradeValue)
 	// if resource is property
 	CurrentTier += UpgradeValue;
 	
-	GetTierRatioList(CurrentTier); // get ratio at datatable
-	GetTierMeshList(CurrentTier);
+	LoadTierRatioList(CurrentTier); // get ratio at datatable
+	LoadTierMeshList(CurrentTier);
 	
 	StartBuilding();
 }
@@ -176,8 +176,8 @@ void ABuildingBase::BeginPlay()
 	
 	InitInfo(Row); // set preview mesh
 	
-	GetTierRatioList(CurrentTier); // get ratio at datatable
-	GetTierMeshList(CurrentTier);
+	LoadTierRatioList(CurrentTier); // get ratio at datatable
+	LoadTierMeshList(CurrentTier);
 	
 	BindFunction(); // bind progress
 }

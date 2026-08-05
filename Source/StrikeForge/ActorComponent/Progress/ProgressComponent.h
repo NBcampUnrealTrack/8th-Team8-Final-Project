@@ -15,9 +15,6 @@ class STRIKEFORGE_API UProgressComponent : public UActorComponent
 public:
 	UProgressComponent();
 	
-	FChangedProgressRatio OnChangedRatio;
-	FCompletedBuilding OnCompletedBuilding;
-	
 	void StartProgress();
 	int32 FindRatioIndex(float InRatio) const;
 	void StopProgress();
@@ -25,12 +22,15 @@ public:
 	void InitializeProperties();
 	
 	void SetQuarterOfRatios(TArray<float> InQuarterOfRatios);
+	
+	FChangedProgressRatio OnChangedRatio;
+	FCompletedBuilding OnCompletedBuilding;
 protected:
 	virtual void BeginPlay() override;
-
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 public:
 	UPROPERTY()
-	FTimerHandle TimerHandle;
+	FTimerHandle ProgressTimerHandle;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
 	float Accumulate = 0.f;

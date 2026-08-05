@@ -28,8 +28,8 @@ public:
 	
 	//FChangedBuildingState OnChangedBuildingState;
 	
-	void GetTierMeshList(int32 InCurrentTier);
-	void GetTierRatioList(int32 InCurrentTier);
+	void LoadTierMeshList(int32 InCurrentTier);
+	void LoadTierRatioList(int32 InCurrentTier);
 	
 	void BindFunction();
 	void UnBindFunction();
@@ -49,11 +49,11 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
-	UStaticMeshComponent* StaticMeshComponent;
+	TObjectPtr<UStaticMeshComponent> StaticMeshComponent;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
-	UHealthComponent* HealthComponent;
+	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
-	UProgressComponent* ProgressComponent;
+	TObjectPtr<UProgressComponent> ProgressComponent;
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	FName RowFName;

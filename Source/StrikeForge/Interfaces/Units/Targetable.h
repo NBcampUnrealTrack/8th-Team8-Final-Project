@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/Interface.h"
 #include "Targetable.generated.h"
 
 /**
@@ -13,50 +12,10 @@ enum class ETargetType : uint8
 {
 	CombatUnit			UMETA(DisplayName = "전투 유닛"),
 	Commander			UMETA(DisplayName = "지휘관"),
-	Worker				UMETA(DisplayName = "일꾼"),
+	Worker				UMETA(DisplayName = "일꾼"),			// 미사용 — 일꾼 없는 설계
 	ProductionBuilding	UMETA(DisplayName = "생산 건물"),
-	CoreBuilding		UMETA(DisplayName = "핵심 건물")
-};
-
-/**
- * 전투 대상 규약.
- *
- * IDamagable 은 피해를 "받는" 것만 정의한다.
- * 전투 AI 가 대상을 "고르려면" 진영·분류·유효성을 물어볼 수 있어야 하므로
- * 그 부분을 여기로 분리했다.
- *
- * 유닛·건물·일꾼이 IDamagable 과 함께 이것을 구현하면
- * USFCombatSubsystem 의 탐색 대상이 된다.
- */
-UINTERFACE()
-class UTargetable : public UInterface
-{
-	GENERATED_BODY()
-};
-
-class STRIKEFORGE_API ITargetable
-{
-	GENERATED_BODY()
-public:
-	/** 소속 팀. Targetable::NeutralTeam(-1) 은 누구와도 적대하지 않는다 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	int32 GetTeamIndex() const;
-
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	ETargetType GetTargetType() const;
-
-	/** 죽었지만 아직 연출 중인 대상을 걸러내기 위해 필요하다 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	bool IsTargetable() const;
-
-	/**
-	 * 받는 피해 감소 0~0.9.
-	 *
-	 * 관통 계산이 필요해 공격자가 미리 알아야 하므로 여기서 노출한다.
-	 * 최종 피해 = 공격력 * (1 - max(0, 방어 - 관통))
-	 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	float GetArmor() const;
+	CoreBuilding		UMETA(DisplayName = "핵심 건물"),
+	ResourceBuilding	UMETA(DisplayName = "채광 건물")		// 광물 위에 짓는 건물
 };
 
 namespace Targetable
@@ -64,3 +23,13 @@ namespace Targetable
 	/** 중립 팀. 어느 쪽과도 교전하지 않는다 */
 	static constexpr int32 NeutralTeam = INDEX_NONE;
 }
+
+/*
+ * 참고 — ITargetable 인터페이스는 제거했다.
+ *
+ * 전투 대상 여부·팀·분류는 UCombatTargetComponent 가 전담한다.
+ * 액터가 인터페이스를 구현하게 하면 클래스 선언을 수정해야 하는데,
+ * 그러면 다른 작업자 파일을 건드리게 된다.
+ *
+ * 컴포넌트를 붙이는 방식은 BP 에서 끝나므로 C++ 수정이 필요 없다.
+ */

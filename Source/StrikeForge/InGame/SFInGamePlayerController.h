@@ -4,11 +4,21 @@
 #include "GameFramework/PlayerController.h"
 #include "SFInGamePlayerController.generated.h"
 
+class UEnhancedInputLocalPlayerSubsystem;
 class UInputAction;
 class UInputMappingContext;
 class USFInGameHUDWidget;
 
+UENUM(BlueprintType)
+enum class ESFControlMode : uint8
+{
+    Gameplay UMETA(DisplayName = "Gameplay"),
+    BuildPlacement UMETA(DisplayName = "Build Placement")
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
@@ -16,26 +26,109 @@ class STRIKEFORGE_API ASFInGamePlayerController
 {
     GENERATED_BODY()
 
+    // 함수 영역
 public:
     ASFInGamePlayerController();
 
-    UPROPERTY(
-        BlueprintAssignable,
+    UFUNCTION(
+        BlueprintCallable,
         Category = "SF|Input"
     )
-    FSFOnSelectInput OnSelectInput;
+    void SetSFControlMode(
+        ESFControlMode NewControlMode
+    );
+
+    UFUNCTION(
+        BlueprintPure,
+        Category = "SF|Input"
+    )
+    ESFControlMode GetSFControlMode() const;
 
 protected:
     virtual void BeginPlay() override;
 
     virtual void SetupInputComponent() override;
 
+private:
+    UEnhancedInputLocalPlayerSubsystem*
+        GetEnhancedInputSubsystem() const;
+
+    void ConfigureMouseInput();
+
+    void RegisterBaseMappingContext();
+
+    void HandleSelectInput();
+
+    void HandleConfirmBuildInput();
+
+    void HandleCancelBuildInput();
+
+    void CreateInGameHUD();
+
+    // 변수 영역
+protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
-        Category = "SF|Input"
+        Category = "SF|Input|Mapping"
     )
-    TObjectPtr<UInputMappingContext> InGameMappingContext;
+    TObjectPtr<UInputMappingContext> BaseMappingContext;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Mapping"
+    )
+    TObjectPtr<UInputMappingContext> GameplayMappingContext;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Mapping"
+    )
+    TObjectPtr<UInputMappingContext> BuildPlacementMappingContext;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> SelectAction;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> ConfirmBuildAction;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> CancelBuildAction;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Mapping"
+    )
+    int32 BaseMappingPriority = 0;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Mapping"
+    )
+    int32 GameplayMappingPriority = 10;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Mapping"
+    )
+    int32 BuildPlacementMappingPriority = 20;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -49,33 +142,41 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Input"
     )
-    TObjectPtr<UInputAction> SelectAction;
-
-    UPROPERTY(
-        EditDefaultsOnly,
-        BlueprintReadOnly,
-        Category = "SF|Input"
-    )
-    int32 MappingPriority = 0;
-
-    UPROPERTY(
-        EditDefaultsOnly,
-        BlueprintReadOnly,
-        Category = "SF|Input"
-    )
     bool bLockMouseToViewport = true;
 
+    UPROPERTY(
+        VisibleInstanceOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input"
+    )
+    ESFControlMode CurrentControlMode =
+        ESFControlMode::Gameplay;
+
 private:
-    void RegisterInputMappingContext();
-
-    void ConfigureMouseInput();
-
-    void HandleSelectInput();
-
     UPROPERTY(
         Transient
     )
     TObjectPtr<USFInGameHUDWidget> InGameHUDWidget;
 
-    void CreateInGameHUD();
+    bool bControlModeInitialized = false;
+
+    // Delegate 변수는 최하단
+public:
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSelectInput OnSelectInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnConfirmBuildInput OnConfirmBuildInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnCancelBuildInput OnCancelBuildInput;
 };

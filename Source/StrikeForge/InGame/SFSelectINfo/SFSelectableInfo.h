@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "SFSelectableInfo.generated.h"
 
+class UTexture2D;
+
 UENUM(BlueprintType)
 enum class ESFSelectableType : uint8
 {
@@ -19,6 +21,16 @@ struct STRIKEFORGE_API FSFSelectableInfo
 {
     GENERATED_BODY()
 
+    // 변수 영역
+public:
+    // 어떤 원본 행과 UI 행을 조회할지 결정하는 공통 키
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection"
+    )
+    FName DataRowName = NAME_None;
+
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
@@ -34,24 +46,78 @@ struct STRIKEFORGE_API FSFSelectableInfo
     )
     FText DisplayName;
 
+    // HPComponent에서 가져오는 현재 런타임 체력
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
-        Category = "SF|Selection"
+        Category = "SF|Selection|Stat"
     )
     float CurrentHealth = 0.0f;
 
+    // 액터 또는 스탯 컴포넌트에서 가져오는 현재 최대 체력
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
-        Category = "SF|Selection"
+        Category = "SF|Selection|Stat"
     )
     float MaximumHealth = 0.0f;
 
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
-        Category = "SF|Selection"
+        Category = "SF|Selection|Stat"
     )
-    FName DataRowName = NAME_None;
+    float AttackPower = 0.0f;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|Stat"
+    )
+    float MoveSpeed = 0.0f;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    TObjectPtr<UTexture2D> PortraitImage = nullptr;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    TObjectPtr<UTexture2D> SelectionIcon = nullptr;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI",
+        meta = (
+            MultiLine = true
+            )
+    )
+    FText Description;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    bool bShowHealth = true;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    bool bShowAttackPower = true;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    bool bShowMoveSpeed = true;
 };

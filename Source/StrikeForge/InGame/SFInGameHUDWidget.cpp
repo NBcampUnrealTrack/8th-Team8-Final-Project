@@ -185,7 +185,7 @@ void USFInGameHUDWidget::ClearSelection()
 
     if (IsValid(SelectionPanel))
     {
-        SelectionPanel->HideSelection();
+        SelectionPanel->ClearSelection();
     }
 
     UE_LOG(

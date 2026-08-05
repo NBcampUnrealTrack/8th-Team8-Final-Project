@@ -14,17 +14,43 @@ class STRIKEFORGE_API USFInGameHUDWidget
 {
     GENERATED_BODY()
 
+    // 함수 영역
 protected:
     virtual void NativeConstruct() override;
+
     virtual void NativeDestruct() override;
 
+private:
+    UFUNCTION()
+    void HandleSelectInput();
+
+    UFUNCTION()
+    void HandleSelectedActorDestroyed(
+        AActor* DestroyedActor
+    );
+
+    void PerformSelectionTrace();
+
+    void ApplySelection(
+        AActor* NewSelectedActor,
+        const FSFSelectableInfo& NewSelectedInfo
+    );
+
+    void UnbindSelectedActorDestroyed();
+
+    void ClearSelection();
+
+    // 변수 영역
+protected:
     UPROPERTY(
+        Transient,
         BlueprintReadOnly,
         Category = "SF|Selection"
     )
-    TObjectPtr<AActor> SelectedActor;
+    TObjectPtr<AActor> SelectedActor = nullptr;
 
     UPROPERTY(
+        Transient,
         BlueprintReadOnly,
         Category = "SF|Selection"
     )
@@ -32,16 +58,10 @@ protected:
 
     UPROPERTY(
         BlueprintReadOnly,
-        meta = (BindWidgetOptional),
-        Category = "SF|HUD"
+        Category = "SF|HUD",
+        meta = (
+            BindWidgetOptional
+            )
     )
-    TObjectPtr<USFSelectionPanelWidget> SelectionPanel;
-
-private:
-    UFUNCTION()
-    void HandleSelectInput();
-
-    void PerformSelectionTrace();
-
-    void ClearSelection();
+    TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
 };

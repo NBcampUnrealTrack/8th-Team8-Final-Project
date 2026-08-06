@@ -28,7 +28,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void DebugDrawRadius(const FVector& WorldLocation, float Radius);
 	UFUNCTION(BlueprintCallable)
-	void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGrid);
+	void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
 #pragma endregion 
 private:
 	// size of grid

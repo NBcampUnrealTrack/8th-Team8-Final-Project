@@ -1,7 +1,7 @@
-﻿#include "RootBase.h"
+﻿#include "SFRootBase.h"
 #include "Components/StaticMeshComponent.h"
 
-ARootBase::ARootBase()
+ASFRootBase::ASFRootBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	

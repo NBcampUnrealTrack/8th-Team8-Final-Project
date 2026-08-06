@@ -3,13 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Buildings/RootBase.h"
+#include "Buildings/SFRootBase.h"
 #include "GameFramework/Actor.h"
 #include "ResourceBase.generated.h"
 
 UCLASS()
 class STRIKEFORGE_API AResourceBase 
-	: public ARootBase
+	: public ASFRootBase
 {
 	GENERATED_BODY()
 

@@ -134,7 +134,7 @@ void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, flo
 	}
 }
 
-void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGrid)
+void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize)
 {
 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
@@ -142,9 +142,9 @@ void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const
 	
 	const float HalfCell = CellSize * 0.5f;
 
-	for (int Y = 0; Y < InGrid.Y; Y++)
+	for (int Y = 0; Y < InGridSize.Y; Y++)
 	{
-		for (int X = 0; X < InGrid.X; X++)
+		for (int X = 0; X < InGridSize.X; X++)
 		{
 			FVector TempGridCenter(ApplyGridVector.X + X * CellSize, ApplyGridVector.Y + Y * CellSize, ApplyGridVector.Z);
 			

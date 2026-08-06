@@ -53,6 +53,8 @@ void UBuildingPlacement::UpdatePlacementMode()
 		if (ToggleGrid)
 		{
 			const FIntPoint GridPoint = CachedGridSubsystem->WorldCoordinateToGrid(HitLocation);
+			// targetactor's gridsize?
+			// CachedGridSubsystem->DebugDrawGrid(HitLocation, gridsize);
 			HitLocation = CachedGridSubsystem->GridToWorldCoordinate(GridPoint);
 		}
 		TargetActor.Get()->SetActorLocation(HitLocation);

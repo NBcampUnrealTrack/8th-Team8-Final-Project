@@ -1,11 +1,11 @@
-﻿#include "BuildingBase.h"
+﻿#include "SFBaseBuilding.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "Datas/Building/BuildingAppearance.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 
-ABuildingBase::ABuildingBase()
+ASFBaseBuilding::ASFBaseBuilding()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	
@@ -13,7 +13,7 @@ ABuildingBase::ABuildingBase()
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 }
 
-void ABuildingBase::InitializeBuildingData()
+void ASFBaseBuilding::InitializeBuildingData()
 {
 	USFDataTableManager* Subsystem = GetGameInstance()->GetSubsystem<USFDataTableManager>();
 	if (!IsValid(Subsystem)) return;
@@ -39,24 +39,13 @@ void ABuildingBase::InitializeBuildingData()
 	// ApplyPreviewMesh(); // set preview mesh
 	// ApplyPreviewMaterial(true); // true = green false = red;
 }
-FName ABuildingBase::OnSelected_Implementation()
-{
-	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnSelected_Implementation"));
-	return RowFName;
-}
 
-void ABuildingBase::OnDeSelected_Implementation()
-{
-	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnDeSelected_Implementation"));
-	
-}
-
-void ABuildingBase::TakeDamaged_Implementation(float InDamage)
+void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 {
 	HealthComponent->ApplyDamage(InDamage);
 }
 
-void ABuildingBase::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
+void ASFBaseBuilding::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
 	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnTakeAttacking"));
 	
@@ -64,17 +53,30 @@ void ABuildingBase::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float I
 	// play sound
 }
 
-void ABuildingBase::OnDeath()
+void ASFBaseBuilding::HandleHealthZero()
 {
 	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnDeath"));
 	
-	// play death montage
 	// play sound
+	// destroy mesh
+	// collision unenable
+	// stop progress
 	
 	// do not destroy()
+	
+	// virtual function
+	OnBuildingDestroyed();
 }
 
-void ABuildingBase::LoadTierRatioList(int32 InCurrentTier)
+void ASFBaseBuilding::OnBuildingDestroyed()
+{
+}
+
+void ASFBaseBuilding::OnConstructionFinished()
+{
+}
+
+void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
 {
 	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
 	CurrentTierRatios.Sort([](const float A, const float B)
@@ -92,7 +94,7 @@ void ABuildingBase::LoadTierRatioList(int32 InCurrentTier)
 	BuildingCompleteSound = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].CompleteSoundBase;
 }
 
-void ABuildingBase::EnterPreviewState()
+void ASFBaseBuilding::EnterPreviewState()
 {
 	//SetBuildingState(EBuildingState::Preview);
 
@@ -100,7 +102,7 @@ void ABuildingBase::EnterPreviewState()
 	ApplyPreviewMaterial(true);
 }
 
-void ABuildingBase::BeginConstruction()
+void ASFBaseBuilding::BeginConstruction()
 {
 	//SetBuildingState(EBuildingState::UnderConstruction);
 	
@@ -117,7 +119,7 @@ void ABuildingBase::BeginConstruction()
 	ProgressComponent->StartProgress();
 }
 
-void ABuildingBase::EnterCompletedState()
+void ASFBaseBuilding::EnterCompletedState()
 { // set last mesh completed
 	//SetBuildingState(EBuildingState::Completed);
 	//ProgressComponent->StopProgress();
@@ -128,13 +130,13 @@ void ABuildingBase::EnterCompletedState()
 	}
 }
 
-void ABuildingBase::ApplyPreviewMesh()
+void ASFBaseBuilding::ApplyPreviewMesh()
 {
 	UStaticMesh* InMesh = CurrentTierMeshes[CurrentTierMeshes.Num() - 1];
 	StaticMeshComponent->SetStaticMesh(InMesh);
 }
 
-void ABuildingBase::ApplyPreviewMaterial(uint8 bIsPlaced)
+void ASFBaseBuilding::ApplyPreviewMaterial(uint8 bIsPlaced)
 {
 	if (bIsPlaced)
 	{
@@ -150,55 +152,55 @@ void ABuildingBase::ApplyPreviewMaterial(uint8 bIsPlaced)
 	}
 }
 
-void ABuildingBase::BindFunction()
+void ASFBaseBuilding::BindFunction()
 {
 	if (false == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
 	{
 		ProgressComponent->OnChangedRatio.AddDynamic(this, &ThisClass::ChangeMeshByRatio);
 	}
-	if (false == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::CompleteConstruction))
+	if (false == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
 	{
-		ProgressComponent->OnCompletedBuilding.AddDynamic(this, &ThisClass::CompleteConstruction);
+		ProgressComponent->OnCompletedBuilding.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
 	}
 	
 	if (false == HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::OnTakeAttacking))
 	{
 		HealthComponent->OnHealthValueChanged.AddDynamic(this, &ThisClass::OnTakeAttacking);
 	}
-	if (false == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::OnDeath))
+	if (false == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::HandleHealthZero))
 	{
-		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::OnDeath);
+		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
 	
 }
 
-void ABuildingBase::UnBindFunction()
+void ASFBaseBuilding::UnBindFunction()
 {
 	if (true == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
 	{
 		ProgressComponent->OnChangedRatio.RemoveDynamic(this, &ThisClass::ChangeMeshByRatio);
 	}
-	if (true == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::CompleteConstruction))
+	if (true == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
 	{
-		ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::CompleteConstruction);
+		ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	}
 	
 	if (true == HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::OnTakeAttacking))
 	{
 		HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::OnTakeAttacking);
 	}
-	if (true == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::OnDeath))
+	if (true == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::HandleHealthZero))
 	{
-		HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::OnDeath);
+		HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
 	}
 }
 
-void ABuildingBase::ChangeMeshByRatio(int32 InCurrentRatioIndex)
+void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
 {
 	SetMesh(CurrentTierMeshes[InCurrentRatioIndex]);
 }
 
-void ABuildingBase::PlayBuildingEffect()
+void ASFBaseBuilding::PlayBuildingEffect()
 {
 	UGameplayStatics::PlaySoundAtLocation(
 		GetWorld(),
@@ -208,7 +210,7 @@ void ABuildingBase::PlayBuildingEffect()
 
 }
 
-void ABuildingBase::SetBuildingState(const EBuildingState InState)
+void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
 	if (CurrentBuildingState == InState)
 	{
@@ -219,7 +221,7 @@ void ABuildingBase::SetBuildingState(const EBuildingState InState)
 	ApplyBuildingState(InState);
 }
 
-void ABuildingBase::ApplyBuildingState(const EBuildingState InState)
+void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 {
 	switch (InState)
 	{
@@ -240,7 +242,7 @@ void ABuildingBase::ApplyBuildingState(const EBuildingState InState)
 	}
 }
 
-void ABuildingBase::LoadTierMeshList(int32 InCurrentTier)
+void ASFBaseBuilding::LoadTierMeshList(int32 InCurrentTier)
 {
 	// load > will change assetmanager
 	CurrentTierMeshes.Empty();
@@ -251,7 +253,7 @@ void ABuildingBase::LoadTierMeshList(int32 InCurrentTier)
 	}
 }
 
-void ABuildingBase::InitInfo(const FBuildingAppearance* InData)
+void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	if (!InData)
 	{
@@ -272,7 +274,7 @@ void ABuildingBase::InitInfo(const FBuildingAppearance* InData)
 	UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes:: Completed."));
 }
 
-void ABuildingBase::UpgradeBuilding(int32 UpgradeValue)
+void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
 	int32 TempTier = CurrentTier + UpgradeValue;
 	if(!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(TempTier))
@@ -292,7 +294,7 @@ void ABuildingBase::UpgradeBuilding(int32 UpgradeValue)
 	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
-void ABuildingBase::SetMesh(UStaticMesh* InMesh)
+void ASFBaseBuilding::SetMesh(UStaticMesh* InMesh)
 {
 	if (!InMesh)
 	{
@@ -302,13 +304,15 @@ void ABuildingBase::SetMesh(UStaticMesh* InMesh)
 	StaticMeshComponent->SetStaticMesh(InMesh);
 }
 
-void ABuildingBase::CompleteConstruction()
+void ASFBaseBuilding::HandleCompleteConstruction()
 {
 	SetBuildingState(EBuildingState::Completed);
 	PlayBuildingEffect();
+	// product begin in childclass
+	OnConstructionFinished();
 }
 
-void ABuildingBase::BeginPlay()
+void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 	
@@ -317,7 +321,7 @@ void ABuildingBase::BeginPlay()
 	InitializeBuildingData();
 }
 
-void ABuildingBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnBindFunction();
 	Super::EndPlay(EndPlayReason);

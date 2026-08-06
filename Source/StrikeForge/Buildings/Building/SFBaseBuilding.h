@@ -1,11 +1,11 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Buildings/RootBase.h"
+#include "Buildings/SFRootBase.h"
 #include "Datas/Building/BuildingAppearance.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/Units/Damagable.h"
-#include "BuildingBase.generated.h"
+#include "SFBaseBuilding.generated.h"
 
 //DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FChangedBuildingState, EBuildingState, InCurrentState);
 
@@ -21,16 +21,20 @@ enum class EBuildingState : uint8
 	Completed
 };
 
-UCLASS()
-class STRIKEFORGE_API ABuildingBase 
-	: public ARootBase
+UCLASS(Abstract, Blueprintable)
+class STRIKEFORGE_API ASFBaseBuilding 
+	: public ASFRootBase
 	, public IDamagable
 
 {
 	GENERATED_BODY()
 
 public:
-	ABuildingBase();
+	ASFBaseBuilding();
+	
+	virtual void OnBuildingDestroyed();
+	virtual void OnConstructionFinished();
+	virtual void TakeDamaged_Implementation(float InDamage) override;
 	
 	//FChangedBuildingState OnChangedBuildingState;
 	
@@ -57,7 +61,7 @@ public:
 	
 	// completed construct
 	UFUNCTION()
-	void CompleteConstruction();
+	void HandleCompleteConstruction();
 	void EnterCompletedState();
 	void PlayBuildingEffect();
 	
@@ -69,15 +73,14 @@ public:
 	void UpgradeBuilding(int32 UpgradeValue = 1);
 	
 	// inferfaces
-	virtual FName OnSelected_Implementation() override;
-	virtual void OnDeSelected_Implementation() override;
+	// virtual FName OnSelected_Implementation() override;
+	// virtual void OnDeSelected_Implementation() override;
 	
-	virtual void TakeDamaged_Implementation(float InDamage) override;
 	UFUNCTION()
 	void OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP);
 	UFUNCTION()
-	void OnDeath();
-
+	void HandleHealthZero();
+	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -86,12 +89,9 @@ protected:
 	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UProgressComponent> ProgressComponent;
-private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FText DisplayName;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	int32 TeamIndex;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
 	
@@ -110,4 +110,7 @@ private:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
 	EBuildingState CurrentBuildingState;
+	
+private:
+	
 };

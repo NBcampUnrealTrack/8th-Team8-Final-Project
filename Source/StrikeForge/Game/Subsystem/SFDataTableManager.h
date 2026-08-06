@@ -1,46 +1,91 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+
 #include "Game/GameInstance/SFGameInstance.h"
+#include "Logging/SFLog.h"
+
 #include "SFDataTableManager.generated.h"
 
 UCLASS()
-class STRIKEFORGE_API USFDataTableManager : public UGameInstanceSubsystem
+class STRIKEFORGE_API USFDataTableManager
+    : public UGameInstanceSubsystem
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
+
+    // 함수 영역
 public:
-	
-	template<typename T>
-	const T* GetDataRow(EDataTableType TableType, FName RowName, const FString& ContextString = TEXT("GetDataRow")) const
-	{
-		const USFGameInstance* SF_GI =	Cast<USFGameInstance>(GetGameInstance());
+    template<typename T>
+    const T* GetDataRow(
+        EDataTableType TableType,
+        FName RowName,
+        const FString& ContextString = TEXT("GetDataRow")
+    ) const
+    {
+        if (RowName.IsNone())
+        {
+            SF_LOG(
+                Warning,
+                "[SFDataTableManager] RowName is None."
+            );
 
-		if (!IsValid(SF_GI))
-		{
-			UE_LOG(LogTemp, Error, TEXT("GameInstance is invalid"));
-			return nullptr;
-		}
+            return nullptr;
+        }
 
-		UDataTable* DataTable = SF_GI->GetDataTableType(TableType);
+        const USFGameInstance* SFGameInstance =
+            Cast<USFGameInstance>(
+                GetGameInstance()
+            );
 
-		if (!IsValid(DataTable))
-		{
-			UE_LOG(LogTemp,	Error,	TEXT("DataTable is invalid. TableType: %d"), static_cast<int32>(TableType));
-			return nullptr;
-		}
+        if (!IsValid(SFGameInstance))
+        {
+            SF_LOG(
+                Error,
+                "[SFDataTableManager] GameInstance is invalid."
+            );
 
-		const T* FoundRow = DataTable->FindRow<T>(RowName, ContextString,true);
+            return nullptr;
+        }
 
-		if (!FoundRow)
-		{
-			UE_LOG(LogTemp,	Warning, TEXT("Row is invalid. Table: %s, Row: %s"), *GetNameSafe(DataTable), *RowName.ToString());
-		}
-		
-		UE_LOG(LogTemp,	Warning, TEXT("Success."));
-		return FoundRow;
-	}
-	
-private:
-	
+        UDataTable* DataTable =
+            SFGameInstance->GetDataTableType(
+                TableType
+            );
+
+        if (!IsValid(DataTable))
+        {
+            SF_LOG(
+                Error,
+                "[SFDataTableManager] "
+                "DataTable is invalid. TableType: %d",
+                static_cast<int32>(TableType)
+            );
+
+            return nullptr;
+        }
+
+        const T* FoundRow =
+            DataTable->FindRow<T>(
+                RowName,
+                ContextString,
+                false
+            );
+
+        if (FoundRow == nullptr)
+        {
+            SF_LOG(
+                Warning,
+                "[SFDataTableManager] "
+                "Row was not found. Table: %s, Row: %s",
+                *GetNameSafe(DataTable),
+                *RowName.ToString()
+            );
+
+            return nullptr;
+        }
+
+        return FoundRow;
+    }
 };

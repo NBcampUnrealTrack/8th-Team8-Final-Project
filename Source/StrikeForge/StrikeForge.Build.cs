@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,13 +8,27 @@ public class StrikeForge : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput","UMG","Slate","SlateCore"});
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			// basic, input
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			
+			// ai
+			"AIModule", "NavigationSystem", "GameplayTasks",
+			
+			// ui
+			"UMG", "Slate", "SlateCore",
+			
+			
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
+		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
+
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

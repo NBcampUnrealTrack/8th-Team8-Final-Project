@@ -4,11 +4,13 @@
 #include "GameFramework/Character.h"
 #include "Interfaces/Units/Damagable.h"
 #include "Interfaces/Units/Selectable.h"
+#include "InGame/SFSelectINfo/SFSelectable.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "UnitBase.generated.h"
 
 class UHealthComponent;
+class UCombatTargetComponent;
 class UWidgetComponent;
 class AUnitAIController;
 class ALanePath;
@@ -31,25 +33,34 @@ enum class EUnitCombatState : uint8
  * 체력은 UHealthComponent 가 전담한다.
  */
 UCLASS()
-class STRIKEFORGE_API AUnitBase : public ACharacter, public IDamagable, public ISelectable, public ITargetable
+class STRIKEFORGE_API AUnitBase : public ACharacter, public ISelectable, public ISFSelectable
 {
 	GENERATED_BODY()
 
 public:
 	AUnitBase();
 
-	// ── IDamagable ──────────────────────────────────────
-	virtual void TakeDamaged_Implementation(float InDamage) override;
-
 	// ── ISelectable ─────────────────────────────────────
 	virtual void OnSelected_Implementation() override {}
 	virtual void OnDeSelected_Implementation() override {}
 
-	// ── ITargetable ─────────────────────────────────────
-	virtual int32 GetTeamIndex_Implementation() const override { return TeamIndex; }
-	virtual ETargetType GetTargetType_Implementation() const override { return TargetType; }
-	virtual bool IsTargetable_Implementation() const override;
-	virtual float GetArmor_Implementation() const override { return Armor; }
+	// ── ISFSelectable ───────────────────────────────────
+	/**
+	 * HUD 선택 패널에 넘길 정보를 만든다.
+	 *
+	 * 런타임 값(체력·공격력·이동속도)은 컴포넌트와 현재 스탯에서,
+	 * 표시용 값(초상화·설명)은 UI 테이블에서 가져온다.
+	 * 두 테이블 모두 UnitRowName 을 키로 쓴다.
+	 */
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+
+	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	UHealthComponent* GetHealthComponent() const { return HealthComponent; }
+
+	/** 소속 팀. 전투 대상 컴포넌트가 단일 출처다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	int32 GetTeamIndex() const;
 
 	// ── 외부 인터페이스 ─────────────────────────────────
 
@@ -59,9 +70,6 @@ public:
 	/** EDataTableType::Unit 에서 RowName 을 찾아 주입한다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
 	bool InitStatFromTable(FName InRowName);
-
-	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
-	void SetTeamIndex(int32 InTeamIndex) { TeamIndex = InTeamIndex; }
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
 	void SetAssignedLane(ALanePath* InLane);
@@ -76,10 +84,6 @@ public:
 	/** 타겟까지 시야가 열려 있는가. 벽 너머 공격을 막는다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool HasLineOfSight(const AActor* InTarget) const;
-
-	/** 이 역할이 생산 건물보다 일꾼을 먼저 노리는가 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
-	bool PrefersWorkerOverBuilding() const;
 
 	/** 대상 표면까지의 수평 거리. 건물처럼 큰 대상에서 필수 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
@@ -116,9 +120,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
-	/** HealthComponent 의 사망 델리게이트에 연결된다 */
+	/** CombatTargetComponent 의 파괴 델리게이트에 연결된다 */
 	UFUNCTION()
-	void HandleDeath();
+	void HandleDeath(UCombatTargetComponent* InTarget);
 
 	bool IsTargetUsable(const AActor* InTarget) const;
 
@@ -136,6 +140,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UHealthComponent> HealthComponent;
 
+	/** 팀·분류·방어를 보유하며 전투 레지스트리에 자신을 등록한다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UCombatTargetComponent> CombatTarget;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> StatusWidget;
 
@@ -144,16 +152,9 @@ protected:
 private:
 #pragma region Information
 
-	/** 소속 팀. 이 값 하나로 아군/적군이 갈린다 */
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
-	int32 TeamIndex = 0;
-
 	/** 데이터테이블 RowName. 비우면 아래 기본값을 그대로 쓴다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
 	FName UnitRowName;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
-	ETargetType TargetType = ETargetType::CombatUnit;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
 	EUnitRole UnitRole = EUnitRole::Defense;
@@ -161,9 +162,6 @@ private:
 #pragma endregion
 
 #pragma region Stat
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true, ClampMin = "0.0", ClampMax = "0.9"))
-	float Armor = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true))
 	float Attack = 10.f;
@@ -252,6 +250,16 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.1", ClampMax = "1.0"))
 	float TargetStickiness = 0.6f;
 
+	/**
+	 * 타겟 분류별 거리 가중치. 점수 = 거리 × 가중치.
+	 *
+	 * 전부 1.0 이면 "시야가 열린 가장 가까운 적" 을 고른다(기본).
+	 * 특정 분류를 우선하려면 1 보다 작게, 후순위로 미루려면 크게 준다.
+	 * 비어 있는 항목은 1.0 으로 간주한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	TMap<ETargetType, float> TargetTypeWeights;
+
 	/** 한 번의 탐색에서 시야 검사를 수행할 최대 후보 수 (성능 상한) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "1"))
 	int32 MaxLineOfSightChecks = 6;
@@ -279,6 +287,9 @@ private:
 
 	/** InitStat 이 이미 호출됐는가. BeginPlay 의 중복 주입을 막는다 */
 	uint8 bStatInitialized : 1;
+
+	/** "적이 없어 정지" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bNoTargetReported : 1;
 
 	float AttackCooldownRemaining = 0.f;
 	float RetargetTimer = 0.f;

@@ -1,6 +1,7 @@
 ﻿#include "UnitSpawner.h"
 
 #include "Units/Unit/UnitBase.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Units/Lane/LanePath.h"
 
 #include "NavigationSystem.h"
@@ -159,7 +160,11 @@ AUnitBase* AUnitSpawner::SpawnOne()
 
 	if (!Unit) return nullptr;
 
-	Unit->SetTeamIndex(TeamIndex);
+	// BeginPlay 전에 팀을 심어야 레지스트리에 올바른 버킷으로 들어간다
+	if (UCombatTargetComponent* Comp = Unit->FindComponentByClass<UCombatTargetComponent>())
+	{
+		Comp->SetTeamIndex(TeamIndex);
+	}
 	Unit->SetAssignedLane(Lane);
 
 	if (!UnitRowName.IsNone())

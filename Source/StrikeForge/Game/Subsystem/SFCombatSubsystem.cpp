@@ -1,5 +1,6 @@
 ﻿#include "SFCombatSubsystem.h"
 
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "GameFramework/Actor.h"
 
 USFCombatSubsystem* USFCombatSubsystem::Get(const UObject* WorldContext)
@@ -8,6 +9,13 @@ USFCombatSubsystem* USFCombatSubsystem::Get(const UObject* WorldContext)
 
 	const UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
 	return IsValid(World) ? World->GetSubsystem<USFCombatSubsystem>() : nullptr;
+}
+
+UCombatTargetComponent* USFCombatSubsystem::FindTargetComponent(const AActor* InActor)
+{
+	if (!IsValid(InActor)) return nullptr;
+
+	return InActor->FindComponentByClass<UCombatTargetComponent>();
 }
 
 bool USFCombatSubsystem::IsHostileTeam(int32 InTeamA, int32 InTeamB)
@@ -19,40 +27,38 @@ bool USFCombatSubsystem::IsHostileTeam(int32 InTeamA, int32 InTeamB)
 	return InTeamA != InTeamB;
 }
 
-void USFCombatSubsystem::RegisterCombatant(AActor* InActor)
+void USFCombatSubsystem::RegisterTarget(UCombatTargetComponent* InTarget)
 {
-	if (!IsValid(InActor) || !InActor->Implements<UTargetable>()) return;
+	if (!IsValid(InTarget) || !IsValid(InTarget->GetOwner())) return;
 
-	const int32 TeamIndex = ITargetable::Execute_GetTeamIndex(InActor);
-
-	TArray<TWeakObjectPtr<AActor>>& Bucket = TeamBuckets.FindOrAdd(TeamIndex);
-	Bucket.AddUnique(InActor);
+	TArray<TWeakObjectPtr<UCombatTargetComponent>>& Bucket = TeamBuckets.FindOrAdd(InTarget->GetTeamIndex());
+	Bucket.AddUnique(InTarget);
 }
 
-void USFCombatSubsystem::UnregisterCombatant(AActor* InActor)
+void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
 {
-	if (!InActor) return;
+	if (!InTarget) return;
 
-	// 사망 시점에 팀이 바뀌었을 가능성까지 고려해 전 버킷을 훑는다.
+	// 팀이 바뀐 뒤 해제될 가능성까지 고려해 전 버킷을 훑는다.
 	// 무효화된 약참조도 이 기회에 같이 정리한다.
-	for (TPair<int32, TArray<TWeakObjectPtr<AActor>>>& Pair : TeamBuckets)
+	for (TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
 	{
-		Pair.Value.RemoveAllSwap([InActor](const TWeakObjectPtr<AActor>& InWeak)
+		Pair.Value.RemoveAllSwap([InTarget](const TWeakObjectPtr<UCombatTargetComponent>& InWeak)
 		{
-			return !InWeak.IsValid() || InWeak.Get() == InActor;
+			return !InWeak.IsValid() || InWeak.Get() == InTarget;
 		});
 	}
 }
 
-bool USFCombatSubsystem::IsUsableTarget(const TWeakObjectPtr<AActor>& InWeak, AActor*& OutActor)
+bool USFCombatSubsystem::ResolveTarget(const TWeakObjectPtr<UCombatTargetComponent>& InWeak, AActor*& OutActor)
 {
-	AActor* Actor = InWeak.Get();
-	if (!IsValid(Actor)) return false;
+	UCombatTargetComponent* Comp = InWeak.Get();
+	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
 
-	// 죽었지만 아직 연출 중인 대상을 걸러낸다
-	if (!ITargetable::Execute_IsTargetable(Actor)) return false;
+	AActor* Owner = Comp->GetOwner();
+	if (!IsValid(Owner)) return false;
 
-	OutActor = Actor;
+	OutActor = Owner;
 	return true;
 }
 
@@ -64,21 +70,48 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 	const bool bLimitRange = InMaxRange > 0.f;
 	const float MaxRangeSq = InMaxRange * InMaxRange;
 
-	for (const TPair<int32, TArray<TWeakObjectPtr<AActor>>>& Pair : TeamBuckets)
+	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
 	{
 		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
 
-		for (const TWeakObjectPtr<AActor>& Weak : Pair.Value)
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
 		{
 			AActor* Candidate = nullptr;
-			if (!IsUsableTarget(Weak, Candidate)) continue;
+			if (!ResolveTarget(Weak, Candidate)) continue;
 
-			if (ITargetable::Execute_GetTargetType(Candidate) != InTargetType) continue;
+			if (Weak->GetTargetType() != InTargetType) continue;
 
 			// 수평 거리로 판정한다. 언덕 높이 차로 사거리가 어긋나지 않게.
 			const float DistSq = FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation());
 
 			if (bLimitRange && DistSq > MaxRangeSq) continue;
+
+			if (DistSq < BestDistSq)
+			{
+				BestDistSq = DistSq;
+				Best = Candidate;
+			}
+		}
+	}
+
+	return Best;
+}
+
+AActor* USFCombatSubsystem::FindNearestHostileAny(const FVector& InOrigin, int32 InSeekerTeam) const
+{
+	AActor* Best = nullptr;
+	float BestDistSq = TNumericLimits<float>::Max();
+
+	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
+	{
+		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
+
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
+		{
+			AActor* Candidate = nullptr;
+			if (!ResolveTarget(Weak, Candidate)) continue;
+
+			const float DistSq = FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation());
 
 			if (DistSq < BestDistSq)
 			{
@@ -99,14 +132,14 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 
 	const float RadiusSq = InRadius * InRadius;
 
-	for (const TPair<int32, TArray<TWeakObjectPtr<AActor>>>& Pair : TeamBuckets)
+	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
 	{
 		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
 
-		for (const TWeakObjectPtr<AActor>& Weak : Pair.Value)
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
 		{
 			AActor* Candidate = nullptr;
-			if (!IsUsableTarget(Weak, Candidate)) continue;
+			if (!ResolveTarget(Weak, Candidate)) continue;
 
 			if (FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation()) <= RadiusSq)
 			{
@@ -116,16 +149,16 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 	}
 }
 
-int32 USFCombatSubsystem::GetCombatantCount(int32 InTeamIndex) const
+int32 USFCombatSubsystem::GetTargetCount(int32 InTeamIndex) const
 {
-	const TArray<TWeakObjectPtr<AActor>>* Bucket = TeamBuckets.Find(InTeamIndex);
+	const TArray<TWeakObjectPtr<UCombatTargetComponent>>* Bucket = TeamBuckets.Find(InTeamIndex);
 	if (!Bucket) return 0;
 
 	int32 Count = 0;
-	for (const TWeakObjectPtr<AActor>& Weak : *Bucket)
+	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : *Bucket)
 	{
 		AActor* Actor = nullptr;
-		if (IsUsableTarget(Weak, Actor))
+		if (ResolveTarget(Weak, Actor))
 		{
 			++Count;
 		}

@@ -29,7 +29,7 @@ bool ASFGameState::InitializeStage(FName StageRowName)
 
 	CurrentStageRowName = StageRowName;
 
-	SF_LOG(Log, "[SFGameState] Stage initialized : % s", *CurrentStageRowName.ToString());
+	SF_LOG(Log, "[SFGameState] Stage initialized : %s", *CurrentStageRowName.ToString());
 
 	return true;
 }
@@ -108,4 +108,34 @@ bool ASFGameState::IsStagePlaying() const
 bool ASFGameState::IsStageFinished() const
 {
 	return StageState == ESFStageState::Finished;
+}
+
+int32 ASFGameState::GetMineral() const
+{
+	return Mineral;
+}
+
+int32 ASFGameState::GetEther() const
+{
+	return Ether;
+}
+
+float ASFGameState::GetMineralIncomeRate() const
+{
+	return MineralIncomeRate;
+}
+
+float ASFGameState::GetEtherIncomeRate() const
+{
+	return EtherIncomeRate;
+}
+
+int32 ASFGameState::GetCurrentPopulation() const
+{
+	return CurrentPopulation;
+}
+
+int32 ASFGameState::GetMaximumPopulation() const
+{
+	return MaximumPopulation;
 }

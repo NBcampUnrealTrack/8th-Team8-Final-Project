@@ -5,6 +5,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
 #include "Units/Lane/LanePath.h"
 
 #include "AIController.h"
@@ -23,6 +24,14 @@ AUnitBase::AUnitBase()
 
 	// 1 프로토 유닛 = 150cm 기준. 일반 유닛 신장 약 180cm
 	GetCapsuleComponent()->InitCapsuleSize(45.f, 90.f);
+
+	// HUD 클릭 선택은 ECC_Visibility 트레이스를 쓴다.
+	// 그런데 ACharacter 기본 Pawn 프로파일은 Visibility 를 Ignore 하므로
+	// 커서 트레이스가 유닛을 그대로 통과해 버린다.
+	// (건물은 StaticMeshComponent 라 BlockAll 기본값이라 문제가 없었다)
+	//
+	// 다른 채널 응답은 건드리지 않고 Visibility 만 Block 으로 바꾼다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
 
@@ -191,6 +200,80 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	{
 		Destroy();
 	}
+}
+
+// ─────────────────────────────────────────────────────────
+// HUD 선택 정보
+//
+// 런타임 값과 표시용 값의 출처가 다르다.
+//   런타임  : HealthComponent, 현재 스탯      — 매 선택 시점의 실제 값
+//   표시용  : EDataTableType::UI 테이블        — 초상화·설명·표시 여부
+//
+// 두 테이블 모두 UnitRowName 을 키로 쓴다.
+// FSFSelectableInfo::DataRowName 주석에 적힌 "공통 키" 설계 그대로다.
+// ─────────────────────────────────────────────────────────
+FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info;
+
+	Info.DataRowName = UnitRowName;
+	Info.SelectableType = ESFSelectableType::Unit;
+
+	// ── 런타임 값 ───────────────────────────────────────
+	if (IsValid(HealthComponent))
+	{
+		Info.CurrentHealth = HealthComponent->GetCurrentHealth();
+		Info.MaximumHealth = HealthComponent->GetMaxHealth();
+	}
+
+	// 지휘관 버프 등이 적용된 실제 공격력을 보여준다
+	Info.AttackPower = Attack * AttackMultiplier;
+
+	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Info.MoveSpeed = Move->MaxWalkSpeed;
+	}
+
+	// ── 테이블 값 ───────────────────────────────────────
+	const UWorld* World = GetWorld();
+	UGameInstance* GI = IsValid(World) ? World->GetGameInstance() : nullptr;
+	USFDataTableManager* TableManager = IsValid(GI) ? GI->GetSubsystem<USFDataTableManager>() : nullptr;
+
+	// RowName 이 없으면 런타임 값만 담아 돌려준다.
+	// 스포너를 거치지 않고 레벨에 직접 배치한 유닛이 여기 해당한다.
+	if (!IsValid(TableManager) || UnitRowName.IsNone())
+	{
+		return Info;
+	}
+
+	if (const FUnitStatData* StatRow =
+		TableManager->GetDataRow<FUnitStatData>(EDataTableType::Unit, UnitRowName, TEXT("AUnitBase::GetSelectableInfo")))
+	{
+		Info.DisplayName = StatRow->DisplayName;
+	}
+
+	if (const FSFSelectionUIDataRow* UIRow =
+		TableManager->GetDataRow<FSFSelectionUIDataRow>(EDataTableType::UI, UnitRowName, TEXT("AUnitBase::GetSelectableInfo")))
+	{
+		// UI 테이블에 이름이 따로 있으면 그쪽을 우선한다.
+		// 스탯 테이블 이름은 개발용, UI 이름은 현지화 대상인 경우가 있다.
+		if (!UIRow->DisplayName.IsEmpty())
+		{
+			Info.DisplayName = UIRow->DisplayName;
+		}
+
+		// TSoftObjectPtr 이므로 여기서 로드한다.
+		// 선택은 사용자 입력 시점에만 일어나므로 동기 로드로 충분하다.
+		Info.PortraitImage = UIRow->PortraitImage.LoadSynchronous();
+		Info.SelectionIcon = UIRow->SelectionIcon.LoadSynchronous();
+		Info.Description = UIRow->Description;
+
+		Info.bShowHealth = UIRow->bShowHealth;
+		Info.bShowAttackPower = UIRow->bShowAttackPower;
+		Info.bShowMoveSpeed = UIRow->bShowMoveSpeed;
+	}
+
+	return Info;
 }
 
 // ─────────────────────────────────────────────────────────

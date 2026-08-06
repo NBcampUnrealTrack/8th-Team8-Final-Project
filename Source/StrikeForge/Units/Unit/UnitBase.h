@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Interfaces/Units/Damagable.h"
 #include "Interfaces/Units/Selectable.h"
+#include "InGame/SFSelectINfo/SFSelectable.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "UnitBase.generated.h"
@@ -32,7 +33,7 @@ enum class EUnitCombatState : uint8
  * 체력은 UHealthComponent 가 전담한다.
  */
 UCLASS()
-class STRIKEFORGE_API AUnitBase : public ACharacter, public ISelectable
+class STRIKEFORGE_API AUnitBase : public ACharacter, public ISelectable, public ISFSelectable
 {
 	GENERATED_BODY()
 
@@ -42,6 +43,20 @@ public:
 	// ── ISelectable ─────────────────────────────────────
 	virtual void OnSelected_Implementation() override {}
 	virtual void OnDeSelected_Implementation() override {}
+
+	// ── ISFSelectable ───────────────────────────────────
+	/**
+	 * HUD 선택 패널에 넘길 정보를 만든다.
+	 *
+	 * 런타임 값(체력·공격력·이동속도)은 컴포넌트와 현재 스탯에서,
+	 * 표시용 값(초상화·설명)은 UI 테이블에서 가져온다.
+	 * 두 테이블 모두 UnitRowName 을 키로 쓴다.
+	 */
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+
+	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	UHealthComponent* GetHealthComponent() const { return HealthComponent; }
 
 	/** 소속 팀. 전투 대상 컴포넌트가 단일 출처다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")

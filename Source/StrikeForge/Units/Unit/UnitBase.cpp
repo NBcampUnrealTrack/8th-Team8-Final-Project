@@ -57,7 +57,7 @@ void AUnitBase::BeginPlay()
 
 	if (HealthComponent)
 	{
-		HealthComponent->OnHealthStateChanged.AddDynamic(this, &AUnitBase::HandleDeath);
+		HealthComponent->OnHealthIsZero.AddDynamic(this, &AUnitBase::HandleDeath);
 	}
 
 	// 전투 레지스트리에 등록 — 이래야 상대가 나를 찾을 수 있다

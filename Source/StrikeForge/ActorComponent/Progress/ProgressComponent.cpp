@@ -27,14 +27,14 @@ void UProgressComponent::StartProgress()
 		// max인지 확인
 		const int32 TempRatioIndex = FindRatioIndex(Ratio);
 		
-		if ( TempRatioIndex != CurrentRatioIndex )
+		if ( TempRatioIndex != CurrentRatioIndex ) // set mesh twice when completed
 		{
 			CurrentRatioIndex = TempRatioIndex;
 			OnChangedRatio.Broadcast(CurrentRatioIndex);
 		}
 		if (Ratio >= QuarterofRatios[QuarterofRatios.Num() - 1])
 		{
-			//StopProgress();
+			StopProgress();
 			OnCompletedBuilding.Broadcast();
 		}
 	},

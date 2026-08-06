@@ -2,12 +2,12 @@
 
 #include "SFInGamePlayerController.h"
 #include "SFSelectInfo/SFSelectable.h"
+#include "SFSelectInfo/SFSelectionPanelWidget.h"
 
 #include "DrawDebugHelpers.h"
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Actor.h"
-#include "SFSelectInfo/SFSelectionPanelWidget.h"
-
+#include "Logging/SFLog.h"
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -20,13 +20,10 @@ void USFInGameHUDWidget::NativeConstruct()
 
     if (!IsValid(PlayerController))
     {
-        UE_LOG(
-            LogTemp,
+        SF_LOG(
             Error,
-            TEXT(
-                "SFInGameHUDWidget: "
-                "SFInGamePlayerController를 찾지 못했습니다."
-            )
+            "[SFInGameHUDWidget] "
+            "SFInGamePlayerController is invalid."
         );
 
         return;
@@ -37,18 +34,17 @@ void USFInGameHUDWidget::NativeConstruct()
         &USFInGameHUDWidget::HandleSelectInput
     );
 
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT(
-            "SFInGameHUDWidget: "
-            "OnSelectInput 바인딩 완료"
-        )
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "OnSelectInput binding completed."
     );
 }
 
 void USFInGameHUDWidget::NativeDestruct()
 {
+    UnbindSelectedActorDestroyed();
+
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
             GetOwningPlayer()
@@ -68,6 +64,30 @@ void USFInGameHUDWidget::NativeDestruct()
 void USFInGameHUDWidget::HandleSelectInput()
 {
     PerformSelectionTrace();
+}
+
+void USFInGameHUDWidget::HandleSelectedActorDestroyed(
+    AActor* DestroyedActor
+)
+{
+    if (DestroyedActor != SelectedActor.Get())
+    {
+        return;
+    }
+
+    SelectedActor = nullptr;
+    SelectedInfo = FSFSelectableInfo();
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ClearSelection();
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Selected actor was destroyed. Selection cleared."
+    );
 }
 
 void USFInGameHUDWidget::PerformSelectionTrace()
@@ -97,17 +117,18 @@ void USFInGameHUDWidget::PerformSelectionTrace()
 
     if (!bHit)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("SF Selection Trace: No Hit")
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "Selection trace returned no hit."
         );
 
         ClearSelection();
         return;
     }
 
-    AActor* HitActor = HitResult.GetActor();
+    AActor* HitActor =
+        HitResult.GetActor();
 
     if (!IsValid(HitActor))
     {
@@ -122,13 +143,10 @@ void USFInGameHUDWidget::PerformSelectionTrace()
 
     if (!bIsSelectable)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT(
-                "SF Selection Trace: "
-                "%s is not selectable."
-            ),
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "%s is not selectable.",
             *HitActor->GetName()
         );
 
@@ -141,26 +159,16 @@ void USFInGameHUDWidget::PerformSelectionTrace()
             HitActor
         );
 
-    SelectedActor = HitActor;
-    SelectedInfo = SelectableInfo;
+    ApplySelection(
+        HitActor,
+        SelectableInfo
+    );
 
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
-    }
-
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT(
-            "SF Selectable Selected | "
-            "Actor: %s | "
-            "Name: %s | "
-            "Health: %.1f / %.1f | "
-            "RowName: %s"
-        ),
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Selected | Actor: %s | Name: %s | "
+        "Health: %.1f / %.1f | RowName: %s",
         *HitActor->GetName(),
         *SelectableInfo.DisplayName.ToString(),
         SelectableInfo.CurrentHealth,
@@ -178,19 +186,80 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         1.5f
     );
 }
+
+void USFInGameHUDWidget::ApplySelection(
+    AActor* NewSelectedActor,
+    const FSFSelectableInfo& NewSelectedInfo
+)
+{
+    if (!IsValid(NewSelectedActor))
+    {
+        ClearSelection();
+        return;
+    }
+
+    // 같은 대상을 다시 선택하면 파괴 이벤트는 재연결하지 않고
+    // 최신 선택 정보만 다시 표시한다.
+    if (SelectedActor == NewSelectedActor)
+    {
+        SelectedInfo = NewSelectedInfo;
+
+        if (IsValid(SelectionPanel))
+        {
+            SelectionPanel->ShowSelection(
+                SelectedInfo
+            );
+        }
+
+        return;
+    }
+
+    UnbindSelectedActorDestroyed();
+
+    SelectedActor = NewSelectedActor;
+    SelectedInfo = NewSelectedInfo;
+
+    SelectedActor->OnDestroyed.AddUniqueDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
+        );
+    }
+}
+
+void USFInGameHUDWidget::UnbindSelectedActorDestroyed()
+{
+    if (!IsValid(SelectedActor))
+    {
+        return;
+    }
+
+    SelectedActor->OnDestroyed.RemoveDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+}
+
 void USFInGameHUDWidget::ClearSelection()
 {
+    UnbindSelectedActorDestroyed();
+
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
 
     if (IsValid(SelectionPanel))
     {
-        SelectionPanel->HideSelection();
+        SelectionPanel->ClearSelection();
     }
 
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("SF Selection Cleared")
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Selection cleared."
     );
 }

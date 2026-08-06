@@ -1,6 +1,7 @@
 #include "SFInGamePlayerController.h"
 
 #include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystemInterface.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
@@ -21,7 +22,10 @@ void ASFInGamePlayerController::BeginPlay()
     Super::BeginPlay();
 
     ConfigureMouseInput();
-    RegisterInputMappingContext();
+    RegisterBaseMappingContext();
+    SetSFControlMode(
+        ESFControlMode::Gameplay
+    );
     CreateInGameHUD();
 }
 
@@ -30,45 +34,155 @@ void ASFInGamePlayerController::SetupInputComponent()
     Super::SetupInputComponent();
 
     UEnhancedInputComponent* EnhancedInputComponent =
-        Cast<UEnhancedInputComponent>(InputComponent);
+        Cast<UEnhancedInputComponent>(
+            InputComponent
+        );
 
     if (!IsValid(EnhancedInputComponent))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT(
-                "SFInGamePlayerController: "
-                "EnhancedInputComponent is invalid."
-            )
-        );
-
         return;
     }
 
-    if (!IsValid(SelectAction))
+    if (IsValid(SelectAction))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT(
-                "SFInGamePlayerController: "
-                "SelectAction is not assigned."
-            )
+        EnhancedInputComponent->BindAction(
+            SelectAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::
+            HandleSelectInput
         );
-
-        return;
     }
 
-    EnhancedInputComponent->BindAction(
-        SelectAction,
-        ETriggerEvent::Started,
-        this,
-        &ASFInGamePlayerController::HandleSelectInput
-    );
+    if (IsValid(ConfirmBuildAction))
+    {
+        EnhancedInputComponent->BindAction(
+            ConfirmBuildAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::
+            HandleConfirmBuildInput
+        );
+    }
+
+    if (IsValid(CancelBuildAction))
+    {
+        EnhancedInputComponent->BindAction(
+            CancelBuildAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::
+            HandleCancelBuildInput
+        );
+    }
 }
 
-void ASFInGamePlayerController::ConfigureMouseInput()
+void ASFInGamePlayerController::SetSFControlMode(
+    ESFControlMode NewControlMode
+)
+{
+    if (
+        bControlModeInitialized
+        && CurrentControlMode == NewControlMode
+        )
+    {
+        return;
+    }
+
+    UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+        GetEnhancedInputSubsystem();
+
+    if (!IsValid(InputSubsystem))
+    {
+        return;
+    }
+
+    UInputMappingContext* TargetMappingContext = nullptr;
+    int32 TargetMappingPriority = 0;
+
+    switch (NewControlMode)
+    {
+    case ESFControlMode::Gameplay:
+        TargetMappingContext =
+            GameplayMappingContext;
+
+        TargetMappingPriority =
+            GameplayMappingPriority;
+        break;
+
+    case ESFControlMode::BuildPlacement:
+        TargetMappingContext =
+            BuildPlacementMappingContext;
+
+        TargetMappingPriority =
+            BuildPlacementMappingPriority;
+        break;
+
+    default:
+        return;
+    }
+
+    if (!IsValid(TargetMappingContext))
+    {
+        return;
+    }
+
+    FModifyContextOptions ModifyOptions;
+
+    ModifyOptions
+        .bIgnoreAllPressedKeysUntilRelease = true;
+
+    if (IsValid(GameplayMappingContext))
+    {
+        InputSubsystem->RemoveMappingContext(
+            GameplayMappingContext,
+            ModifyOptions
+        );
+    }
+
+    if (IsValid(BuildPlacementMappingContext))
+    {
+        InputSubsystem->RemoveMappingContext(
+            BuildPlacementMappingContext,
+            ModifyOptions
+        );
+    }
+
+    InputSubsystem->AddMappingContext(
+        TargetMappingContext,
+        TargetMappingPriority,
+        ModifyOptions
+    );
+
+    CurrentControlMode = NewControlMode;
+    bControlModeInitialized = true;
+}
+
+ESFControlMode
+ASFInGamePlayerController::GetSFControlMode() const
+{
+    return CurrentControlMode;
+}
+
+UEnhancedInputLocalPlayerSubsystem*
+ASFInGamePlayerController::
+GetEnhancedInputSubsystem() const
+{
+    ULocalPlayer* LocalPlayer =
+        GetLocalPlayer();
+
+    if (!IsValid(LocalPlayer))
+    {
+        return nullptr;
+    }
+
+    return ULocalPlayer::GetSubsystem<
+        UEnhancedInputLocalPlayerSubsystem
+    >(LocalPlayer);
+}
+
+void ASFInGamePlayerController::
+ConfigureMouseInput()
 {
     bShowMouseCursor = true;
     bEnableClickEvents = true;
@@ -87,75 +201,48 @@ void ASFInGamePlayerController::ConfigureMouseInput()
     SetInputMode(InputMode);
 }
 
-void ASFInGamePlayerController::RegisterInputMappingContext()
+void ASFInGamePlayerController::
+RegisterBaseMappingContext()
 {
-    ULocalPlayer* LocalPlayer = GetLocalPlayer();
-
-    if (!IsValid(LocalPlayer))
-    {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT(
-                "SFInGamePlayerController: "
-                "LocalPlayer is invalid."
-            )
-        );
-
-        return;
-    }
-
     UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
-        ULocalPlayer::GetSubsystem<
-        UEnhancedInputLocalPlayerSubsystem
-        >(LocalPlayer);
+        GetEnhancedInputSubsystem();
 
     if (!IsValid(InputSubsystem))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT(
-                "SFInGamePlayerController: "
-                "Enhanced Input Subsystem is invalid."
-            )
-        );
-
         return;
     }
 
-    if (!IsValid(InGameMappingContext))
+    if (!IsValid(BaseMappingContext))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT(
-                "SFInGamePlayerController: "
-                "InGameMappingContext is not assigned."
-            )
-        );
-
         return;
     }
 
     InputSubsystem->AddMappingContext(
-        InGameMappingContext,
-        MappingPriority
+        BaseMappingContext,
+        BaseMappingPriority
     );
 }
 
-void ASFInGamePlayerController::HandleSelectInput()
+void ASFInGamePlayerController::
+HandleSelectInput()
 {
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("SF Select Input Received")
-    );
-
     OnSelectInput.Broadcast();
 }
 
-void ASFInGamePlayerController::CreateInGameHUD()
+void ASFInGamePlayerController::
+HandleConfirmBuildInput()
+{
+    OnConfirmBuildInput.Broadcast();
+}
+
+void ASFInGamePlayerController::
+HandleCancelBuildInput()
+{
+    OnCancelBuildInput.Broadcast();
+}
+
+void ASFInGamePlayerController::
+CreateInGameHUD()
 {
     if (!IsLocalController())
     {
@@ -164,15 +251,6 @@ void ASFInGamePlayerController::CreateInGameHUD()
 
     if (!InGameHUDWidgetClass)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT(
-                "SFInGamePlayerController: "
-                "InGameHUDWidgetClass가 설정되지 않았습니다."
-            )
-        );
-
         return;
     }
 
@@ -184,26 +262,8 @@ void ASFInGamePlayerController::CreateInGameHUD()
 
     if (!IsValid(InGameHUDWidget))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT(
-                "SFInGamePlayerController: "
-                "인게임 HUD 생성 실패"
-            )
-        );
-
         return;
     }
 
     InGameHUDWidget->AddToViewport();
-
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT(
-            "SFInGamePlayerController: "
-            "인게임 HUD 생성 완료"
-        )
-    );
 }

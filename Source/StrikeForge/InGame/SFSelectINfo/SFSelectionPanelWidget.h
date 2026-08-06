@@ -11,6 +11,7 @@ class STRIKEFORGE_API USFSelectionPanelWidget
 {
     GENERATED_BODY()
 
+    // 함수 영역
 public:
     UFUNCTION(
         BlueprintCallable,
@@ -24,7 +25,7 @@ public:
         BlueprintCallable,
         Category = "SF|Selection"
     )
-    void HideSelection();
+    void ClearSelection();
 
     UFUNCTION(
         BlueprintPure,
@@ -34,18 +35,6 @@ public:
 
 protected:
     virtual void NativeConstruct() override;
-
-    UPROPERTY(
-        BlueprintReadOnly,
-        Category = "SF|Selection"
-    )
-    FSFSelectableInfo CurrentSelectableInfo;
-
-    UPROPERTY(
-        BlueprintReadOnly,
-        Category = "SF|Selection"
-    )
-    bool bHasSelection = false;
 
     UFUNCTION(
         BlueprintImplementableEvent,
@@ -62,8 +51,22 @@ protected:
         BlueprintImplementableEvent,
         Category = "SF|Selection",
         meta = (
-            DisplayName = "On Selection Hidden"
+            DisplayName = "On Selection Cleared"
             )
     )
-    void BP_OnSelectionHidden();
+    void BP_OnSelectionCleared();
+
+    // 변수 영역
+protected:
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    FSFSelectableInfo CurrentSelectableInfo;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    bool bHasSelection = false;
 };

@@ -4,7 +4,7 @@ void USFSelectionPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
-    HideSelection();
+    ClearSelection();
 }
 
 void USFSelectionPanelWidget::ShowSelection(
@@ -23,16 +23,17 @@ void USFSelectionPanelWidget::ShowSelection(
     );
 }
 
-void USFSelectionPanelWidget::HideSelection()
+void USFSelectionPanelWidget::ClearSelection()
 {
     CurrentSelectableInfo = FSFSelectableInfo();
     bHasSelection = false;
 
+    // 패널은 유지하고 선택 정보만 초기화한다.
     SetVisibility(
-        ESlateVisibility::Collapsed
+        ESlateVisibility::HitTestInvisible
     );
 
-    BP_OnSelectionHidden();
+    BP_OnSelectionCleared();
 }
 
 bool USFSelectionPanelWidget::HasSelection() const

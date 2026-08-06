@@ -19,18 +19,12 @@ void ASFGameMode::BeginPlay()
 
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] Failed to find SFGameState."
-		);
+		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
 
 		return;
 	}
 
-	SF_LOG(
-		Log,
-		"[SFGameMode] Stage initialization started."
-	);
+	SF_LOG(Log, "[SFGameMode] Stage initialization started.");
 
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 
@@ -41,30 +35,19 @@ bool ASFGameMode::StartStage()
 {
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] StartStage failed: GameState is invalid."
-		);
+		SF_LOG(Error, "[SFGameMode] StartStage failed: GameState is invalid.");
 
 		return false;
 	}
 
 	if (!SFGameState->StartStage())
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameMode] StartStage was rejected by GameState."
-		);
+		SF_LOG(Warning, "[SFGameMode] StartStage was rejected by GameState.");
 
 		return false;
 	}
 
-	SF_SCREEN_LOG(
-		Log,
-		5.0f,
-		FColor::Green,
-		"[SFGameMode] Stage started."
-	);
+	SF_SCREEN_LOG(Log, 5.0f, FColor::Green, "[SFGameMode] Stage started.");
 
 	return true;
 }
@@ -83,56 +66,35 @@ bool ASFGameMode::FinishStage(ESFStageResult NewStageResult)
 {
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] FinishStage failed: GameState is invalid."
-		);
+		SF_LOG(Error, "[SFGameMode] FinishStage failed: GameState is invalid.");
 
 		return false;
 	}
 
 	if (!SFGameState->IsStagePlaying())
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameMode] FinishStage failed: Stage is not playing."
-		);
+		SF_LOG(Warning, "[SFGameMode] FinishStage failed: Stage is not playing.");
 
 		return false;
 	}
 
 	if (NewStageResult == ESFStageResult::Undetermined)
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameMode] Undetermined is not a valid final result."
-		);
+		SF_LOG(Warning, "[SFGameMode] Undetermined is not a valid final result.");
 
 		return false;
 	}
 
 	if (!SFGameState->FinishStage(NewStageResult))
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameMode] FinishStage was rejected by GameState."
-		);
+		SF_LOG(Warning, "[SFGameMode] FinishStage was rejected by GameState.");
 
 		return false;
 	}
 
-	const FColor ResultColor =
-		NewStageResult == ESFStageResult::Victory
-		? FColor::Green
-		: FColor::Red;
+	const FColor ResultColor = NewStageResult == ESFStageResult::Victory ? FColor::Green : FColor::Red;
 
-	SF_SCREEN_LOG(
-		Log,
-		5.0f,
-		ResultColor,
-		"[SFGameMode] Stage finished. Result: %s",
-		*UEnum::GetValueAsString(NewStageResult)
-	);
+	SF_SCREEN_LOG(Log, 5.0f, ResultColor, "[SFGameMode] Stage finished. Result: %s", *UEnum::GetValueAsString(NewStageResult));
 
 	return true;
 }

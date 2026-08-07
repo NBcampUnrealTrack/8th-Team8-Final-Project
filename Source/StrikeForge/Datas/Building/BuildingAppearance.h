@@ -36,9 +36,13 @@ struct FBuildingAppearance : public FTableRowBase
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Name")
 	FText DisplayName;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building")
-	TObjectPtr<UStaticMesh> PreviewMesh;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Class")
+	TSubclassOf<AActor> BuildingClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info|Building|Grid")
+	FIntPoint GridSize = FIntPoint(1, 1);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
+	TObjectPtr<UMaterialInstance> PreviewMeshMaterial;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
 	FBuildingTierData AllTierBuildingStates;
 	//    ........ hp
 	

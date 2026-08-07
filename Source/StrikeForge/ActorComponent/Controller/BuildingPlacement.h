@@ -6,6 +6,8 @@
 
 #define ECC_LANDSCAPE ECC_GameTraceChannel1
 
+class USFBuildingGridSubsystem;
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UBuildingPlacement : public UActorComponent
 {
@@ -22,11 +24,18 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void UpdatePlacementMode();
 	UFUNCTION(BlueprintCallable)
-	void ConfrimPlacementMode();
+	void ConfirmPlacementMode();
+	
+	UFUNCTION(BlueprintCallable)
+	void ToggleGridFunction(bool toggle);
 private:
 	
 	UPROPERTY()
 	TWeakObjectPtr<AActor> TargetActor;
 	UPROPERTY()
 	TWeakObjectPtr<APlayerController> OwnerController;
+	UPROPERTY() // should not be deleted by GC
+	TObjectPtr<USFBuildingGridSubsystem> CachedGridSubsystem;
+	
+	bool ToggleGrid = true;
 };

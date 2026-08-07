@@ -41,7 +41,7 @@ public:
 	AUnitBase();
 
 	// ── ISelectable ─────────────────────────────────────
-	virtual void OnSelected_Implementation() override {}
+	virtual FName OnSelected_Implementation() override { return UnitRowName; }
 	virtual void OnDeSelected_Implementation() override {}
 
 	// ── ISFSelectable ───────────────────────────────────
@@ -56,7 +56,7 @@ public:
 
 	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
-	UHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }
 
 	/** 소속 팀. 전투 대상 컴포넌트가 단일 출처다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -134,6 +134,12 @@ protected:
 	void FaceTarget(float DeltaSeconds);
 
 	AUnitAIController* GetUnitAI() const;
+
+	/**
+	 * 디버그 표시 여부.
+	 * 유닛별 bDrawCombatDebug 또는 콘솔 sf.DrawCombatDebug 중 하나라도 켜지면 true.
+	 */
+	bool ShouldDrawDebug() const;
 
 #pragma region Components
 

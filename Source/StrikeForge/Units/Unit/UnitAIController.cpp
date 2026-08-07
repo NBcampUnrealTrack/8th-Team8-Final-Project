@@ -2,6 +2,7 @@
 
 #include "Navigation/CrowdFollowingComponent.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "Logging/SFLog.h"
 
 AUnitAIController::AUnitAIController(const FObjectInitializer& ObjectInitializer)
 	// 기본 PathFollowingComponent 를 CrowdFollowing 으로 교체한다.
@@ -94,7 +95,7 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 		const UPathFollowingComponent* PFC = GetPathFollowingComponent();
 		const bool bPartial = PFC && PFC->GetPath().IsValid() && PFC->GetPath()->IsPartial();
 
-		UE_LOG(LogTemp, Warning, TEXT("[%s] MoveTo(%s) -> %s / PathValid %d / Partial %d"),
+		SF_LOG(Warning, "[%s] MoveTo(%s) -> %s / PathValid %d / Partial %d",
 			GetPawn() ? *GetPawn()->GetName() : TEXT("NoPawn"),
 			*InGoal->GetName(),
 			Result.Code == EPathFollowingRequestResult::RequestSuccessful ? TEXT("Success")

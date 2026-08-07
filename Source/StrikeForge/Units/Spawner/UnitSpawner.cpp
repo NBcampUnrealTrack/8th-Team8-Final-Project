@@ -7,6 +7,7 @@
 #include "NavigationSystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "Logging/SFLog.h"
 
 AUnitSpawner::AUnitSpawner()
 	: bSpawningEnabled(true)
@@ -128,7 +129,7 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 		return true;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[UnitSpawner] %s : NavMesh 위에서 스폰 지점을 찾지 못했습니다. NavMeshBoundsVolume 을 확인하세요."), *GetName());
+	SF_LOG(Warning, "[UnitSpawner] %s : NavMesh 위에서 스폰 지점을 찾지 못했습니다. NavMeshBoundsVolume 을 확인하세요.", *GetName());
 	OutLocation = Origin;
 	return false;
 }
@@ -137,7 +138,7 @@ AUnitBase* AUnitSpawner::SpawnOne()
 {
 	if (!UnitClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[UnitSpawner] %s : UnitClass 가 비어 있습니다."), *GetName());
+		SF_LOG(Warning, "[UnitSpawner] %s : UnitClass 가 비어 있습니다.", *GetName());
 		return nullptr;
 	}
 

@@ -32,10 +32,10 @@ public:
 	float GetAlphaAtLocation(const FVector& InWorldLocation) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
-	float GetLaneHalfWidth() const { return LaneHalfWidth; }
+	FORCEINLINE float GetLaneHalfWidth() const { return LaneHalfWidth; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
-	int32 GetTeamIndex() const { return TeamIndex; }
+	FORCEINLINE int32 GetTeamIndex() const { return TeamIndex; }
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

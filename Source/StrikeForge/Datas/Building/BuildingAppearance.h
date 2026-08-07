@@ -16,6 +16,8 @@ struct FOnBuildingMeshData
 	// TSoftObjectPtr<UStaticMesh> BuildingMesh;   // 0 : mesh1 , 50 : mesh2 , 100 : mesh3
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sound")
 	TObjectPtr<USoundBase> CompleteSoundBase;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Units")
+	TArray<FName> SpawnableUnits;
 };
 
 USTRUCT(BlueprintType)
@@ -26,6 +28,7 @@ struct FBuildingTierData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mesh")
 	TArray<FOnBuildingMeshData> TierBuildingState; // tarray({0,mesh1}, {50,mesh2}, {100,mesh3})
 	// construct sound?
+
 	
 };
 

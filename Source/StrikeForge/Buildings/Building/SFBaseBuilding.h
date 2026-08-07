@@ -39,7 +39,7 @@ public:
 	//FChangedBuildingState OnChangedBuildingState;
 	
 	void InitializeBuildingData();
-	void InitInfo(const FBuildingAppearance* InData);
+	virtual void InitInfo(const FBuildingAppearance* InData);
 	void LoadTierMeshList(int32 InCurrentTier);
 	void LoadTierRatioList(int32 InCurrentTier);
 	

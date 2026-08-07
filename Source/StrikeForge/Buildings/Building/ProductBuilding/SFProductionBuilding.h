@@ -4,10 +4,26 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Datas/Unit/UnitProductData.h"
+#include "Interfaces/Building/Productable.h"
 #include "SFProductionBuilding.generated.h"
 
+// USTRUCT(BlueprintType)
+// struct FSpawnableUnitsData
+// {
+// 	GENERATED_BODY()
+// 	
+// 	FName SpawnableUnitName;
+// 	FResources
+// };
+
+
+class UProductComponent;
+
 UCLASS()
-class STRIKEFORGE_API ASFProductionBuilding : public ASFBaseBuilding
+class STRIKEFORGE_API ASFProductionBuilding 
+	: public ASFBaseBuilding
+	, public IProductable
 {
 	GENERATED_BODY()
 
@@ -18,4 +34,17 @@ protected:
 
 	virtual void BeginPlay() override;
 	virtual void OnConstructionFinished() override;
+	virtual void InitInfo(const FBuildingAppearance* InData) override;
+	
+	virtual void ProductUnits_Implementation(FName InUnitName) override;
+
+	void TryAddUnitProductLine(FName InUnitName);
+	
+	void GetSpawnableUnitNames(int32 InCurrentTier);
+protected:
+	UPROPERTY()
+	TObjectPtr<UProductComponent> ProductComponent;
+	
+	UPROPERTY()
+	TArray<FName> StoredSpawnableUnitDatas;
 };

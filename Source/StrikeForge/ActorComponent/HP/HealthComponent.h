@@ -5,7 +5,7 @@
 #include "HealthComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FHealthValueChanged, float, InBeforeHP, float, InCurrentHP, float, InMaxHP);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FHealthStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDeath);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UHealthComponent : public UActorComponent
@@ -43,7 +43,7 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FHealthValueChanged OnHealthValueChanged;
 	UPROPERTY(BlueprintAssignable)
-	FHealthStateChanged OnHealthStateChanged;
+	FOnDeath OnHealthIsZero;
 	
 	UPROPERTY()
 	uint8 bIsDead;

@@ -30,7 +30,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Level")
 	bool MoveToLobby();
 
-	UFUNCTION(BlueprintCallable, Category = "SF|Level")
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
+	bool SelectStage(FName StageRowName);
+
+	UFUNCTION(BlueprintPure, Category = "SF|Stage")
+	FName GetSelectedStageRowName() const;
+
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MoveToStage();
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable", meta = (AllowPrivateAccess = true))
@@ -53,6 +59,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Level", meta = (AllowPrivateAccess = "true"))
 	TSoftObjectPtr<UWorld> LobbyLevel;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Level", meta = (AllowPrivateAccess = "true"))
-	TSoftObjectPtr<UWorld> StageLevel;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	FName SelectedStageRowName = NAME_None;
 };

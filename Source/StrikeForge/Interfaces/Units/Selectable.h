@@ -16,7 +16,7 @@ class STRIKEFORGE_API ISelectable
 public:
 	
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	void OnSelected();
+	FName OnSelected();
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 	void OnDeSelected();
 	

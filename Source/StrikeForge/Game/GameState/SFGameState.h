@@ -38,6 +38,33 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     NewStageResult
 );
 
+// 광물 초기값 및 광물 자동생산량 변경
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FSFOnMineralChanged,
+    int32,
+    NewMineral,
+    float,
+    NewMineralIncomeRate
+);
+
+// 에테르 초기값 및 에테르 자동 생산량 변경
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FSFOnEtherChanged,
+    int32,
+    NewEther,
+    float,
+    NewEtherIncomeRate
+);
+
+// 현재 및 최대 인구수 변경
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FSFOnPopulationChanged,
+    int32,
+    NewCurrentPopulation,
+    int32,
+    NewMaximumPopulation
+);
+
 UCLASS()
 class STRIKEFORGE_API ASFGameState : public AGameStateBase
 {
@@ -46,10 +73,16 @@ class STRIKEFORGE_API ASFGameState : public AGameStateBase
 public:
     ASFGameState();
 
+    // GamaMode가 현재 선택된 스테이지 ID를 전달
+    bool InitializeStage(FName StageRowName);
+
     bool StartStage(); // 스테이지 초기화 부분 -> GameMode에서 호출
 
     // 스테이지 승 or 패 부분 -> GameMode에서 호출
     bool FinishStage(ESFStageResult NewStageResult);
+
+    UFUNCTION(BlueprintPure, Category = "SF|Stage")
+    FName GetCurrentStageRowName() const;
 
     UFUNCTION(BlueprintPure, Category = "SF|Stage")
     ESFStageState GetStageState() const;
@@ -63,6 +96,27 @@ public:
     UFUNCTION(BlueprintPure, Category = "SF|Stage")
     bool IsStageFinished() const;
 
+    // InGameUI에서 사용될 광물, 에테르, 인구수
+    UFUNCTION(BlueprintPure, Category = "SF|Resource")
+    int32 GetMineral() const;
+
+    UFUNCTION(BlueprintPure, Category = "SF|Resource")
+    int32 GetEther() const;
+
+    UFUNCTION(BlueprintPure, Category = "SF|Resource")
+    float GetMineralIncomeRate() const;
+
+    UFUNCTION(BlueprintPure, Category = "SF|Resource")
+    float GetEtherIncomeRate() const;
+
+    UFUNCTION(BlueprintPure, Category = "SF|Population")
+    int32 GetCurrentPopulation() const;
+
+    UFUNCTION(BlueprintPure, Category = "SF|Population")
+    int32 GetMaximumPopulation() const;
+
+    // 여기까지
+
 public:
 
     // UI 부분
@@ -74,21 +128,43 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
     FSFOnStageResultChanged OnStageResultChanged;
 
+    // InGameUI 바인딩 용 Delegate
+    UPROPERTY(BlueprintAssignable, Category = "SF|Resource")
+    FSFOnMineralChanged OnMineralChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|Resource")
+    FSFOnEtherChanged OnEtherChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|Population")
+    FSFOnPopulationChanged OnPopulationChanged;
+
 private:
-    UPROPERTY(
-        VisibleAnywhere,
-        BlueprintReadOnly,
-        Category = "SF|Stage",
-        meta = (AllowPrivateAccess = "true")
-    )
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageState StageState;
 
-    UPROPERTY(
-        VisibleAnywhere,
-        BlueprintReadOnly,
-        Category = "SF|Stage",
-        meta = (AllowPrivateAccess = "true")
-    )
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageResult StageResult;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+    FName CurrentStageRowName = NAME_None;
+
+    // InGameUI 용 초기값
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
+    int32 Mineral = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
+    int32 Ether = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
+    float MineralIncomeRate = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
+    float EtherIncomeRate = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Population", meta = (AllowPrivateAccess = "true"))
+    int32 CurrentPopulation = 0;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Population", meta = (AllowPrivateAccess = "true"))
+    int32 MaximumPopulation = 0;
 	
 };

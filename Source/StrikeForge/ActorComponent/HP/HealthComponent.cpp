@@ -23,7 +23,7 @@ void UHealthComponent::ApplyDamage(float InDamage)
 		// 사망 플래그를 먼저 세운다.
 		// 델리게이트 수신부에서 IsDead 를 물어볼 수 있어야 한다.
 		bIsDead = true;
-		OnHealthStateChanged.Broadcast();
+		OnHealthIsZero.Broadcast();
 	}
 }
 

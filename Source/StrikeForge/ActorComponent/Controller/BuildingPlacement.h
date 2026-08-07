@@ -34,9 +34,8 @@ private:
 	TWeakObjectPtr<AActor> TargetActor;
 	UPROPERTY()
 	TWeakObjectPtr<APlayerController> OwnerController;
-	UPROPERTY()
+	UPROPERTY() // should not be deleted by GC
 	TObjectPtr<USFBuildingGridSubsystem> CachedGridSubsystem;
 	
-	UPROPERTY()
 	bool ToggleGrid = true;
 };

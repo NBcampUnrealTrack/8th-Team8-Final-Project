@@ -22,8 +22,8 @@ public:
 	bool CanPlaceBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize);
 	bool TryRegistBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize);
 	
-	float GetCellSize() const { return CellSize; }
-	const FVector& GetGridOrigin() const { return GridOrigin; }
+	FORCEINLINE float GetCellSize() const { return CellSize; }
+	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
 #pragma region Debug
 	UFUNCTION(BlueprintCallable)
 	void DebugDrawRadius(const FVector& WorldLocation, float Radius);

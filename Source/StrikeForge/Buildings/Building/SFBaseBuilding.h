@@ -32,8 +32,8 @@ class STRIKEFORGE_API ASFBaseBuilding
 public:
 	ASFBaseBuilding();
 	
-	virtual void OnBuildingDestroyed();
-	virtual void OnConstructionFinished();
+	virtual void OnBuildingDestroyed() {};
+	virtual void OnConstructionFinished() {};
 	virtual void TakeDamaged_Implementation(float InDamage) override;
 	
 	//FChangedBuildingState OnChangedBuildingState;
@@ -66,8 +66,8 @@ public:
 	void PlayBuildingEffect();
 	
 	// component delegate
-	void BindFunction();
-	void UnBindFunction();
+	void BindFunctionWithComponent();
+	void UnBindFunctionWithComponent();
 
 	UFUNCTION(BlueprintCallable)
 	void UpgradeBuilding(int32 UpgradeValue = 1);

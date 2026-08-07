@@ -2,5 +2,5 @@
 
 AResourceBase::AResourceBase()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 }

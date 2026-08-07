@@ -68,14 +68,6 @@ void ASFBaseBuilding::HandleHealthZero()
 	OnBuildingDestroyed();
 }
 
-void ASFBaseBuilding::OnBuildingDestroyed()
-{
-}
-
-void ASFBaseBuilding::OnConstructionFinished()
-{
-}
-
 void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
 {
 	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
@@ -152,7 +144,7 @@ void ASFBaseBuilding::ApplyPreviewMaterial(uint8 bIsPlaced)
 	}
 }
 
-void ASFBaseBuilding::BindFunction()
+void ASFBaseBuilding::BindFunctionWithComponent()
 {
 	if (false == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
 	{
@@ -174,7 +166,7 @@ void ASFBaseBuilding::BindFunction()
 	
 }
 
-void ASFBaseBuilding::UnBindFunction()
+void ASFBaseBuilding::UnBindFunctionWithComponent()
 {
 	if (true == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
 	{
@@ -316,14 +308,14 @@ void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	BindFunction(); // bind progress
+	BindFunctionWithComponent(); // bind progress
 	
 	InitializeBuildingData();
 }
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UnBindFunction();
+	UnBindFunctionWithComponent();
 	Super::EndPlay(EndPlayReason);
 	
 }

@@ -41,7 +41,7 @@ public:
 	AUnitBase();
 
 	// ── ISelectable ─────────────────────────────────────
-	virtual void OnSelected_Implementation() override {}
+	virtual FName OnSelected_Implementation() override { return UnitRowName; }
 	virtual void OnDeSelected_Implementation() override {}
 
 	// ── ISFSelectable ───────────────────────────────────

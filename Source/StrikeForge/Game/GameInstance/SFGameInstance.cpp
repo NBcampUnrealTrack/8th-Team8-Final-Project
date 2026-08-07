@@ -26,6 +26,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return StageDataTable;
 		}
+	case EDataTableType::Product:
+		{
+			return ProductDataTable;
+		}
 		default:
 		{
 			return nullptr;

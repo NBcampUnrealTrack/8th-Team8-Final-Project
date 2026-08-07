@@ -30,3 +30,9 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 	UE_LOG(LogTemp, Warning, TEXT("ANexusBuilding::OnBuildingDestroyed: Lose/Win"));
 	// win or lose > gamemode
 }
+
+void ASFNexusBuilding::InitInfo(const FBuildingAppearance* InData)
+{
+	Super::InitInfo(InData);
+	
+}

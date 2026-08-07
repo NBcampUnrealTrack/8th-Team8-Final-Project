@@ -2,8 +2,10 @@
 
 #include "UnitAIController.h"
 #include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
 #include "Units/Lane/LanePath.h"
 
 #include "AIController.h"
@@ -16,13 +18,25 @@ AUnitBase::AUnitBase()
 	: bRequireLineOfSight(true)
 	, bDrawCombatDebug(false)
 	, bStatInitialized(false)
+	, bNoTargetReported(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
 	// 1 프로토 유닛 = 150cm 기준. 일반 유닛 신장 약 180cm
 	GetCapsuleComponent()->InitCapsuleSize(45.f, 90.f);
 
+	// HUD 클릭 선택은 ECC_Visibility 트레이스를 쓴다.
+	// 그런데 ACharacter 기본 Pawn 프로파일은 Visibility 를 Ignore 하므로
+	// 커서 트레이스가 유닛을 그대로 통과해 버린다.
+	// (건물은 StaticMeshComponent 라 BlockAll 기본값이라 문제가 없었다)
+	//
+	// 다른 채널 응답은 건드리지 않고 Visibility 만 Block 으로 바꾼다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
+
+	CombatTarget = CreateDefaultSubobject<UCombatTargetComponent>(TEXT("CombatTarget"));
+	CombatTarget->SetTargetType(ETargetType::CombatUnit);
 
 	StatusWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("StatusWidget"));
 	StatusWidget->SetupAttachment(RootComponent);
@@ -55,15 +69,11 @@ void AUnitBase::BeginPlay()
 		InitStatFromTable(UnitRowName);
 	}
 
-	if (HealthComponent)
+	// 레지스트리 등록·해제는 CombatTargetComponent 가 담당한다.
+	// 여기서는 파괴 통지만 받는다.
+	if (CombatTarget)
 	{
-		HealthComponent->OnHealthIsZero.AddDynamic(this, &AUnitBase::HandleDeath);
-	}
-
-	// 전투 레지스트리에 등록 — 이래야 상대가 나를 찾을 수 있다
-	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
-	{
-		Combat->RegisterCombatant(this);
+		CombatTarget->OnTargetDestroyed.AddDynamic(this, &AUnitBase::HandleDeath);
 	}
 
 	RetargetTimer = 0.f;	// 첫 틱에 바로 탐색이 돌게 한다
@@ -71,12 +81,7 @@ void AUnitBase::BeginPlay()
 
 void AUnitBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 레벨 전환·강제 파괴 등 어떤 경로로 사라져도 반드시 해제한다
-	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
-	{
-		Combat->UnregisterCombatant(this);
-	}
-
+	// 레지스트리 해제는 CombatTargetComponent::EndPlay 가 처리한다
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -86,7 +91,11 @@ void AUnitBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AUnitBase::InitStat(const FUnitStatData& InRow)
 {
 	UnitRole		= InRow.Role;
-	Armor			= InRow.Armor;
+
+	if (CombatTarget)
+	{
+		CombatTarget->SetArmor(InRow.Armor);
+	}
 	Attack			= InRow.Attack;
 	AttackRange		= InRow.AttackRange;
 	AttackCooldown	= InRow.AttackCooldown;
@@ -131,17 +140,9 @@ void AUnitBase::SetAssignedLane(ALanePath* InLane)
 	LaneAlpha = 0.f;
 }
 
-bool AUnitBase::IsTargetable_Implementation() const
+int32 AUnitBase::GetTeamIndex() const
 {
-	return IsValid(HealthComponent) && !HealthComponent->IsDead();
-}
-
-bool AUnitBase::PrefersWorkerOverBuilding() const
-{
-	// 돌격 · 암살 · 광역은 경제 견제 역할을 갖는다
-	return UnitRole == EUnitRole::Charge
-		|| UnitRole == EUnitRole::Assassin
-		|| UnitRole == EUnitRole::Splash;
+	return CombatTarget ? CombatTarget->GetTeamIndex() : Targetable::NeutralTeam;
 }
 
 AUnitAIController* AUnitBase::GetUnitAI() const
@@ -150,35 +151,18 @@ AUnitAIController* AUnitBase::GetUnitAI() const
 }
 
 // ─────────────────────────────────────────────────────────
-// 피해 수신
-// ─────────────────────────────────────────────────────────
-void AUnitBase::TakeDamaged_Implementation(float InDamage)
-{
-	if (!IsValid(HealthComponent)) return;
-
-	// 방어 감산은 공격자가 관통을 반영해 이미 계산했다.
-	// 여기서는 최종 피해를 그대로 적용한다.
-	HealthComponent->ApplyDamage(InDamage);
-}
-
-// ─────────────────────────────────────────────────────────
 // 사망 — HealthComponent 델리게이트
 // ─────────────────────────────────────────────────────────
-void AUnitBase::HandleDeath()
+void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 {
 	if (CombatState == EUnitCombatState::Dead) return;
 
 	CurrentTarget = nullptr;
 	SetCombatState(EUnitCombatState::Dead);
 
-	// 1) 레지스트리에서 즉시 뺀다.
-	//    이걸 먼저 해야 다른 유닛이 시체를 계속 때리지 않는다.
-	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
-	{
-		Combat->UnregisterCombatant(this);
-	}
+	// 레지스트리 해제는 CombatTargetComponent 가 이미 처리했다.
 
-	// 2) AI 정지 및 컨트롤러 정리.
+	// AI 정지 및 컨트롤러 정리.
 	//    AIController 는 폰이 죽어도 자동 소멸하지 않으므로 직접 없앤다.
 	if (AController* MyController = GetController())
 	{
@@ -191,7 +175,7 @@ void AUnitBase::HandleDeath()
 		}
 	}
 
-	// 3) 이동·충돌 차단. 시체가 살아있는 유닛의 길을 막지 않게 한다.
+	// 이동·충돌 차단. 시체가 살아있는 유닛의 길을 막지 않게 한다.
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
 		Move->StopMovementImmediately();
@@ -205,7 +189,7 @@ void AUnitBase::HandleDeath()
 		StatusWidget->SetVisibility(false);
 	}
 
-	// 4) 연출 훅. 래그돌·디졸브는 BP 에서.
+	// 연출 훅. 래그돌·디졸브는 BP 에서.
 	OnUnitDied();
 
 	if (DeathLifeSpan > 0.f)
@@ -219,17 +203,88 @@ void AUnitBase::HandleDeath()
 }
 
 // ─────────────────────────────────────────────────────────
+// HUD 선택 정보
+//
+// 런타임 값과 표시용 값의 출처가 다르다.
+//   런타임  : HealthComponent, 현재 스탯      — 매 선택 시점의 실제 값
+//   표시용  : EDataTableType::UI 테이블        — 초상화·설명·표시 여부
+//
+// 두 테이블 모두 UnitRowName 을 키로 쓴다.
+// FSFSelectableInfo::DataRowName 주석에 적힌 "공통 키" 설계 그대로다.
+// ─────────────────────────────────────────────────────────
+FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info;
+
+	Info.DataRowName = UnitRowName;
+	Info.SelectableType = ESFSelectableType::Unit;
+
+	// ── 런타임 값 ───────────────────────────────────────
+	if (IsValid(HealthComponent))
+	{
+		Info.CurrentHealth = HealthComponent->GetCurrentHealth();
+		Info.MaximumHealth = HealthComponent->GetMaxHealth();
+	}
+
+	// 지휘관 버프 등이 적용된 실제 공격력을 보여준다
+	Info.AttackPower = Attack * AttackMultiplier;
+
+	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Info.MoveSpeed = Move->MaxWalkSpeed;
+	}
+
+	// ── 테이블 값 ───────────────────────────────────────
+	const UWorld* World = GetWorld();
+	UGameInstance* GI = IsValid(World) ? World->GetGameInstance() : nullptr;
+	USFDataTableManager* TableManager = IsValid(GI) ? GI->GetSubsystem<USFDataTableManager>() : nullptr;
+
+	// RowName 이 없으면 런타임 값만 담아 돌려준다.
+	// 스포너를 거치지 않고 레벨에 직접 배치한 유닛이 여기 해당한다.
+	if (!IsValid(TableManager) || UnitRowName.IsNone())
+	{
+		return Info;
+	}
+
+	if (const FUnitStatData* StatRow =
+		TableManager->GetDataRow<FUnitStatData>(EDataTableType::Unit, UnitRowName, TEXT("AUnitBase::GetSelectableInfo")))
+	{
+		Info.DisplayName = StatRow->DisplayName;
+	}
+
+	if (const FSFSelectionUIDataRow* UIRow =
+		TableManager->GetDataRow<FSFSelectionUIDataRow>(EDataTableType::UI, UnitRowName, TEXT("AUnitBase::GetSelectableInfo")))
+	{
+		// UI 테이블에 이름이 따로 있으면 그쪽을 우선한다.
+		// 스탯 테이블 이름은 개발용, UI 이름은 현지화 대상인 경우가 있다.
+		if (!UIRow->DisplayName.IsEmpty())
+		{
+			Info.DisplayName = UIRow->DisplayName;
+		}
+
+		// TSoftObjectPtr 이므로 여기서 로드한다.
+		// 선택은 사용자 입력 시점에만 일어나므로 동기 로드로 충분하다.
+		Info.PortraitImage = UIRow->PortraitImage.LoadSynchronous();
+		Info.SelectionIcon = UIRow->SelectionIcon.LoadSynchronous();
+		Info.Description = UIRow->Description;
+
+		Info.bShowHealth = UIRow->bShowHealth;
+		Info.bShowAttackPower = UIRow->bShowAttackPower;
+		Info.bShowMoveSpeed = UIRow->bShowMoveSpeed;
+	}
+
+	return Info;
+}
+
+// ─────────────────────────────────────────────────────────
 // 거리 · 시야
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
-	if (!IsValid(InTarget) || !InTarget->Implements<UTargetable>()) return false;
+	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
 
-	// 인터페이스 호출은 const 를 받지 않으므로 여기서만 벗겨낸다
-	AActor* Mutable = const_cast<AActor*>(InTarget);
-
-	return ITargetable::Execute_IsTargetable(Mutable)
-		&& USFCombatSubsystem::IsHostileTeam(TeamIndex, ITargetable::Execute_GetTeamIndex(Mutable));
+	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
 }
 
 float AUnitBase::GetDistanceToTargetEdge(const AActor* InTarget) const
@@ -293,13 +348,15 @@ bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 }
 
 // ─────────────────────────────────────────────────────────
-// 타겟 선정
+// 타겟 선정 — 시야가 열린 가장 가까운 적
 //
-// "가장 가까운 적"이 아니라 "가장 때리기 좋은 적"을 고른다.
-//  - 벽 너머라 시야가 안 열리는 대상은 후순위로 밀어낸다
-//  - 지금 잡고 있는 대상에 가산점을 줘 타겟이 매번 뒤바뀌는 것을 막는다
+// 점수 = 거리 x 분류가중치 x 시야페널티 x 타겟고정력  (낮을수록 우선)
 //
-// 이 두 가지가 없으면 아군 전원이 같은 적 하나로 몰려가고,
+// 분류 가중치는 기본이 전부 1.0 이라 순수 최근접이 된다.
+// 특정 분류를 우선하고 싶어지면 TargetTypeWeights 만 조정하면 되고
+// 코드는 손대지 않는다.
+//
+// 시야 페널티와 타겟 고정력이 없으면 아군 전원이 같은 적 하나로 몰려가고,
 // 뒤엉킨 상태에서 최근접 대상이 계속 바뀌면서 제자리 밀치기가 된다.
 // ─────────────────────────────────────────────────────────
 AActor* AUnitBase::FindBestTarget()
@@ -308,30 +365,12 @@ AActor* AUnitBase::FindBestTarget()
 	if (!Combat) return nullptr;
 
 	const FVector Origin = GetActorLocation();
+	const int32 MyTeam = GetTeamIndex();
 
 	TArray<AActor*> Candidates;
-	Combat->GetHostilesInRadius(Origin, TeamIndex, AggroRadius, Candidates);
+	Combat->GetHostilesInRadius(Origin, MyTeam, AggroRadius, Candidates);
 
 	if (Candidates.Num() == 0) return nullptr;
-
-	// 우선순위표. 클래스 캐스팅 없이 ETargetType 만으로 판정한다.
-	TArray<ETargetType, TInlineAllocator<5>> Priority;
-
-	Priority.Add(ETargetType::CombatUnit);		// 1) 적 전투 유닛
-	Priority.Add(ETargetType::Commander);		// 2) 적 지휘관
-
-	if (PrefersWorkerOverBuilding())			// 3) 역할에 따라 순서가 뒤바뀐다
-	{
-		Priority.Add(ETargetType::Worker);
-		Priority.Add(ETargetType::ProductionBuilding);
-	}
-	else
-	{
-		Priority.Add(ETargetType::ProductionBuilding);
-		Priority.Add(ETargetType::Worker);
-	}
-
-	Priority.Add(ETargetType::CoreBuilding);	// 5) 최후
 
 	// 거리순으로 미리 정렬해 둔다.
 	// 시야 검사는 비싸므로 가까운 쪽부터 제한된 횟수만 검사한다.
@@ -341,47 +380,49 @@ AActor* AUnitBase::FindBestTarget()
 			 < FVector::DistSquared2D(Origin, B.GetActorLocation());
 	});
 
-	for (const ETargetType Type : Priority)
+	AActor* Best = nullptr;
+	float BestScore = TNumericLimits<float>::Max();
+	int32 LosChecksLeft = MaxLineOfSightChecks;
+
+	for (AActor* Candidate : Candidates)
 	{
-		AActor* Best = nullptr;
-		float BestScore = TNumericLimits<float>::Max();
-		int32 LosChecksLeft = MaxLineOfSightChecks;
+		const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(Candidate);
+		if (!IsValid(Comp)) continue;
 
-		for (AActor* Candidate : Candidates)
+		float Score = FVector::Dist2D(Origin, Candidate->GetActorLocation());
+
+		// 분류 가중치. 지정되지 않은 분류는 1.0 (= 거리만 본다).
+		if (const float* Weight = TargetTypeWeights.Find(Comp->GetTargetType()))
 		{
-			if (ITargetable::Execute_GetTargetType(Candidate) != Type) continue;
+			Score *= *Weight;
+		}
 
-			float Score = FVector::Dist2D(Origin, Candidate->GetActorLocation());
+		// 시야가 막힌 대상은 점수를 불린다.
+		// 완전히 배제하지는 않는다 — 전부 벽 뒤라면 그쪽으로라도 가야 한다.
+		if (LosChecksLeft > 0)
+		{
+			--LosChecksLeft;
 
-			// 시야가 막힌 대상은 점수를 불린다.
-			// 완전히 배제하지는 않는다 — 전부 벽 뒤라면 그쪽으로라도 가야 한다.
-			if (LosChecksLeft > 0)
+			if (!HasLineOfSight(Candidate))
 			{
-				--LosChecksLeft;
-
-				if (!HasLineOfSight(Candidate))
-				{
-					Score *= BlockedTargetPenalty;
-				}
-			}
-
-			if (Candidate == CurrentTarget)
-			{
-				Score *= TargetStickiness;
-			}
-
-			if (Score < BestScore)
-			{
-				BestScore = Score;
-				Best = Candidate;
+				Score *= BlockedTargetPenalty;
 			}
 		}
 
-		if (Best) return Best;
+		// 현재 타겟에 가산점. 난전에서 타겟이 매번 뒤바뀌는 것을 막는다.
+		if (Candidate == CurrentTarget)
+		{
+			Score *= TargetStickiness;
+		}
+
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			Best = Candidate;
+		}
 	}
 
-	// 교전 반경 안에 아무것도 없다 → Advance() 가 전진을 맡는다
-	return nullptr;
+	return Best;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -390,36 +431,38 @@ AActor* AUnitBase::FindBestTarget()
 void AUnitBase::PerformAttack(AActor* InTarget)
 {
 	if (!IsTargetUsable(InTarget)) return;
-	if (!InTarget->Implements<UDamagable>()) return;
 
 	const float RawDamage = Attack * AttackMultiplier;
+	const int32 MyTeam = GetTeamIndex();
 
-	// 최종 피해 = 공격력 * (1 - max(0, 방어 - 관통))
-	// 방어 감산을 공격자가 계산하는 이유는 IDamagable 이 인자 하나만 받기 때문이다.
-	auto ComputeDamage = [this, RawDamage](AActor* InVictim) -> float
+	// 최종 피해 = 공격력 x (1 - clamp(방어 - 관통, 0, 0.9))
+	// 방어 감산을 공격자가 계산하는 이유는 피해 전달 경로가 값 하나뿐이기 때문이다.
+	auto ApplyTo = [this, RawDamage](AActor* InVictim, float InRatio)
 	{
-		const float VictimArmor = ITargetable::Execute_GetArmor(InVictim);
-		const float Effective = FMath::Clamp(VictimArmor - Penetration, 0.f, 0.9f);
-		return RawDamage * (1.f - Effective);
+		UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InVictim);
+		if (!IsValid(Comp) || !Comp->IsAlive()) return;
+
+		const float Effective = FMath::Clamp(Comp->GetArmor() - Penetration, 0.f, 0.9f);
+		Comp->ApplyCombatDamage(RawDamage * (1.f - Effective) * InRatio, this);
 	};
 
-	IDamagable::Execute_TakeDamaged(InTarget, ComputeDamage(InTarget));
+	ApplyTo(InTarget, 1.f);
 
 	if (SplashRadius > 0.f)
 	{
 		if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
 		{
 			TArray<AActor*> Splashed;
-			Combat->GetHostilesInRadius(InTarget->GetActorLocation(), TeamIndex, SplashRadius, Splashed);
+			Combat->GetHostilesInRadius(InTarget->GetActorLocation(), MyTeam, SplashRadius, Splashed);
 
 			for (AActor* Other : Splashed)
 			{
-				if (Other == InTarget) continue;			// 주 대상은 이미 맞았다
+				if (Other == InTarget) continue;		// 주 대상은 이미 맞았다
 
 				// 앞선 피해로 이미 파괴됐을 수 있으므로 매번 다시 확인한다
-				if (!IsValid(Other) || !Other->Implements<UDamagable>()) continue;
+				if (!IsValid(Other)) continue;
 
-				IDamagable::Execute_TakeDamaged(Other, ComputeDamage(Other) * SplashDamageRatio);
+				ApplyTo(Other, SplashDamageRatio);
 			}
 		}
 	}
@@ -455,47 +498,40 @@ void AUnitBase::Advance()
 	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
 	{
 		const FVector Origin = GetActorLocation();
+		const int32 MyTeam = GetTeamIndex();
 
 		// 1순위 — 적 핵심 건물 (거리 제한 없음)
-		if (AActor* Core = Combat->FindNearestHostile(Origin, TeamIndex, ETargetType::CoreBuilding, 0.f))
+		if (AActor* Core = Combat->FindNearestHostile(Origin, MyTeam, ETargetType::CoreBuilding, 0.f))
 		{
 			AI->RequestMoveToActor(Core, MoveAcceptanceRadius);
+			bNoTargetReported = false;
 			return;
 		}
 
 		// 2순위 — 핵심 건물이 없는 맵(테스트 레벨 등)에서는
 		//         교전 반경 밖이라도 가장 가까운 적을 향해 전진한다.
-		static const ETargetType FallbackOrder[] = {
-			ETargetType::CombatUnit,
-			ETargetType::Commander,
-			ETargetType::ProductionBuilding,
-			ETargetType::Worker
-		};
-
-		AActor* Nearest = nullptr;
-		float NearestDistSq = TNumericLimits<float>::Max();
-
-		for (const ETargetType Type : FallbackOrder)
-		{
-			if (AActor* Found = Combat->FindNearestHostile(Origin, TeamIndex, Type, 0.f))
-			{
-				const float DistSq = FVector::DistSquared2D(Origin, Found->GetActorLocation());
-				if (DistSq < NearestDistSq)
-				{
-					NearestDistSq = DistSq;
-					Nearest = Found;
-				}
-			}
-		}
-
-		if (Nearest)
+		if (AActor* Nearest = Combat->FindNearestHostileAny(Origin, MyTeam))
 		{
 			AI->RequestMoveToActor(Nearest, MoveAcceptanceRadius);
+			bNoTargetReported = false;
 			return;
 		}
 	}
 
-	// 맵에 적이 하나도 남지 않은 경우에만 정지한다
+	// 여기까지 왔다면 맵에 살아있는 적대 대상이 하나도 없다.
+	//
+	// 유닛이 굳은 것처럼 보이지만 정상 동작이다.
+	// 다만 원인을 알 수 없으면 버그로 오인하기 쉬우므로 한 번은 알린다.
+	if (!bNoTargetReported)
+	{
+		bNoTargetReported = true;
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Unit] %s (Team %d) : 살아있는 적대 대상이 없어 정지합니다. ")
+			TEXT("적 팀에 CombatTarget 컴포넌트를 가진 액터가 남아 있는지 확인하세요."),
+			*GetName(), GetTeamIndex());
+	}
+
 	AI->ClearMoveRequest();
 }
 
@@ -564,6 +600,8 @@ void AUnitBase::Tick(float DeltaSeconds)
 		Advance();
 		return;
 	}
+
+	bNoTargetReported = false;
 
 	// ── 3. 사거리 · 시야 판정 ───────────────────────────
 	const float Distance = GetDistanceToTargetEdge(CurrentTarget);
@@ -655,9 +693,9 @@ void AUnitBase::Tick(float DeltaSeconds)
 
 		const FString Info = FString::Printf(
 			TEXT("Team%d | %s | 대상:%s | 거리:%.0f | 속도:%.0f | HP:%.0f"),
-			TeamIndex,
+			GetTeamIndex(),
 			StateText,
-			CurrentTarget ? *CurrentTarget->GetName() : TEXT("없음"),
+			CurrentTarget ? *CurrentTarget->GetName() : (bNoTargetReported ? TEXT("적 전멸") : TEXT("없음")),
 			CurrentTarget ? GetDistanceToTargetEdge(CurrentTarget) : -1.f,
 			GetVelocity().Size2D(),
 			HealthComponent ? HealthComponent->GetCurrentHealth() : 0.f);

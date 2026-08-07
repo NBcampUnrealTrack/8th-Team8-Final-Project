@@ -20,7 +20,14 @@ enum class EBuildingState : uint8
 	UnderConstruction,
 	Completed
 };
-
+// repec=============================================
+UENUM(BlueprintType)
+enum class ESFBuildingSpawnMode : uint8
+{
+	PlacedComplete UMETA(DisplayName = "Placed Complete"),
+	PlayerConstructed UMETA(DisplayName = "Player Constructed")
+};
+//=====================================================
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API ASFBaseBuilding 
 	: public ASFRootBase
@@ -81,18 +88,27 @@ public:
 	UFUNCTION()
 	void HandleHealthZero();
 	
+	// repec ========================================================================
+	void ApplySpawnMode();
+	UFUNCTION(BlueprintCallable, Category = "SF|Building")
+	bool TryStartConstruction();
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FORCEINLINE FIntPoint GetGridSize() const { return CachedGridSize; }
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
+	//================================================================================
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UHealthComponent> HealthComponent;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UProgressComponent> ProgressComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FText DisplayName;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
 	
 	UPROPERTY()
@@ -111,6 +127,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
 	EBuildingState CurrentBuildingState;
 	
+	// repec ============================================================================================
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
+	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlacedComplete;
+
+	/** FBuildingAppearance::GridSize 를 InitInfo 시점에 캐싱해 둔 값. 배치 컴포넌트가 겹침 검사에 쓴다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	FIntPoint CachedGridSize = FIntPoint(1, 1);
 private:
 	
 };

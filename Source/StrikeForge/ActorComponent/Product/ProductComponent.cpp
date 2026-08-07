@@ -61,6 +61,11 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 
 void UProductComponent::StartProductLine()
 {
+	// currentproduct startinfo
+
+	CurrentProductTimeInfo.Duration = ProductLine[0].Duration;
+	CurrentProductTimeInfo.StartTime = GetWorld()->GetTimeSeconds();
+	
 	GetWorld()->GetTimerManager().SetTimer(
 		CurrentTimerHandle,
 		[this]()
@@ -71,7 +76,7 @@ void UProductComponent::StartProductLine()
 		false);
 }
 
-void UProductComponent::CompletedProduct(FName& InCompletedName)
+void UProductComponent::CompletedProduct(const FName& InCompletedName)
 {
 	// FName Spawn Logic //         
 	//
@@ -80,7 +85,7 @@ void UProductComponent::CompletedProduct(FName& InCompletedName)
 	//
 	/////////////////////
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InCompletedName.ToString());
-	ProductLine.Pop();
+	ProductLine.RemoveAt(0);
 	OnProductLineChanged.Broadcast();
 	if (ProductLine.Num() > 0)
 	{
@@ -89,11 +94,17 @@ void UProductComponent::CompletedProduct(FName& InCompletedName)
 		return;
 	}
 	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
-
+	StopProductLine();
 }
 
 void UProductComponent::StopProductLine()
 {
+	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
+
+	CurrentProductTimeInfo.StartTime = 0.f;
+	CurrentProductTimeInfo.Duration = 0.f;
+	CurrentProductTimeInfo.CurrentTime = 0.f;
+	CurrentProductTimeInfo.Ratio = 0.f;
 }
 
 const FRecordTimeInfo& UProductComponent::GetCurrentProductTimeInfo()

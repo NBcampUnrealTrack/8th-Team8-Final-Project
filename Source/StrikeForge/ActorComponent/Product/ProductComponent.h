@@ -38,7 +38,7 @@ public:
 	void RemoveProductInLine(int32 InProductLineIndex);
 	
 	void StartProductLine();
-	void CompletedProduct(FName& InCompletedName);
+	void CompletedProduct(const FName& InCompletedName);
 	void StopProductLine();
 	
 	const FRecordTimeInfo& GetCurrentProductTimeInfo();

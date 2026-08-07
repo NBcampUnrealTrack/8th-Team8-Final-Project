@@ -6,5 +6,6 @@ ASFRootBase::ASFRootBase()
 	PrimaryActorTick.bCanEverTick = false;
 	
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMesh");
-	StaticMeshComponent->SetupAttachment(GetRootComponent());
+	//StaticMeshComponent->SetupAttachment(GetRootComponent());
+	SetRootComponent(StaticMeshComponent);
 }

@@ -17,7 +17,9 @@ void ASFNexusBuilding::BeginPlay()
 	//
 	// gamemode
 	
-	SetBuildingState(EBuildingState::Completed);
+	// repec =============================================
+	// SetBuildingState(EBuildingState::Completed);
+	// repec ============================================
 }
 
 void ASFNexusBuilding::OnBuildingDestroyed()

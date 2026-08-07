@@ -112,5 +112,6 @@ private:
 	FTimerHandle SpawnTimerHandle;
 
 	/** 약참조라 유닛이 파괴되면 자동으로 무효가 된다 */
+	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AUnitBase>> SpawnedUnits;
 };

@@ -13,6 +13,22 @@
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Logging/SFLog.h"
+
+/**
+ * 전투 디버그 표시 전역 스위치.
+ *
+ * 유닛이 수십 기가 되면 개별 bDrawCombatDebug 를 켜고 끄는 게 불가능하다.
+ * 콘솔에서 한 번에 제어한다.
+ *
+ *   sf.DrawCombatDebug 1   전체 켜기
+ *   sf.DrawCombatDebug 0   전체 끄기 (유닛별 설정은 그대로 유지)
+ */
+static TAutoConsoleVariable<int32> CVarDrawCombatDebug(
+	TEXT("sf.DrawCombatDebug"),
+	0,
+	TEXT("전투 AI 디버그 표시 (0=off, 1=on). 유닛별 설정과 OR 로 동작한다."),
+	ECVF_Cheat);
 
 AUnitBase::AUnitBase()
 	: bRequireLineOfSight(true)
@@ -148,6 +164,15 @@ int32 AUnitBase::GetTeamIndex() const
 AUnitAIController* AUnitBase::GetUnitAI() const
 {
 	return Cast<AUnitAIController>(GetController());
+}
+
+bool AUnitBase::ShouldDrawDebug() const
+{
+#if ENABLE_DRAW_DEBUG
+	return bDrawCombatDebug || CVarDrawCombatDebug.GetValueOnGameThread() > 0;
+#else
+	return false;
+#endif
 }
 
 // ─────────────────────────────────────────────────────────
@@ -333,7 +358,7 @@ bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 		Hit, Start, End, FQuat::Identity, ECC_WorldStatic, Probe, Params);
 
 #if ENABLE_DRAW_DEBUG
-	if (bDrawCombatDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugLine(GetWorld(), Start, End, bBlocked ? FColor::Black : FColor::Green, false, -1.f, 0, 2.f);
 
@@ -526,9 +551,8 @@ void AUnitBase::Advance()
 	{
 		bNoTargetReported = true;
 
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Unit] %s (Team %d) : 살아있는 적대 대상이 없어 정지합니다. ")
-			TEXT("적 팀에 CombatTarget 컴포넌트를 가진 액터가 남아 있는지 확인하세요."),
+		SF_LOG(Warning,
+			"[Unit] %s (Team %d) : 살아있는 적대 대상이 없어 정지합니다. 적 팀에 CombatTarget 컴포넌트를 가진 액터가 남아 있는지 확인하세요.",
 			*GetName(), GetTeamIndex());
 	}
 
@@ -673,7 +697,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	}
 
 #if ENABLE_DRAW_DEBUG
-	if (bDrawCombatDebug)
+	if (ShouldDrawDebug())
 	{
 		DrawDebugCircle(GetWorld(), GetActorLocation(), AggroRadius, 32, FColor::Yellow, false, -1.f, 0, 3.f,
 			FVector(1, 0, 0), FVector(0, 1, 0), false);

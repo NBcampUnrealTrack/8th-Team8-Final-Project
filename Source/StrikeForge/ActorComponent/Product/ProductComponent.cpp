@@ -26,7 +26,7 @@ void UProductComponent::AddProductInLine(FName InProductName)
 	}
 	
 	USFDataTableManager* DataManager = GetOwner()->GetGameInstance()->GetSubsystem<USFDataTableManager>();
-	if (!DataManager) return;
+	if (!IsValid(DataManager)) return;
 	
 	const FUnitProductData* Row = DataManager->GetDataRow<FUnitProductData>(EDataTableType::Product, InProductName);;
 	if (!Row) return;
@@ -43,17 +43,26 @@ void UProductComponent::AddProductInLine(FName InProductName)
 
 void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 {
-	// index = 0 : num = 1 / inindex = 1x inindex = 0
-	if (ProductLine.Num() - 1 < InProductLineIndex)
-	{
-		return;
-	}
-	
-	GetOwner()->GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
-	
-	ProductLine.RemoveAt(InProductLineIndex);
+	if (!ProductLine.IsValidIndex(InProductLineIndex)) return;
+
+	const bool bWasProducing = (InProductLineIndex == 0);
+
+	ProductLine.RemoveAt(InProductLineIndex); 
 	OnProductLineChanged.Broadcast();
-	if (ProductLine.Num() == 0)
+
+	if (!bWasProducing)
+	{
+		return; // index > 0 : index0 timer can not be deleted.
+	}
+
+	// only deleted index == 0
+	GetOwner()->GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
+
+	if (ProductLine.Num() > 0)
+	{
+		StartProductLine(); // restart next element
+	}
+	else
 	{
 		StopProductLine();
 	}
@@ -120,4 +129,10 @@ void UProductComponent::BeginPlay()
 	Super::BeginPlay();
 	
 	InitProductCostMap();
+}
+
+void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopProductLine();
+	Super::EndPlay(EndPlayReason);
 }

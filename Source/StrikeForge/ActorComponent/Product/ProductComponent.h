@@ -42,12 +42,10 @@ public:
 	void StopProductLine();
 	
 	const FRecordTimeInfo& GetCurrentProductTimeInfo();
-	
-	FProductLineChanged OnProductLineChanged;
 
 protected:
 	virtual void BeginPlay() override;
-
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	TArray<FProductInfo> ProductLine;
 	
@@ -56,4 +54,8 @@ private:
 	FTimerHandle CurrentTimerHandle;
 	
 	int32 MaxLineCount = 5;
+	
+public:
+	UPROPERTY(BlueprintAssignable)
+	FProductLineChanged OnProductLineChanged;
 };

@@ -1,4 +1,6 @@
-﻿#include "BuildingPlacement.h"
+﻿#define ECC_LANDSCAPE ECC_GameTraceChannel1
+
+#include "BuildingPlacement.h"
 
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Kismet/GameplayStatics.h"

@@ -113,7 +113,15 @@ bool ASFBaseBuilding::TryStartConstruction()
 
 void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
 {
+	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierRatioList: Invalid Tier %d / %d"),
+			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
+		return;
+	}
+	
 	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
+	
 	CurrentTierRatios.Sort([](const float A, const float B)
 	{
 		return A < B;
@@ -170,14 +178,15 @@ void ASFBaseBuilding::ApplyPreviewMesh()
 	if (CurrentTierMeshes.IsEmpty())
 	{
 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ApplyPreviewMesh:CurrentTierMeshes is Empty"));
+		return;
 	}
 	UStaticMesh* InMesh = CurrentTierMeshes[CurrentTierMeshes.Num() - 1];
 	StaticMeshComponent->SetStaticMesh(InMesh);
 }
 
-void ASFBaseBuilding::ApplyPreviewMaterial(uint8 bIsPlaced)
+void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
 {
-	if (bIsPlaced)
+	if (CanPlaced)
 	{
 		OverlayMID = UMaterialInstanceDynamic::Create(BuildingPreviewMaterialInstance, this);
 		OverlayMID->SetVectorParameterValue("PreviewColor", FLinearColor(0.048881,1.000000,0.000000,1.000000));
@@ -236,6 +245,12 @@ void ASFBaseBuilding::UnBindFunctionWithComponent()
 
 void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
 {
+	if (!CurrentTierMeshes.IsValidIndex(InCurrentRatioIndex))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ChangeMeshByRatio: Invalid Index %d / %d"),
+			InCurrentRatioIndex, CurrentTierMeshes.Num());
+		return;
+	}
 	SetMesh(CurrentTierMeshes[InCurrentRatioIndex]);
 }
 
@@ -285,6 +300,14 @@ void ASFBaseBuilding::LoadTierMeshList(int32 InCurrentTier)
 {
 	// load > will change assetmanager
 	CurrentTierMeshes.Empty();
+	
+	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierMeshList: Invalid Tier %d / %d"),
+			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
+		return;
+	}
+	
 	for ( auto Key : CurrentTierRatios)
 	{
 		UStaticMesh* LoadMesh = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh[Key].LoadSynchronous();

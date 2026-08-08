@@ -44,7 +44,7 @@ void UProgressComponent::StartProgress()
 
 int32 UProgressComponent::FindRatioIndex(float Ratio) const
 {
-	int32 FoundIndex = INDEX_NONE;
+	int32 FoundIndex = 0;
 
 	for (int32 Index = 0; Index < QuarterofRatios.Num(); ++Index)
 	{

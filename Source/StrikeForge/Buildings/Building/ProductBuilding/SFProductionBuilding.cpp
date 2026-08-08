@@ -23,7 +23,7 @@ void ASFProductionBuilding::OnConstructionFinished()
 	
 	// product component initialize
 	UE_LOG(LogTemp, Warning, TEXT("AProductionBuilding::OnConstructionFinished: ProduceComponent Init."));
-	GetSpawnableUnitNames(CurrentTier);
+	UpdateSpawnableUnitNames(CurrentTier);
 	
 	
 }
@@ -32,7 +32,7 @@ void ASFProductionBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	Super::InitInfo(InData);
 	
-	GetSpawnableUnitNames(CurrentTier);
+	UpdateSpawnableUnitNames(CurrentTier);
 	//const TArray<FName> GetSpawnableList = InData->AllTierBuildingStates.TierBuildingState[CurrentTier].SpawnableUnits;
 	
 }
@@ -52,7 +52,7 @@ void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
 	UE_LOG(LogTemp, Error, TEXT("Building is not Completed."));
 }
 
-void ASFProductionBuilding::GetSpawnableUnitNames(int32 InCurrentTier)
+void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 {
 	for (int i = 0; i <= CurrentTier; ++i)
 	{

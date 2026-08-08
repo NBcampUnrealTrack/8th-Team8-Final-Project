@@ -61,7 +61,7 @@ public:
 	// begin construct
 	void BeginConstruction();
 	void ApplyPreviewMesh();
-	void ApplyPreviewMaterial(uint8 bIsPlaced);
+	void ApplyPreviewMaterial(const bool CanPlaced);
 	UFUNCTION()
 	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
 	void SetMesh(UStaticMesh* InMesh);

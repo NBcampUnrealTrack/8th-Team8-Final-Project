@@ -4,8 +4,6 @@
 #include "Components/ActorComponent.h"
 #include "BuildingPlacement.generated.h"
 
-#define ECC_LANDSCAPE ECC_GameTraceChannel1
-
 class USFBuildingGridSubsystem;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))

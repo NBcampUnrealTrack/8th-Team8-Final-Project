@@ -16,6 +16,8 @@ struct FOnBuildingMeshData
 	// TSoftObjectPtr<UStaticMesh> BuildingMesh;   // 0 : mesh1 , 50 : mesh2 , 100 : mesh3
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sound")
 	TObjectPtr<USoundBase> CompleteSoundBase;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Units")
+	TArray<FName> SpawnableUnits;
 };
 
 USTRUCT(BlueprintType)
@@ -26,6 +28,7 @@ struct FBuildingTierData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mesh")
 	TArray<FOnBuildingMeshData> TierBuildingState; // tarray({0,mesh1}, {50,mesh2}, {100,mesh3})
 	// construct sound?
+
 	
 };
 
@@ -36,9 +39,13 @@ struct FBuildingAppearance : public FTableRowBase
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Name")
 	FText DisplayName;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building")
-	TObjectPtr<UStaticMesh> PreviewMesh;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Class")
+	TSubclassOf<AActor> BuildingClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info|Building|Grid")
+	FIntPoint GridSize = FIntPoint(1, 1);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
+	TObjectPtr<UMaterialInstance> PreviewMeshMaterial;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
 	FBuildingTierData AllTierBuildingStates;
 	//    ........ hp
 	

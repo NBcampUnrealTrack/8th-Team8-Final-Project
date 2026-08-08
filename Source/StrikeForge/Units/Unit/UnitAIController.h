@@ -65,6 +65,7 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> LastGoalActor;
 	FVector LastGoalLocation = FVector::ZeroVector;
 	uint8 bHasLocationGoal : 1;

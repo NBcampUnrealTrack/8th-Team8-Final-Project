@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "SFGameState.generated.h"
 
 // 상태 정의 = 진행 상황
@@ -151,7 +152,7 @@ private:
     // InGameUI 용 초기값
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
     int32 Mineral = 0;
-
+    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
     int32 Ether = 0;
 

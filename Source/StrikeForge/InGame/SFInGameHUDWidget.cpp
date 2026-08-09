@@ -1,6 +1,6 @@
 #include "SFInGameHUDWidget.h"
 
-#include "SFInGamePlayerController.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
 

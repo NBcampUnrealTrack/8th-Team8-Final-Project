@@ -8,7 +8,8 @@ class UHorizontalBox;
 class USFBuildCatalogEntryWidget;
 
 UCLASS()
-class STRIKEFORGE_API USFBuildCatalogPanelWidget : public UUserWidget
+class STRIKEFORGE_API USFBuildCatalogPanelWidget
+	: public UUserWidget
 {
 	GENERATED_BODY()
 
@@ -25,7 +26,4 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "SF|Build Catalog")
 	TSubclassOf<USFBuildCatalogEntryWidget> BuildingEntryWidgetClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "SF|Build Catalog")
-	TArray<FName> TestBuildingRowNames;
 };

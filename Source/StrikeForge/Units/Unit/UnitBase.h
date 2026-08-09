@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/Units/Damagable.h"
-#include "Interfaces/Units/Selectable.h"
 #include "InGame/SFSelectINfo/SFSelectable.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Datas/Unit/UnitStatData.h"
@@ -33,16 +32,17 @@ enum class EUnitCombatState : uint8
  * 체력은 UHealthComponent 가 전담한다.
  */
 UCLASS()
-class STRIKEFORGE_API AUnitBase : public ACharacter, public ISelectable, public ISFSelectable
+class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable
 {
 	GENERATED_BODY()
 
 public:
 	AUnitBase();
-
+	
+	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
+	
 	// ── ISelectable ─────────────────────────────────────
-	virtual FName OnSelected_Implementation() override { return UnitRowName; }
-	virtual void OnDeSelected_Implementation() override {}
+
 
 	// ── ISFSelectable ───────────────────────────────────
 	/**

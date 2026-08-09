@@ -1,8 +1,12 @@
 ﻿#include "ProductComponent.h"
 
+#include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "Datas/Unit/UnitProductData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Units/Unit/UnitBase.h"
 
 UProductComponent::UProductComponent()
 {
@@ -72,23 +76,21 @@ void UProductComponent::StartProductLine()
 {
 	// currentproduct startinfo
 
-	CurrentProductTimeInfo.Duration = ProductLine[0].Duration;
-	CurrentProductTimeInfo.StartTime = GetWorld()->GetTimeSeconds();
+	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
+	Tracker.Reset(ProductLine[0].Duration, 1.f);
+	LastAdvanceTime = GetWorld()->GetTimeSeconds();
 	
 	GetWorld()->GetTimerManager().SetTimer(
 		CurrentTimerHandle,
-		[this]()
-		{
-			CompletedProduct(ProductLine[0].RowName);
-		},
-		ProductLine[0].Duration,
-		false);
+		this,
+		&UProductComponent::TickProduction,
+		TickInterval,
+		true);
 }
 
 void UProductComponent::CompletedProduct(const FName& InCompletedName)
 {
-	// FName Spawn Logic //         
-	//
+	// FName Spawn Logic //
 	//
 	//
 	//
@@ -109,19 +111,7 @@ void UProductComponent::CompletedProduct(const FName& InCompletedName)
 void UProductComponent::StopProductLine()
 {
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
-
-	CurrentProductTimeInfo.StartTime = 0.f;
-	CurrentProductTimeInfo.Duration = 0.f;
-	CurrentProductTimeInfo.CurrentTime = 0.f;
-	CurrentProductTimeInfo.Ratio = 0.f;
-}
-
-const FRecordTimeInfo& UProductComponent::GetCurrentProductTimeInfo()
-{
-	CurrentProductTimeInfo.CurrentTime = GetWorld()->GetTimeSeconds();
-	CurrentProductTimeInfo.Ratio =
-		(CurrentProductTimeInfo.CurrentTime - CurrentProductTimeInfo.StartTime) / CurrentProductTimeInfo.Duration;
-	return CurrentProductTimeInfo;
+	Tracker.Reset(0.f, 0.f);
 }
 
 void UProductComponent::BeginPlay()
@@ -135,4 +125,19 @@ void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopProductLine();
 	Super::EndPlay(EndPlayReason);
+}
+
+void UProductComponent::TickProduction()
+{
+	const float Now = GetWorld()->GetTimeSeconds();
+	const float ActualDelta = Now - LastAdvanceTime;
+	LastAdvanceTime = Now;
+	UE_LOG(LogTemp, Warning, TEXT("Now: %f, Delta: %f"), Now, ActualDelta);
+	
+	//if (Tracker.Advance(TickInterval))
+	if (Tracker.Advance(ActualDelta))
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
+		CompletedProduct(ProductLine[0].RowName);
+	}
 }

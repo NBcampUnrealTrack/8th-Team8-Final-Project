@@ -12,7 +12,7 @@ class STRIKEFORGE_API ASFNexusBuilding : public ASFBaseBuilding
 	GENERATED_BODY()
 
 public:
-	ASFNexusBuilding();
+	ASFNexusBuilding(const FObjectInitializer& ObjectInitializer);
 
 protected:
 	virtual void BeginPlay() override;

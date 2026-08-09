@@ -1,16 +1,19 @@
 ﻿#include "SFBaseBuilding.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Datas/Building/BuildingAppearance.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 
-ASFBaseBuilding::ASFBaseBuilding()
+ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
+	:Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
+	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 }
 
 void ASFBaseBuilding::InitializeBuildingData()
@@ -18,7 +21,7 @@ void ASFBaseBuilding::InitializeBuildingData()
 	USFDataTableManager* Subsystem = GetGameInstance()->GetSubsystem<USFDataTableManager>();
 	if (!IsValid(Subsystem)) return;
 	
-	const FBuildingAppearance* Row = Subsystem->GetDataRow<FBuildingAppearance>(EDataTableType::Building, RowFName);
+	const FBuildingAppearance* Row = Subsystem->GetDataRow<FBuildingAppearance>(EDataTableType::Building, RowName);
 	if (!Row)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Building RowName is INVALID"));
@@ -72,7 +75,7 @@ void ASFBaseBuilding::ApplySpawnMode()
 {
 	switch (SpawnMode)
 	{
-	case ESFBuildingSpawnMode::PlacedComplete:
+	case ESFBuildingSpawnMode::ViewPortPlacedMode:
 		{
 			// 건설 연출(진행 게이지, 사운드) 없이 곧장 완성 상태로 진입한다.
 			SetBuildingState(EBuildingState::Completed);
@@ -83,7 +86,7 @@ void ASFBaseBuilding::ApplySpawnMode()
 			break;
 		}
 
-	case ESFBuildingSpawnMode::PlayerConstructed:
+	case ESFBuildingSpawnMode::PlayerPlacedMode:
 		{
 			// 고스트 메시 + 초록 프리뷰 머티리얼로 시작한다.
 			// 실제 진행(UnderConstruction)은 배치가 확정될 때 TryStartConstruction() 이 담당한다.
@@ -376,6 +379,17 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayBuildingEffect();
 	// product begin in childclass
 	OnConstructionFinished();
+}
+
+int32 ASFBaseBuilding::GetTeamIndex() const
+{
+	if (!IsValid(CombatTargetComponent))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::GetTeamIndex:CombatTargetComponent is INVALID"));
+		return Targetable::NeutralTeam;
+	}
+	
+	return CombatTargetComponent->GetTeamIndex();
 }
 
 void ASFBaseBuilding::BeginPlay()

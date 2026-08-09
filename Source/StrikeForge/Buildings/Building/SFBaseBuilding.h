@@ -11,6 +11,7 @@
 
 class UProgressComponent;
 class UHealthComponent;
+class UCombatTargetComponent;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -24,8 +25,8 @@ enum class EBuildingState : uint8
 UENUM(BlueprintType)
 enum class ESFBuildingSpawnMode : uint8
 {
-	PlacedComplete UMETA(DisplayName = "Placed Complete"),
-	PlayerConstructed UMETA(DisplayName = "Player Constructed")
+	ViewPortPlacedMode UMETA(DisplayName = "Viewport placed"),
+	PlayerPlacedMode UMETA(DisplayName = "PlayerController placed")
 };
 //=====================================================
 UCLASS(Abstract, Blueprintable)
@@ -37,7 +38,7 @@ class STRIKEFORGE_API ASFBaseBuilding
 	GENERATED_BODY()
 
 public:
-	ASFBaseBuilding();
+	ASFBaseBuilding(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	
 	virtual void OnBuildingDestroyed() {};
 	virtual void OnConstructionFinished() {};
@@ -97,6 +98,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
 	//================================================================================
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	int32 GetTeamIndex() const;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -105,7 +108,9 @@ protected:
 	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UProgressComponent> ProgressComponent;
-
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FText DisplayName;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
@@ -129,7 +134,7 @@ protected:
 	
 	// repec ============================================================================================
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
-	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlacedComplete;
+	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::ViewPortPlacedMode;
 
 	/** FBuildingAppearance::GridSize 를 InitInfo 시점에 캐싱해 둔 값. 배치 컴포넌트가 겹침 검사에 쓴다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))

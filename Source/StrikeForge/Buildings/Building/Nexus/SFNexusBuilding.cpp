@@ -1,8 +1,8 @@
 ﻿#include "SFNexusBuilding.h"
-#include "Game/GameMode/SFGameMode.h"
-#include "Kismet/GameplayStatics.h"
+#include "ActorComponent/Combat/CoreObjectiveComponent.h"
 
-ASFNexusBuilding::ASFNexusBuilding()
+ASFNexusBuilding::ASFNexusBuilding(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UCoreObjectiveComponent>(TEXT("CombatTargetComponent")))
 {
 	PrimaryActorTick.bCanEverTick = false;
 }
@@ -26,10 +26,10 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 {
 	Super::OnBuildingDestroyed();
 	//if (!HasAuthority()) return;
-	ASFGameMode* GameMode =	Cast<ASFGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
-	if (!IsValid(GameMode)) return;
-	
-	UE_LOG(LogTemp, Warning, TEXT("ANexusBuilding::OnBuildingDestroyed: Lose/Win"));
+	// ASFGameMode* GameMode =	Cast<ASFGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
+	// if (!IsValid(GameMode)) return;
+	//
+	// UE_LOG(LogTemp, Warning, TEXT("ANexusBuilding::OnBuildingDestroyed: Lose/Win"));
 	// win or lose > gamemode
 }
 

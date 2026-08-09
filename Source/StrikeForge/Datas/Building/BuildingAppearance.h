@@ -20,7 +20,9 @@ struct FOnBuildingMeshData
 	TArray<FName> SpawnableUnits;
 	// current tier cost
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
-	FResources ConstructionCost;
+	FResources ConstructCost;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
+	FResources NextTierUpgradeCost;
 };
 
 USTRUCT(BlueprintType)

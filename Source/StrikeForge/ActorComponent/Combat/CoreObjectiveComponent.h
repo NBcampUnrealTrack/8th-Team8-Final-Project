@@ -32,7 +32,8 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
 	int32 PlayerTeamIndex = 0;
-
+	//int32 PlayerTeamIndex = Targetable::PlayerTeam;
+	
 	/** 끄면 파괴돼도 스테이지를 끝내지 않는다. 전투 반복 테스트용 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
 	uint8 bFinishStageOnDestroyed : 1;

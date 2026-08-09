@@ -4,41 +4,100 @@
 #include "Blueprint/UserWidget.h"
 #include "SFResourcePanelWidget.generated.h"
 
+class ASFGameState;
 class UTextBlock;
 
 UCLASS()
-class STRIKEFORGE_API USFResourcePanelWidget : public UUserWidget
+class STRIKEFORGE_API USFResourcePanelWidget
+	: public UUserWidget
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
-    // 함수 영역
+	// ==================== Functions ====================
+
 public:
-    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Resource")
-    void UpdateMineral(int32 NewMineralValue, float NewMineralRate);
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "SF|HUD|Resource"
+	)
+	void UpdateMineral(
+		int32 NewMineralValue,
+		float NewMineralRate
+	);
 
-    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Resource")
-    void UpdateEther(int32 NewEtherValue, float NewEtherRate);
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "SF|HUD|Resource"
+	)
+	void UpdateEther(
+		int32 NewEtherValue,
+		float NewEtherRate
+	);
 
-    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Resource")
-    void UpdatePopulation(int32 CurrentPopulation, int32 MaximumPopulation);
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "SF|HUD|Resource"
+	)
+	void UpdatePopulation(
+		int32 CurrentPopulation,
+		int32 MaximumPopulation
+	);
+
+protected:
+	virtual void NativeConstruct() override;
+
+	virtual void NativeDestruct() override;
 
 private:
-    FText MakeResourceRateText(float ResourceRate) const;
+	void BindResourceData();
 
-    // 변수 영역
+	void UnbindResourceData();
+
+	void RefreshResourceData();
+
+	FText MakeResourceRateText(
+		float ResourceRate
+	) const;
+
+	// ==================== Variables ====================
+
 protected:
-    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "SF|HUD|Resource")
-    TObjectPtr<UTextBlock> MineralValueText;
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidget)
+	)
+	TObjectPtr<UTextBlock> MineralValueText = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "SF|HUD|Resource")
-    TObjectPtr<UTextBlock> MineralRateText;
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidget)
+	)
+	TObjectPtr<UTextBlock> MineralRateText = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "SF|HUD|Resource")
-    TObjectPtr<UTextBlock> EtherValueText;
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidget)
+	)
+	TObjectPtr<UTextBlock> EtherValueText = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "SF|HUD|Resource")
-    TObjectPtr<UTextBlock> EtherRateText;
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidget)
+	)
+	TObjectPtr<UTextBlock> EtherRateText = nullptr;
 
-    UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "SF|HUD|Resource")
-    TObjectPtr<UTextBlock> PopulationValueText;
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidget)
+	)
+	TObjectPtr<UTextBlock> PopulationValueText = nullptr;
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<ASFGameState> BoundGameState = nullptr;
 };

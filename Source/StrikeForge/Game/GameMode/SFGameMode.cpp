@@ -52,6 +52,26 @@ bool ASFGameMode::StartStage()
 	return true;
 }
 
+bool ASFGameMode::ProcessCoreDestroyed(int32 DestroyedTeamIndex)
+{
+	if (DestroyedTeamIndex == INDEX_NONE)
+	{
+		SF_LOG(Warning, "[SFGameMode] ProcessCoreDestroyed failed: Destroyed Team Index is invalid.");
+
+		return false;
+	}
+
+	SF_LOG(Log, "[SFGameMode] Core destroyed. DestroyedTeam: %d, PlayerTeam: %d", DestroyedTeamIndex, PlayerTeamIndex);
+
+	if (DestroyedTeamIndex == PlayerTeamIndex)
+	{
+		return ProcessDefeat();
+	}
+
+	return ProcessVictory();
+	
+}
+
 bool ASFGameMode::ProcessVictory()
 {
 	return FinishStage(ESFStageResult::Victory);

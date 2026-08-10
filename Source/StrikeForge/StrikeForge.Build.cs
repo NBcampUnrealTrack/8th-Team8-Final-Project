@@ -17,10 +17,10 @@ public class StrikeForge : ModuleRules
 			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore",
-			
-			
-		});
+			"UMG", "Slate", "SlateCore", "CommonUI",
+
+
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

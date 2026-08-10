@@ -26,14 +26,6 @@ public:
 protected:
 	virtual void HandleOwnerDeath() override;
 
-	/**
-	 * 플레이어 진영의 팀 번호.
-	 * 이 팀의 핵심이 파괴되면 패배, 그 외 팀이면 승리로 처리한다.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
-	int32 PlayerTeamIndex = 0;
-	//int32 PlayerTeamIndex = Targetable::PlayerTeam;
-	
 	/** 끄면 파괴돼도 스테이지를 끝내지 않는다. 전투 반복 테스트용 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
 	uint8 bFinishStageOnDestroyed : 1;

@@ -349,7 +349,7 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
     );
     
     ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
-    if (!SFPC) return;
+    if (!IsValid(SFPC)) return;
     
     SFPC->SetSFControlMode(ESFControlMode::Gameplay);
 }

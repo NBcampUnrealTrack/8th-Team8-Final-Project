@@ -167,6 +167,7 @@ private:
 
     bool bControlModeInitialized = false;
     
+    UPROPERTY()
     TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef; //=============================================================================================
     
     // Delegate 변수는 최하단

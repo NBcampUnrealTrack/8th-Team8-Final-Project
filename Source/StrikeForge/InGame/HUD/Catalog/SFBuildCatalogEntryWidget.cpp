@@ -138,7 +138,7 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 	
 	// onclicked spawn building by rowname ======================================================================================
 	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
-	if (SFPC == nullptr)
+	if (!IsValid(SFPC))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("USFBuildCatalogEntryWidget::HandleEntryClicked: SFInGamePlayerController IS INVALID"));
 		return;

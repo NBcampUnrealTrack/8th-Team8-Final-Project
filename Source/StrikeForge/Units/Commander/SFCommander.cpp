@@ -105,7 +105,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	FNavLocation OutLoc;
 
 	const FBox BuildBox = Bounds.GetBox();
-	FVector Dest;
+	FVector Dest = Center;
 	if (BuildBox.IsValid)
 	{
 		Bounds.Origin = FVector::UpVector * Bounds.BoxExtent.Z;

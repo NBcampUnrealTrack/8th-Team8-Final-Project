@@ -3,6 +3,7 @@
 #include "Engine/GameInstance.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Logging/SFLog.h"
 
 void USFBuildCatalogEntryWidget::InitializeBuildingEntry(
@@ -112,7 +113,7 @@ void USFBuildCatalogEntryWidget::NativeDestruct()
 }
 
 void USFBuildCatalogEntryWidget::HandleEntryClicked()
-{
+{// horizontal child widghet clicked
 	if (BuildingRowName.IsNone())
 	{
 		SF_LOG(
@@ -130,8 +131,20 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 		"Entry Clicked: %s",
 		*BuildingRowName.ToString()
 	);
-
+	
 	OnBuildCatalogEntryClicked.Broadcast(
 		BuildingRowName
 	);
+	
+	// onclicked spawn building by rowname ======================================================================================
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+	if (SFPC == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("USFBuildCatalogEntryWidget::HandleEntryClicked: SFInGamePlayerController IS INVALID"));
+		return;
+	}
+	
+	// 자원이 충분한가 아닌가 검사 로직. 가능구역1
+	SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
+	SFPC->SpawnBuildingFunction(BuildingRowName);
 }

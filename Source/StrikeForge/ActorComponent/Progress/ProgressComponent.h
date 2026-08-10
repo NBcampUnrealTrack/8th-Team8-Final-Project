@@ -27,15 +27,17 @@ public:
 	// change speed
 	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+public:
 	
 	UPROPERTY(BlueprintAssignable)
 	FChangedProgressRatio OnChangedRatio;
 	UPROPERTY(BlueprintAssignable)
 	FCompletedBuilding OnCompletedBuilding;
-protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-public:
+	
 	UPROPERTY()
 	FTimerHandle ProgressTimerHandle;
 	

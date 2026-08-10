@@ -41,13 +41,11 @@ struct STRIKEFORGE_API FSFProgressTracker
 		return Accumulate >= CompleteAmount;
 	}
 
-	float GetRatio() const
+	FORCEINLINE float GetRatio() const
 	{
 		return CompleteAmount > 0.f ? FMath::Clamp(Accumulate / CompleteAmount, 0.f, 1.f) : 1.f;
 	}
 	
-	void ClearSpeedMultiplier()
-	{
-	     SpeedMultiplier = 1.f;
-	}
+	FORCEINLINE void ClearSpeedMultiplier()	{ SpeedMultiplier = 1.f; }
 };
+ 

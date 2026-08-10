@@ -5,10 +5,6 @@
 #include "SFSelectableInfo.h"
 #include "SFSelectable.generated.h"
 
-class UProductComponent;
-class UProgressComponent;
-class UHealthComponent;
-
 UINTERFACE(BlueprintType)
 class STRIKEFORGE_API USFSelectable : public UInterface
 {

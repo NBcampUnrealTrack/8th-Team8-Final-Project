@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -14,13 +14,13 @@ public class StrikeForge : ModuleRules
 			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
 			
 			// ai
-			"AIModule", "NavigationSystem",
+			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore",
-			
-			
-		});
+			"UMG", "Slate", "SlateCore", "CommonUI",
+
+
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

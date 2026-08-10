@@ -110,3 +110,12 @@ void UProductComponent::BeginPlay()
 	
 	InitProductCostMap();
 }
+
+void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (GetWorld() && GetWorld()->IsInitialized())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
+	}
+	Super::EndPlay(EndPlayReason);
+}

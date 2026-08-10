@@ -2,7 +2,7 @@
 
 
 #include "Units/Commander/SFCommander.h"
-#include "InGame/SFInGamePlayerController.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Units/Unit/UnitAIController.h"
 #include "Components/CapsuleComponent.h"
 #include "NavigationSystem.h"

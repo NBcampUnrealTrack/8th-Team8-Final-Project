@@ -85,14 +85,7 @@ void ASFCommander::LoadPlayerController()
 
 void ASFCommander::MoveToDest(FVector Dest)
 {
-	//MoveToAction(Dest, ECommandAction::NONE);
-	if (TestMesh != nullptr)
-	{
-		FBoxSphereBounds MeshBounds = TestMesh->GetBounds();
-		MeshBounds.BoxExtent *= 5.f;
-		MeshBounds.SphereRadius *= 5.f;
-		MoveToBuild(Dest, MeshBounds, FMath::RandRange(0.f,360.f));
-	}
+	MoveToAction(Dest, ECommandAction::NONE);
 }
 
 void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Rotation)
@@ -110,7 +103,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	if (BuildBox.IsValid)
 	{
 		Bounds.Origin = FVector::UpVector * Bounds.BoxExtent.Z;
-		DrawDebugBox(GetWorld(), Center + FVector::UpVector * Bounds.BoxExtent.Z, Bounds.BoxExtent, FQuat::MakeFromRotator(FRotator(0.f, Rotation, 0.f)), FColor::Red, false, 2.f);
+		//DrawDebugBox(GetWorld(), Center + FVector::UpVector * Bounds.BoxExtent.Z, Bounds.BoxExtent, FQuat::MakeFromRotator(FRotator(0.f, Rotation, 0.f)), FColor::Red, false, 2.f);
 		FVector WorldLoc = GetActorLocation() - FVector::UpVector * CapsuleHalfHeight;	// 지휘관의 지면 월드 좌표
 
 		// 1. 지휘관의 월드좌표를 건설 구역 기준 상대좌표로 변환
@@ -118,7 +111,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 		SF_LOG(Log, "MoveToBuild: CommanderLocalLoc = %s", *LocalLoc.ToString());
 
 		// 2. 지휘관의 박스형 캡슐 생성
-		DrawDebugBox(GetWorld(), GetActorLocation(), FVector(CapsuleRadius, CapsuleRadius, CapsuleHalfHeight), FColor::Green, false, 5.f);
+		//DrawDebugBox(GetWorld(), GetActorLocation(), FVector(CapsuleRadius, CapsuleRadius, CapsuleHalfHeight), FColor::Green, false, 5.f);
 		FBox CommanderBox = FBox::BuildAABB(LocalLoc + FVector::UpVector * CapsuleHalfHeight, FVector(CapsuleRadius, CapsuleRadius, CapsuleHalfHeight));
 
 		SF_LOG(Log, "MoveToBuild: BuildBox={Center:%s, Extents:%s}", *BuildBox.GetCenter().ToString(), *BuildBox.GetExtent().ToString());
@@ -153,7 +146,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 
 						// 도착점 확정
 						Dest = OutLoc;
-						GEngine->AddOnScreenDebugMessage(3, 2.f, FColor::Cyan, FString::Printf(TEXT("i: %d"), i));
+						//GEngine->AddOnScreenDebugMessage(3, 2.f, FColor::Cyan, FString::Printf(TEXT("i: %d"), i));
 						break;
 					}
 				}
@@ -194,7 +187,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	else
 	{
 		Bounds.Origin = FVector::ZeroVector;
-		DrawDebugSphere(GetWorld(), Center,Bounds.SphereRadius,16, FColor::Red, false, 2.f);
+		//DrawDebugSphere(GetWorld(), Center,Bounds.SphereRadius,16, FColor::Red, false, 2.f);
 		FVector WorldLoc = GetActorLocation() - FVector::UpVector * CapsuleHalfHeight;	// 지휘관의 지면 월드 좌표
 		if (Bounds.GetSphere().IsInside(Dest))
 		{
@@ -214,7 +207,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	BuildLocation = Center;
 	BuildRotation = Rotation;
 	BuildBoundary = Bounds;
-	DrawDebugPoint(GetWorld(), Dest, 10.f, FColor::Red, false, 20.f);
+	//DrawDebugPoint(GetWorld(), Dest, 20.f, FColor::Red, false, 2.f);
 	if (CheckCanBuild())
 	{
 		BeginBuild();
@@ -256,15 +249,15 @@ bool ASFCommander::CheckCanBuild()
 	float Dist = FVector::Dist(GetActorLocation(), BuildLocation);
 	float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	float CapsuleRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
-	GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Magenta, FString::Printf(TEXT("BuildDistance: %f"), Dist));
+	//GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Magenta, FString::Printf(TEXT("BuildDistance: %f"), Dist));
 	const FBox BuildBox = BuildBoundary.GetBox();
 	if (BuildBox.IsValid)
 	{
 		FVector WorldLoc = GetActorLocation() - FVector::UpVector * CapsuleHalfHeight;	// 지휘관의 지면 월드 좌표
 		FVector LocalLoc = (WorldLoc - BuildLocation).RotateAngleAxis(-BuildRotation, FVector::UpVector);	// 지휘관의 건설구역 기준 상대위치
 
-		DrawDebugBox(GetWorld(), LocalLoc + FVector::UpVector * CapsuleHalfHeight, FVector(CapsuleRadius, CapsuleRadius, CapsuleHalfHeight), FColor::Magenta, false, 0.f);
-		DrawDebugBox(GetWorld(), FVector::ZeroVector + FVector::UpVector * BuildBox.GetExtent().Z, BuildBox.GetExtent(), FColor::Emerald, false, 2.f);
+		//DrawDebugBox(GetWorld(), LocalLoc + FVector::UpVector * CapsuleHalfHeight, FVector(CapsuleRadius, CapsuleRadius, CapsuleHalfHeight), FColor::Magenta, false, 0.f);
+		//DrawDebugBox(GetWorld(), FVector::ZeroVector + FVector::UpVector * BuildBox.GetExtent().Z, BuildBox.GetExtent(), FColor::Emerald, false, 2.f);
 		float EdgeDistFromBound;
 		if (BuildBox.IsInsideOrOn(LocalLoc + FVector::UpVector * BuildBox.GetExtent().Z))
 		{
@@ -274,10 +267,10 @@ bool ASFCommander::CheckCanBuild()
 		{
 			EdgeDistFromBound = FVector::Dist(LocalLoc, BuildBox.GetClosestPointTo(LocalLoc));
 		}
-		GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Cyan, FString::Printf(TEXT("EdgeDistFromBound: %f"), EdgeDistFromBound));
+		//GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Cyan, FString::Printf(TEXT("EdgeDistFromBound: %f"), EdgeDistFromBound));
 		if (EdgeDistFromBound > CapsuleRadius && EdgeDistFromBound <= CapsuleRadius + MaxDistToBuild)
 		{
-			DrawDebugBox(GetWorld(), BuildLocation + FVector::UpVector * BuildBoundary.BoxExtent.Z, BuildBoundary.BoxExtent, FQuat::MakeFromRotator(FRotator(0.f, BuildRotation, 0.f)), FColor::Blue, false, 2.f, 0U, 20.f);
+			//DrawDebugBox(GetWorld(), BuildLocation + FVector::UpVector * BuildBoundary.BoxExtent.Z, BuildBoundary.BoxExtent, FQuat::MakeFromRotator(FRotator(0.f, BuildRotation, 0.f)), FColor::Blue, false, 2.f, 0U, 20.f);
 			return true;
 		}
 	}
@@ -285,7 +278,7 @@ bool ASFCommander::CheckCanBuild()
 	{
 		if (Dist > BuildBoundary.SphereRadius && Dist <= BuildBoundary.SphereRadius + MaxDistToBuild)
 		{
-			DrawDebugSphere(GetWorld(), BuildLocation, BuildBoundary.SphereRadius, 16, FColor::Blue, false, 2.f, 0U, 20.f);
+			//DrawDebugSphere(GetWorld(), BuildLocation, BuildBoundary.SphereRadius, 16, FColor::Blue, false, 2.f, 0U, 20.f);
 			return true;
 		}
 	}
@@ -309,7 +302,7 @@ void ASFCommander::BeginBuild()
 void ASFCommander::PrintMessage(FString Msg)
 {
 	// TODO : Msg 출력값을 UI와 연동해주세요. 현재 이곳에는 건설시도 실패 메세지가 주로 들어갑니다.
-	GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, Msg);
+	//GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, Msg);
 }
 
 void ASFCommander::StopMoving()

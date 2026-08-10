@@ -16,9 +16,6 @@ class STRIKEFORGE_API AResourceBase
 public:
 	// Sets default values for this actor's properties
 	AResourceBase();
-	
-	virtual FName OnSelected_Implementation() override { return RowFName; }
-	virtual void OnDeSelected_Implementation() override {}
 
 	
 private:

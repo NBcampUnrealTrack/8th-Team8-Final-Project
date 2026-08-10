@@ -1,5 +1,4 @@
 ﻿#include "BuildingPlacement.h"
-
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 

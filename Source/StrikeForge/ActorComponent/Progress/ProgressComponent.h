@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ActorComponent/Progress/SFProgressTracker.h"
 #include "Components/ActorComponent.h"
 #include "ProgressComponent.generated.h"
 
@@ -23,21 +24,32 @@ public:
 	
 	void SetQuarterOfRatios(TArray<float> InQuarterOfRatios);
 	
-	FChangedProgressRatio OnChangedRatio;
-	FCompletedBuilding OnCompletedBuilding;
+	// change speed
+	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
+	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 public:
+	
 	UPROPERTY()
 	FTimerHandle ProgressTimerHandle;
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float Accumulate = 0.f;
+	float LastAdvanceTime = 0.f;
+	// UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
+	// float Accumulate = 0.f;
+	/** 타이머 주기(초). ProductComponent와 값을 맞추고 싶으면 같은 수치를 쓰면 된다 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress")
+	float TickInterval = 1.f;
+	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
 	float CompleteAmount = 100.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
 	float AccumulateSpeed = 10.f;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Progress")
+	FSFProgressTracker Tracker;
 	
 	UPROPERTY()
 	int32 CurrentRatioIndex = 0;
@@ -45,4 +57,9 @@ public:
 	float CurrentRatio = 0.f;
 	UPROPERTY()
 	TArray<float> QuarterofRatios;
+	
+	UPROPERTY(BlueprintAssignable)
+	FChangedProgressRatio OnChangedRatio;
+	UPROPERTY(BlueprintAssignable)
+	FCompletedBuilding OnCompletedBuilding;
 };

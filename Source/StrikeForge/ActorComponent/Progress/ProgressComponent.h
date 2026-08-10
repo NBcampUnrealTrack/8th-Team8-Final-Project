@@ -33,11 +33,6 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 public:
 	
-	UPROPERTY(BlueprintAssignable)
-	FChangedProgressRatio OnChangedRatio;
-	UPROPERTY(BlueprintAssignable)
-	FCompletedBuilding OnCompletedBuilding;
-	
 	UPROPERTY()
 	FTimerHandle ProgressTimerHandle;
 	
@@ -62,4 +57,9 @@ public:
 	float CurrentRatio = 0.f;
 	UPROPERTY()
 	TArray<float> QuarterofRatios;
+	
+	UPROPERTY(BlueprintAssignable)
+	FChangedProgressRatio OnChangedRatio;
+	UPROPERTY(BlueprintAssignable)
+	FCompletedBuilding OnCompletedBuilding;
 };

@@ -25,7 +25,7 @@ public:
 
 	// 건설명령 함수. Center=건물좌표, Bounds=건물바운드, Rotation=회전값.
 	// 스태틱메시의 GetBounds()를 가져와 Bounds에 등록해주세요.
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category = "Command")
 	void MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Rotation = 0.f);
 
 protected:

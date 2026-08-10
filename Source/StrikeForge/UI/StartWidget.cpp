@@ -6,6 +6,7 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "StrikeForge/Game/GameInstance/SFGameInstance.h"
 
 void UStartWidget::NativeConstruct()
 {
@@ -45,7 +46,13 @@ void UStartWidget::NativeConstruct()
 
 void UStartWidget::OnStartButtonClicked()
 {
-	UGameplayStatics::OpenLevel(this, FName("Lobby"));
+	USFGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<USFGameInstance>() : nullptr;
+	if (!IsValid(GameInstance))
+	{
+		return;
+	}
+
+	GameInstance->MoveToLobby();
 }
 
 void UStartWidget::OnSettingButtonClicked()

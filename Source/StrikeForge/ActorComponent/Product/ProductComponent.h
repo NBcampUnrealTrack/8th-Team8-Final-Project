@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "ActorComponent/Progress/SFProgressTracker.h"
+#include "ActorComponent/Product/ProductInfo.h"
 #include "ProductComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FProductLineChanged);
@@ -17,13 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FProductLineChanged);
 // 	float Ratio;
 // };
 
-USTRUCT(BlueprintType)
-struct FProductInfo
-{
-	GENERATED_BODY()
-	FName RowName;
-	float Duration;
-};
+
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
@@ -43,8 +38,6 @@ public:
 	void StopProductLine();
 	
 	/** 현재 생산 중인 항목의 진행률 0~1 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
-	float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	bool IsProducing() const { return !ProductLine.IsEmpty(); }
@@ -52,7 +45,11 @@ public:
 	/** 외부 요인(버프 등)으로 생산 속도를 즉시 바꾼다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
-
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
+	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
+	FORCEINLINE const TArray<FProductInfo>& GetProductLine() const { return ProductLine; }
+	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

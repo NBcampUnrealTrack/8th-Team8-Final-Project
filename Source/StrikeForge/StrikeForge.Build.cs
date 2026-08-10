@@ -27,6 +27,7 @@ public class StrikeForge : ModuleRules
 		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
 	
 		PublicDefinitions.Add("ECC_LANDSCAPE=ECC_GameTraceChannel1");
+		
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 

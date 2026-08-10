@@ -48,6 +48,7 @@ public:
     
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
     void SpawnBuildingFunction(const FName& InRowName);
+    void ClearSpawnedBuildingRef();
 protected:
     virtual void BeginPlay() override;
 

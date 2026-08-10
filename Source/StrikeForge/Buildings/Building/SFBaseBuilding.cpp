@@ -73,6 +73,9 @@ void ASFBaseBuilding::HandleHealthZero()
 
 void ASFBaseBuilding::ApplySpawnMode()
 {
+	// ApplySpawnMode() 맨 앞
+	UE_LOG(LogTemp, Warning, TEXT("[%s] ApplySpawnMode: SpawnMode=%d, Time=%f"), *GetName(), (int32)SpawnMode, GetWorld()->GetTimeSeconds());
+	
 	switch (SpawnMode)
 	{
 	case ESFBuildingSpawnMode::ViewPortPlacedMode:
@@ -151,6 +154,8 @@ void ASFBaseBuilding::EnterPreviewState()
 void ASFBaseBuilding::BeginConstruction()
 {
 	//SetBuildingState(EBuildingState::UnderConstruction);
+	// BeginConstruction() 맨 앞
+	UE_LOG(LogTemp, Warning, TEXT("[%s] BeginConstruction, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
 	
 	LoadTierRatioList(CurrentTier); // get ratio at datatable
 	LoadTierMeshList(CurrentTier);
@@ -169,6 +174,9 @@ void ASFBaseBuilding::EnterCompletedState()
 { // set last mesh completed
 	//SetBuildingState(EBuildingState::Completed);
 	//ProgressComponent->StopProgress();
+	// EnterCompletedState() 맨 앞
+	UE_LOG(LogTemp, Warning, TEXT("[%s] EnterCompletedState, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
+	
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	if (!CurrentTierMeshes.IsEmpty())
 	{
@@ -189,6 +197,9 @@ void ASFBaseBuilding::ApplyPreviewMesh()
 
 void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
 {
+	// ApplyPreviewMaterial() 맨 앞
+	UE_LOG(LogTemp, Warning, TEXT("[%s] ApplyPreviewMaterial(%d), Time=%f"), *GetName(), CanPlaced, GetWorld()->GetTimeSeconds());
+	
 	if (CanPlaced)
 	{
 		OverlayMID = UMaterialInstanceDynamic::Create(BuildingPreviewMaterialInstance, this);
@@ -365,6 +376,9 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 
 void ASFBaseBuilding::SetMesh(UStaticMesh* InMesh)
 {
+	// SetMesh() 맨 앞
+	UE_LOG(LogTemp, Warning, TEXT("[%s] SetMesh: %s, Time=%f"), *GetName(), InMesh ? *InMesh->GetName() : TEXT("null"), GetWorld()->GetTimeSeconds());
+	
 	if (!InMesh)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::SetMesh: InMesh is None"));

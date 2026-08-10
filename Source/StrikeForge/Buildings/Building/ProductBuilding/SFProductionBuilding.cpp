@@ -1,6 +1,7 @@
 ﻿#include "SFProductionBuilding.h"
 
 #include "ActorComponent/Product/ProductComponent.h"
+#include "Compilation/IMovieSceneTrackTemplateProducer.h"
 #include "Datas/Unit/UnitProductData.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 
@@ -40,6 +41,17 @@ void ASFProductionBuilding::InitInfo(const FBuildingAppearance* InData)
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
 	TryAddUnitProductLine(InUnitName);
+	
+}
+
+FProductableData ASFProductionBuilding::GetProductableData_Implementation()
+{
+	FProductableData ProductData;
+	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
+	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
+	ProductData.CurrentProductRatio = ProductComponent->GetCurrentProductRatio();
+	ProductData.ProductComponent = ProductComponent;
+	return ProductData;
 }
 
 void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
@@ -52,21 +64,29 @@ void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
 	UE_LOG(LogTemp, Error, TEXT("Building is not Completed."));
 }
 
+const TArray<FName>& ASFProductionBuilding::GetSpawnableUnitNames() const
+{
+	return StoredSpawnableUnitDatas;
+}
+
 void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 {
-	for (int i = 0; i <= CurrentTier; ++i)
-	{
-		for (const auto& Name : AllTierMeshesSoftArray.TierBuildingState[CurrentTier].SpawnableUnits)
-		{	// if tier is down still exist pre timer fname
-			StoredSpawnableUnitDatas.AddUnique(Name);
-			// need to delete when tier is down
-		}
-	}
+	StoredSpawnableUnitDatas = 
+	AllTierMeshesSoftArray.TierBuildingState[CurrentTier].SpawnableUnits;
+	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+	// for (int i = 0; i <= CurrentTier; ++i)
+	// {
+	// 	for (const auto& Name : AllTierMeshesSoftArray.TierBuildingState[CurrentTier].SpawnableUnits)
+	// 	{	// if tier is down still exist pre timer fname
+	// 		StoredSpawnableUnitDatas.AddUnique(Name);
+	// 		// need to delete when tier is down
+	// 	}
+	// }
 	
 	// debug
 	for (const auto& Name : StoredSpawnableUnitDatas)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Spawnable Units: %s, BuildingTier: %d"), *Name.ToString(), CurrentTier);
+		UE_LOG(LogTemp, Warning, TEXT("Spawnable Units: %s, BuildingTier: %d\n"), *Name.ToString(), CurrentTier);
 	}
 	
 	// USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();

@@ -14,6 +14,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return UIDataTable;
 		}
+    case EDataTableType::BuildCatalogUI:
+        {
+            return BuildCatalogUIDataTable;
+        }
 	case EDataTableType::Building:
 		{
 			return BuildingDataTable;

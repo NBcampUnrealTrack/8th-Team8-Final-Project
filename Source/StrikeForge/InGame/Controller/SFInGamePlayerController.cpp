@@ -6,7 +6,7 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "SFInGameHUDWidget.h"
+#include "InGame/SFInGameHUDWidget.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {

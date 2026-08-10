@@ -11,6 +11,7 @@ UENUM(BlueprintType)
 enum class EDataTableType : uint8
 {
 	UI,
+	BuildCatalogUI,
 	Building,
 	Unit,
 	Stage,	// 추가부분
@@ -44,6 +45,8 @@ private:
 	TObjectPtr<UDataTable> BuildingDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UDataTable> BuildCatalogUIDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Unit", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UnitsDataTable;
 

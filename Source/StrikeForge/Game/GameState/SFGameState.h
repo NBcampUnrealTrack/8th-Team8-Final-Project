@@ -116,6 +116,25 @@ public:
     UFUNCTION(BlueprintPure, Category = "SF|Population")
     int32 GetMaximumPopulation() const;
 
+    // 자원 값 변경
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetMineral(int32 NewMineral);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetEther(int32 NewEther);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetMineralIncomeRate(float NewMineralIncomeRate);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetEtherIncomeRate(float NewEtherIncomeRate);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Population")
+    void SetPopulation(
+        int32 NewCurrentPopulation,
+        int32 NewMaximumPopulation
+    );
+
     // 여기까지
 
 public:

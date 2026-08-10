@@ -18,13 +18,13 @@ public:
 	ASFRootBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	// virtual FName OnSelected_Implementation() override { return UnitRowName; }
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	//int32 GetTeamIndex() const { return TeamIndex; }
+	int32 GetTeamIndex() const { return TeamIndex; }
 	
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	FName RowName;
-	// UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	// int32 TeamIndex;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	int32 TeamIndex;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UStaticMeshComponent> StaticMeshComponent;

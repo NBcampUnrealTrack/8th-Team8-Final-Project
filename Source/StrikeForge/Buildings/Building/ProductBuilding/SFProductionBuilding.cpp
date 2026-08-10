@@ -49,7 +49,6 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	FProductableData ProductData;
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
-	ProductData.CurrentProductRatio = ProductComponent->GetCurrentProductRatio();
 	ProductData.ProductComponent = ProductComponent;
 	return ProductData;
 }
@@ -71,8 +70,14 @@ const TArray<FName>& ASFProductionBuilding::GetSpawnableUnitNames() const
 
 void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 {
+	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFProductionBuilding::UpdateSpawnableUnitNames: AllTierMeshesSoftArray.TierBuildingState INDEX IS INVALILD"));
+		return;
+	}
+	
 	StoredSpawnableUnitDatas = 
-	AllTierMeshesSoftArray.TierBuildingState[CurrentTier].SpawnableUnits;
+	AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].SpawnableUnits;
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
 	// for (int i = 0; i <= CurrentTier; ++i)
 	// {

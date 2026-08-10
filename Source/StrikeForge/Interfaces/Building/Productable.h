@@ -25,8 +25,6 @@ struct FProductableData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FProductInfo> CurrentProductingFNames;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	float CurrentProductRatio;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TWeakObjectPtr<UProductComponent> ProductComponent;
 };
 

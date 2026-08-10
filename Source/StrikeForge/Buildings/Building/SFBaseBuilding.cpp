@@ -28,12 +28,6 @@ void ASFBaseBuilding::InitializeBuildingData()
 		return;
 	}
 	
-	if (!Row->PreviewMeshMaterial)
-	{
-		UE_LOG(LogTemp, Error, TEXT("PreviewMeshMaterial is None"));
-		return;
-	}
-	
 	InitInfo(Row); 
 	LoadTierRatioList(CurrentTier); // get ratio at datatable
 	LoadTierMeshList(CurrentTier);
@@ -199,6 +193,11 @@ void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
 {
 	// ApplyPreviewMaterial() 맨 앞
 	UE_LOG(LogTemp, Warning, TEXT("[%s] ApplyPreviewMaterial(%d), Time=%f"), *GetName(), CanPlaced, GetWorld()->GetTimeSeconds());
+	if (!IsValid(BuildingPreviewMaterialInstance))
+	{
+		UE_LOG(LogTemp, Error, TEXT("PreviewMeshMaterial is None"));
+		return;
+	}
 	
 	if (CanPlaced)
 	{
@@ -395,16 +394,16 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	OnConstructionFinished();
 }
 
-int32 ASFBaseBuilding::GetTeamIndex() const
-{
-	if (!IsValid(CombatTargetComponent))
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::GetTeamIndex:CombatTargetComponent is INVALID"));
-		return Targetable::NeutralTeam;
-	}
-	
-	return CombatTargetComponent->GetTeamIndex();
-}
+// int32 ASFBaseBuilding::GetTeamIndex() const
+// {
+// 	if (!IsValid(CombatTargetComponent))
+// 	{
+// 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::GetTeamIndex:CombatTargetComponent is INVALID"));
+// 		return Targetable::NeutralTeam;
+// 	}
+// 	
+// 	return CombatTargetComponent->GetTeamIndex();
+// }
 
 void ASFBaseBuilding::BeginPlay()
 {

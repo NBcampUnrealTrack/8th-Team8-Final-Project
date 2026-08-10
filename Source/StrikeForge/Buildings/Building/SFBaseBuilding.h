@@ -98,8 +98,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
 	//================================================================================
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
-	int32 GetTeamIndex() const;
+	// UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	// int32 GetTeamIndex() const;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

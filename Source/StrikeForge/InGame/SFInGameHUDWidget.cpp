@@ -347,4 +347,9 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
         "[SFInGameHUDWidget] "
         "Building mode deactivated."
     );
+    
+    ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!IsValid(SFPC)) return;
+    
+    SFPC->SetSFControlMode(ESFControlMode::Gameplay);
 }

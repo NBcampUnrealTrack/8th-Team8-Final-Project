@@ -32,6 +32,7 @@ public:
 		BlueprintAssignable,
 		Category = "SF|Build Catalog"
 	)
+	
 	FSFOnBuildCatalogEntryClicked OnBuildCatalogEntryClicked;
 
 protected:

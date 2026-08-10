@@ -82,7 +82,7 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 		EntryWidget->InitializeBuildingEntry(
 			BuildingRowName
 		);
-
+		
 		BuildingEntryHorizontalBox
 			->AddChildToHorizontalBox(
 				EntryWidget

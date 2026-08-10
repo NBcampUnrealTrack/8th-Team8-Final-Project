@@ -20,6 +20,7 @@ public:
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	int32 GetTeamIndex() const { return TeamIndex; }
 	
+	FORCEINLINE void SetRowName(const FName& InNewName) { RowName = InNewName; }
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	FName RowName;

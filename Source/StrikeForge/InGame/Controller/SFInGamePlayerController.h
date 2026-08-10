@@ -4,6 +4,8 @@
 #include "GameFramework/PlayerController.h"
 #include "SFInGamePlayerController.generated.h"
 
+class UBuildingPlacement;
+class ASFBaseBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
 class UInputAction;
 class UInputMappingContext;
@@ -43,7 +45,9 @@ public:
         Category = "SF|Input"
     )
     ESFControlMode GetSFControlMode() const;
-
+    
+    FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
+    void SpawnBuildingFunction(const FName& InRowName);
 protected:
     virtual void BeginPlay() override;
 
@@ -67,6 +71,9 @@ private:
 
     // 변수 영역
 protected:
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component")
+    TObjectPtr<UBuildingPlacement> PlacementComponent; //======================================================================
+    
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -159,7 +166,10 @@ private:
     TObjectPtr<USFInGameHUDWidget> InGameHUDWidget;
 
     bool bControlModeInitialized = false;
-
+    
+    UPROPERTY()
+    TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef; //=============================================================================================
+    
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

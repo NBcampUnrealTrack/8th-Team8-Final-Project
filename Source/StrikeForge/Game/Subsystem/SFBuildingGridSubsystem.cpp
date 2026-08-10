@@ -1,7 +1,5 @@
 ﻿#include "SFBuildingGridSubsystem.h"
 
-#include <SceneExport.h>
-
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);

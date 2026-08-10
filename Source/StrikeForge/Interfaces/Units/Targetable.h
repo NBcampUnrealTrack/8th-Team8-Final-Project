@@ -22,6 +22,12 @@ namespace Targetable
 {
 	/** 중립 팀. 어느 쪽과도 교전하지 않는다 */
 	static constexpr int32 NeutralTeam = INDEX_NONE;
+	
+	/** 플레이어 진영 팀 번호 (1v1 프로토타입 기준) */
+	static constexpr int32 PlayerTeam = 0;
+	
+	/** 적 진영 팀 번호 (1v1 프로토타입 기준) */
+	static constexpr int32 EnemyTeam = 1;
 }
 
 /*

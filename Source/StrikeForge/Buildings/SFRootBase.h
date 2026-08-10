@@ -3,29 +3,28 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Datas/Building/BuildingAppearance.h"
 #include "GameFramework/Actor.h"
-#include "Interfaces/Units/Selectable.h"
+#include "InGame/SFSelectINfo/SFSelectable.h"
 #include "SFRootBase.generated.h"
 
 UCLASS(Abstract)
 class STRIKEFORGE_API ASFRootBase 
 	: public AActor
-	, public ISelectable
+	, public ISFSelectable
 {
 	GENERATED_BODY()
 
 public:
-	ASFRootBase();
+	ASFRootBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	// virtual FName OnSelected_Implementation() override { return UnitRowName; }
-	virtual FName OnSelected_Implementation() override { return RowFName; }
-	virtual void OnDeSelected_Implementation() override {}
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	int32 GetTeamIndex() const { return TeamIndex; }
 	
+	FORCEINLINE void SetRowName(const FName& InNewName) { RowName = InNewName; }
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
-	FName RowFName;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	FName RowName;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	int32 TeamIndex;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Component", meta=(AllowPrivateAccess=true))

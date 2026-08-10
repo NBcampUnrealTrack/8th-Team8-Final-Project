@@ -40,11 +40,10 @@ protected:
 
 	void TryAddUnitProductLine(FName InUnitName);
 	
-	void GetSpawnableUnitNames(int32 InCurrentTier);
+	void UpdateSpawnableUnitNames(int32 InCurrentTier);
 protected:
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
-	
-	UPROPERTY()
+
 	TArray<FName> StoredSpawnableUnitDatas;
 };

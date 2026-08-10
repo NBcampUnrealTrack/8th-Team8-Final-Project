@@ -25,6 +25,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool StartStage();
 
+	// 파괴된 코어건물(메인)을 기준으로 승리, 패배 처리
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
+	bool ProcessCoreDestroyed(int32 DestroyedTeamIndex);
+
 	// 승리 결과 스테이지 종료
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool ProcessVictory();
@@ -42,4 +46,7 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	int32 PlayerTeamIndex = 0;
 };

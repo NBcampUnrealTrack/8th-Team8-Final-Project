@@ -1,23 +1,28 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "BuildingAppearance.generated.h"
 
 USTRUCT(BlueprintType)
 struct FOnBuildingMeshData
 {
 	GENERATED_BODY()
-
+	
+	// mesh by construct ratio
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<float,TSoftObjectPtr<UStaticMesh>> Ratio_Mesh;  
-	// UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	// float ProgressRatio = 0.f;              
-	// UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	// TSoftObjectPtr<UStaticMesh> BuildingMesh;   // 0 : mesh1 , 50 : mesh2 , 100 : mesh3
+	// completed sound by tier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sound")
 	TObjectPtr<USoundBase> CompleteSoundBase;
+	// can spawn unit lists
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Units")
 	TArray<FName> SpawnableUnits;
+	// current tier cost
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
+	FResources ConstructCost;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
+	FResources NextTierUpgradeCost;
 };
 
 USTRUCT(BlueprintType)
@@ -25,11 +30,10 @@ struct FBuildingTierData
 {
 	GENERATED_BODY()
 	
+	// 1tier 2tier 3tier : array
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mesh")
-	TArray<FOnBuildingMeshData> TierBuildingState; // tarray({0,mesh1}, {50,mesh2}, {100,mesh3})
-	// construct sound?
+	TArray<FOnBuildingMeshData> TierBuildingState;
 
-	
 };
 
 USTRUCT(BlueprintType)

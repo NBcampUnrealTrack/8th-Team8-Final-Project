@@ -12,6 +12,7 @@ class STRIKEFORGE_API USFSelectable : public UInterface
 };
 
 class STRIKEFORGE_API ISFSelectable
+
 {
     GENERATED_BODY()
 

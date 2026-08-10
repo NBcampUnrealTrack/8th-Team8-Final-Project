@@ -6,7 +6,10 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "SFInGameHUDWidget.h"
+#include "ActorComponent/Controller/BuildingPlacement.h"
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/SFInGameHUDWidget.h"
 #include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
@@ -16,6 +19,46 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     bEnableMouseOverEvents = true;
 
     DefaultMouseCursor = EMouseCursor::Default;
+    
+    PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
+}
+
+void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
+{
+    // 자원이 충분한가 아닌가 검사 로직. 가능구역2
+    
+    USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
+    if (!IsValid(DataManager)) return;
+    
+    const FBuildingAppearance* Row = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, InRowName);
+    if (!Row)
+    {
+        UE_LOG(LogTemp, Error, TEXT("No build table for %s"), *InRowName.ToString());
+        return;
+    }
+    
+    FTransform Trans;
+    Trans.SetLocation(GetPawn()->GetActorLocation());
+    FRotator Rot(0.f, 90.f, 0.f);
+    FVector Scaled(1.f, 1.f, 1.f);
+    Trans.SetRotation(Rot.Quaternion());
+    Trans.SetScale3D(Scaled);
+    
+    ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
+        Row->BuildingClass,
+        Trans,
+        nullptr,
+        nullptr,
+        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
+        );
+    DeferredActor->SetRowName(InRowName);
+    // deferred spawn finished
+    DeferredActor->FinishSpawning(Trans);
+    
+    // gird init. preivew mode init.
+    DeferredActor->SetBuildingState(EBuildingState::Preview);
+    PlacementComponent->StartPlacementMode(DeferredActor);
+    SpawnedBuildingRef = DeferredActor;
 }
 
 void ASFInGamePlayerController::BeginPlay()
@@ -255,7 +298,16 @@ HandleMoveInput()
 void ASFInGamePlayerController::
 HandleConfirmBuildInput()
 {
+    // building confirm logic
     OnConfirmBuildInput.Broadcast();
+    UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
+    
+    if (IsValid(SpawnedBuildingRef))
+    {
+        PlacementComponent->ConfirmPlacementMode();
+        SpawnedBuildingRef->SetBuildingState(EBuildingState::UnderConstruction);
+        SpawnedBuildingRef = nullptr;
+    }
 }
 
 void ASFInGamePlayerController::

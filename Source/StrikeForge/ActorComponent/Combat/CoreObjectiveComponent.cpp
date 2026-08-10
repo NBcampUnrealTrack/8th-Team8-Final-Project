@@ -39,11 +39,9 @@ void UCoreObjectiveComponent::HandleOwnerDeath()
 		return;
 	}
 
-	// 플레이어 핵심이 무너지면 패배, 그 외 진영이 무너지면 승리.
-	// 스테이지가 이미 끝났다면 GameMode 가 거절하므로 중복 호출은 안전하다.
-	const bool bResult = (LoserTeam == PlayerTeamIndex)
-		? GameMode->ProcessDefeat()
-		: GameMode->ProcessVictory();
+	// 파괴된 코어(메인) 건물의 팀 번호를 GameMode에 전달
+	// 실제 승리, 패배 판정은 GameMode가 담당
+	const bool bResult = GameMode->ProcessCoreDestroyed(LoserTeam);
 
 	if (!bResult)
 	{

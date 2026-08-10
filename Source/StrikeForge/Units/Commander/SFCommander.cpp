@@ -12,23 +12,29 @@
 // Sets default values
 ASFCommander::ASFCommander()
 	: CommandAction(ECommandAction::NONE)
+	, bMyCommander(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
 	GetCharacterMovement()->RotationRate.Yaw = 720.f;
+	AIControllerClass = AUnitAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 }
 
 // Called when the game starts or when spawned
 void ASFCommander::BeginPlay()
 {
 	Super::BeginPlay();
-	GetWorldTimerManager().SetTimer(
-		LoadPCTimer,
-		this,
-		&ASFCommander::LoadPlayerController,
-		1.f,
-		true,
-		0.f);
+	if (bMyCommander)
+	{
+		GetWorldTimerManager().SetTimer(
+			LoadPCTimer,
+			this,
+			&ASFCommander::LoadPlayerController,
+			1.f,
+			true,
+			0.f);
+	}
 }
 
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)

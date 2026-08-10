@@ -56,6 +56,9 @@ protected:
 	void StopMoving();
 
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SpawnProperty")
+	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
+
 	const float MaxDistToBuild = 50.f;	// 건설이 가능한 최대거리
 
 	// 만약 중간에 액션을 중단해야하는 일이 있다면 해당 변수를 초기화.

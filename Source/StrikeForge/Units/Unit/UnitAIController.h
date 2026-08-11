@@ -4,6 +4,8 @@
 #include "AIController.h"
 #include "UnitAIController.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnCompleteMoving, bool, IsSuccessed);
+
 /**
  * 전투 유닛 전용 AIController.
  *
@@ -61,10 +63,14 @@ public:
 
 #pragma endregion
 
+	FSFOnCompleteMoving OnCompleteMoving;	// 이동 완료 델리게이트
+
 protected:
 	virtual void BeginPlay() override;
 
+	virtual void OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result) override;
 private:
+	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> LastGoalActor;
 	FVector LastGoalLocation = FVector::ZeroVector;
 	uint8 bHasLocationGoal : 1;

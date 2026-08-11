@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/Units/Damagable.h"
-#include "Interfaces/Units/Selectable.h"
 #include "InGame/SFSelectINfo/SFSelectable.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Datas/Unit/UnitStatData.h"
@@ -33,16 +32,17 @@ enum class EUnitCombatState : uint8
  * 체력은 UHealthComponent 가 전담한다.
  */
 UCLASS()
-class STRIKEFORGE_API AUnitBase : public ACharacter, public ISelectable, public ISFSelectable
+class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable
 {
 	GENERATED_BODY()
 
 public:
 	AUnitBase();
-
+	
+	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
+	
 	// ── ISelectable ─────────────────────────────────────
-	virtual void OnSelected_Implementation() override {}
-	virtual void OnDeSelected_Implementation() override {}
+
 
 	// ── ISFSelectable ───────────────────────────────────
 	/**
@@ -56,7 +56,7 @@ public:
 
 	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
-	UHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }
 
 	/** 소속 팀. 전투 대상 컴포넌트가 단일 출처다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -134,6 +134,12 @@ protected:
 	void FaceTarget(float DeltaSeconds);
 
 	AUnitAIController* GetUnitAI() const;
+
+	/**
+	 * 디버그 표시 여부.
+	 * 유닛별 bDrawCombatDebug 또는 콘솔 sf.DrawCombatDebug 중 하나라도 켜지면 true.
+	 */
+	bool ShouldDrawDebug() const;
 
 #pragma region Components
 

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "SFGameState.generated.h"
 
 // 상태 정의 = 진행 상황
@@ -115,6 +116,25 @@ public:
     UFUNCTION(BlueprintPure, Category = "SF|Population")
     int32 GetMaximumPopulation() const;
 
+    // 자원 값 변경
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetMineral(int32 NewMineral);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetEther(int32 NewEther);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetMineralIncomeRate(float NewMineralIncomeRate);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void SetEtherIncomeRate(float NewEtherIncomeRate);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Population")
+    void SetPopulation(
+        int32 NewCurrentPopulation,
+        int32 NewMaximumPopulation
+    );
+
     // 여기까지
 
 public:
@@ -151,7 +171,7 @@ private:
     // InGameUI 용 초기값
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
     int32 Mineral = 0;
-
+    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
     int32 Ether = 0;
 

@@ -3,6 +3,7 @@
 #include "ActorComponent/HP/HealthComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Interfaces/Units/Damagable.h"
+#include "Logging/SFLog.h"
 
 UCombatTargetComponent::UCombatTargetComponent()
 	: bRegistered(false)
@@ -23,8 +24,7 @@ void UCombatTargetComponent::BeginPlay()
 	{
 		// 체력이 없으면 공격받을 수 없으므로 등록하지 않는다.
 		// 광물 노드처럼 파괴되지 않는 액터가 여기 해당한다.
-		UE_LOG(LogTemp, Warning,
-			TEXT("[CombatTarget] %s : HealthComponent 가 없어 전투 대상으로 등록하지 않습니다."),
+		SF_LOG(Warning, "[CombatTarget] %s : HealthComponent 가 없어 전투 대상으로 등록하지 않습니다.",
 			*Owner->GetName());
 		return;
 	}
@@ -34,7 +34,7 @@ void UCombatTargetComponent::BeginPlay()
 		HealthComponent->InitHealth(OverrideMaxHealth);
 	}
 
-	HealthComponent->OnHealthStateChanged.AddDynamic(this, &UCombatTargetComponent::HandleOwnerDeath);
+	HealthComponent->OnHealthIsZero.AddDynamic(this, &UCombatTargetComponent::HandleOwnerDeath);
 
 	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
 	{

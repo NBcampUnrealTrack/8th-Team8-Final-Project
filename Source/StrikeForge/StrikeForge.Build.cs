@@ -17,21 +17,23 @@ public class StrikeForge : ModuleRules
 			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore",
-			
-			
-		});
+			"UMG", "Slate", "SlateCore", "CommonUI",
+
+
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+        PublicDefinitions.Add("ECC_LANDSCAPE=ECC_GameTraceChannel1");
 
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+        // Uncomment if you are using Slate UI
+        // PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
-	}
+        // Uncomment if you are using online features
+        // PrivateDependencyModuleNames.Add("OnlineSubsystem");
+
+        // To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+    }
 }

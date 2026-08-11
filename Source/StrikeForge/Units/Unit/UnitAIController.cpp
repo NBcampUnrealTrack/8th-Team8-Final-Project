@@ -2,6 +2,8 @@
 
 #include "Navigation/CrowdFollowingComponent.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
+#include "Logging/SFLog.h"
 
 AUnitAIController::AUnitAIController(const FObjectInitializer& ObjectInitializer)
 	// 기본 PathFollowingComponent 를 CrowdFollowing 으로 교체한다.
@@ -36,6 +38,14 @@ void AUnitAIController::BeginPlay()
 	{
 		Crowd->SetCrowdSimulationState(ECrowdSimulationState::Disabled);
 	}
+}
+
+void AUnitAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
+{
+	Super::OnMoveCompleted(RequestID, Result);
+
+	// NavMesh 밖이거나 경로가 막혀서 이동이 실패/중단되었는지를 인수로 전달.
+	OnCompleteMoving.Broadcast(!Result.IsFailure());
 }
 
 bool AUnitAIController::IsMoving() const
@@ -94,7 +104,7 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 		const UPathFollowingComponent* PFC = GetPathFollowingComponent();
 		const bool bPartial = PFC && PFC->GetPath().IsValid() && PFC->GetPath()->IsPartial();
 
-		UE_LOG(LogTemp, Warning, TEXT("[%s] MoveTo(%s) -> %s / PathValid %d / Partial %d"),
+		SF_LOG(Warning, "[%s] MoveTo(%s) -> %s / PathValid %d / Partial %d",
 			GetPawn() ? *GetPawn()->GetName() : TEXT("NoPawn"),
 			*InGoal->GetName(),
 			Result.Code == EPathFollowingRequestResult::RequestSuccessful ? TEXT("Success")
@@ -122,7 +132,20 @@ void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float I
 	bHasLocationGoal = true;
 	LastRequestTime = Now;
 
-	FAIMoveRequest Request(InLocation);
+	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!NavSys || !NavSys->GetDefaultNavDataInstance()) return;
+	
+	FNavLocation OutLoc;
+	FVector QueryExt(1000.f, 1000.f, 1000.f);
+	FAIMoveRequest Request;
+	if (NavSys->ProjectPointToNavigation(InLocation, OutLoc, QueryExt))
+	{
+		Request.SetGoalLocation(OutLoc);
+	}
+	else
+	{
+		Request.SetGoalLocation(InLocation);
+	}
 	Request.SetAcceptanceRadius(InAcceptanceRadius);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(true);

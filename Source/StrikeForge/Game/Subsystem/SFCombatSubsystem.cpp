@@ -2,6 +2,7 @@
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "GameFramework/Actor.h"
+#include "Logging/SFLog.h"
 
 USFCombatSubsystem* USFCombatSubsystem::Get(const UObject* WorldContext)
 {
@@ -31,8 +32,8 @@ void USFCombatSubsystem::RegisterTarget(UCombatTargetComponent* InTarget)
 {
 	if (!IsValid(InTarget) || !IsValid(InTarget->GetOwner())) return;
 
-	TArray<TWeakObjectPtr<UCombatTargetComponent>>& Bucket = TeamBuckets.FindOrAdd(InTarget->GetTeamIndex());
-	Bucket.AddUnique(InTarget);
+	FSFTargetBucket& Bucket = TeamBuckets.FindOrAdd(InTarget->GetTeamIndex());
+	Bucket.Targets.AddUnique(InTarget);
 }
 
 void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
@@ -41,9 +42,9 @@ void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
 
 	// 팀이 바뀐 뒤 해제될 가능성까지 고려해 전 버킷을 훑는다.
 	// 무효화된 약참조도 이 기회에 같이 정리한다.
-	for (TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
+	for (TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
 	{
-		Pair.Value.RemoveAllSwap([InTarget](const TWeakObjectPtr<UCombatTargetComponent>& InWeak)
+		Pair.Value.Targets.RemoveAllSwap([InTarget](const TWeakObjectPtr<UCombatTargetComponent>& InWeak)
 		{
 			return !InWeak.IsValid() || InWeak.Get() == InTarget;
 		});
@@ -70,11 +71,11 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 	const bool bLimitRange = InMaxRange > 0.f;
 	const float MaxRangeSq = InMaxRange * InMaxRange;
 
-	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
+	for (const TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
 	{
 		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
 
-		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value.Targets)
 		{
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
@@ -102,11 +103,11 @@ AActor* USFCombatSubsystem::FindNearestHostileAny(const FVector& InOrigin, int32
 	AActor* Best = nullptr;
 	float BestDistSq = TNumericLimits<float>::Max();
 
-	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
+	for (const TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
 	{
 		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
 
-		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value.Targets)
 		{
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
@@ -132,11 +133,11 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 
 	const float RadiusSq = InRadius * InRadius;
 
-	for (const TPair<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>>& Pair : TeamBuckets)
+	for (const TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
 	{
 		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
 
-		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value)
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value.Targets)
 		{
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
@@ -151,11 +152,11 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 
 int32 USFCombatSubsystem::GetTargetCount(int32 InTeamIndex) const
 {
-	const TArray<TWeakObjectPtr<UCombatTargetComponent>>* Bucket = TeamBuckets.Find(InTeamIndex);
+	const FSFTargetBucket* Bucket = TeamBuckets.Find(InTeamIndex);
 	if (!Bucket) return 0;
 
 	int32 Count = 0;
-	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : *Bucket)
+	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket->Targets)
 	{
 		AActor* Actor = nullptr;
 		if (ResolveTarget(Weak, Actor))
@@ -165,3 +166,78 @@ int32 USFCombatSubsystem::GetTargetCount(int32 InTeamIndex) const
 	}
 	return Count;
 }
+
+// ─────────────────────────────────────────────────────────
+// 디버그 — 등록 현황 덤프
+//
+// 통합 레벨에서 "아군끼리 싸운다" 가 가장 흔한 사고다.
+// 어느 액터가 어느 팀으로 등록됐는지 즉시 확인할 수 있어야 한다.
+//
+//   콘솔:  sf.DumpCombatTargets
+// ─────────────────────────────────────────────────────────
+void USFCombatSubsystem::DumpTargets() const
+{
+	SF_LOG(Warning, "===== 전투 대상 등록 현황 =====");
+
+	if (TeamBuckets.Num() == 0)
+	{
+		SF_LOG(Warning, "  등록된 대상이 없습니다.");
+		return;
+	}
+
+	// 팀 번호 순으로 보기 좋게 정렬한다
+	TArray<int32> TeamKeys;
+	TeamBuckets.GetKeys(TeamKeys);
+	TeamKeys.Sort();
+
+	for (const int32 TeamIndex : TeamKeys)
+	{
+		const FSFTargetBucket& Bucket = TeamBuckets[TeamIndex];
+
+		int32 AliveCount = 0;
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket.Targets)
+		{
+			AActor* Dummy = nullptr;
+			if (ResolveTarget(Weak, Dummy)) ++AliveCount;
+		}
+
+		SF_LOG(Warning, "[Team %d] 생존 %d / 등록 %d", TeamIndex, AliveCount, Bucket.Targets.Num());
+
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket.Targets)
+		{
+			const UCombatTargetComponent* Comp = Weak.Get();
+			if (!IsValid(Comp))
+			{
+				SF_LOG(Warning, "    (무효화된 참조)");
+				continue;
+			}
+
+			const AActor* Owner = Comp->GetOwner();
+
+			SF_LOG(Warning, "    %-28s | %-18s | %s",
+				Owner ? *Owner->GetName() : TEXT("NoOwner"),
+				*UEnum::GetDisplayValueAsText(Comp->GetTargetType()).ToString(),
+				Comp->IsAlive() ? TEXT("생존") : TEXT("사망"));
+		}
+	}
+}
+
+#if !UE_BUILD_SHIPPING
+static void SFDumpCombatTargets(const TArray<FString>& Args, UWorld* World)
+{
+	const USFCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<USFCombatSubsystem>() : nullptr;
+
+	if (!IsValid(Combat))
+	{
+		SF_LOG(Error, "USFCombatSubsystem 을 찾지 못했습니다. 플레이 중인지 확인하세요.");
+		return;
+	}
+
+	Combat->DumpTargets();
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSFDumpCombatTargets(
+	TEXT("sf.DumpCombatTargets"),
+	TEXT("팀별 전투 대상 등록 현황을 출력한다."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SFDumpCombatTargets));
+#endif

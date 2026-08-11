@@ -14,6 +14,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return UIDataTable;
 		}
+    case EDataTableType::BuildCatalogUI:
+        {
+            return BuildCatalogUIDataTable;
+        }
 	case EDataTableType::Building:
 		{
 			return BuildingDataTable;
@@ -25,6 +29,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 	case EDataTableType::Stage: // 추가부분
 		{
 			return StageDataTable;
+		}
+	case EDataTableType::Product:
+		{
+			return ProductDataTable;
 		}
 		default:
 		{

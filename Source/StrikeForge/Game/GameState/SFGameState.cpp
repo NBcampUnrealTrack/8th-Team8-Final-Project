@@ -139,3 +139,71 @@ int32 ASFGameState::GetMaximumPopulation() const
 {
 	return MaximumPopulation;
 }
+
+//기존 Delegate 시그니처를 그대로 활용
+void ASFGameState::SetMineral(int32 NewMineral)
+{
+	Mineral = FMath::Max(0, NewMineral);
+
+	OnMineralChanged.Broadcast(
+		Mineral,
+		MineralIncomeRate
+	);
+}
+
+void ASFGameState::SetEther(int32 NewEther)
+{
+	Ether = FMath::Max(0, NewEther);
+
+	OnEtherChanged.Broadcast(
+		Ether,
+		EtherIncomeRate
+	);
+}
+
+void ASFGameState::SetMineralIncomeRate(
+	float NewMineralIncomeRate
+)
+{
+	MineralIncomeRate =
+		FMath::Max(0.0f, NewMineralIncomeRate);
+
+	OnMineralChanged.Broadcast(
+		Mineral,
+		MineralIncomeRate
+	);
+}
+
+void ASFGameState::SetEtherIncomeRate(
+	float NewEtherIncomeRate
+)
+{
+	EtherIncomeRate =
+		FMath::Max(0.0f, NewEtherIncomeRate);
+
+	OnEtherChanged.Broadcast(
+		Ether,
+		EtherIncomeRate
+	);
+}
+
+void ASFGameState::SetPopulation(
+	int32 NewCurrentPopulation,
+	int32 NewMaximumPopulation
+)
+{
+	MaximumPopulation =
+		FMath::Max(0, NewMaximumPopulation);
+
+	CurrentPopulation =
+		FMath::Clamp(
+			NewCurrentPopulation,
+			0,
+			MaximumPopulation
+		);
+
+	OnPopulationChanged.Broadcast(
+		CurrentPopulation,
+		MaximumPopulation
+	);
+}

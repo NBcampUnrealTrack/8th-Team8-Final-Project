@@ -8,6 +8,21 @@
 class UCombatTargetComponent;
 
 /**
+ * 한 팀의 전투 대상 목록.
+ *
+ * TMap<int32, TArray<...>> 형태로는 UPROPERTY 를 붙일 수 없다(중첩 컨테이너 미지원).
+ * 구조체로 한 겹 풀어 리플렉션에 노출한다.
+ */
+USTRUCT()
+struct FSFTargetBucket
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TArray<TWeakObjectPtr<UCombatTargetComponent>> Targets;
+};
+
+/**
  * 전투 대상 레지스트리.
  *
  * 등록 단위는 액터가 아니라 UCombatTargetComponent 다.
@@ -59,9 +74,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	static bool IsHostileTeam(int32 InTeamA, int32 InTeamB);
 
+	/** 팀별 등록 현황을 로그로 출력한다. 콘솔 명령 sf.DumpCombatTargets 에서 호출 */
+	void DumpTargets() const;
+
 private:
 	/** 팀 인덱스별 버킷. 약참조라 파괴된 컴포넌트는 자동으로 무효화된다 */
-	TMap<int32, TArray<TWeakObjectPtr<UCombatTargetComponent>>> TeamBuckets;
+	UPROPERTY(Transient)
+	TMap<int32, FSFTargetBucket> TeamBuckets;
 
 	/** 유효 + 생존 + 소유 액터 유효 여부를 한 번에 판정 */
 	static bool ResolveTarget(const TWeakObjectPtr<UCombatTargetComponent>& InWeak, AActor*& OutActor);

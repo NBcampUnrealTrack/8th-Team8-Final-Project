@@ -61,4 +61,15 @@ struct FUnitStatData : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat|Move")
 	float MoveSpeed = 400.f;
+
+	/**
+	 * 이 행으로 생성할 유닛 블루프린트.
+	 *
+	 * 생산 시간·비용은 FUnitProductData(EDataTableType::Product)가 담당하므로
+	 * 여기에는 두지 않는다. 이 테이블은 "무엇을 어떤 능력치로 만들 것인가"만 다룬다.
+	 *
+	 * 비워두면 호출부가 넘긴 기본 클래스를 사용한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawn")
+	TSoftClassPtr<class AUnitBase> UnitClass;
 };

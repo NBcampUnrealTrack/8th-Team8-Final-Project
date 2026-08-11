@@ -3,11 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Buildings/SFRootBase.h"
 #include "GameFramework/Actor.h"
 #include "ResourceBase.generated.h"
 
 UCLASS()
-class STRIKEFORGE_API AResourceBase : public AActor
+class STRIKEFORGE_API AResourceBase 
+	: public ASFRootBase
 {
 	GENERATED_BODY()
 
@@ -15,11 +17,7 @@ public:
 	// Sets default values for this actor's properties
 	AResourceBase();
 
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-public:
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
+	
+private:
+	
 };

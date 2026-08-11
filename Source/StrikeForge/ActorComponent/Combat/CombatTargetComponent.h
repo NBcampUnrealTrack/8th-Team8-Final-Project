@@ -35,20 +35,20 @@ public:
 
 	// ── 조회 ────────────────────────────────────────────
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
-	int32 GetTeamIndex() const { return TeamIndex; }
+	FORCEINLINE int32 GetTeamIndex() const { return TeamIndex; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
-	ETargetType GetTargetType() const { return TargetType; }
+	FORCEINLINE ETargetType GetTargetType() const { return TargetType; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
-	float GetArmor() const { return Armor; }
+	FORCEINLINE float GetArmor() const { return Armor; }
 
 	/** 아직 때릴 수 있는 상태인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool IsAlive() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
-	UHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }
 
 	// ── 설정 ────────────────────────────────────────────
 	/** 스폰 시 팀을 지정한다. BeginPlay 전에 호출해야 올바른 팀으로 등록된다 */
@@ -56,7 +56,7 @@ public:
 	void SetTeamIndex(int32 InTeamIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
-	void SetTargetType(ETargetType InTargetType) { TargetType = InTargetType; }
+	FORCEINLINE void SetTargetType(ETargetType InTargetType) { TargetType = InTargetType; }
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void SetArmor(float InArmor) { Armor = FMath::Clamp(InArmor, 0.f, 0.9f); }

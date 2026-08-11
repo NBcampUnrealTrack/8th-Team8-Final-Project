@@ -1,6 +1,6 @@
 #include "SFInGameHUDWidget.h"
 
-#include "SFInGamePlayerController.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
 
@@ -8,6 +8,10 @@
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
+
+#include "CommonActivatableWidget.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
+#include "Components/Button.h"
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -43,6 +47,11 @@ void USFInGameHUDWidget::NativeConstruct()
 
 void USFInGameHUDWidget::NativeDestruct()
 {
+    if (IsValid(ActiveBuildingModeWidget))
+    {
+        ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
+    }
+
     UnbindSelectedActorDestroyed();
 
     ASFInGamePlayerController* PlayerController =
@@ -262,4 +271,85 @@ void USFInGameHUDWidget::ClearSelection()
         "[SFInGameHUDWidget] "
         "Selection cleared."
     );
+}
+
+void USFInGameHUDWidget::OpenBuildingMode()
+{
+    if (
+        !IsValid(BuildingUIStack) ||
+        !IsValid(BuildingModeWidgetClass)
+        )
+    {
+        return;
+    }
+
+    if (
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated()
+        )
+    {
+        return;
+    }
+
+    ActiveBuildingModeWidget =
+        BuildingUIStack->AddWidget<UCommonActivatableWidget>(
+            BuildingModeWidgetClass
+        );
+
+    if (!IsValid(ActiveBuildingModeWidget))
+    {
+        return;
+    }
+
+    ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
+
+    ActiveBuildingModeWidget->OnDeactivated().AddUObject(
+        this,
+        &USFInGameHUDWidget::HandleBuildingModeDeactivated
+    );
+
+    if (IsValid(BuildModeOpenButton))
+    {
+        BuildModeOpenButton->SetVisibility(
+            ESlateVisibility::Collapsed
+        );
+    }
+}
+
+void USFInGameHUDWidget::CloseBuildingMode()
+{
+    if (!IsValid(ActiveBuildingModeWidget))
+    {
+        return;
+    }
+
+    ActiveBuildingModeWidget->DeactivateWidget();
+}
+
+void USFInGameHUDWidget::HandleBuildingModeDeactivated()
+{
+    if (IsValid(ActiveBuildingModeWidget))
+    {
+        ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
+    }
+
+    ActiveBuildingModeWidget = nullptr;
+
+    if (IsValid(BuildModeOpenButton))
+    {
+        BuildModeOpenButton->SetVisibility(
+            ESlateVisibility::Visible
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Building mode deactivated."
+    );
+    
+    ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!IsValid(SFPC)) return;
+    
+    SFPC->SetSFControlMode(ESFControlMode::Gameplay);
 }

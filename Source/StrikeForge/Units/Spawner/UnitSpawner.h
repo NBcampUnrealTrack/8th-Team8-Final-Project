@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+//#include "Interfaces/Units/Targetable.h"
 #include "UnitSpawner.generated.h"
 
 class AUnitBase;
@@ -63,7 +64,7 @@ private:
 	/** 이 스포너가 만드는 유닛의 팀 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawn", meta = (AllowPrivateAccess = true))
 	int32 TeamIndex = 1;
-
+	//int32 TeamIndex = Targetable::EnemyTeam;
 #pragma endregion
 
 #pragma region Timing
@@ -112,5 +113,6 @@ private:
 	FTimerHandle SpawnTimerHandle;
 
 	/** 약참조라 유닛이 파괴되면 자동으로 무효가 된다 */
+	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AUnitBase>> SpawnedUnits;
 };

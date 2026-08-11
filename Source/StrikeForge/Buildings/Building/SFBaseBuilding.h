@@ -97,6 +97,8 @@ public:
 	FORCEINLINE FIntPoint GetGridSize() const { return CachedGridSize; }
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FBoxSphereBounds GetBuildBounds() const;
 	//================================================================================
 	// UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	// int32 GetTeamIndex() const;

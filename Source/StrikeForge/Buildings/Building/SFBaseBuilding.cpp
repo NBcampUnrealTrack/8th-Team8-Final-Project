@@ -405,6 +405,12 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 // 	return CombatTargetComponent->GetTeamIndex();
 // }
 
+FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
+{
+	const UStaticMesh* Mesh = StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr;
+	return Mesh ? Mesh->GetBounds() : FBoxSphereBounds(ForceInit);
+}
+
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();

@@ -2,6 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
+
+// 추가부분 26.08.10
+#include "Datas/Stage/SFStageData.h"
+
 #include "SFGameInstance.generated.h"
 
 // 수정부분
@@ -41,6 +45,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MoveToStage();
+
+	// 추가 부분 26.08.10
+	// 스테이지 진행 상태 확인
+	UFUNCTION(BlueprintPure, Category = "SF|Stage")
+	ESFStageProgressState GetStageProgressState(FName StageRowName) const;
+
+	// 스테이지 클리어 기록
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
+	bool MarkStageCleared(FName StageRowName);
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Building", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> BuildingDataTable;
@@ -69,4 +82,9 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	FName SelectedStageRowName = NAME_None;
+
+	// 추가 부분 26.08.10
+	// 가장 높은 순서의 클리어 스테이지
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	int32 HighestClearedStageOrder = 0;
 };

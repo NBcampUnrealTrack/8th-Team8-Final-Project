@@ -369,7 +369,7 @@ HandleMoveInput()
     if (!IsValid(Target)) return;
     if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
 
-    IMovable::Execute_MoveTo(Target, Hit.Location);
+    IMovable::Execute_MoveToLocation(Target, Hit.Location);
 }
 
 void ASFInGamePlayerController::

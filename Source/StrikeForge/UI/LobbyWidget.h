@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Input/Reply.h"
@@ -9,6 +9,9 @@ class UWidget;
 class UBackgroundBlur;
 class UComboBoxString;
 class USlider;
+
+// 26.08.11 추가
+class UTexture2D;
 
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
@@ -41,6 +44,17 @@ protected:
 	void OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 
 	void OpenStageLevel(int32 StageIndex);
+
+	// 26.08.11 추가
+	// 로비의 모든 스테이지 버튼 상태 갱신
+	void RefreshStageButtons();
+
+	// 스테이지 하나의 진행 상태와 이미지 갱신
+	void RefreshStageButton(UButton* StageButton, FName StageRowName);
+
+	// Texture를 버튼 Style에 적용
+	void ApplyStageButtonTexture(UButton* StageButton, UTexture2D* StageTexture);
+
 	void SetSettingMenuVisible(bool bIsVisible);
 	void InitializeSettingOptions();
 

@@ -79,12 +79,30 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
-    if (IsValid(SpawnedBuildingRef))
+    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
+    if (IsValid(PendingConstructionBuilding))
     {
-        SpawnedBuildingRef->SetBuildingState(EBuildingState::UnderConstruction);
+        PendingConstructionBuilding->SetBuildingState(EBuildingState::UnderConstruction);
     }
-    
-    SpawnedBuildingRef = nullptr;
+
+    // 건물은 파괴하지 않는다. 건설이 진행되어야 하므로 참조만 놓는다.
+    PendingConstructionBuilding = nullptr;
+}
+
+void ASFInGamePlayerController::CancelPendingConstruction()
+{
+    if (!IsValid(PendingConstructionBuilding))
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingConstructionBuilding->GetName());
+
+    // TODO: 자원 환불 (자원 차감을 넣은 뒤)
+    // TODO: 그리드 점유 해제 (TryRegistBuildingGrid 를 연결한 뒤)
+
+    PendingConstructionBuilding->Destroy();
+    PendingConstructionBuilding = nullptr;
 }
 
 void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
@@ -107,6 +125,7 @@ void ASFInGamePlayerController::BeginPlay()
         ESFControlMode::Gameplay
     );
     CreateInGameHUD();
+
 }
 
 void ASFInGamePlayerController::SetupInputComponent()
@@ -166,6 +185,7 @@ void ASFInGamePlayerController::SetupInputComponent()
             HandleCancelBuildInput
         );
     }
+    
 }
 
 void ASFInGamePlayerController::SetSFControlMode(
@@ -317,36 +337,22 @@ RegisterBaseMappingContext()
 void ASFInGamePlayerController::
 HandleSelectInput()
 {
+    // ★CHANGED: 선택만 담당한다. 이동 명령은 HandleMoveInput 으로 옮겼다.
     FHitResult Hit;
     const ETraceTypeQuery TraceType = UEngineTypes::ConvertToTraceType(ECC_Visibility);
-    bool bHit = GetHitResultUnderCursorByChannel(TraceType, false, Hit);
-    
-    if (IsValid(Hit.GetActor()) &&
-    Hit.GetActor()->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
-    {
-        SetSelectedActor(Hit.GetActor());
-    }
-    
-    if (SelectedActor.Get())
-    {
-        FHitResult Hit2;
-        const ETraceTypeQuery TraceType2 = UEngineTypes::ConvertToTraceType(ECC_LANDSCAPE);
 
-        if (GetHitResultUnderCursorByChannel(TraceType2, false, Hit2))
+    AActor* NewSelected = nullptr;
+    if (GetHitResultUnderCursorByChannel(TraceType, false, Hit))
+    {
+        AActor* HitActor = Hit.GetActor();
+        if (IsValid(HitActor) &&
+            HitActor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
         {
-            if (IsValid(Hit2.GetActor()) &&
-    SelectedActor.Get()->GetClass()->ImplementsInterface(UMovable::StaticClass()))
-            {
-                IMovable::Execute_MoveTo(SelectedActor.Get(), Hit2.Location);
-            }
-            else
-            {
-                SelectedActor.Reset();
-            }
+            NewSelected = HitActor;
         }
     }
-    
-    //SetSelectedActor(NewSelected);  
+
+    SetSelectedActor(NewSelected);   // 빈 곳을 클릭하면 선택 해제된다
     OnSelectInput.Broadcast();
 }
 
@@ -356,24 +362,29 @@ HandleMoveInput()
     FHitResult Hit;
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
 
-    OnMoveInput.Broadcast(Hit.Location);      // 기존 구독자 호환용
+    OnMoveInput.Broadcast(Hit.Location);
 
+    // ★ADD: 선택된 액터에게 이동 명령 (HandleSelectInput 에서 옮겨옴)
+    AActor* Target = SelectedActor.Get();
+    if (!IsValid(Target)) return;
+    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
+
+    IMovable::Execute_MoveTo(Target, Hit.Location);
 }
 
 void ASFInGamePlayerController::
 HandleConfirmBuildInput()
 {
-    // building confirm logic
     OnConfirmBuildInput.Broadcast();
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
-    
+
     if (!IsValid(SpawnedBuildingRef))
     {
         return;
     }
-    
+
     PlacementComponent->ConfirmPlacementMode();
-    
+
     ASFCommander* Commander = MyCommander.Get();
     if (!IsValid(Commander))
     {
@@ -383,10 +394,20 @@ HandleConfirmBuildInput()
         return;
     }
 
+    // ★ADD: 이전 건설 명령이 남아 있으면 먼저 취소한다.
+    CancelPendingConstruction();
+
+    // ★ADD: 고스트 → 대기 슬롯으로 소유권 이전.
+    //        SpawnedBuildingRef 를 비워야 다음 건물을 고를 수 있고,
+    //        빌드 패널을 닫아도 ClearSpawnedBuildingRef 에 파괴되지 않는다.
+    PendingConstructionBuilding = SpawnedBuildingRef;
+    SpawnedBuildingRef = nullptr;
+
+    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     Commander->MoveToBuild(
-        SpawnedBuildingRef->GetActorLocation(),
-        SpawnedBuildingRef->GetBuildBounds(),
-        SpawnedBuildingRef->GetActorRotation().Yaw);
+        PendingConstructionBuilding->GetActorLocation(),
+        PendingConstructionBuilding->GetBuildBounds(),
+        PendingConstructionBuilding->GetActorRotation().Yaw);
 
     SetSFControlMode(ESFControlMode::Gameplay);
 }
@@ -395,6 +416,13 @@ void ASFInGamePlayerController::
 HandleCancelBuildInput()
 {
     OnCancelBuildInput.Broadcast();
+
+    // ★ADD: 배치 중이던 고스트 정리 + 컨트롤 모드 복귀
+    //        IA_SFCancelBuild 는 IMC_SFBuildPlacement 에만 있으므로
+    //        배치 중에만 발동한다. 확정된 건설은 건드리지 않는다.
+    PlacementComponent->ConfirmPlacementMode();
+    ClearSpawnedBuildingRef();
+    SetSFControlMode(ESFControlMode::Gameplay);
 }
 
 void ASFInGamePlayerController::

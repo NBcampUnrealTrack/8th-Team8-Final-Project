@@ -247,15 +247,44 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 
 void ASFCommander::OnFailMoving(bool IsSuccessed)
 {
-	if (CommandAction == ECommandAction::BUILD)
+	// ★CHANGED: 건설 명령이 아니면 관심 없음 (조기 반환으로 중첩 제거)
+	if (CommandAction != ECommandAction::BUILD)
 	{
-		PrintMessage(TEXT("Build Error!"));
-		StopMoving();
+		return;
 	}
+
+	// ★ADD: 성공/중단은 실패가 아니다.
+	//   - 도착 성공  → Tick 의 CheckCanBuild() 가 건설을 시작한다
+	//   - 중단(Aborted) → 새 이동 요청이 이어받은 것이므로 건드리면 안 된다
+	AUnitAIController* AI = GetController<AUnitAIController>();
+	const bool bStillMoving = IsValid(AI) && AI->IsMoving();
+
+	if (IsSuccessed || bStillMoving)
+	{
+		return;
+	}
+
+	// 여기부터가 진짜 도달 실패 (경로 막힘 / NavMesh 밖)
+	PrintMessage(TEXT("Build Error!"));
+
+	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+	{
+		SFPC->CancelPendingConstruction();
+	}
+
+	StopMoving();
 }
 
 void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 {
+	if (CommandAction == ECommandAction::BUILD && OutAction != ECommandAction::BUILD)
+	{
+		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+		{
+			SFPC->CancelPendingConstruction();
+		}
+	}
+	
 	CommandAction = OutAction;
 	if (IsValid(GetCharacterMovement()))
 	{

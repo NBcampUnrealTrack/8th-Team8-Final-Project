@@ -52,6 +52,7 @@ public:
     void SpawnBuildingFunction(const FName& InRowName);
     void ClearSpawnedBuildingRef();
     void NotifyBuilderArrived();
+    void CancelPendingConstruction();
     
     void SetSelectedActor(AActor* InActor);
     void RegisterCommander(ASFCommander* InCommander);
@@ -80,8 +81,7 @@ private:
 
     // 변수 영역
 protected:
-    UPROPERTY()
-    TWeakObjectPtr<ASFCommander> MyCommander;
+    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component")
     TObjectPtr<UBuildingPlacement> PlacementComponent; //======================================================================
     
@@ -186,9 +186,13 @@ private:
     bool bControlModeInitialized = false;
     
     UPROPERTY()
-    TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef; //=============================================================================================
-    UPROPERTY()
     TWeakObjectPtr<AActor> SelectedActor;
+    UPROPERTY()
+    TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef;           // 드래그 중인 고스트
+    UPROPERTY()
+    TObjectPtr<ASFBaseBuilding> PendingConstructionBuilding;  // 확정, 커맨더 대기 중
+    UPROPERTY()
+    TWeakObjectPtr<ASFCommander> MyCommander;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

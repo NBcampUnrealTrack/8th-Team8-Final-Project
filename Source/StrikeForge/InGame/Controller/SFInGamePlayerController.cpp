@@ -26,7 +26,11 @@ ASFInGamePlayerController::ASFInGamePlayerController()
 void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
 {
     // 자원이 충분한가 아닌가 검사 로직. 가능구역2
-    
+    if (IsValid(SpawnedBuildingRef))
+    {
+        UE_LOG(LogTemp, Error, TEXT("Exist Spawned Building Ref"));
+        return;
+    }
     USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
     if (!IsValid(DataManager)) return;
     
@@ -56,9 +60,18 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     DeferredActor->FinishSpawning(Trans);
     
     // gird init. preivew mode init.
-    DeferredActor->SetBuildingState(EBuildingState::Preview);
+    //DeferredActor->SetBuildingState(EBuildingState::Preview);
     PlacementComponent->StartPlacementMode(DeferredActor);
     SpawnedBuildingRef = DeferredActor;
+}
+
+void ASFInGamePlayerController::ClearSpawnedBuildingRef()
+{
+    if (IsValid(SpawnedBuildingRef))
+    {
+        SpawnedBuildingRef->Destroy();
+        SpawnedBuildingRef = nullptr;
+    }
 }
 
 void ASFInGamePlayerController::BeginPlay()

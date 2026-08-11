@@ -18,7 +18,7 @@ public:
 	ASFRootBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	// virtual FName OnSelected_Implementation() override { return UnitRowName; }
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	int32 GetTeamIndex() const { return TeamIndex; }
+	int32 GetTeamIndex() const;
 	
 	FORCEINLINE void SetRowName(const FName& InNewName) { RowName = InNewName; }
 protected:

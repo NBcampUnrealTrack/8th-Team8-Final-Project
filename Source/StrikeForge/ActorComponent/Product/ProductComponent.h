@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "ActorComponent/Progress/SFProgressTracker.h"
+#include "ActorComponent/Product/ProductInfo.h"
 #include "ProductComponent.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FProductLineChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductRatioChanged, float, OutProductRatio);
 
 // USTRUCT(BlueprintType)
 // struct FRecordTimeInfo
@@ -17,13 +19,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FProductLineChanged);
 // 	float Ratio;
 // };
 
-USTRUCT(BlueprintType)
-struct FProductInfo
-{
-	GENERATED_BODY()
-	FName RowName;
-	float Duration;
-};
+
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
@@ -42,17 +38,22 @@ public:
 	void CompletedProduct(const FName& InCompletedName);
 	void StopProductLine();
 	
-	/** 현재 생산 중인 항목의 진행률 0~1 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
-	float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
+	/** progress ratio 0~1 */
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	bool IsProducing() const { return !ProductLine.IsEmpty(); }
 
-	/** 외부 요인(버프 등)으로 생산 속도를 즉시 바꾼다 */
+	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
-
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
+	// current ratio
+	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
+	// current product line
+	FORCEINLINE const TArray<FProductInfo>& GetProductLine() const { return ProductLine; }
+	// current product value
+	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
 protected:
 	virtual void BeginPlay() override;
 
@@ -75,6 +76,9 @@ private:
 	int32 MaxLineCount = 5;
 	
 public:
+	// 생산열이 바뀔때마다 호출
 	UPROPERTY(BlueprintAssignable)
 	FProductLineChanged OnProductLineChanged;
+	UPROPERTY(BlueprintAssignable)
+	FProductRatioChanged OnProductRatioChanged;
 };

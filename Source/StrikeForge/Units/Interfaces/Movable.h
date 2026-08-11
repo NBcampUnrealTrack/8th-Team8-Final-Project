@@ -18,7 +18,7 @@ class STRIKEFORGE_API IMovable
 	GENERATED_BODY()
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	void MoveTo(const FVector& InDestination);
+	void MoveToLocation(const FVector& InDestination);
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 	void StopMove();

@@ -29,7 +29,7 @@ public:
 	ASFCommander();
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	virtual void MoveTo_Implementation(const FVector& InDestination) override;
+	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
 	
 	// 건설명령 함수. Center=건물좌표, Bounds=건물바운드, Rotation=회전값.
@@ -47,9 +47,6 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 
 	void LoadPlayerController();
-
-	UFUNCTION()
-	void MoveToDest(FVector Dest);
 
 	UFUNCTION()
 	void OnFailMoving(bool IsSuccessed);

@@ -29,7 +29,7 @@ FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 	return Info;
 }
 
-void ASFCommander::MoveTo_Implementation(const FVector& InDestination)
+void ASFCommander::MoveToLocation_Implementation(const FVector& InDestination)
 {
 	MoveToAction(InDestination, ECommandAction::NONE);
 }
@@ -97,22 +97,13 @@ void ASFCommander::LoadPlayerController()
 		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 		{
 			// add : cached commander
+			// IMovable called when clicked commander and clicked floor
 			SFPC->RegisterCommander(this);
-			//
-			SFPC->OnMoveInput.Clear();
-			SFPC->OnMoveInput.AddUniqueDynamic(
-				this,
-				&ASFCommander::MoveToDest
-			);
+
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");
 		}
 	}
-}
-
-void ASFCommander::MoveToDest(FVector Dest)
-{
-	MoveToAction(Dest, ECommandAction::NONE);
 }
 
 void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Rotation)

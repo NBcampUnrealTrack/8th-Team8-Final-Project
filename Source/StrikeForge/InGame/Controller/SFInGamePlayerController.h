@@ -46,10 +46,13 @@ public:
         Category = "SF|Input"
     )
     ESFControlMode GetSFControlMode() const;
-    
+    // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
     void SpawnBuildingFunction(const FName& InRowName);
     void ClearSpawnedBuildingRef();
+    void NotifyBuilderArrived();
+    
+    void SetSelectedActor(AActor* InActor);
 protected:
     virtual void BeginPlay() override;
 
@@ -180,7 +183,8 @@ private:
     
     UPROPERTY()
     TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef; //=============================================================================================
-    
+    UPROPERTY()
+    TWeakObjectPtr<AActor> SelectedActor;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

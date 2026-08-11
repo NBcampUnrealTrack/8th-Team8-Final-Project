@@ -21,6 +21,24 @@ ASFCommander::ASFCommander()
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 }
 
+FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info;
+	Info.SelectableType = ESFSelectableType::Commander;
+	Info.DataRowName    = "";      // 행 이름 필드 추가 필요
+	return Info;
+}
+
+void ASFCommander::MoveTo_Implementation(const FVector& InDestination)
+{
+	MoveToAction(InDestination, ECommandAction::NONE);
+}
+
+void ASFCommander::StopMove_Implementation()
+{
+	StopMoving();
+}
+
 // Called when the game starts or when spawned
 void ASFCommander::BeginPlay()
 {
@@ -303,6 +321,11 @@ void ASFCommander::BeginBuild()
 	}
 
 	// TODO : 빌딩관련 함수를 적어주세요.
+	if (ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetController()))
+	{
+		SFPC->NotifyBuilderArrived();
+	}
+	
 }
 
 void ASFCommander::PrintMessage(FString Msg)

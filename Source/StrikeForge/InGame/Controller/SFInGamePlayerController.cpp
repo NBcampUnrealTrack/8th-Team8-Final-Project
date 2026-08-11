@@ -6,11 +6,13 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "Logging/SFLog.h"
+#include "Units/Interfaces/Movable.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -74,6 +76,21 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
     }
 }
 
+void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
+{
+    if (IsValid(SpawnedBuildingRef))
+    {
+        SpawnedBuildingRef->SetBuildingState(EBuildingState::UnderConstruction);
+    }
+    
+    SpawnedBuildingRef = nullptr;
+}
+
+void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
+{
+    SelectedActor = InActor;
+}
+
 void ASFInGamePlayerController::BeginPlay()
 {
     Super::BeginPlay();
@@ -94,7 +111,7 @@ void ASFInGamePlayerController::SetupInputComponent()
         Cast<UEnhancedInputComponent>(
             InputComponent
         );
-
+    
     if (!IsValid(EnhancedInputComponent))
     {
         return;
@@ -294,18 +311,58 @@ RegisterBaseMappingContext()
 void ASFInGamePlayerController::
 HandleSelectInput()
 {
+    FHitResult Hit;
+    const ETraceTypeQuery TraceType = UEngineTypes::ConvertToTraceType(ECC_Visibility);
+    bool bHit = GetHitResultUnderCursorByChannel(TraceType, false, Hit);
+    
+    if (IsValid(Hit.GetActor()) &&
+    Hit.GetActor()->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+    {
+        SetSelectedActor(Hit.GetActor());
+    }
+    
+    if (SelectedActor.Get())
+    {
+        FHitResult Hit2;
+        const ETraceTypeQuery TraceType2 = UEngineTypes::ConvertToTraceType(ECC_LANDSCAPE);
+
+        if (GetHitResultUnderCursorByChannel(TraceType2, false, Hit2))
+        {
+            if (IsValid(Hit2.GetActor()) &&
+    SelectedActor.Get()->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+            {
+                IMovable::Execute_MoveTo(SelectedActor.Get(), Hit2.Location);
+            }
+            else
+            {
+                SelectedActor.Reset();
+            }
+        }
+    }
+    
+    //SetSelectedActor(NewSelected);  
     OnSelectInput.Broadcast();
 }
 
 void ASFInGamePlayerController::
 HandleMoveInput()
 {
-    FHitResult HitResult;
-    if (GetHitResultUnderCursor(ECC_LANDSCAPE, false, HitResult))
-    {
-        SF_LOG(Log, "InputAction: Move");
-        OnMoveInput.Broadcast(HitResult.Location);
-    }
+    FHitResult Hit;
+    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
+
+    OnMoveInput.Broadcast(Hit.Location);      // 기존 구독자 호환용
+    //
+    // AActor* Target = SelectedActor.Get();
+    // if (!IsValid(Target)) return;
+    // if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
+    //
+    // // 팀 검사 — 커맨더에 UCombatTargetComponent 를 붙인 뒤 활성화
+    // if (const UCombatTargetComponent* Combat = Target->FindComponentByClass<UCombatTargetComponent>())
+    // {
+    //     //if (Combat->GetTeamIndex() != PlayerTeamIndex) return;
+    // }
+    //
+    // IMovable::Execute_MoveTo(Target, Hit.Location);
 }
 
 void ASFInGamePlayerController::
@@ -318,8 +375,7 @@ HandleConfirmBuildInput()
     if (IsValid(SpawnedBuildingRef))
     {
         PlacementComponent->ConfirmPlacementMode();
-        SpawnedBuildingRef->SetBuildingState(EBuildingState::UnderConstruction);
-        SpawnedBuildingRef = nullptr;
+        
     }
 }
 

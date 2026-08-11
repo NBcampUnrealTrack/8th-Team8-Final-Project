@@ -59,7 +59,7 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     DeferredActor->FinishSpawning(Trans);
     
     // gird init. preivew mode init.
-    DeferredActor->SetBuildingState(EBuildingState::Preview);
+    //DeferredActor->SetBuildingState(EBuildingState::Preview);
     PlacementComponent->StartPlacementMode(DeferredActor);
     SpawnedBuildingRef = DeferredActor;
 }

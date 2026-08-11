@@ -103,3 +103,14 @@ void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 	// 	Name.UnitProductionDuration = Row->UnitProductionDuration;
 	// }
 }
+
+FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info =
+		Super::GetSelectableInfo_Implementation();
+
+	Info.SelectableType =
+		ESFSelectableType::ProductionBuilding;
+
+	return Info;
+}

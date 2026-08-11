@@ -34,6 +34,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return ProductDataTable;
 		}
+    case EDataTableType::ProductionUI:
+        {
+            return ProductionUIDataTable;
+        }
 		default:
 		{
 			return nullptr;

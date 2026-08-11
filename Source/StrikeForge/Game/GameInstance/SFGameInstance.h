@@ -15,7 +15,8 @@ enum class EDataTableType : uint8
 	Building,
 	Unit,
 	Stage,	// 추가부분
-	Product
+	Product,
+	ProductionUI
 };
 
 UCLASS()
@@ -55,6 +56,8 @@ private:
 	TObjectPtr<UDataTable> StageDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Building", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> ProductDataTable;
+	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "DataTable|UI",meta = (AllowPrivateAccess = true))
+	TObjectPtr<UDataTable> ProductionUIDataTable;
 	// 추가한 부분
 	bool TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel);
 

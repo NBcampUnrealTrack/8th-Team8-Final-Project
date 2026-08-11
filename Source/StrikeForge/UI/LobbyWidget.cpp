@@ -1,4 +1,4 @@
-#include "LobbyWidget.h"
+ï»¿#include "LobbyWidget.h"
 #include "Components/Button.h"
 #include "Components/Widget.h"
 #include "Components/BackgroundBlur.h"
@@ -6,6 +6,10 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/GameplayStatics.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
+#include "Datas/Stage/SFStageData.h"
+#include "Engine/Texture2D.h"
+#include "Game/Subsystem/SFDataTableManager.h"
+#include "Styling/SlateTypes.h"
 
 void ULobbyWidget::NativeConstruct()
 {
@@ -45,7 +49,7 @@ void ULobbyWidget::NativeConstruct()
 		Stage6->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
 
-	// ¿É¼Ç ÃÊ±âÈ­ (ÀÌº¥Æ® ¹ÙÀÎµù Àü¿¡ È£ÃâÇØ¾ß ºÒÇÊ¿äÇÑ OnSelectionChanged ¹æÁö)
+	// ì˜µì…˜ ì´ˆê¸°í™” (ì´ë²¤íŠ¸ ë°”ì¸ë”© ì „ì— í˜¸ì¶œí•´ì•¼ ë¶ˆí•„ìš”í•œ OnSelectionChanged ë°©ì§€)
 	InitializeSettingOptions();
 
 	if (IsValid(DisplayComboBox))
@@ -57,7 +61,7 @@ void ULobbyWidget::NativeConstruct()
 		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &ULobbyWidget::OnFullscreenModeChanged);
 	}
 
-	// ÃÊ±â »óÅÂ: ¼³Á¤Ã¢ ¼û±è
+	// ì´ˆê¸° ìƒíƒœ: ì„¤ì •ì°½ ìˆ¨ê¹€
 	SetSettingMenuVisible(false);
 }
 
@@ -108,6 +112,119 @@ void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 		GameInstance->MoveToStage();
 	}
 }
+
+// 26.08.11 ì¶”ê°€
+void ULobbyWidget::RefreshStageButtons()
+{
+	const TArray<UButton*> StageButtons =
+	{
+		Stage1,
+		Stage2,
+		Stage3,
+		Stage4,
+		Stage5,
+		Stage6
+	};
+
+	const int32 StageCount =
+		FMath::Min(StageButtons.Num(), StageRowNames.Num());
+
+	for (int32 StageIndex = 0;
+		StageIndex < StageCount;
+		++StageIndex)
+	{
+		RefreshStageButton(
+			StageButtons[StageIndex],
+			StageRowNames[StageIndex]
+		);
+	}
+}
+
+void ULobbyWidget::RefreshStageButton(UButton* StageButton, FName StageRowName)
+{
+	if (!IsValid(StageButton) || StageRowName.IsNone())
+	{
+		return;
+	}
+
+	USFGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<USFGameInstance>() : nullptr;
+
+	if (!IsValid(GameInstance))
+	{
+		return;
+	}
+
+	USFDataTableManager* DataTableManager = GameInstance->GetSubsystem<USFDataTableManager>();
+
+	if (!IsValid(DataTableManager))
+	{
+		return;
+	}
+
+	const FSFStageData* StageData = DataTableManager->GetDataRow<FSFStageData>(EDataTableType::Stage, StageRowName, TEXT("RefreshStageButton"));
+
+	if (!StageData)
+	{
+		return;
+	}
+
+	const ESFStageProgressState StageState = GameInstance->GetStageProgressState(StageRowName);
+	const TSoftObjectPtr<UTexture2D>* SelectedImage = nullptr;
+
+	switch (StageState)
+	{
+	case ESFStageProgressState::Locked:
+		SelectedImage = &StageData->LockedImage;
+		StageButton->SetIsEnabled(false);
+		break;
+
+	case ESFStageProgressState::Unlocked:
+		SelectedImage = &StageData->UnlockedImage;
+		StageButton->SetIsEnabled(true);
+		break;
+
+	case ESFStageProgressState::Cleared:
+		SelectedImage = &StageData->ClearedImage;
+		StageButton->SetIsEnabled(true);
+		break;
+
+	default:
+		StageButton->SetIsEnabled(false);
+		return;
+	}
+
+	if (!SelectedImage || SelectedImage->IsNull())
+	{
+		return;
+	}
+
+	UTexture2D* StageTexture = SelectedImage->LoadSynchronous();
+
+	if (!IsValid(StageTexture))
+	{
+		return;
+	}
+
+	ApplyStageButtonTexture(StageButton, StageTexture);
+}
+
+void ULobbyWidget::ApplyStageButtonTexture(UButton* StageButton, UTexture2D* StageTexture)
+{
+	if (!IsValid(StageButton) || !IsValid(StageTexture))
+	{
+		return;
+	}
+
+	FButtonStyle ButtonStyle = StageButton->GetStyle();
+
+	ButtonStyle.Normal.SetResourceObject(StageTexture);
+	ButtonStyle.Hovered.SetResourceObject(StageTexture);
+	ButtonStyle.Pressed.SetResourceObject(StageTexture);
+	ButtonStyle.Disabled.SetResourceObject(StageTexture);
+
+	StageButton->SetStyle(ButtonStyle);
+}
+// ì—¬ê¸°ê¹Œì§€
 
 void ULobbyWidget::SetSettingMenuVisible(bool bIsVisible)
 {

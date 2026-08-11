@@ -27,7 +27,7 @@ void UProgressComponent::StartProgress()
 		const float ActualDelta = Now - LastAdvanceTime;
 		LastAdvanceTime = Now;
 
-		Tracker.Advance(ActualDelta);
+		const bool bCompleted = Tracker.Advance(ActualDelta);
 		CurrentRatio = Tracker.GetRatio();
 		UE_LOG(LogTemp, Warning, TEXT("UProgressComponent::Ratio: %f"), CurrentRatio);
 		
@@ -42,7 +42,13 @@ void UProgressComponent::StartProgress()
 			CurrentRatioIndex = TempRatioIndex;
 			OnChangedRatio.Broadcast(CurrentRatioIndex);
 		}
-		if (QuarterofRatios.Num() > 0 && CurrentRatio >= QuarterofRatios[QuarterofRatios.Num() - 1])
+		// if (QuarterofRatios.Num() > 0 && CurrentRatio >= QuarterofRatios[QuarterofRatios.Num() - 1])
+		// {
+		// 	StopProgress();
+		// 	OnCompletedBuilding.Broadcast();
+		// }
+		
+		if (bCompleted)
 		{
 			StopProgress();
 			OnCompletedBuilding.Broadcast();

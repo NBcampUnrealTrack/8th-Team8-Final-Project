@@ -98,8 +98,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
 	//================================================================================
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
-	int32 GetTeamIndex() const;
+	// UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	// int32 GetTeamIndex() const;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -134,7 +134,7 @@ protected:
 	
 	// repec ============================================================================================
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
-	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::ViewPortPlacedMode;
+	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;
 
 	/** FBuildingAppearance::GridSize 를 InitInfo 시점에 캐싱해 둔 값. 배치 컴포넌트가 겹침 검사에 쓴다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))

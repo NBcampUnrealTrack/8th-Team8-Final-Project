@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
@@ -19,6 +19,7 @@ enum class ESFControlMode : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnMoveInput, FVector, Destination);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
 
@@ -64,6 +65,8 @@ private:
 
     void HandleSelectInput();
 
+    void HandleMoveInput();
+
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
@@ -102,6 +105,13 @@ protected:
         Category = "SF|Input|Action"
     )
     TObjectPtr<UInputAction> SelectAction;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> MoveAction;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -178,6 +188,12 @@ public:
         Category = "SF|Input"
     )
     FSFOnSelectInput OnSelectInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnMoveInput OnMoveInput;
 
     UPROPERTY(
         BlueprintAssignable,

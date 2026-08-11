@@ -2,6 +2,7 @@
 
 #include "Navigation/CrowdFollowingComponent.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 #include "Logging/SFLog.h"
 
 AUnitAIController::AUnitAIController(const FObjectInitializer& ObjectInitializer)
@@ -37,6 +38,14 @@ void AUnitAIController::BeginPlay()
 	{
 		Crowd->SetCrowdSimulationState(ECrowdSimulationState::Disabled);
 	}
+}
+
+void AUnitAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result)
+{
+	Super::OnMoveCompleted(RequestID, Result);
+
+	// NavMesh 밖이거나 경로가 막혀서 이동이 실패/중단되었는지를 인수로 전달.
+	OnCompleteMoving.Broadcast(!Result.IsFailure());
 }
 
 bool AUnitAIController::IsMoving() const
@@ -123,7 +132,20 @@ void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float I
 	bHasLocationGoal = true;
 	LastRequestTime = Now;
 
-	FAIMoveRequest Request(InLocation);
+	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!NavSys || !NavSys->GetDefaultNavDataInstance()) return;
+	
+	FNavLocation OutLoc;
+	FVector QueryExt(1000.f, 1000.f, 1000.f);
+	FAIMoveRequest Request;
+	if (NavSys->ProjectPointToNavigation(InLocation, OutLoc, QueryExt))
+	{
+		Request.SetGoalLocation(OutLoc);
+	}
+	else
+	{
+		Request.SetGoalLocation(InLocation);
+	}
 	Request.SetAcceptanceRadius(InAcceptanceRadius);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(true);

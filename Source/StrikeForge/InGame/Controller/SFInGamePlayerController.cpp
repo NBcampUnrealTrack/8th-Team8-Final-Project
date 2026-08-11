@@ -1,4 +1,4 @@
-#include "SFInGamePlayerController.h"
+﻿#include "SFInGamePlayerController.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystemInterface.h"
@@ -10,6 +10,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -107,6 +108,17 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::
             HandleSelectInput
+        );
+    }
+
+    if (IsValid(MoveAction))
+    {
+        EnhancedInputComponent->BindAction(
+            MoveAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::
+            HandleMoveInput
         );
     }
 
@@ -283,6 +295,17 @@ void ASFInGamePlayerController::
 HandleSelectInput()
 {
     OnSelectInput.Broadcast();
+}
+
+void ASFInGamePlayerController::
+HandleMoveInput()
+{
+    FHitResult HitResult;
+    if (GetHitResultUnderCursor(ECC_LANDSCAPE, false, HitResult))
+    {
+        SF_LOG(Log, "InputAction: Move");
+        OnMoveInput.Broadcast(HitResult.Location);
+    }
 }
 
 void ASFInGamePlayerController::

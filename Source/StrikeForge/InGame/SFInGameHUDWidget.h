@@ -7,6 +7,7 @@
 
 class AActor;
 class USFSelectionPanelWidget;
+class USFProductionBuildingPanelWidget;
 class UCommonActivatableWidget;
 class UCommonActivatableWidgetStack;
 class UButton;
@@ -82,6 +83,14 @@ protected:
 		meta = (BindWidgetOptional)
 	)
 	TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
+
+	UPROPERTY(
+		BlueprintReadOnly,
+		Category = "SF|HUD|Production",
+		meta = (BindWidgetOptional)
+	)
+	TObjectPtr<USFProductionBuildingPanelWidget>
+		ProductionBuildingPanel = nullptr;
 
 	UPROPERTY(
 		BlueprintReadOnly,

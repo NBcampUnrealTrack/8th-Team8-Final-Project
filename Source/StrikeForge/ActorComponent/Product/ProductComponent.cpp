@@ -35,7 +35,7 @@ void UProductComponent::AddProductInLine(FName InProductName)
 	if (!Row) return;
 
 	ProductLine.Add({InProductName, Row->UnitProductionDuration});
-	OnProductLineChanged.Broadcast();
+	OnProductLineChanged.Broadcast(ProductLine);
 	UE_LOG(LogTemp, Warning, TEXT("Insert ProductLine: %s / Currentindex: %d"), *InProductName.ToString(), ProductLine.Num() - 1);
 	
 	if (ProductLine.Num() == 1)
@@ -51,7 +51,7 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 	const bool bWasProducing = (InProductLineIndex == 0);
 
 	ProductLine.RemoveAt(InProductLineIndex); 
-	OnProductLineChanged.Broadcast();
+	OnProductLineChanged.Broadcast(ProductLine);
 
 	if (!bWasProducing)
 	{
@@ -78,6 +78,7 @@ void UProductComponent::StartProductLine()
 	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
 	Tracker.Reset(ProductLine[0].Duration, 1.f);
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
+	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 	
 	GetWorld()->GetTimerManager().SetTimer(
 		CurrentTimerHandle,
@@ -99,7 +100,7 @@ void UProductComponent::CompletedProduct(const FName& InCompletedName)
 	// Pop() 은 마지막 항목을 제거한다.
 	// 대기열은 0번부터 처리되므로 앞에서 빼야 순서가 맞는다.
 	ProductLine.RemoveAt(0);
-	OnProductLineChanged.Broadcast();
+	OnProductLineChanged.Broadcast(ProductLine);
 	if (ProductLine.Num() > 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Product Restart: %d / %d"), ProductLine.Num(), MaxLineCount);
@@ -114,6 +115,7 @@ void UProductComponent::StopProductLine()
 {
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	Tracker.Reset(0.f, 0.f);
+	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 }
 
 void UProductComponent::BeginPlay()
@@ -142,4 +144,6 @@ void UProductComponent::TickProduction()
 		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 		CompletedProduct(ProductLine[0].RowName);
 	}
+	
+	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 }

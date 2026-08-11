@@ -88,6 +88,15 @@ bool USFGameInstance::SelectStage(FName StageRowName)
         return false;
     }
 
+    // 추가부분 26.08.10
+    if (GetStageProgressState(StageRowName)
+        == ESFStageProgressState::Locked)
+    {
+        SF_LOG(Warning, "[SFGameInstance] Locked stage cannot be selected: %s", *StageRowName.ToString());
+
+        return false;
+    }
+
     SelectedStageRowName = StageRowName;
 
     SF_LOG(Log, "[SFGameInstance] Stage selected: %s, DisplayName: %s", *SelectedStageRowName.ToString(), *StageData->DisplayName.ToString());
@@ -128,6 +137,107 @@ bool USFGameInstance::MoveToStage()
     }
 
     return TravelToLevel(StageData->StageLevel);
+}
+
+// 추가부분 26.08.10
+ESFStageProgressState USFGameInstance::GetStageProgressState(FName StageRowName) const
+{
+    if (StageRowName.IsNone())
+    {
+        return ESFStageProgressState::Locked;
+    }
+
+    const USFDataTableManager* DataTableManager =
+        GetSubsystem<USFDataTableManager>();
+
+    if (!IsValid(DataTableManager))
+    {
+        return ESFStageProgressState::Locked;
+    }
+
+    const FSFStageData* StageData =
+        DataTableManager->GetDataRow<FSFStageData>(
+            EDataTableType::Stage,
+            StageRowName,
+            TEXT("GetStageProgressState")
+        );
+
+    if (!StageData || StageData->StageOrder <= 0)
+    {
+        return ESFStageProgressState::Locked;
+    }
+
+    if (StageData->StageOrder <= HighestClearedStageOrder)
+    {
+        return ESFStageProgressState::Cleared;
+    }
+
+    if (StageData->StageOrder == HighestClearedStageOrder + 1)
+    {
+        return ESFStageProgressState::Unlocked;
+    }
+
+    return ESFStageProgressState::Locked;
+}
+
+// 추가 부분 26.08.10
+bool USFGameInstance::MarkStageCleared(FName StageRowName)
+{
+    if (StageRowName.IsNone())
+    {
+        SF_LOG(Warning, "[SFGameInstance] Stage Row Name is None.");
+        return false;
+    }
+
+    USFDataTableManager* DataTableManager =
+        GetSubsystem<USFDataTableManager>();
+
+    if (!IsValid(DataTableManager))
+    {
+        SF_LOG(Error, "[SFGameInstance] DataTableManager is invalid.");
+        return false;
+    }
+
+    const FSFStageData* StageData =
+        DataTableManager->GetDataRow<FSFStageData>(
+            EDataTableType::Stage,
+            StageRowName,
+            TEXT("MarkStageCleared")
+        );
+
+    if (!StageData || StageData->StageOrder <= 0)
+    {
+        SF_LOG(
+            Warning,
+            "[SFGameInstance] Invalid stage data: %s",
+            *StageRowName.ToString()
+        );
+
+        return false;
+    }
+
+    if (StageData->StageOrder > HighestClearedStageOrder + 1)
+    {
+        SF_LOG(
+            Warning,
+            "[SFGameInstance] Locked stage cannot be cleared: %s",
+            *StageRowName.ToString()
+        );
+
+        return false;
+    }
+
+    HighestClearedStageOrder =
+        FMath::Max(HighestClearedStageOrder, StageData->StageOrder);
+
+    SF_LOG(
+        Log,
+        "[SFGameInstance] Stage cleared: %s, HighestClearedOrder: %d",
+        *StageRowName.ToString(),
+        HighestClearedStageOrder
+    );
+
+    return true;
 }
 
 bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)

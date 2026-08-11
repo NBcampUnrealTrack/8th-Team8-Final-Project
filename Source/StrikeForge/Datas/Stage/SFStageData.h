@@ -15,7 +15,7 @@ enum class ESFStageProgressState : uint8
 };
 
 class UWorld;
-class UStaticMesh;
+class UTexture2D;
 
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFStageData : public FTableRowBase
@@ -34,15 +34,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage")
     TSoftObjectPtr<UWorld> StageLevel;
 
-    // 스테이지 잠금 메쉬
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Mesh")
-    TSoftObjectPtr<UStaticMesh> LockedMesh;
+    // 스테이지 잠금 이미지
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|UI")
+    TSoftObjectPtr<UTexture2D> LockedImage;
 
-    // 스테이지 풀림 메쉬
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Mesh")
-    TSoftObjectPtr<UStaticMesh> UnlockedMesh;
+    // 스테이지 풀림 이미지
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|UI")
+    TSoftObjectPtr<UTexture2D> UnlockedImage;
 
-    // 스테이지 클리어 메쉬
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Mesh")
-    TSoftObjectPtr<UStaticMesh> ClearedMesh;
+    // 스테이지 클리어 이미지
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|UI")
+    TSoftObjectPtr<UTexture2D> ClearedImage;
 };

@@ -1,4 +1,6 @@
 ﻿#include "SFRootBase.h"
+
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Components/StaticMeshComponent.h"
 
 ASFRootBase::ASFRootBase(const FObjectInitializer& ObjectInitializer)
@@ -17,4 +19,10 @@ FSFSelectableInfo ASFRootBase::GetSelectableInfo_Implementation()
 	FSFSelectableInfo Info;
 	Info.DataRowName = RowName;
 	return Info;
+}
+
+int32 ASFRootBase::GetTeamIndex() const
+{
+	const UCombatTargetComponent* Combat = FindComponentByClass<UCombatTargetComponent>();
+	return Combat ? Combat->GetTeamIndex() : Targetable::NeutralTeam;
 }

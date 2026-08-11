@@ -16,7 +16,7 @@
 // 	FName SpawnableUnitName;
 // 	FResources
 // };
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductUnitArrayChanged, TArray<FName>&, SpawnableRowNames);
 
 class UProductComponent;
 
@@ -35,12 +35,16 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void OnConstructionFinished() override;
 	virtual void InitInfo(const FBuildingAppearance* InData) override;
+	void UpdateSpawnableUnitNames(int32 InCurrentTier);
 	
 	virtual void ProductUnits_Implementation(FName InUnitName) override;
-
+	virtual FProductableData GetProductableData_Implementation() override;
 	void TryAddUnitProductLine(FName InUnitName);
 	
-	void UpdateSpawnableUnitNames(int32 InCurrentTier);
+	const TArray<FName>& GetSpawnableUnitNames() const;
+public:
+	FProductUnitArrayChanged OnSpawnableUnitsChanged;
+	
 protected:
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;

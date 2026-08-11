@@ -49,7 +49,7 @@ protected:
 	void LoadPlayerController();
 
 	UFUNCTION()
-	void OnFailMoving(bool IsSuccessed);
+	void CheckFailMoving(bool IsSuccessed);
 
 	void MoveToAction(FVector Dest, ECommandAction Action);
 

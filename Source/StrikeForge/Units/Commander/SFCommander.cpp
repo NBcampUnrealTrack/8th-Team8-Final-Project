@@ -84,7 +84,7 @@ void ASFCommander::PossessedBy(AController* NewController)
 	{
 		GetController<AUnitAIController>()->OnCompleteMoving.AddUniqueDynamic(
 			this,
-			&ASFCommander::OnFailMoving
+			&ASFCommander::CheckFailMoving
 		);
 	}
 }
@@ -236,7 +236,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	}
 }
 
-void ASFCommander::OnFailMoving(bool IsSuccessed)
+void ASFCommander::CheckFailMoving(bool IsSuccessed)
 {
 	// ★CHANGED: 건설 명령이 아니면 관심 없음 (조기 반환으로 중첩 제거)
 	if (CommandAction != ECommandAction::BUILD)
@@ -343,9 +343,10 @@ void ASFCommander::BeginBuild()
 		GetController()->SetControlRotation(Dir.Rotation());
 	}
 
-	// TODO : 빌딩관련 함수를 적어주세요.
+	// Notify To Controller That Commander Arrived Location
 	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 	{
+		// Begin Constructing Building in this Function
 		SFPC->NotifyBuilderArrived();
 	}
 	

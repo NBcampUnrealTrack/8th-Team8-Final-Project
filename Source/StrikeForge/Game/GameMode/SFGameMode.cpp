@@ -3,6 +3,7 @@
 
 #include "SFGameMode.h"
 #include "Logging/SFLog.h"
+#include "Game/GameInstance/SFGameInstance.h"
 
 ASFGameMode::ASFGameMode()
 {
@@ -105,11 +106,35 @@ bool ASFGameMode::FinishStage(ESFStageResult NewStageResult)
 		return false;
 	}
 
+	// 26.08.11 추가
 	if (!SFGameState->FinishStage(NewStageResult))
 	{
 		SF_LOG(Warning, "[SFGameMode] FinishStage was rejected by GameState.");
 
 		return false;
+	}
+
+	if (NewStageResult == ESFStageResult::Victory)
+	{
+		USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
+
+		if (!IsValid(SFGameInstance))
+		{
+			SF_LOG(Warning, "[SFGameMode] Failed to record stage clear: GameInstance is invalid.");
+		}
+		else
+		{
+			const FName StageRowName = SFGameInstance->GetSelectedStageRowName();
+
+			if (StageRowName.IsNone())
+			{
+				SF_LOG(Warning, "[SFGameMode] Failed to record stage clear : Selected Stage Row Name is None.");
+			}
+			else if (!SFGameInstance->MarkStageCleared(StageRowName))
+			{
+				SF_LOG(Warning, "[SFGameMode] Failed to record stage clear: %s", *StageRowName.ToString());
+			}
+		}
 	}
 
 	const FColor ResultColor = NewStageResult == ESFStageResult::Victory ? FColor::Green : FColor::Red;

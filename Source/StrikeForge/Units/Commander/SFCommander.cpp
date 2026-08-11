@@ -96,6 +96,9 @@ void ASFCommander::LoadPlayerController()
 	{
 		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 		{
+			// add : cached commander
+			SFPC->RegisterCommander(this);
+			//
 			SFPC->OnMoveInput.Clear();
 			SFPC->OnMoveInput.AddUniqueDynamic(
 				this,
@@ -321,7 +324,7 @@ void ASFCommander::BeginBuild()
 	}
 
 	// TODO : 빌딩관련 함수를 적어주세요.
-	if (ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetController()))
+	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 	{
 		SFPC->NotifyBuilderArrived();
 	}

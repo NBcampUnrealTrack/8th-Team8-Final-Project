@@ -146,5 +146,5 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 	
 	// 자원이 충분한가 아닌가 검사 로직. 가능구역1
 	SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
-	//SFPC->SpawnBuildingFunction(BuildingRowName);
+	SFPC->SpawnBuildingFunction(BuildingRowName);
 }

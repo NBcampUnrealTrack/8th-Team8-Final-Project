@@ -12,6 +12,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "Logging/SFLog.h"
+#include "Units/Commander/SFCommander.h"
 #include "Units/Interfaces/Movable.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
@@ -89,6 +90,11 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
 void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 {
     SelectedActor = InActor;
+}
+
+void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
+{
+    MyCommander = InCommander;
 }
 
 void ASFInGamePlayerController::BeginPlay()
@@ -351,18 +357,7 @@ HandleMoveInput()
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
 
     OnMoveInput.Broadcast(Hit.Location);      // 기존 구독자 호환용
-    //
-    // AActor* Target = SelectedActor.Get();
-    // if (!IsValid(Target)) return;
-    // if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
-    //
-    // // 팀 검사 — 커맨더에 UCombatTargetComponent 를 붙인 뒤 활성화
-    // if (const UCombatTargetComponent* Combat = Target->FindComponentByClass<UCombatTargetComponent>())
-    // {
-    //     //if (Combat->GetTeamIndex() != PlayerTeamIndex) return;
-    // }
-    //
-    // IMovable::Execute_MoveTo(Target, Hit.Location);
+
 }
 
 void ASFInGamePlayerController::
@@ -372,11 +367,28 @@ HandleConfirmBuildInput()
     OnConfirmBuildInput.Broadcast();
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
     
-    if (IsValid(SpawnedBuildingRef))
+    if (!IsValid(SpawnedBuildingRef))
     {
-        PlacementComponent->ConfirmPlacementMode();
-        
+        return;
     }
+    
+    PlacementComponent->ConfirmPlacementMode();
+    
+    ASFCommander* Commander = MyCommander.Get();
+    if (!IsValid(Commander))
+    {
+        SF_LOG(Error, "[SFPC] 커맨더가 등록되지 않아 건설을 시작할 수 없습니다.");
+        ClearSpawnedBuildingRef();
+        SetSFControlMode(ESFControlMode::Gameplay);
+        return;
+    }
+
+    Commander->MoveToBuild(
+        SpawnedBuildingRef->GetActorLocation(),
+        SpawnedBuildingRef->GetBuildBounds(),
+        SpawnedBuildingRef->GetActorRotation().Yaw);
+
+    SetSFControlMode(ESFControlMode::Gameplay);
 }
 
 void ASFInGamePlayerController::

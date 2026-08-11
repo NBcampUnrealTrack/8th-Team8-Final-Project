@@ -4,6 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "SFInGamePlayerController.generated.h"
 
+class ASFCommander;
 class UBuildingPlacement;
 class ASFBaseBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
@@ -53,6 +54,7 @@ public:
     void NotifyBuilderArrived();
     
     void SetSelectedActor(AActor* InActor);
+    void RegisterCommander(ASFCommander* InCommander);
 protected:
     virtual void BeginPlay() override;
 
@@ -78,6 +80,8 @@ private:
 
     // 변수 영역
 protected:
+    UPROPERTY()
+    TWeakObjectPtr<ASFCommander> MyCommander;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component")
     TObjectPtr<UBuildingPlacement> PlacementComponent; //======================================================================
     

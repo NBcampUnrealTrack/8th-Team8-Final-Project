@@ -60,6 +60,9 @@ private:
 
 	void HandleBuildingModeDeactivated();
 
+	void ApplySelectionUIData(
+		FSFSelectableInfo& InOutSelectableInfo
+	);
 	// ==================== Variables ====================
 
 protected:

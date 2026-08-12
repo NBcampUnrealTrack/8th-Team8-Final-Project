@@ -14,6 +14,10 @@
 #include "Widgets/CommonActivatableWidgetContainer.h"
 #include "Components/Button.h"
 
+#include "SFSelectInfo/SFSelectionUIDataRow.h"
+#include "Game/Subsystem/SFDataTableManager.h"
+#include "Game/GameInstance/SFGameInstance.h"
+
 void USFInGameHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
@@ -169,10 +173,14 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         return;
     }
 
-    const FSFSelectableInfo SelectableInfo =
+    FSFSelectableInfo SelectableInfo =
         ISFSelectable::Execute_GetSelectableInfo(
             HitActor
         );
+
+    ApplySelectionUIData(
+        SelectableInfo
+    );
 
     ApplySelection(
         HitActor,
@@ -211,6 +219,19 @@ void USFInGameHUDWidget::ApplySelection(
     {
         ClearSelection();
         return;
+    }
+
+    const bool bIsBuilding =
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    if (bIsBuilding)
+    {
+        CloseBuildingMode();
     }
 
     // 같은 대상을 다시 선택하면 파괴 이벤트는 재연결하지 않고
@@ -428,4 +449,63 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
     
     SFPC->ClearSpawnedBuildingRef();
     SFPC->SetSFControlMode(ESFControlMode::Gameplay);
+}
+
+void USFInGameHUDWidget::ApplySelectionUIData(
+    FSFSelectableInfo& InOutSelectableInfo
+)
+{
+    if (InOutSelectableInfo.DataRowName.IsNone())
+    {
+        return;
+    }
+
+    UGameInstance* GameInstance =
+        GetGameInstance();
+
+    if (!IsValid(GameInstance))
+    {
+        return;
+    }
+
+    USFDataTableManager* DataTableManager =
+        GameInstance->GetSubsystem<USFDataTableManager>();
+
+    if (!IsValid(DataTableManager))
+    {
+        return;
+    }
+
+    const FSFSelectionUIDataRow* UIData =
+        DataTableManager->GetDataRow<FSFSelectionUIDataRow>(
+            EDataTableType::UI,
+            InOutSelectableInfo.DataRowName,
+            TEXT("ApplySelectionUIData")
+        );
+
+    if (!UIData)
+    {
+        return;
+    }
+
+    InOutSelectableInfo.DisplayName =
+        UIData->DisplayName;
+
+    InOutSelectableInfo.PortraitImage =
+        UIData->PortraitImage.LoadSynchronous();
+
+    InOutSelectableInfo.SelectionIcon =
+        UIData->SelectionIcon.LoadSynchronous();
+
+    InOutSelectableInfo.Description =
+        UIData->Description;
+
+    InOutSelectableInfo.bShowHealth =
+        UIData->bShowHealth;
+
+    InOutSelectableInfo.bShowAttackPower =
+        UIData->bShowAttackPower;
+
+    InOutSelectableInfo.bShowMoveSpeed =
+        UIData->bShowMoveSpeed;
 }

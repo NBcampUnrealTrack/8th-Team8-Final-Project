@@ -76,9 +76,10 @@ private:
 	int32 MaxLineCount = 5;
 	
 public:
-	// 생산열이 바뀔때마다 호출
+	// product line changed
 	UPROPERTY(BlueprintAssignable)
 	FProductLineChanged OnProductLineChanged;
+	// product ratio changed
 	UPROPERTY(BlueprintAssignable)
 	FProductRatioChanged OnProductRatioChanged;
 };

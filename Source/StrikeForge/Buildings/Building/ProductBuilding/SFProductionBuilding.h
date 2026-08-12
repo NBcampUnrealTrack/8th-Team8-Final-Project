@@ -30,6 +30,8 @@ class STRIKEFORGE_API ASFProductionBuilding
 public:
 	ASFProductionBuilding();
 
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+
 protected:
 
 	virtual void BeginPlay() override;

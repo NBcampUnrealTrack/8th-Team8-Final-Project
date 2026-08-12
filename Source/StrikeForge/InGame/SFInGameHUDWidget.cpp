@@ -3,6 +3,7 @@
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
+#include "HUD/Production/SFProductionBuildingPanelWidget.h"
 
 #include "DrawDebugHelpers.h"
 #include "Engine/EngineTypes.h"
@@ -90,6 +91,11 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->ClearSelection();
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
     }
 
     SF_LOG(
@@ -213,10 +219,57 @@ void USFInGameHUDWidget::ApplySelection(
     {
         SelectedInfo = NewSelectedInfo;
 
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] Selection Type: %d | "
+            "ProductionPanel Valid: %s",
+            static_cast<int32>(SelectedInfo.SelectableType),
+            IsValid(ProductionBuildingPanel)
+            ? TEXT("True")
+            : TEXT("False")
+        );
+
         if (IsValid(SelectionPanel))
         {
             SelectionPanel->ShowSelection(
                 SelectedInfo
+            );
+        }
+        if (IsValid(ProductionBuildingPanel))
+        {
+            if (
+                SelectedInfo.SelectableType ==
+                ESFSelectableType::ProductionBuilding
+                )
+            {
+                SF_LOG(
+                    Log,
+                    "[SFInGameHUDWidget] "
+                    "Show ProductionBuildingPanel"
+                );
+
+                ProductionBuildingPanel->ShowProductionBuilding(
+                    SelectedActor.Get()
+                );
+            }
+            else
+            {
+                SF_LOG(
+                    Log,
+                    "[SFInGameHUDWidget] "
+                    "Hide ProductionBuildingPanel | Type: %d",
+                    static_cast<int32>(SelectedInfo.SelectableType)
+                );
+
+                ProductionBuildingPanel->HideProductionBuilding();
+            }
+        }
+        else
+        {
+            SF_LOG(
+                Error,
+                "[SFInGameHUDWidget] "
+                "ProductionBuildingPanel is invalid."
             );
         }
 
@@ -238,6 +291,23 @@ void USFInGameHUDWidget::ApplySelection(
         SelectionPanel->ShowSelection(
             SelectedInfo
         );
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        if (
+            SelectedInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding
+            )
+        {
+            ProductionBuildingPanel->ShowProductionBuilding(
+                SelectedActor.Get()
+            );
+        }
+        else
+        {
+            ProductionBuildingPanel->HideProductionBuilding();
+        }
     }
 }
 
@@ -264,6 +334,11 @@ void USFInGameHUDWidget::ClearSelection()
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->ClearSelection();
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
     }
 
     SF_LOG(

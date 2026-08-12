@@ -24,6 +24,10 @@ void ULobbyWidget::NativeConstruct()
 	{
 		Setting_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnSettingButtonClicked);
 	}
+	if (IsValid(BackUi_Btn))
+	{
+		BackUi_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnBackUiButtonClicked);
+	}
 	if (IsValid(Stage1))
 	{
 		Stage1->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage1Clicked);
@@ -85,6 +89,11 @@ void ULobbyWidget::OnSettingButtonClicked()
 
 	const bool bCurrentlyVisible = (SettingPanel->GetVisibility() == ESlateVisibility::Visible);
 	SetSettingMenuVisible(!bCurrentlyVisible);
+}
+
+void ULobbyWidget::OnBackUiButtonClicked()
+{
+	SetSettingMenuVisible(false);
 }
 
 void ULobbyWidget::OnStage1Clicked() { OpenStageLevel(0); }
@@ -232,6 +241,7 @@ void ULobbyWidget::SetSettingMenuVisible(bool bIsVisible)
 
 	if (IsValid(SettingPanel)) { SettingPanel->SetVisibility(SettingVis); }
 	if (IsValid(BackgroundBlur)) { BackgroundBlur->SetVisibility(SettingVis); }
+	if (IsValid(BackUi_Btn)) { BackUi_Btn->SetVisibility(SettingVis); }
 
 	if (bIsVisible)
 	{

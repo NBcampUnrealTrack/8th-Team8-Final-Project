@@ -92,6 +92,8 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
 
+    RefreshBuildModeOpenButtonVisibility();
+
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->ClearSelection();
@@ -240,6 +242,8 @@ void USFInGameHUDWidget::ApplySelection(
     {
         SelectedInfo = NewSelectedInfo;
 
+        RefreshBuildModeOpenButtonVisibility();
+
         SF_LOG(
             Log,
             "[SFInGameHUDWidget] Selection Type: %d | "
@@ -302,6 +306,8 @@ void USFInGameHUDWidget::ApplySelection(
     SelectedActor = NewSelectedActor;
     SelectedInfo = NewSelectedInfo;
 
+    RefreshBuildModeOpenButtonVisibility();
+
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
@@ -351,6 +357,8 @@ void USFInGameHUDWidget::ClearSelection()
 
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    RefreshBuildModeOpenButtonVisibility();
 
     if (IsValid(SelectionPanel))
     {
@@ -431,12 +439,7 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
 
     ActiveBuildingModeWidget = nullptr;
 
-    if (IsValid(BuildModeOpenButton))
-    {
-        BuildModeOpenButton->SetVisibility(
-            ESlateVisibility::Visible
-        );
-    }
+    RefreshBuildModeOpenButtonVisibility();
 
     SF_LOG(
         Log,
@@ -508,4 +511,31 @@ void USFInGameHUDWidget::ApplySelectionUIData(
 
     InOutSelectableInfo.bShowMoveSpeed =
         UIData->bShowMoveSpeed;
+}
+
+void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
+{
+    if (!IsValid(BuildModeOpenButton))
+    {
+        return;
+    }
+
+    const bool bIsBuildingSelected =
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    const bool bIsBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    BuildModeOpenButton->SetVisibility(
+        bIsBuildingSelected ||
+        bIsBuildingModeActive
+        ? ESlateVisibility::Collapsed
+        : ESlateVisibility::Visible
+    );
 }

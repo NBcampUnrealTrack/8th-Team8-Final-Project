@@ -63,6 +63,9 @@ private:
 	void ApplySelectionUIData(
 		FSFSelectableInfo& InOutSelectableInfo
 	);
+
+	void RefreshBuildModeOpenButtonVisibility();
+
 	// ==================== Variables ====================
 
 protected:

@@ -85,6 +85,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool HasLineOfSight(const AActor* InTarget) const;
 
+	/** 대상이 건물 계열인가. 사거리 여유를 줄지 판단한다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	bool IsBuildingTarget(const AActor* InTarget) const;
+
 	/** 대상 표면까지의 수평 거리. 건물처럼 큰 대상에서 필수 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	float GetDistanceToTargetEdge(const AActor* InTarget) const;
@@ -208,6 +212,17 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.2", ClampMax = "1.0"))
 	float AttackApproachRatio = 0.7f;
 
+	/**
+	 * 건물 대상일 때 사거리에 더하는 여유(cm).
+	 *
+	 * 건물은 자기 주변 NavMesh 를 넓게 파먹어서, 유닛이 아무리 붙어도
+	 * 원래 사거리 안으로 들어가지 못하는 경우가 있다.
+	 * AttackRange 를 늘리면 유닛 간 교전 사거리까지 함께 늘어나므로
+	 * 건물에만 적용되는 값을 따로 둔다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float BuildingRangeBonus = 250.f;
+
 	/** 교전 유지 여유. 사거리 경계에서 걷다 멈추다 반복하는 것을 막는다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float RangeHysteresis = 60.f;
@@ -302,6 +317,9 @@ private:
 
 	/** 진격 목표 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bAdvanceTargetReported : 1;
+
+	/** "사거리에 도달 불가" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bRangeUnreachableReported : 1;
 
 	float AttackCooldownRemaining = 0.f;
 	float RetargetTimer = 0.f;

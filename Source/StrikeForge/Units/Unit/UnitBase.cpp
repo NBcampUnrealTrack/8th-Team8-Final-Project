@@ -36,6 +36,7 @@ AUnitBase::AUnitBase()
 	, bStatInitialized(false)
 	, bNoTargetReported(false)
 	, bAdvanceTargetReported(false)
+	, bRangeUnreachableReported(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -323,6 +324,22 @@ bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
 
 	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
+
+bool AUnitBase::IsBuildingTarget(const AActor* InTarget) const
+{
+	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!IsValid(Comp)) return false;
+
+	switch (Comp->GetTargetType())
+	{
+	case ETargetType::CoreBuilding:
+	case ETargetType::ProductionBuilding:
+	case ETargetType::ResourceBuilding:
+		return true;
+	default:
+		return false;
+	}
 }
 
 float AUnitBase::GetDistanceToTargetEdge(const AActor* InTarget) const
@@ -723,9 +740,19 @@ void AUnitBase::Tick(float DeltaSeconds)
 	//   유지: AttackRange + RangeHysteresis      — 한번 붙으면 조금 벌어져도 계속
 	const bool bWasAttacking = (CombatState == EUnitCombatState::Attacking);
 
-	const float EffectiveRange = bWasAttacking
-		? AttackRange + RangeHysteresis
+	// 건물은 자기 주변 NavMesh 를 넓게 파먹는다.
+	// Agent 반지름 + 콜리전 크기만큼 접근 한계가 생겨,
+	// 유닛이 아무리 붙어도 사거리 안으로 들어가지 못하는 경우가 있다.
+	//
+	// 그래서 건물 대상에는 접근 비율 대신 여유를 더한다.
+	// AttackRange 자체를 늘리면 유닛 간 교전 사거리까지 함께 늘어난다.
+	const float BaseRange = IsBuildingTarget(CurrentTarget)
+		? AttackRange + BuildingRangeBonus
 		: AttackRange * AttackApproachRatio;
+
+	const float EffectiveRange = bWasAttacking
+		? FMath::Max(BaseRange, AttackRange + RangeHysteresis)
+		: BaseRange;
 
 	const bool bInRange = (Distance <= EffectiveRange);
 
@@ -737,6 +764,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 		// ── 교전 ────────────────────────────────────────
 		SetCombatState(EUnitCombatState::Attacking);
 		StuckTimer = 0.f;
+		bRangeUnreachableReported = false;
 
 		if (AUnitAIController* AI = GetUnitAI())
 		{
@@ -762,6 +790,21 @@ void AUnitBase::Tick(float DeltaSeconds)
 			// 언리얼은 넘긴 값에 목표 반지름을 더해 도달을 판정하므로,
 			// 사거리를 넘기면 벽을 돌기도 전에 "도착했다"고 판단해 멈춘다.
 			AI->RequestMoveToActor(CurrentTarget, MoveAcceptanceRadius);
+
+			// 사거리 밖인데 더 접근할 수도 없는 상태.
+			// NavMesh 가 파여 물리적으로 도달 불가능한 경우이므로
+			// 사거리나 BuildingRangeBonus 를 조정해야 한다.
+			if (!bRangeUnreachableReported
+				&& GetVelocity().SizeSquared2D() < FMath::Square(20.f)
+				&& StuckTimer > StuckThreshold)
+			{
+				bRangeUnreachableReported = true;
+
+				SF_LOG(Warning,
+					"[Unit] %s : %s 에 접근할 수 없습니다. 현재 거리 %.0f / 필요 %.0f. "
+					"BuildingRangeBonus 또는 AttackRange 를 늘리세요.",
+					*GetName(), *CurrentTarget->GetName(), Distance, EffectiveRange);
+			}
 
 			// 끼임 감지 — 이동 명령은 살아 있는데 실제로 안 움직이는 경우.
 			// 경로 캐시만 버리고 다음 틱에 새로 계산하게 한다.

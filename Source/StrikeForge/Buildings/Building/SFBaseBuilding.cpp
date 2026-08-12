@@ -42,7 +42,7 @@ void ASFBaseBuilding::InitializeBuildingData()
 void ASFBaseBuilding::RefreshVisual()
 {
 	UStaticMesh* Mesh = ResolveMesh();
-	if (!Mesh)
+	if (IsValid(StaticMeshComponent) && StaticMeshComponent->GetStaticMesh() == Mesh)
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[%s] RefreshVisual: 해당 상태(%d)에 적용할 메시가 없습니다. Row=%s"),
@@ -208,6 +208,7 @@ void ASFBaseBuilding::BeginConstruction()
 		UGameplayStatics::PlaySoundAtLocation(GetWorld(), BuildingStartSound, GetActorLocation());
 	}
 
+	//
 	ProgressComponent->StartProgress();
 }
 
@@ -215,7 +216,7 @@ void ASFBaseBuilding::EnterCompletedState()
 { // set last mesh completed
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	// set targetable yes
-	HealthComponent->SetIsCanbeTargetable(true);
+	
 	RefreshVisual();    
 }
 

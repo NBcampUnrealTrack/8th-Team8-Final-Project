@@ -36,9 +36,7 @@ public:
 	FORCEINLINE float GetMaxHealth() const { return MaxHealth; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
-	FORCEINLINE bool GetIsCanbeTargetable() const { return CanbeTargetable; }
-	UFUNCTION()
-	FORCEINLINE void SetIsCanbeTargetable(bool IsCanbeTargetable) {CanbeTargetable = IsCanbeTargetable; }
+	FORCEINLINE bool GetIsDead() const { return IsDead; }
 #pragma region Properties
 	
 	UPROPERTY(BlueprintAssignable)
@@ -52,7 +50,7 @@ protected:
 	
 private:
 	UPROPERTY()
-	bool CanbeTargetable;
+	bool IsDead = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float CurrentHealth = 0.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))

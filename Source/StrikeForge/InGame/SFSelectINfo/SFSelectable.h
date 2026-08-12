@@ -23,8 +23,7 @@ struct FHealthData
     UPROPERTY()
     int32 CurrentTier;
     UPROPERTY()
-    UHealthComponent* HealthComponent;
-    
+    TWeakObjectPtr<UHealthComponent> HealthComponent;
 };
 
 class STRIKEFORGE_API ISFSelectable

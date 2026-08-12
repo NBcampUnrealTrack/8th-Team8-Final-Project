@@ -134,7 +134,9 @@ public:
         int32 NewCurrentPopulation,
         int32 NewMaximumPopulation
     );
-
+    
+    UFUNCTION()
+    bool CheckCanBuildAndSpendCost(const int32 InMineral, const int32 InEther);
     // 여기까지
 
 public:

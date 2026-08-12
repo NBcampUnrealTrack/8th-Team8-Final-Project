@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "SFSelectableInfo.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "SFSelectable.generated.h"
 
 class UHealthComponent;
@@ -22,6 +23,8 @@ struct FHealthData
     FText DisplayName;
     UPROPERTY()
     int32 CurrentTier;
+    UPROPERTY()
+    FResources UpgradeCost;
     UPROPERTY()
     TWeakObjectPtr<UHealthComponent> HealthComponent;
 };

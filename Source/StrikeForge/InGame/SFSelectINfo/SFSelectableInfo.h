@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "SFSelectableInfo.generated.h"
 
 class UTexture2D;
@@ -120,4 +121,5 @@ public:
         Category = "SF|Selection|UI"
     )
     bool bShowMoveSpeed = true;
+
 };

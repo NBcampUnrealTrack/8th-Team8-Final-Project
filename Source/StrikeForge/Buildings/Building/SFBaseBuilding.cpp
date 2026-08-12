@@ -4,6 +4,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Product/ProductComponent.h"
 #include "Datas/Building/BuildingAppearance.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -78,6 +79,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.DisplayName = DisplayName;
 	Data.CurrentTier = CurrentTier;
 	Data.HealthComponent = HealthComponent;
+	Data.UpgradeCost = CurrentUpgradeBuildCost; //cost of upgrade - current tier
 	return Data;
 }
 
@@ -473,7 +475,10 @@ void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 	}
 
 	const FBuildingTier& Tier = CachedTiersInfo[InCurrentTier];
-
+	
+	CurrentConstructBuildCost = Tier.ConstructCost; // 나중에 복구값으로 + 초기값 ui
+	CurrentUpgradeBuildCost = Tier.UpgradeCost; // 업그레이드시 ui
+	
 	// 건설 단계 — 
 	TArray<float> Thresholds;
 	Thresholds.Reserve(Tier.ConstructionStages.Num());
@@ -512,8 +517,10 @@ void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
+	// 업그레이드는 건물건설완료일때만
 	if (CurrentBuildingState != EBuildingState::Completed) return;
 
+	// 업그레이드는 다음단계가 있을때만 (최종티어는 x)
 	const int32 NextTier = CurrentTier + UpgradeValue;
 	if (!CachedTiersInfo.IsValidIndex(NextTier))     // ★CHANGED
 	{
@@ -521,9 +528,14 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 			NextTier, CachedTiersInfo.Num());
 		return;
 	}
-
-	// TODO: CachedTiers[CurrentTier].UpgradeCost 로 자원 검사·차감
-	const FResources& NeedCost = CachedTiersInfo[NextTier].Cost; 
+#pragma region CheckResources
+	// // TODO: CachedTiers[CurrentTier].UpgradeCost 로 자원 검사·차감
+	// gamestate resource check
+	// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
+	// if (!IsValid(SFGameState)) return;
+	// if (!SFGameState->CheckCanBuildAndSpendCost(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
+	// 	return;
+#pragma endregion 
 	
 	CurrentTier = NextTier;
 	SetBuildingState(EBuildingState::UnderConstruction);

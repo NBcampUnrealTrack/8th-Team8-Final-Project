@@ -207,3 +207,21 @@ void ASFGameState::SetPopulation(
 		MaximumPopulation
 	);
 }
+
+bool ASFGameState::CheckCanBuildAndSpendCost(const int32 InMineral, const int32 InEther)
+{
+	if (Mineral < InMineral)
+	{
+		return false;
+	}
+	
+	if (Ether < InEther)
+	{
+		return false;
+	}
+	
+	Mineral -= InMineral;
+	Ether -= InEther;
+	
+	return true;
+}

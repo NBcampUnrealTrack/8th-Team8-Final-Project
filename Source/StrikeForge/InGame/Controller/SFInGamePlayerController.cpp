@@ -9,8 +9,10 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "Kismet/GameplayStatics.h"
 #include "Logging/SFLog.h"
 #include "Units/Commander/SFCommander.h"
 #include "Units/Interfaces/Movable.h"
@@ -26,23 +28,32 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
 }
 
-void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
+bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
 {
     // 자원이 충분한가 아닌가 검사 로직. 가능구역2
     if (IsValid(SpawnedBuildingRef))
     {
         UE_LOG(LogTemp, Error, TEXT("Exist Spawned Building Ref"));
-        return;
+        return false;
     }
     USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-    if (!IsValid(DataManager)) return;
+    if (!IsValid(DataManager)) return false;
     
     const FBuildingAppearance* Row = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, InRowName);
     if (!Row)
     {
         UE_LOG(LogTemp, Error, TEXT("No build table for %s"), *InRowName.ToString());
-        return;
+        return false;
     }
+    
+#pragma region CheckResources 
+    // ASFGameState* SFGameState = Cast<ASFGameState>(UGameplayStatics::GetGameState(GetWorld()));
+    // if (!IsValid(SFGameState)) return false;
+    //
+    // if (!SFGameState->CheckCanBuildAndSpendCost(
+    //     Row->GetInitialCost()->Mineral, Row->GetInitialCost()->Ether))
+    //     return false;
+#pragma endregion 
     
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
@@ -56,7 +67,7 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     {
         UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
             *InRowName.ToString());
-        return;
+        return false;
     }
     
     ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
@@ -70,7 +81,7 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     if (!IsValid(DeferredActor))                                   // ★ADD
     {
         UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
-        return;
+        return false;
     }
     
     DeferredActor->SetRowName(InRowName);
@@ -81,6 +92,7 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     //DeferredActor->SetBuildingState(EBuildingState::Preview);
     PlacementComponent->StartPlacementMode(DeferredActor);
     SpawnedBuildingRef = DeferredActor;
+    return true;
 }
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()

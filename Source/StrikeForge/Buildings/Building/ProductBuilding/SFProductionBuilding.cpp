@@ -3,6 +3,7 @@
 #include "ActorComponent/Product/ProductComponent.h"
 #include "Compilation/IMovieSceneTrackTemplateProducer.h"
 #include "Datas/Unit/UnitProductData.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 
 ASFProductionBuilding::ASFProductionBuilding()
@@ -57,14 +58,22 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
 	ProductData.ProductComponent = ProductComponent;
-	ProductData.ConstructCost = BuildCost;
 	return ProductData;
 }
 
 void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
 {
+	// 건설완료상태일때만 생산할수있다
 	if (CurrentBuildingState == EBuildingState::Completed)
 	{
+#pragma region CheckResources
+		// //TODO: resource check
+		// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
+		// if (!IsValid(SFGameState)) return;
+		// if (!SFGameState->CheckCanBuildAndSpendCost(unitcost?.mineral, unitcost?.ether))
+		// 	return;
+#pragma endregion 
+		
 		ProductComponent->AddProductInLine(InUnitName);
 		return;
 	}
@@ -90,9 +99,4 @@ void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 
 	StoredSpawnableUnitDatas = CachedTiersInfo[InCurrentTier].SpawnableUnits;   // ★FIX
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
-	
-	///
-	///
-	/// buildcost cached by tier
-	BuildCost = CachedTiersInfo[InCurrentTier].Cost;
 }

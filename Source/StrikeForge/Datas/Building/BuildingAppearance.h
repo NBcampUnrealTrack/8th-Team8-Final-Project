@@ -67,7 +67,10 @@ struct STRIKEFORGE_API FBuildingTier
 	TArray<FName> SpawnableUnits;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
-	FResources Cost;
+	FResources ConstructCost;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
+	FResources UpgradeCost;
+
 };
 
 USTRUCT(BlueprintType)
@@ -100,25 +103,26 @@ struct STRIKEFORGE_API FBuildingAppearance : public FTableRowBase
 		return BuildingMeshesByTiers.IsValidIndex(TierIndex) ? &BuildingMeshesByTiers[TierIndex] : nullptr;
 	}
 
-	bool CanUpgradeFrom(int32 TierIndex) const
+	bool CanUpgradeNextTier(int32 TierIndex) const
 	{
 		return BuildingMeshesByTiers.IsValidIndex(TierIndex + 1);
 	}
 
 	/** 최초 건설 비용. Tiers 가 비어 있으면 nullptr */
-	const FResources* GetInitialCost() const
+	const FResources* GetConstructBuildCost(int32 FromTierIndex) const
 	{
-		return BuildingMeshesByTiers.Num() > 0 ? &BuildingMeshesByTiers[0].Cost : nullptr;
+		//return BuildingMeshesByTiers.Num() > 0 ? &BuildingMeshesByTiers[FromTierIndex].ConstructCost : nullptr;
+		return BuildingMeshesByTiers.IsValidIndex(FromTierIndex) ? &BuildingMeshesByTiers[FromTierIndex].ConstructCost : nullptr;
+		
 	}
 
 	/**
 	 * FromTierIndex 에서 다음 티어로 올리는 비용.
 	 * 다음 티어가 없으면 nullptr — 업그레이드 불가와 같은 뜻이다.
 	 */
-	const FResources* GetUpgradeCost(int32 FromTierIndex) const
+	const FResources* GetUpgradeBuildCost(int32 FromTierIndex) const
 	{
-		const int32 NextTier = FromTierIndex + 1;
-		return BuildingMeshesByTiers.IsValidIndex(NextTier) ? &BuildingMeshesByTiers[NextTier].Cost : nullptr;
+		return BuildingMeshesByTiers.IsValidIndex(FromTierIndex) ? &BuildingMeshesByTiers[FromTierIndex].UpgradeCost : nullptr;
 	}
 	
 	/**

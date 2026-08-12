@@ -51,6 +51,4 @@ protected:
 	TObjectPtr<UProductComponent> ProductComponent;
 
 	TArray<FName> StoredSpawnableUnitDatas;
-	
-	FResources BuildCost;
 };

@@ -130,8 +130,12 @@ protected:
 	FText DisplayName;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	FResources CurrentConstructBuildCost;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	FResources CurrentUpgradeBuildCost;
 	
-	// 티어별 건설시메쉬, 데미지시 메쉬, 건설 사운드
+	// 티어별 건설시메쉬, 데미지시 메쉬, 건설 사운드 모음집
 	UPROPERTY()
 	TArray<FBuildingTier> CachedTiersInfo;
 

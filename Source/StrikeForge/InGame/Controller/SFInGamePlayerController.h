@@ -49,7 +49,7 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    void SpawnBuildingFunction(const FName& InRowName);
+    bool SpawnBuildingFunction(const FName& InRowName);
     void ClearSpawnedBuildingRef();
     void NotifyBuilderArrived();
     void CancelPendingConstruction();

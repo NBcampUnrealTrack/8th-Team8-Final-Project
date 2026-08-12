@@ -68,7 +68,6 @@ public:
 	void ApplyPreviewMaterial(const bool CanPlaced);
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
-	UStaticMesh* GetCompletedMesh() const;
 	const FBuildingTier* GetCurrentTier() const;
 	
 	UFUNCTION()
@@ -136,20 +135,22 @@ protected:
 	FResources CurrentConstructBuildCost;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentUpgradeBuildCost;
-	
+
 	// 티어별 건설시메쉬, 데미지시 메쉬, 건설 사운드 모음집
+	
 	UPROPERTY()
 	TArray<FBuildingTier> CachedTiersInfo;
 
-	// ★CHANGED: CurrentTierMeshes / CurrentTierRatios → 두 벌로 분리
-	UPROPERTY()
+	// ★Cached Meshes
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
 	TArray<TObjectPtr<UStaticMesh>> CurrentConstructionMeshes;
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
 	TArray<TObjectPtr<UStaticMesh>> CurrentDamageMeshes;
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
+	TObjectPtr<UStaticMesh> CurrentCompletedMesh;
+	
 	UPROPERTY()
 	int32 CurrentStageIndex = 0;
-	UPROPERTY()
-	int32 CurrentDamageIndex = INDEX_NONE;
 
 	// UPROPERTY()
 	// TArray<float> CurrentTierRatios;

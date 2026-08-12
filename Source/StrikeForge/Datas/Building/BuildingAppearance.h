@@ -1,172 +1,192 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DataTable.h"
 #include "Datas/Resource/ResourceTypes.h"
+#include "Engine/DataTable.h"
 #include "BuildingAppearance.generated.h"
 
 class ASFBaseBuilding;
-class UStaticMesh;
-class USoundBase;
 class UMaterialInterface;
+class USoundBase;
+class UStaticMesh;
 
-/**
- * 임계값 하나와 그때의 메시.
- * 건설 단계와 피해 단계가 같은 규칙을 쓴다.
- *
- * 정렬  : Threshold 오름차순
- * 조회  : 현재 값보다 작거나 같은 임계값 중 가장 큰 항목
- * 첫 항목의 Threshold 는 반드시 0 이어야 한다.
- */
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingStage
 {
 	GENERATED_BODY()
-
-	/**
-	 * 이 값 "이상"일 때 적용된다 [0,1].
-	 *   ConstructionStages → 건설 진행도
-	 *   DamageStages       → 체력 비율
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Stage",	meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Threshold = 0.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage")
 	TSoftObjectPtr<UStaticMesh> Mesh;
 };
 
-/** 티어 하나의 전체 정의 */
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingConstructionData
+{
+	GENERATED_BODY()
+
+	/** 해당 티어의 건설 또는 업그레이드 진행 시간 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction", meta = (ClampMin = "0.1"))
+	float Duration = 10.f;
+
+	/** 해당 티어를 최초 건설할 때 사용하는 비용 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
+	FResources ConstructCost;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction")
+	FResources UpgradeCost;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingStatData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Stats",	meta = (ClampMin = "1.0"))
+	float MaxHealth = 100.f;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingVisualData
+{
+	GENERATED_BODY()
+
+	/** 건설 중에만 사용하는 메시. Threshold 오름차순 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	TArray<FBuildingStage> ConstructionStages;
+
+	/** 건설 완료 상태의 기본 메시 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	TSoftObjectPtr<UStaticMesh> CompletedMesh;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TArray<FBuildingStage> DamageStages;
+	
+	// find mesh index by progressratio ( = 0<0.5: 0index , 0.5<0.7: 1 , 0.7: 2 ) 
+	int32 FindConstructionStageIndex(float ProgressRatio) const
+	{
+		if (ConstructionStages.IsEmpty())
+		{
+			return INDEX_NONE;
+		}
+
+		int32 FoundIndex = 0;
+
+		for (int32 Index = 0;
+			Index < ConstructionStages.Num();
+			++Index)
+		{
+			if (ProgressRatio
+				>= ConstructionStages[Index].Threshold)
+			{
+				FoundIndex = Index;
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		return FoundIndex;
+	}
+	// find mesh index by health ( <0.9: 2index, <0.5: 1, <0.1: 0)
+	int32 FindDamageStageIndex(float HealthRatio) const
+	{
+		if (HealthRatio >= 1.f)
+		{
+			return INDEX_NONE;
+		}
+
+		for (int32 Index = 0;
+			Index < DamageStages.Num();
+			++Index)
+		{
+			if (HealthRatio
+				<= DamageStages[Index].Threshold)
+			{
+				return Index;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingAudioData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> ConstructionStart;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> ConstructionComplete;
+};
+
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingTier
 {
 	GENERATED_BODY()
 
-	/** 건설 중 외형. Preview / UnderConstruction 에서 사용. 마지막 = 거의 완성된 모습 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh")
-	TArray<FBuildingStage> ConstructionStages;
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tier")
+	FBuildingConstructionData Construction;
 
-	/** 완성 후 체력별 외형. [0] = 파괴(잔해), 마지막 = 온전한 완성 외형 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mesh")
-	TArray<FBuildingStage> DamageStages;
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingStatData Stats;
 
-	/** 티어 업그레이드 시 이 값으로 완전 회복된다 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats", meta = (ClampMin = "1.0"))
-	float MaxHealth = 100.f;
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingVisualData Visual;
 
-	/** 이 티어의 건설(업그레이드) 소요 시간(초) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats", meta = (ClampMin = "0.1"))
-	float ConstructionDuration = 10.f;
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingAudioData Audio;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
-	TSoftObjectPtr<USoundBase> StartConstructSound;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
-	TSoftObjectPtr<USoundBase> CompleteSound;
-
-	/** 생산 가능 유닛의 행 이름 (FUnitProductData 테이블) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Units")
+	/**
+	 * 생산 건물에서만 사용한다.
+	 * 건물별 기능 데이터가 더 늘어나면 Extension 구조로 이전한다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Tier|Production"
+	)
 	TArray<FName> SpawnableUnits;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
-	FResources ConstructCost;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost")
-	FResources UpgradeCost;
-
 };
 
 USTRUCT(BlueprintType)
-struct STRIKEFORGE_API FBuildingAppearance : public FTableRowBase
+struct STRIKEFORGE_API FBuildingAppearance
+	: public FTableRowBase
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info")
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Identity")
 	FText DisplayName;
 
-	/** 카탈로그 UI 용. 지금은 미사용이지만 나중 재입력을 피하려 미리 둔다 */
-	// UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info")
-	// TSoftObjectPtr<UTexture2D> Icon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Building")
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Spawn")
 	TSoftClassPtr<ASFBaseBuilding> BuildingClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Building", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement",	meta = (ClampMin = "1"))
 	FIntPoint GridSize = FIntPoint(1, 1);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Building")
-	TSoftObjectPtr<UMaterialInterface> PreviewMeshMaterial;
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement")
+	TSoftObjectPtr<UMaterialInterface>	PreviewMaterial;
 
-	/** 인덱스 0 = 1티어 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tiers")
-	TArray<FBuildingTier> BuildingMeshesByTiers;
-
-	const FBuildingTier* GetTierInfo(int32 TierIndex) const
-	{
-		return BuildingMeshesByTiers.IsValidIndex(TierIndex) ? &BuildingMeshesByTiers[TierIndex] : nullptr;
-	}
-
-	bool CanUpgradeNextTier(int32 TierIndex) const
-	{
-		return BuildingMeshesByTiers.IsValidIndex(TierIndex + 1);
-	}
-
-	/** 최초 건설 비용. Tiers 가 비어 있으면 nullptr */
-	const FResources* GetConstructBuildCost(int32 FromTierIndex) const
-	{
-		//return BuildingMeshesByTiers.Num() > 0 ? &BuildingMeshesByTiers[FromTierIndex].ConstructCost : nullptr;
-		return BuildingMeshesByTiers.IsValidIndex(FromTierIndex) ? &BuildingMeshesByTiers[FromTierIndex].ConstructCost : nullptr;
-		
-	}
-
-	/**
-	 * FromTierIndex 에서 다음 티어로 올리는 비용.
-	 * 다음 티어가 없으면 nullptr — 업그레이드 불가와 같은 뜻이다.
-	 */
-	const FResources* GetUpgradeBuildCost(int32 FromTierIndex) const
-	{
-		return BuildingMeshesByTiers.IsValidIndex(FromTierIndex) ? &BuildingMeshesByTiers[FromTierIndex].UpgradeCost : nullptr;
-	}
+	/** 배열 인덱스 0이 게임의 1티어 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")
+	TArray<FBuildingTier> Tiers;
 	
-	/**
-	 * 현재 값에 해당하는 단계 인덱스를 찾는다.
-	 * 건설 단계와 피해 단계가 이 함수를 공유한다.
-	 * Stages 는 Threshold 오름차순으로 정렬되어 있어야 한다.
-	 */
-	static int32 FindStageIndex(const TArray<FBuildingStage>& InStages, float InValue)
+	const FBuildingTier* FindTier(int32 TierIndex) const
 	{
-		if (InStages.Num() == 0)
-		{
-			return INDEX_NONE;              // ★ADD: 빈 배열에서 0 을 반환하면 호출부가 크래시한다
-		}
+		return Tiers.IsValidIndex(TierIndex)
+			? &Tiers[TierIndex]
+			: nullptr;
+	}
 
-		int32 Found = 0;
-		for (int32 Index = 0; Index < InStages.Num(); ++Index)
-		{
-			if (InValue >= InStages[Index].Threshold) { Found = Index; }
-			else { break; }
-		}
-		return Found;
-	}
-	
-	static int32 FindDamageStageIndex(const TArray<FBuildingStage>& InStages, float InRatio)
+	bool HasNextTier(int32 CurrentTierIndex) const
 	{
-		// ★ADD: 체력이 가득 차 있으면 손상이 아니다.
-		//        데이터에 Threshold 1.0 항목이 있어도 완성 외형을 덮지 않는다.
-		if (InRatio >= 1.f)
-		{
-			return INDEX_NONE;
-		}
-		
-		// 오름차순이므로 처음 만나는 항목이 조건을 만족하는 가장 낮은 단계다.
-		for (int32 Index = 0; Index < InStages.Num(); ++Index)
-		{
-			if (InRatio <= InStages[Index].Threshold)
-			{
-				return Index;
-			}
-		}
-		return INDEX_NONE;      // 어떤 단계보다도 체력이 높다 → 손상 없음
+		return Tiers.IsValidIndex(
+			CurrentTierIndex + 1
+		);
 	}
-//
-// #if WITH_EDITOR
-// 	virtual void OnDataTableChanged(const UDataTable* InTable, const FName InRowName) override;
-// #endif
- };
+};

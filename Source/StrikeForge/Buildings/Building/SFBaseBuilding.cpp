@@ -2,9 +2,7 @@
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "ActorComponent/Product/ProductComponent.h"
 #include "Datas/Building/BuildingAppearance.h"
-#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -42,16 +40,22 @@ void ASFBaseBuilding::InitializeBuildingData()
 
 void ASFBaseBuilding::RefreshVisual()
 {
-	UStaticMesh* Mesh = ResolveMesh();
-	if (IsValid(StaticMeshComponent) && StaticMeshComponent->GetStaticMesh() == Mesh)
+	UStaticMesh* ResolvedMesh = ResolveMesh();
+	if (!IsValid(ResolvedMesh))
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[%s] RefreshVisual: 해당 상태(%d)에 적용할 메시가 없습니다. Row=%s"),
-			*GetName(), static_cast<int32>(CurrentBuildingState), *RowName.ToString());
+		UE_LOG(LogTemp,Warning,TEXT("[%s] 적용할 메시가 없습니다. State=%d, Row=%s"),
+			*GetName(),
+			static_cast<int32>(CurrentBuildingState),
+			*RowName.ToString());
 		return;
 	}
 
-	SetMesh(Mesh);
+	if (StaticMeshComponent->GetStaticMesh() == ResolvedMesh)
+	{
+		return;
+	}
+
+	SetMesh(ResolvedMesh);
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
@@ -85,20 +89,10 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 
 void ASFBaseBuilding::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
-	const FBuildingTier* Tier = GetCurrentTier();
-	if (!Tier || Tier->DamageStages.Num() == 0) return;
-
-	const float Ratio = (InMaxHP > 0.f) ? (InCurrentHP / InMaxHP) : 0.f;
-	UE_LOG(LogTemp, Warning, TEXT("%s ::Current HP: %f / %f"),*GetName(), InCurrentHP, InMaxHP);
-	// ★CHANGED: FindStageIndex → FindDamageStageIndex ("이하" 규칙)
-	const int32 NewIndex = FBuildingAppearance::FindDamageStageIndex(Tier->DamageStages, Ratio);
-
-	if (NewIndex == CurrentDamageIndex) return;           // ★CHANGED: INDEX_NONE 도 유효한 값이다
-
-	CurrentDamageIndex = NewIndex;
-
-	// 건설 중이면 ResolveMesh 가 무시한다. 완성 시점에 한 번에 반영된다.
-	RefreshVisual();
+	if (CurrentBuildingState == EBuildingState::Completed)
+	{
+		RefreshVisual();
+	}
 }
 
 void ASFBaseBuilding::HandleHealthZero()
@@ -283,7 +277,7 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 	switch (CurrentBuildingState)
 	{
 	case EBuildingState::Preview:
-		return GetCompletedMesh();
+		return CurrentCompletedMesh;
 
 	case EBuildingState::UnderConstruction:
 		return CurrentConstructionMeshes.IsValidIndex(CurrentStageIndex)
@@ -292,20 +286,23 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 
 	case EBuildingState::Completed:
 	case EBuildingState::Destroyed:
-		if (CurrentDamageMeshes.IsValidIndex(CurrentDamageIndex))
 		{
-			return CurrentDamageMeshes[CurrentDamageIndex];
+			const FBuildingTier* Tier = GetCurrentTier();
+
+			const int32 DamageIndex =
+				Tier && IsValid(HealthComponent)
+				? Tier->Visual.FindDamageStageIndex(
+					HealthComponent->GetHealthPercent())
+				: INDEX_NONE;
+
+			return CurrentDamageMeshes.IsValidIndex(DamageIndex)
+				? CurrentDamageMeshes[DamageIndex]
+				: CurrentCompletedMesh;
 		}
-		return GetCompletedMesh();       // DamageStages 미입력 시 기존 동작
 
 	default:
 		return nullptr;
 	}
-}
-
-UStaticMesh* ASFBaseBuilding::GetCompletedMesh() const
-{
-	return CurrentConstructionMeshes.Num() > 0 ? CurrentConstructionMeshes.Last() : nullptr;
 }
 
 const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
@@ -439,79 +436,119 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 // 		CurrentTierMeshes.Add(LoadMesh);
 // 	}
 // }
-
 void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	if (!InData)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASFBaseBuilding::InitInfo: InData is invalid."));
+		UE_LOG(LogTemp,	Warning, TEXT("ASFBaseBuilding::InitInfo: InData is invalid."));
 		return;
 	}
 
-	// TODO: FindStageIndex 는 Threshold 오름차순을 전제한다.
-	//       현재는 데이터가 정렬되어 입력된다고 가정. 검증/정렬은 추후 추가.
-	
-	// appearance에서 1회만 적용되는 값(초기화)
-	CachedTiersInfo    = InData->BuildingMeshesByTiers;
+	CachedTiersInfo = InData->Tiers;
 	CachedGridSize = InData->GridSize;
-	DisplayName    = InData->DisplayName;
-
-	BuildingPreviewMaterialInstance = InData->PreviewMeshMaterial.LoadSynchronous();   // ★CHANGED
-	UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes:: Completed."));
+	DisplayName = InData->DisplayName;
+	// sort is unnessary, always sort
+	BuildingPreviewMaterialInstance = InData->PreviewMaterial.LoadSynchronous();
 }
 
 void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 { // 티어별 메쉬 로딩
 	CurrentConstructionMeshes.Reset();
 	CurrentDamageMeshes.Reset();
+
+	CurrentCompletedMesh = nullptr;
 	BuildingStartSound = nullptr;
 	BuildingCompleteSound = nullptr;
 
 	if (!CachedTiersInfo.IsValidIndex(InCurrentTier))
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierData: Invalid Tier %d / %d"),
-			InCurrentTier, CachedTiersInfo.Num());
+		UE_LOG(	LogTemp,Error,TEXT("ASFBaseBuilding::LoadTierData: Invalid Tier %d / %d"),
+			InCurrentTier,
+			CachedTiersInfo.Num());
 		return;
 	}
+	// current tier info
+	const FBuildingTier& Tier =	CachedTiersInfo[InCurrentTier];
+	// construct cost
+	const FBuildingConstructionData& Construction =	Tier.Construction;
+	// stat - health
+	const FBuildingStatData& Stats = Tier.Stats;
+	// TArray - meshes
+	const FBuildingVisualData& Visual =	Tier.Visual;
+	// sound - construct.start/end
+	const FBuildingAudioData& Audio = Tier.Audio;
+	
+	// cached cost
+	CurrentConstructBuildCost =	Construction.ConstructCost;
+	CurrentUpgradeBuildCost = Construction.UpgradeCost;
 
-	const FBuildingTier& Tier = CachedTiersInfo[InCurrentTier];
-	
-	CurrentConstructBuildCost = Tier.ConstructCost; // 나중에 복구값으로 + 초기값 ui
-	CurrentUpgradeBuildCost = Tier.UpgradeCost; // 업그레이드시 ui
-	
-	// 건설 단계 — 
 	TArray<float> Thresholds;
-	Thresholds.Reserve(Tier.ConstructionStages.Num());
-	CurrentConstructionMeshes.Reserve(Tier.ConstructionStages.Num());
+	Thresholds.Reserve(Visual.ConstructionStages.Num());
+	CurrentConstructionMeshes.Reserve(Visual.ConstructionStages.Num());
 
-	for (const FBuildingStage& Stage : Tier.ConstructionStages)
-	{ // FBuildingStage == float , ustatic mesh
+	for (const FBuildingStage& Stage: Visual.ConstructionStages)
+	{	// cached ratio
 		Thresholds.Add(Stage.Threshold);
-		CurrentConstructionMeshes.Add(Stage.Mesh.LoadSynchronous());
+		// cached meshes
+		UStaticMesh* Mesh =	Stage.Mesh.LoadSynchronous();
+		CurrentConstructionMeshes.Add(Mesh);
+		
+		if (!IsValid(Mesh))
+		{
+			UE_LOG(LogTemp,Error,TEXT("[%s] Tier %d ConstructionStage Mesh 로드 실패"),
+				*RowName.ToString(),
+				InCurrentTier
+			);
+		}
 	}
+	// cached completed mesh
+	CurrentCompletedMesh = Visual.CompletedMesh.LoadSynchronous();
 
-	// 피해 단계
-	CurrentDamageMeshes.Reserve(Tier.DamageStages.Num());
-	for (const FBuildingStage& Stage : Tier.DamageStages)
+	// DT_Buildings 데이터 이전이 끝날 때까지만 유지합니다.
+	// if (!IsValid(CurrentCompletedMesh)
+	// 	&& !CurrentConstructionMeshes.IsEmpty())
+	// {
+	// 	CurrentCompletedMesh = CurrentConstructionMeshes.Last();
+	//
+	// 	UE_LOG(
+	// 		LogTemp,
+	// 		Warning,
+	// 		TEXT("[%s] Tier %d CompletedMesh가 비어 있어 "
+	// 		     "ConstructionStages.Last()를 임시 사용합니다."),
+	// 		*RowName.ToString(),
+	// 		InCurrentTier
+	// 	);
+	// }
+
+	CurrentDamageMeshes.Reserve(Visual.DamageStages.Num());
+
+	for (const FBuildingStage& Stage: Visual.DamageStages)
 	{
-		CurrentDamageMeshes.Add(Stage.Mesh.LoadSynchronous());
+		// cached dmgmeshes
+		UStaticMesh* Mesh =	Stage.Mesh.LoadSynchronous();
+		CurrentDamageMeshes.Add(Mesh);
+		
+		if (!IsValid(Mesh))
+		{
+			UE_LOG(LogTemp,Error,TEXT("[%s] Tier %d DamageStage Mesh 로드 실패"),
+				*RowName.ToString(),
+				InCurrentTier
+			);
+		}
 	}
-
-	BuildingStartSound = Tier.StartConstructSound.LoadSynchronous();
-	BuildingCompleteSound       = Tier.CompleteSound.LoadSynchronous();
+	// cached sound
+	BuildingStartSound = Audio.ConstructionStart.LoadSynchronous();
+	BuildingCompleteSound = Audio.ConstructionComplete.LoadSynchronous();
 
 	if (IsValid(ProgressComponent))
-	{
-		// not start 미리 duration set
+	{	// set ratio to progresscomp
 		ProgressComponent->SetQuarterOfRatios(Thresholds);
-		ProgressComponent->SetDuration(Tier.ConstructionDuration);
+		ProgressComponent->SetDuration(Construction.Duration);
 	}
 
-	// 티어 업그레이드 = 완전 회복.
-	// 메시를 다 채운 뒤에 불러야 한다 — 브로드캐스트가 OnTakeAttacking → RefreshVisual 로 이어진다.
 	if (IsValid(HealthComponent))
-	{	// maxhealth초기화
-		HealthComponent->InitHealth(Tier.MaxHealth);
+	{	// full health
+		HealthComponent->InitHealth(Stats.MaxHealth);
 	}
 }
 

@@ -1,10 +1,5 @@
 ﻿#include "SFProductionBuilding.h"
-
 #include "ActorComponent/Product/ProductComponent.h"
-#include "Compilation/IMovieSceneTrackTemplateProducer.h"
-#include "Datas/Unit/UnitProductData.h"
-#include "Game/GameState/SFGameState.h"
-#include "Game/Subsystem/SFDataTableManager.h"
 
 ASFProductionBuilding::ASFProductionBuilding()
 {
@@ -26,8 +21,6 @@ void ASFProductionBuilding::OnConstructionFinished()
 	// product component initialize
 	UE_LOG(LogTemp, Warning, TEXT("AProductionBuilding::OnConstructionFinished: ProduceComponent Init."));
 	UpdateSpawnableUnitNames(CurrentTier);
-	
-	
 }
 
 void ASFProductionBuilding::OnBuildingDestroyed()
@@ -40,10 +33,6 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 void ASFProductionBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	Super::InitInfo(InData);
-	
-	UpdateSpawnableUnitNames(CurrentTier);
-	//const TArray<FName> GetSpawnableList = InData->AllTierBuildingStates.TierBuildingState[CurrentTier].SpawnableUnits;
-	
 }
 
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
@@ -91,4 +80,12 @@ void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 
 	StoredSpawnableUnitDatas = CachedTiersInfo[InCurrentTier].SpawnableUnits;   // ★FIX
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+}
+
+FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info = Super::GetSelectableInfo_Implementation();
+
+	Info.SelectableType = ESFSelectableType::ProductionBuilding;
+	return Info;
 }

@@ -38,6 +38,7 @@ protected:
 	virtual void InitInfo(const FBuildingAppearance* InData) override;
 	void UpdateSpawnableUnitNames(int32 InCurrentTier);
 	
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual void ProductUnits_Implementation(FName InUnitName) override;
 	virtual FProductableData GetProductableData_Implementation() override;
 	void TryAddUnitProductLine(FName InUnitName);

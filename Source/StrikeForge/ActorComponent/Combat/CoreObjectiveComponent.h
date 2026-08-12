@@ -5,11 +5,14 @@
 #include "CoreObjectiveComponent.generated.h"
 
 /**
- * 핵심 건물용 전투 대상 컴포넌트.
+ * 핵심 건물 표식 컴포넌트.
  *
- * CombatTargetComponent 와 다른 점은 파괴 시 스테이지를 끝낸다는 것뿐이다.
- * 별도 액터 클래스를 만들지 않기 위해 컴포넌트로 분리했다.
- * 건물 BP 에 이것을 붙이면 그 건물이 곧 핵심 건물이 된다.
+ * 하는 일은 타겟 분류를 CoreBuilding 으로 지정하는 것뿐이다.
+ * 이 값이 있어야 전투 유닛이 "진격 목표" 로 인식한다.
+ * (AUnitBase::Advance 가 ETargetType::CoreBuilding 을 최우선으로 찾는다)
+ *
+ * 승패 판정은 ASFNexusBuilding::OnBuildingDestroyed 가 담당한다.
+ * 파괴 → 승패는 넥서스 자신의 책임이므로 그쪽에 두는 것이 읽기 쉽다.
  */
 UCLASS(ClassGroup=(StrikeForge), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UCoreObjectiveComponent : public UCombatTargetComponent
@@ -18,15 +21,4 @@ class STRIKEFORGE_API UCoreObjectiveComponent : public UCombatTargetComponent
 
 public:
 	UCoreObjectiveComponent();
-
-	/** 파괴 순간. 연출은 BP 에서 */
-	UFUNCTION(BlueprintImplementableEvent, Category = "SF|Objective")
-	void OnCoreDestroyed(int32 InLoserTeamIndex);
-
-protected:
-	virtual void HandleOwnerDeath() override;
-
-	/** 끄면 파괴돼도 스테이지를 끝내지 않는다. 전투 반복 테스트용 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Objective")
-	uint8 bFinishStageOnDestroyed : 1;
 };

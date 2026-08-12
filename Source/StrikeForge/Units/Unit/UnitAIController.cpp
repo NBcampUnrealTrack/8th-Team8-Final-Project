@@ -5,6 +5,20 @@
 #include "NavigationSystem.h"
 #include "Logging/SFLog.h"
 
+/**
+ * 이동 요청 로그 전역 스위치.
+ *
+ * 유닛별 bLogMoveRequests 를 켜려면 AIController 상속 BP 를 만들어야 해서
+ * 급할 때 번거롭다. 콘솔에서 바로 켠다.
+ *
+ *   sf.LogMoveRequests 1
+ */
+static TAutoConsoleVariable<int32> CVarLogMoveRequests(
+	TEXT("sf.LogMoveRequests"),
+	0,
+	TEXT("유닛 이동 요청 결과를 로그로 출력 (0=off, 1=on)"),
+	ECVF_Cheat);
+
 AUnitAIController::AUnitAIController(const FObjectInitializer& ObjectInitializer)
 	// 기본 PathFollowingComponent 를 CrowdFollowing 으로 교체한다.
 	// 이것이 있어야 유닛끼리 서로 밀고 지나가지 않고 자연스럽게 비켜간다.
@@ -76,7 +90,65 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 	bHasLocationGoal = false;
 	LastRequestTime = Now;
 
-	FAIMoveRequest Request(InGoal);
+	// 건물처럼 큰 목표는 자기 발밑의 NavMesh 를 통째로 덮는다.
+	// 그러면 목표 지점을 NavMesh 로 투영할 수 없어 부분 경로조차 나오지 않고
+	// MoveTo 가 Failed / PathValid 0 / Partial 0 을 돌려준다.
+	//
+	// 목표 액터를 그대로 넘기는 대신, 우리 쪽에서 목표를 향한 방향으로
+	// 물러난 지점을 NavMesh 에 투영해 "도달 가능한 위치"를 목표로 삼는다.
+	FAIMoveRequest Request;
+	bool bUsedProjectedGoal = false;
+
+	if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+	{
+		const FVector PawnLoc = GetPawn()->GetActorLocation();
+		const FVector GoalLoc = InGoal->GetActorLocation();
+
+		FNavLocation Projected;
+
+		// 목표 자체가 NavMesh 위라면 그대로 쓴다 (유닛 등 작은 대상)
+		if (NavSys->ProjectPointToNavigation(GoalLoc, Projected, FVector(200.f, 200.f, 500.f)))
+		{
+			Request.SetGoalLocation(Projected.Location);
+			bUsedProjectedGoal = true;
+		}
+		else
+		{
+			// 목표가 NavMesh 밖이다. 목표를 바라보는 방향에서 조금씩 물러나며
+			// NavMesh 위의 접근 지점을 찾는다.
+			FVector ToPawn = PawnLoc - GoalLoc;
+			ToPawn.Z = 0.f;
+
+			if (!ToPawn.IsNearlyZero())
+			{
+				ToPawn.Normalize();
+
+				// 건물 크기를 모르므로 바운딩 박스 반경에서 시작해 점점 넓힌다
+				const FBox GoalBox = InGoal->GetComponentsBoundingBox(true);
+				const float BaseRadius = GoalBox.IsValid
+					? GoalBox.GetExtent().Size2D()
+					: 300.f;
+
+				for (int32 Step = 1; Step <= 5 && !bUsedProjectedGoal; ++Step)
+				{
+					const FVector Candidate = GoalLoc + ToPawn * (BaseRadius + Step * 150.f);
+
+					if (NavSys->ProjectPointToNavigation(Candidate, Projected, FVector(300.f, 300.f, 500.f)))
+					{
+						Request.SetGoalLocation(Projected.Location);
+						bUsedProjectedGoal = true;
+					}
+				}
+			}
+		}
+	}
+
+	// 투영에 실패하면 원래대로 액터를 목표로 넘긴다
+	if (!bUsedProjectedGoal)
+	{
+		Request.SetGoalActor(InGoal);
+	}
+
 	Request.SetAcceptanceRadius(InAcceptanceRadius);
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(true);				// 목표가 NavMesh 밖이어도 최대한 접근
@@ -92,21 +164,20 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 
 	const FPathFollowingRequestResult Result = MoveTo(Request);
 
-	// 이미 도달했다고 응답하면 이동이 시작되지 않는다.
-	// 목표를 비워 다음 틱에 새 경로로 다시 시도하게 한다.
-	if (Result.Code != EPathFollowingRequestResult::RequestSuccessful)
-	{
-		LastGoalActor = nullptr;
-	}
+	// 실패해도 LastGoalActor 는 유지한다.
+	// 비우면 MinRequestInterval 억제가 풀려 매 프레임 재요청이 나가고,
+	// 경로가 원래 없는 상황에서는 로그가 초당 수십 줄씩 쏟아진다.
+	// 시간 억제(0.5초)만으로 충분히 재시도된다.
 
-	if (bLogMoveRequests)
+	if (bLogMoveRequests || CVarLogMoveRequests.GetValueOnGameThread() > 0)
 	{
 		const UPathFollowingComponent* PFC = GetPathFollowingComponent();
 		const bool bPartial = PFC && PFC->GetPath().IsValid() && PFC->GetPath()->IsPartial();
 
-		SF_LOG(Warning, "[%s] MoveTo(%s) -> %s / PathValid %d / Partial %d",
+		SF_LOG(Warning, "[%s] MoveTo(%s%s) -> %s / PathValid %d / Partial %d",
 			GetPawn() ? *GetPawn()->GetName() : TEXT("NoPawn"),
 			*InGoal->GetName(),
+			bUsedProjectedGoal ? TEXT(" [투영]") : TEXT(" [액터직접]"),
 			Result.Code == EPathFollowingRequestResult::RequestSuccessful ? TEXT("Success")
 				: Result.Code == EPathFollowingRequestResult::AlreadyAtGoal ? TEXT("AlreadyAtGoal")
 				: TEXT("Failed"),

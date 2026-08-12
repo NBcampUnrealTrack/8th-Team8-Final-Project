@@ -105,6 +105,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return CachedGridSize; }
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }

@@ -66,14 +66,6 @@ void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
 	// 건설완료상태일때만 생산할수있다
 	if (CurrentBuildingState == EBuildingState::Completed)
 	{
-#pragma region CheckResources
-		// //TODO: resource check
-		// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
-		// if (!IsValid(SFGameState)) return;
-		// if (!SFGameState->CheckCanBuildAndSpendCost(unitcost?.mineral, unitcost?.ether))
-		// 	return;
-#pragma endregion 
-		
 		ProductComponent->AddProductInLine(InUnitName);
 		return;
 	}

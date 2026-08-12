@@ -15,7 +15,9 @@ UProductComponent::UProductComponent()
 
 void UProductComponent::AllClearProductLine()
 {
+	StopProductLine();
 	ProductLine.Reset();
+	OnProductLineChanged.Broadcast(ProductLine);
 }
 
 void UProductComponent::AddProductInLine(FName InProductName)
@@ -27,6 +29,14 @@ void UProductComponent::AddProductInLine(FName InProductName)
 		UE_LOG(LogTemp, Warning, TEXT("ProductLine is Full: %d / %d"), ProductLine.Num(), MaxLineCount);
 		return;
 	}
+	
+#pragma region CheckResources
+	// //TODO: resource check
+	// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
+	// if (!IsValid(SFGameState)) return;
+	// if (!SFGameState->TrySpendCost(unitcost?.mineral, unitcost?.ether))
+	// 	return;
+#pragma endregion 
 	
 	USFDataTableManager* DataManager = GetOwner()->GetGameInstance()->GetSubsystem<USFDataTableManager>();
 	if (!IsValid(DataManager)) return;
@@ -73,7 +83,7 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 
 void UProductComponent::StartProductLine()
 {
-	// currentproduct startinfo
+	// TODO: Population Check Logic
 
 	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
 	Tracker.Reset(ProductLine[0].Duration, 1.f);

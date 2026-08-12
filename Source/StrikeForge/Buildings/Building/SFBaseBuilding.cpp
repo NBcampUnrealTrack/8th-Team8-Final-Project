@@ -533,7 +533,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	// gamestate resource check
 	// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
 	// if (!IsValid(SFGameState)) return;
-	// if (!SFGameState->CheckCanBuildAndSpendCost(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
+	// if (!SFGameState->TrySpendCost(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
 	// 	return;
 #pragma endregion 
 	

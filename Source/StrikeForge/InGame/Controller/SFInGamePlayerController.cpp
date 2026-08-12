@@ -47,11 +47,12 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     }
     
 #pragma region CheckResources 
-    // ASFGameState* SFGameState = Cast<ASFGameState>(UGameplayStatics::GetGameState(GetWorld()));
+    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
     // if (!IsValid(SFGameState)) return false;
     //
-    // if (!SFGameState->CheckCanBuildAndSpendCost(
-    //     Row->GetInitialCost()->Mineral, Row->GetInitialCost()->Ether))
+    // if (!SFGameState->CanAfford(
+    //     Row->GetConstructBuildCost(0)->Mineral,
+    //     Row->GetConstructBuildCost(0)->Ether))
     //     return false;
 #pragma endregion 
     
@@ -125,7 +126,15 @@ void ASFInGamePlayerController::CancelPendingConstruction()
 
     SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingConstructionBuilding->GetName());
 
-    // TODO: 자원 환불 (자원 차감을 넣은 뒤)
+#pragma region CheckCost
+    // ★ADD: 배치 확정 시 차감했으므로 되돌려준다.
+    // if (ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>())
+    // {
+    //     SFGameState->RefundCost(
+    //     PendingConstructionBuilding->GetConstructCost().Mineral,
+    //     PendingConstructionBuilding->GetConstructCost().Ether);
+    // }
+#pragma endregion 
     // TODO: 그리드 점유 해제 (TryRegistBuildingGrid 를 연결한 뒤)
 
     PendingConstructionBuilding->Destroy();
@@ -409,7 +418,16 @@ HandleConfirmBuildInput()
     {
         return;
     }
-
+#pragma region CheckCost
+    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
+    // if (!IsValid(SFGameState)) return;
+    // const FResources NeedCost = SpawnedBuildingRef->GetConstructCost();
+    // if (!SFGameState->TrySpendCost(NeedCost.Mineral, NeedCost.Ether))
+    // {
+    //     SF_LOG(Warning, "[SFPC] 자원이 부족해 배치를 확정할 수 없습니다.");
+    //     return;                                  // 배치 모드 유지 — 취소는 우클릭으로
+    // }
+#pragma endregion 
     PlacementComponent->ConfirmPlacementMode();
 
     ASFCommander* Commander = MyCommander.Get();

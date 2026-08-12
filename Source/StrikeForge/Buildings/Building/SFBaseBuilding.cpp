@@ -28,13 +28,28 @@ void ASFBaseBuilding::InitializeBuildingData()
 		return;
 	}
 	
-	InitInfo(Row); 
-	LoadTierRatioList(CurrentTier); // get ratio at datatable
-	LoadTierMeshList(CurrentTier);
+	InitInfo(Row);
+	LoadTierData(CurrentTier);
+	// LoadTierRatioList(CurrentTier); // get ratio at datatable
+	// LoadTierMeshList(CurrentTier);
 	/////////////////////////////////////////////////////////////////
 	///
 	// ApplyPreviewMesh(); // set preview mesh
 	// ApplyPreviewMaterial(true); // true = green false = red;
+}
+
+void ASFBaseBuilding::RefreshVisual()
+{
+	UStaticMesh* Mesh = ResolveMesh();
+	if (!Mesh)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[%s] RefreshVisual: 해당 상태(%d)에 적용할 메시가 없습니다. Row=%s"),
+			*GetName(), static_cast<int32>(CurrentBuildingState), *RowName.ToString());
+		return;
+	}
+
+	SetMesh(Mesh);
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
@@ -44,10 +59,20 @@ void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 
 void ASFBaseBuilding::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
-	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnTakeAttacking"));
-	
-	// play taken dmg montage
-	// play sound
+	const FBuildingTier* Tier = GetCurrentTier();
+	if (!Tier || Tier->DamageStages.Num() == 0) return;
+
+	const float Ratio = (InMaxHP > 0.f) ? (InCurrentHP / InMaxHP) : 0.f;
+	UE_LOG(LogTemp, Warning, TEXT("%s ::Current HP: %f / %f"),*GetName(), InCurrentHP, InMaxHP);
+	// ★CHANGED: FindStageIndex → FindDamageStageIndex ("이하" 규칙)
+	const int32 NewIndex = FBuildingAppearance::FindDamageStageIndex(Tier->DamageStages, Ratio);
+
+	if (NewIndex == CurrentDamageIndex) return;           // ★CHANGED: INDEX_NONE 도 유효한 값이다
+
+	CurrentDamageIndex = NewIndex;
+
+	// 건설 중이면 ResolveMesh 가 무시한다. 완성 시점에 한 번에 반영된다.
+	RefreshVisual();
 }
 
 void ASFBaseBuilding::HandleHealthZero()
@@ -62,7 +87,8 @@ void ASFBaseBuilding::HandleHealthZero()
 	// do not destroy()
 	
 	// virtual function
-	OnBuildingDestroyed();
+	SetBuildingState(EBuildingState::Destroyed);
+	//OnBuildingDestroyed();
 }
 
 void ASFBaseBuilding::ApplySpawnMode()
@@ -111,54 +137,51 @@ bool ASFBaseBuilding::TryStartConstruction()
 
 }
 
-void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
-{
-	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierRatioList: Invalid Tier %d / %d"),
-			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-		return;
-	}
-	
-	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
-	
-	CurrentTierRatios.Sort([](const float A, const float B)
-	{
-		return A < B;
-	});
-	
-	if (CountKeys <= 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::GetTierRatioList: TMap_ratio is Invalid"));
-		return;
-	}
-	
-	ProgressComponent->SetQuarterOfRatios(CurrentTierRatios);
-	BuildingCompleteSound = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].CompleteSoundBase;
-}
+// void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
+// {
+// 	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+// 	{
+// 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierRatioList: Invalid Tier %d / %d"),
+// 			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
+// 		return;
+// 	}
+// 	
+// 	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
+// 	
+// 	CurrentTierRatios.Sort([](const float A, const float B)
+// 	{
+// 		return A < B;
+// 	});
+// 	
+// 	if (CountKeys <= 0)
+// 	{
+// 		UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::GetTierRatioList: TMap_ratio is Invalid"));
+// 		return;
+// 	}
+// 	
+// 	ProgressComponent->SetQuarterOfRatios(CurrentTierRatios);
+// 	BuildingCompleteSound = CachedTiersInfo.[InCurrentTier].CompleteSoundBase;
+// }
 
 void ASFBaseBuilding::EnterPreviewState()
 {
 	//SetBuildingState(EBuildingState::Preview);
 
-	ApplyPreviewMesh();
+	RefreshVisual();
 	ApplyPreviewMaterial(true);
 }
 
 void ASFBaseBuilding::BeginConstruction()
 {
-	//SetBuildingState(EBuildingState::UnderConstruction);
-	// BeginConstruction() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] BeginConstruction, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
-	
-	LoadTierRatioList(CurrentTier); // get ratio at datatable
-	LoadTierMeshList(CurrentTier);
-	
-	StaticMeshComponent->SetMaterial(0, nullptr);
+	CurrentStageIndex = 0;            // ★MOVED: LoadTierData 앞으로
+	LoadTierData(CurrentTier);
 
-	if (CurrentTierMeshes.IsValidIndex(0))
+	StaticMeshComponent->SetMaterial(0, nullptr);
+	RefreshVisual();
+
+	if (IsValid(BuildingStartConstructSound))   // ★ADD
 	{
-		SetMesh(CurrentTierMeshes[0]);
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), BuildingStartConstructSound, GetActorLocation());
 	}
 
 	ProgressComponent->StartProgress();
@@ -166,28 +189,41 @@ void ASFBaseBuilding::BeginConstruction()
 
 void ASFBaseBuilding::EnterCompletedState()
 { // set last mesh completed
-	//SetBuildingState(EBuildingState::Completed);
-	//ProgressComponent->StopProgress();
-	// EnterCompletedState() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] EnterCompletedState, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
-	
 	StaticMeshComponent->SetMaterial(0, nullptr);
-	if (!CurrentTierMeshes.IsEmpty())
-	{
-		SetMesh(CurrentTierMeshes.Last());
-	}
+	RefreshVisual();    
 }
 
-void ASFBaseBuilding::ApplyPreviewMesh()
+void ASFBaseBuilding::EnterDestroyedState()
 {
-	if (CurrentTierMeshes.IsEmpty())
+	if (IsValid(ProgressComponent))
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ApplyPreviewMesh:CurrentTierMeshes is Empty"));
-		return;
+		ProgressComponent->StopProgress();      // 건설 중 파괴 시 진행 정지
 	}
-	UStaticMesh* InMesh = CurrentTierMeshes[CurrentTierMeshes.Num() - 1];
-	StaticMeshComponent->SetStaticMesh(InMesh);
+
+	ApplyDestroyedCollision();
+	RefreshVisual();
+	OnBuildingDestroyed();
 }
+
+void ASFBaseBuilding::ApplyDestroyedCollision()
+{
+	if (!IsValid(StaticMeshComponent)) return;
+
+	StaticMeshComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	StaticMeshComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	StaticMeshComponent->SetCanEverAffectNavigation(false);
+}
+
+// void ASFBaseBuilding::ApplyPreviewMesh()
+// {
+// 	if (CurrentTierMeshes.IsEmpty())
+// 	{
+// 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ApplyPreviewMesh:CurrentTierMeshes is Empty"));
+// 		return;
+// 	}
+// 	UStaticMesh* InMesh = CurrentTierMeshes[CurrentTierMeshes.Num() - 1];
+// 	StaticMeshComponent->SetStaticMesh(InMesh);
+// }
 
 void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
 {
@@ -211,6 +247,41 @@ void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
 		OverlayMID->SetVectorParameterValue("PreviewColor", FLinearColor(0.700000,0.000000,0.000000,1.000000));
 		StaticMeshComponent->SetMaterial(0, OverlayMID);
 	}
+}
+
+UStaticMesh* ASFBaseBuilding::ResolveMesh() const
+{
+	switch (CurrentBuildingState)
+	{
+	case EBuildingState::Preview:
+		return GetCompletedMesh();
+
+	case EBuildingState::UnderConstruction:
+		return CurrentConstructionMeshes.IsValidIndex(CurrentStageIndex)
+			? CurrentConstructionMeshes[CurrentStageIndex]
+			: nullptr;
+
+	case EBuildingState::Completed:
+	case EBuildingState::Destroyed:
+		if (CurrentDamageMeshes.IsValidIndex(CurrentDamageIndex))
+		{
+			return CurrentDamageMeshes[CurrentDamageIndex];
+		}
+		return GetCompletedMesh();       // DamageStages 미입력 시 기존 동작
+
+	default:
+		return nullptr;
+	}
+}
+
+UStaticMesh* ASFBaseBuilding::GetCompletedMesh() const
+{
+	return CurrentConstructionMeshes.Num() > 0 ? CurrentConstructionMeshes.Last() : nullptr;
+}
+
+const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
+{
+	return CachedTiersInfo.IsValidIndex(CurrentTier) ? &CachedTiersInfo[CurrentTier] : nullptr;
 }
 
 void ASFBaseBuilding::BindFunctionWithComponent()
@@ -258,17 +329,26 @@ void ASFBaseBuilding::UnBindFunctionWithComponent()
 
 void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
 {
-	if (!CurrentTierMeshes.IsValidIndex(InCurrentRatioIndex))
+	if (!CurrentConstructionMeshes.IsValidIndex(InCurrentRatioIndex))
 	{
 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ChangeMeshByRatio: Invalid Index %d / %d"),
-			InCurrentRatioIndex, CurrentTierMeshes.Num());
+			InCurrentRatioIndex, CurrentConstructionMeshes.Num());
 		return;
 	}
-	SetMesh(CurrentTierMeshes[InCurrentRatioIndex]);
+
+	CurrentStageIndex = InCurrentRatioIndex;    // ★CHANGED
+	RefreshVisual();
 }
 
 void ASFBaseBuilding::PlayBuildingEffect()
 {
+	if (!IsValid(BuildingCompleteSound))                          // ★ADD
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PlayBuildingEffect: CompleteSound is None. RowName=%s"),
+			*RowName.ToString());
+		return;
+	}
+	
 	UGameplayStatics::PlaySoundAtLocation(
 		GetWorld(),
 		BuildingCompleteSound,
@@ -303,74 +383,120 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 	case EBuildingState::Completed:
 		EnterCompletedState();
 		break;
+	case EBuildingState::Destroyed: 
+		EnterDestroyedState();
+		break;
 		
 	default:
 		break;
 	}
 }
 
-void ASFBaseBuilding::LoadTierMeshList(int32 InCurrentTier)
-{
-	// load > will change assetmanager
-	CurrentTierMeshes.Empty();
-	
-	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierMeshList: Invalid Tier %d / %d"),
-			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-		return;
-	}
-	
-	for ( auto Key : CurrentTierRatios)
-	{
-		UStaticMesh* LoadMesh = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh[Key].LoadSynchronous();
-		CurrentTierMeshes.Add(LoadMesh);
-	}
-}
+// void ASFBaseBuilding::LoadTierMeshList(int32 InCurrentTier)
+// {
+// 	// load > will change assetmanager
+// 	CurrentTierMeshes.Empty();
+// 	
+// 	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+// 	{
+// 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierMeshList: Invalid Tier %d / %d"),
+// 			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
+// 		return;
+// 	}
+// 	
+// 	for ( auto Key : CurrentTierRatios)
+// 	{
+// 		UStaticMesh* LoadMesh = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh[Key].LoadSynchronous();
+// 		CurrentTierMeshes.Add(LoadMesh);
+// 	}
+// }
 
 void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	if (!InData)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes::InData: Invalid"));
+		UE_LOG(LogTemp, Warning, TEXT("ASFBaseBuilding::InitInfo: InData is invalid."));
 		return;
 	}
-	
-	AllTierMeshesSoftArray = InData->AllTierBuildingStates;
-	// material apply
-	// completedbuiling apply material
-	//
-	///////
-	//SetMesh(InData->PreviewMesh);
+
+	// TODO: FindStageIndex 는 Threshold 오름차순을 전제한다.
+	//       현재는 데이터가 정렬되어 입력된다고 가정. 검증/정렬은 추후 추가.
+	CachedTiersInfo    = InData->Tiers;             // ★CHANGED
 	CachedGridSize = InData->GridSize;
-	DisplayName = InData->DisplayName;
-	BuildingPreviewMaterialInstance = InData->PreviewMeshMaterial;
-	//BuildingCompleteSound = InData->AllTierBuildingStates.CompleteSoundBase;
-	
+	DisplayName    = InData->DisplayName;
+
+	BuildingPreviewMaterialInstance = InData->PreviewMeshMaterial.LoadSynchronous();   // ★CHANGED
 	UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes:: Completed."));
+}
+
+void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
+{
+	CurrentConstructionMeshes.Reset();
+	CurrentDamageMeshes.Reset();
+	BuildingStartConstructSound = nullptr;
+	BuildingCompleteSound = nullptr;
+
+	if (!CachedTiersInfo.IsValidIndex(InCurrentTier))
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierData: Invalid Tier %d / %d"),
+			InCurrentTier, CachedTiersInfo.Num());
+		return;
+	}
+
+	const FBuildingTier& Tier = CachedTiersInfo[InCurrentTier];
+
+	// 건설 단계 — 임계값과 메시의 인덱스가 그대로 일치한다
+	TArray<float> Thresholds;
+	Thresholds.Reserve(Tier.ConstructionStages.Num());
+	CurrentConstructionMeshes.Reserve(Tier.ConstructionStages.Num());
+
+	for (const FBuildingStage& Stage : Tier.ConstructionStages)
+	{
+		Thresholds.Add(Stage.Threshold);
+		CurrentConstructionMeshes.Add(Stage.Mesh.LoadSynchronous());
+	}
+
+	// 피해 단계
+	CurrentDamageMeshes.Reserve(Tier.DamageStages.Num());
+	for (const FBuildingStage& Stage : Tier.DamageStages)
+	{
+		CurrentDamageMeshes.Add(Stage.Mesh.LoadSynchronous());
+	}
+
+	BuildingStartConstructSound = Tier.StartConstructSound.LoadSynchronous();
+	BuildingCompleteSound       = Tier.CompleteSound.LoadSynchronous();
+
+	if (IsValid(ProgressComponent))
+	{
+		ProgressComponent->SetQuarterOfRatios(Thresholds);
+		ProgressComponent->SetDuration(Tier.ConstructionDuration);
+	}
+
+	// 티어 업그레이드 = 완전 회복.
+	// 메시를 다 채운 뒤에 불러야 한다 — 브로드캐스트가 OnTakeAttacking → RefreshVisual 로 이어진다.
+	if (IsValid(HealthComponent))
+	{
+		HealthComponent->InitHealth(Tier.MaxHealth);
+	}
 }
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
-	if (CurrentBuildingState == EBuildingState::Completed)
+	if (CurrentBuildingState != EBuildingState::Completed) return;
+
+	const int32 NextTier = CurrentTier + UpgradeValue;
+	if (!CachedTiersInfo.IsValidIndex(NextTier))     // ★CHANGED
 	{
-		int32 TempTier = CurrentTier + UpgradeValue;
-		if(!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(TempTier))
-		{
-			UE_LOG(LogTemp, Error, TEXT("ABuildingBase::UpgradeBuilding: Excess Index %d / %d"),
-				TempTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-			return;
-		}
-		// if ( resource is property )
-		//
-		//
-		//
-		//
-		////////////////////////////
-		///
-		CurrentTier += UpgradeValue;
-		SetBuildingState(EBuildingState::UnderConstruction);
+		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::UpgradeBuilding: Excess Index %d / %d"),
+			NextTier, CachedTiersInfo.Num());
+		return;
 	}
+
+	// TODO: CachedTiers[CurrentTier].UpgradeCost 로 자원 검사·차감
+	const FResources& NeedCost = CachedTiersInfo[NextTier].Cost; 
+	
+	CurrentTier = NextTier;
+	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
 void ASFBaseBuilding::SetMesh(UStaticMesh* InMesh)

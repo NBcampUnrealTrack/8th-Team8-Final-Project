@@ -51,17 +51,32 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     Trans.SetRotation(Rot.Quaternion());
     Trans.SetScale3D(Scaled);
     
+    UClass* SpawnClass = Row->BuildingClass.LoadSynchronous();     // ★ADD
+    if (!SpawnClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
+            *InRowName.ToString());
+        return;
+    }
+    
     ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
-        Row->BuildingClass,
+        SpawnClass,
         Trans,
         nullptr,
         nullptr,
         ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
         );
+    
+    if (!IsValid(DeferredActor))                                   // ★ADD
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
+        return;
+    }
+    
     DeferredActor->SetRowName(InRowName);
     // deferred spawn finished
     DeferredActor->FinishSpawning(Trans);
-    
+
     // gird init. preivew mode init.
     //DeferredActor->SetBuildingState(EBuildingState::Preview);
     PlacementComponent->StartPlacementMode(DeferredActor);

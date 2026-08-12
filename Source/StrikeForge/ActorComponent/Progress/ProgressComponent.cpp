@@ -94,6 +94,16 @@ void UProgressComponent::SetQuarterOfRatios(TArray<float> InQuarterOfRatios)
 	QuarterofRatios = InQuarterOfRatios;
 }
 
+void UProgressComponent::SetDuration(float InSeconds)
+{
+	if (InSeconds <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UProgressComponent::SetDuration: Invalid duration %f"), InSeconds);
+		return;
+	}
+	AccumulateSpeed = CompleteAmount / InSeconds;
+}
+
 void UProgressComponent::BeginPlay()
 {
 	Super::BeginPlay();

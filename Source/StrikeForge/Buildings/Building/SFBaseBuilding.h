@@ -19,7 +19,8 @@ enum class EBuildingState : uint8
 	None,
 	Preview,
 	UnderConstruction,
-	Completed
+	Completed,
+	Destroyed
 };
 // repec=============================================
 UENUM(BlueprintType)
@@ -48,8 +49,9 @@ public:
 	
 	void InitializeBuildingData();
 	virtual void InitInfo(const FBuildingAppearance* InData);
-	void LoadTierMeshList(int32 InCurrentTier);
-	void LoadTierRatioList(int32 InCurrentTier);
+	// void LoadTierMeshList(int32 InCurrentTier);
+	// void LoadTierRatioList(int32 InCurrentTier);
+	void LoadTierData(int32 InCurrentTier);
 	
 	// state manager
 	UFUNCTION(BlueprintCallable)
@@ -61,8 +63,13 @@ public:
 	
 	// begin construct
 	void BeginConstruction();
-	void ApplyPreviewMesh();
+	//void ApplyPreviewMesh();
 	void ApplyPreviewMaterial(const bool CanPlaced);
+	void RefreshVisual();
+	UStaticMesh* ResolveMesh() const;
+	UStaticMesh* GetCompletedMesh() const;
+	const FBuildingTier* GetCurrentTier() const;
+	
 	UFUNCTION()
 	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
 	void SetMesh(UStaticMesh* InMesh);
@@ -71,6 +78,9 @@ public:
 	UFUNCTION()
 	void HandleCompleteConstruction();
 	void EnterCompletedState();
+	void EnterDestroyedState();
+	void ApplyDestroyedCollision();
+	
 	void PlayBuildingEffect();
 	
 	// component delegate
@@ -118,16 +128,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
 	
+	// ★CHANGED: FBuildingTierData 래퍼 제거
 	UPROPERTY()
-	FBuildingTierData AllTierMeshesSoftArray;
+	TArray<FBuildingTier> CachedTiersInfo;
+
+	// ★CHANGED: CurrentTierMeshes / CurrentTierRatios → 두 벌로 분리
 	UPROPERTY()
-	TArray<UStaticMesh*> CurrentTierMeshes;
+	TArray<TObjectPtr<UStaticMesh>> CurrentConstructionMeshes;
 	UPROPERTY()
-	TArray<float> CurrentTierRatios;
+	TArray<TObjectPtr<UStaticMesh>> CurrentDamageMeshes;
+	UPROPERTY()
+	int32 CurrentStageIndex = 0;
+	UPROPERTY()
+	int32 CurrentDamageIndex = INDEX_NONE;
+
+	// UPROPERTY()
+	// TArray<float> CurrentTierRatios;
+	UPROPERTY()
+	TObjectPtr<USoundBase> BuildingStartConstructSound;
 	UPROPERTY()
 	TObjectPtr<USoundBase> BuildingCompleteSound;
 	UPROPERTY()
-	TObjectPtr<UMaterialInstance> BuildingPreviewMaterialInstance;
+	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
 	

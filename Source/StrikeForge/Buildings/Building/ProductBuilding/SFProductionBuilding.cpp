@@ -70,36 +70,16 @@ const TArray<FName>& ASFProductionBuilding::GetSpawnableUnitNames() const
 
 void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 {
-	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
+	StoredSpawnableUnitDatas.Reset();
+
+	if (!CachedTiersInfo.IsValidIndex(InCurrentTier))          // ★FIX
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASFProductionBuilding::UpdateSpawnableUnitNames: AllTierMeshesSoftArray.TierBuildingState INDEX IS INVALILD"));
+		UE_LOG(LogTemp, Error, TEXT("UpdateSpawnableUnitNames: Invalid Tier %d / %d"),
+			InCurrentTier, CachedTiersInfo.Num());             // ★FIX
+		OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
 		return;
 	}
-	
-	StoredSpawnableUnitDatas = 
-	AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].SpawnableUnits;
+
+	StoredSpawnableUnitDatas = CachedTiersInfo[InCurrentTier].SpawnableUnits;   // ★FIX
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
-	// for (int i = 0; i <= CurrentTier; ++i)
-	// {
-	// 	for (const auto& Name : AllTierMeshesSoftArray.TierBuildingState[CurrentTier].SpawnableUnits)
-	// 	{	// if tier is down still exist pre timer fname
-	// 		StoredSpawnableUnitDatas.AddUnique(Name);
-	// 		// need to delete when tier is down
-	// 	}
-	// }
-	
-	// debug
-	for (const auto& Name : StoredSpawnableUnitDatas)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Spawnable Units: %s, BuildingTier: %d\n"), *Name.ToString(), CurrentTier);
-	}
-	
-	// USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-	// if (!DataManager) return;
-	// for (auto& Name : StoredSpawnableUnitDatas)
-	// {
-	// 	const FUnitProductData* Row = DataManager->GetDataRow<FUnitProductData>(EDataTableType::Product, Name.UnitRowName);
-	// 	Name.UnitProductionCost = Row->UnitProductionCost;
-	// 	Name.UnitProductionDuration = Row->UnitProductionDuration;
-	// }
 }

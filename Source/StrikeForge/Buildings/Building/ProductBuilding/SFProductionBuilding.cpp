@@ -29,6 +29,13 @@ void ASFProductionBuilding::OnConstructionFinished()
 	
 }
 
+void ASFProductionBuilding::OnBuildingDestroyed()
+{
+	Super::OnBuildingDestroyed();
+	
+	ProductComponent->AllClearProductLine();
+}
+
 void ASFProductionBuilding::InitInfo(const FBuildingAppearance* InData)
 {
 	Super::InitInfo(InData);
@@ -50,6 +57,7 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
 	ProductData.ProductComponent = ProductComponent;
+	ProductData.ConstructCost = BuildCost;
 	return ProductData;
 }
 
@@ -82,4 +90,9 @@ void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
 
 	StoredSpawnableUnitDatas = CachedTiersInfo[InCurrentTier].SpawnableUnits;   // ★FIX
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+	
+	///
+	///
+	/// buildcost cached by tier
+	BuildCost = CachedTiersInfo[InCurrentTier].Cost;
 }

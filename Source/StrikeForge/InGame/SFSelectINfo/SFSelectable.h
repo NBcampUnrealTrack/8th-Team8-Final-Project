@@ -5,10 +5,26 @@
 #include "SFSelectableInfo.h"
 #include "SFSelectable.generated.h"
 
+class UHealthComponent;
+
 UINTERFACE(BlueprintType)
 class STRIKEFORGE_API USFSelectable : public UInterface
 {
     GENERATED_BODY()
+};
+
+USTRUCT(BlueprintType)
+struct FHealthData
+{
+    GENERATED_BODY()
+    
+    UPROPERTY()
+    FText DisplayName;
+    UPROPERTY()
+    int32 CurrentTier;
+    UPROPERTY()
+    UHealthComponent* HealthComponent;
+    
 };
 
 class STRIKEFORGE_API ISFSelectable
@@ -23,4 +39,10 @@ public:
         Category = "SF|Selection"
     )
     FSFSelectableInfo GetSelectableInfo();
+    
+    UFUNCTION(
+    BlueprintNativeEvent,
+    BlueprintCallable,
+    Category = "SF|Selection")
+    const FHealthData GetHealthData();
 };

@@ -13,9 +13,9 @@ UProductComponent::UProductComponent()
 
 }
 
-void UProductComponent::InitProductCostMap()
+void UProductComponent::AllClearProductLine()
 {
-
+	ProductLine.Reset();
 }
 
 void UProductComponent::AddProductInLine(FName InProductName)
@@ -121,8 +121,7 @@ void UProductComponent::StopProductLine()
 void UProductComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	InitProductCostMap();
+
 }
 
 void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

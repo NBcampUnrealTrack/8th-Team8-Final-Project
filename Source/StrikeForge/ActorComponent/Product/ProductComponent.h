@@ -28,7 +28,7 @@ class STRIKEFORGE_API UProductComponent : public UActorComponent
 
 public:
 	UProductComponent();
-	void InitProductCostMap();
+	void AllClearProductLine();
 	
 	UFUNCTION(BlueprintCallable)
 	void AddProductInLine(FName InProductName);

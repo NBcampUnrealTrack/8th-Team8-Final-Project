@@ -34,6 +34,7 @@ protected:
 
 	virtual void BeginPlay() override;
 	virtual void OnConstructionFinished() override;
+	virtual void OnBuildingDestroyed() override;
 	virtual void InitInfo(const FBuildingAppearance* InData) override;
 	void UpdateSpawnableUnitNames(int32 InCurrentTier);
 	
@@ -50,4 +51,6 @@ protected:
 	TObjectPtr<UProductComponent> ProductComponent;
 
 	TArray<FName> StoredSpawnableUnitDatas;
+	
+	FResources BuildCost;
 };

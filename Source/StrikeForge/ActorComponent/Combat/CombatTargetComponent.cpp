@@ -77,7 +77,7 @@ void UCombatTargetComponent::SetTeamIndex(int32 InTeamIndex)
 
 bool UCombatTargetComponent::IsAlive() const
 {
-	return IsValid(HealthComponent) && !HealthComponent->IsDead();
+	return IsValid(HealthComponent) && !HealthComponent->GetIsCanbeTargetable();
 }
 
 void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InInstigator)

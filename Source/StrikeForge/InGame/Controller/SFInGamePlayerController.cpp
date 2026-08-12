@@ -97,7 +97,7 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     if (IsValid(PendingConstructionBuilding))
     {
-        PendingConstructionBuilding->SetBuildingState(EBuildingState::UnderConstruction);
+        PendingConstructionBuilding->TryStartConstruction();
     }
 
     // 건물은 파괴하지 않는다. 건설이 진행되어야 하므로 참조만 놓는다.

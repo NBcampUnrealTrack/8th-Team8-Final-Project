@@ -44,7 +44,8 @@ public:
 	virtual void OnBuildingDestroyed() {};
 	virtual void OnConstructionFinished() {};
 	virtual void TakeDamaged_Implementation(float InDamage) override;
-	
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+	virtual const FHealthData GetHealthData_Implementation() override;
 	//FChangedBuildingState OnChangedBuildingState;
 	
 	void InitializeBuildingData();
@@ -112,6 +113,8 @@ public:
 	//================================================================================
 	// UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	// int32 GetTeamIndex() const;
+private:
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -128,7 +131,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
 	
-	// ★CHANGED: FBuildingTierData 래퍼 제거
+	// 티어별 건설시메쉬, 데미지시 메쉬, 건설 사운드
 	UPROPERTY()
 	TArray<FBuildingTier> CachedTiersInfo;
 
@@ -145,7 +148,7 @@ protected:
 	// UPROPERTY()
 	// TArray<float> CurrentTierRatios;
 	UPROPERTY()
-	TObjectPtr<USoundBase> BuildingStartConstructSound;
+	TObjectPtr<USoundBase> BuildingStartSound;
 	UPROPERTY()
 	TObjectPtr<USoundBase> BuildingCompleteSound;
 	UPROPERTY()

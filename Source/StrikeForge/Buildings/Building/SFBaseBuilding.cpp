@@ -2,6 +2,7 @@
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "ActorComponent/Product/ProductComponent.h"
 #include "Datas/Building/BuildingAppearance.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -55,6 +56,29 @@ void ASFBaseBuilding::RefreshVisual()
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 {
 	HealthComponent->ApplyDamage(InDamage);
+}
+
+FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo BuildingInfo = Super::GetSelectableInfo_Implementation();
+	BuildingInfo.DisplayName = DisplayName;
+	BuildingInfo.CurrentHealth = HealthComponent->GetCurrentHealth();
+	BuildingInfo.MaximumHealth = HealthComponent->GetMaxHealth();
+	BuildingInfo.SelectableType = ESFSelectableType::None;
+	BuildingInfo.bShowAttackPower = false;
+	BuildingInfo.bShowMoveSpeed = false;
+	BuildingInfo.bShowHealth = true;
+	BuildingInfo.MoveSpeed = 0.f;
+	return BuildingInfo;
+}
+
+const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
+{
+	FHealthData Data;
+	Data.DisplayName = DisplayName;
+	Data.CurrentTier = CurrentTier;
+	Data.HealthComponent = HealthComponent;
+	return Data;
 }
 
 void ASFBaseBuilding::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
@@ -179,9 +203,9 @@ void ASFBaseBuilding::BeginConstruction()
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
 
-	if (IsValid(BuildingStartConstructSound))   // ★ADD
+	if (IsValid(BuildingStartSound))   // ★ADD
 	{
-		UGameplayStatics::PlaySoundAtLocation(GetWorld(), BuildingStartConstructSound, GetActorLocation());
+		UGameplayStatics::PlaySoundAtLocation(GetWorld(), BuildingStartSound, GetActorLocation());
 	}
 
 	ProgressComponent->StartProgress();
@@ -190,6 +214,8 @@ void ASFBaseBuilding::BeginConstruction()
 void ASFBaseBuilding::EnterCompletedState()
 { // set last mesh completed
 	StaticMeshComponent->SetMaterial(0, nullptr);
+	// set targetable yes
+	HealthComponent->SetIsCanbeTargetable(true);
 	RefreshVisual();    
 }
 
@@ -421,7 +447,9 @@ void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
 
 	// TODO: FindStageIndex 는 Threshold 오름차순을 전제한다.
 	//       현재는 데이터가 정렬되어 입력된다고 가정. 검증/정렬은 추후 추가.
-	CachedTiersInfo    = InData->Tiers;             // ★CHANGED
+	
+	// appearance에서 1회만 적용되는 값(초기화)
+	CachedTiersInfo    = InData->BuildingMeshesByTiers;
 	CachedGridSize = InData->GridSize;
 	DisplayName    = InData->DisplayName;
 
@@ -430,10 +458,10 @@ void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
 }
 
 void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
-{
+{ // 티어별 메쉬 로딩
 	CurrentConstructionMeshes.Reset();
 	CurrentDamageMeshes.Reset();
-	BuildingStartConstructSound = nullptr;
+	BuildingStartSound = nullptr;
 	BuildingCompleteSound = nullptr;
 
 	if (!CachedTiersInfo.IsValidIndex(InCurrentTier))
@@ -445,13 +473,13 @@ void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 
 	const FBuildingTier& Tier = CachedTiersInfo[InCurrentTier];
 
-	// 건설 단계 — 임계값과 메시의 인덱스가 그대로 일치한다
+	// 건설 단계 — 
 	TArray<float> Thresholds;
 	Thresholds.Reserve(Tier.ConstructionStages.Num());
 	CurrentConstructionMeshes.Reserve(Tier.ConstructionStages.Num());
 
 	for (const FBuildingStage& Stage : Tier.ConstructionStages)
-	{
+	{ // FBuildingStage == float , ustatic mesh
 		Thresholds.Add(Stage.Threshold);
 		CurrentConstructionMeshes.Add(Stage.Mesh.LoadSynchronous());
 	}
@@ -463,11 +491,12 @@ void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 		CurrentDamageMeshes.Add(Stage.Mesh.LoadSynchronous());
 	}
 
-	BuildingStartConstructSound = Tier.StartConstructSound.LoadSynchronous();
+	BuildingStartSound = Tier.StartConstructSound.LoadSynchronous();
 	BuildingCompleteSound       = Tier.CompleteSound.LoadSynchronous();
 
 	if (IsValid(ProgressComponent))
 	{
+		// not start 미리 duration set
 		ProgressComponent->SetQuarterOfRatios(Thresholds);
 		ProgressComponent->SetDuration(Tier.ConstructionDuration);
 	}
@@ -475,7 +504,7 @@ void ASFBaseBuilding::LoadTierData(int32 InCurrentTier)
 	// 티어 업그레이드 = 완전 회복.
 	// 메시를 다 채운 뒤에 불러야 한다 — 브로드캐스트가 OnTakeAttacking → RefreshVisual 로 이어진다.
 	if (IsValid(HealthComponent))
-	{
+	{	// maxhealth초기화
 		HealthComponent->InitHealth(Tier.MaxHealth);
 	}
 }
@@ -543,9 +572,9 @@ void ASFBaseBuilding::BeginPlay()
 	
 	BindFunctionWithComponent(); // bind progress
 	
-	InitializeBuildingData();
+	InitializeBuildingData(); // hp full, init info , loadmesh
 	// repec ================================================
-	ApplySpawnMode();
+	ApplySpawnMode(); // complete or preview
 	// repec ================================================
 }
 

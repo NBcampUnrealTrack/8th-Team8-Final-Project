@@ -93,22 +93,22 @@ struct STRIKEFORGE_API FBuildingAppearance : public FTableRowBase
 
 	/** 인덱스 0 = 1티어 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tiers")
-	TArray<FBuildingTier> Tiers;
+	TArray<FBuildingTier> BuildingMeshesByTiers;
 
 	const FBuildingTier* GetTierInfo(int32 TierIndex) const
 	{
-		return Tiers.IsValidIndex(TierIndex) ? &Tiers[TierIndex] : nullptr;
+		return BuildingMeshesByTiers.IsValidIndex(TierIndex) ? &BuildingMeshesByTiers[TierIndex] : nullptr;
 	}
 
 	bool CanUpgradeFrom(int32 TierIndex) const
 	{
-		return Tiers.IsValidIndex(TierIndex + 1);
+		return BuildingMeshesByTiers.IsValidIndex(TierIndex + 1);
 	}
 
 	/** 최초 건설 비용. Tiers 가 비어 있으면 nullptr */
 	const FResources* GetInitialCost() const
 	{
-		return Tiers.Num() > 0 ? &Tiers[0].Cost : nullptr;
+		return BuildingMeshesByTiers.Num() > 0 ? &BuildingMeshesByTiers[0].Cost : nullptr;
 	}
 
 	/**
@@ -118,7 +118,7 @@ struct STRIKEFORGE_API FBuildingAppearance : public FTableRowBase
 	const FResources* GetUpgradeCost(int32 FromTierIndex) const
 	{
 		const int32 NextTier = FromTierIndex + 1;
-		return Tiers.IsValidIndex(NextTier) ? &Tiers[NextTier].Cost : nullptr;
+		return BuildingMeshesByTiers.IsValidIndex(NextTier) ? &BuildingMeshesByTiers[NextTier].Cost : nullptr;
 	}
 	
 	/**

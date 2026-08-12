@@ -53,7 +53,7 @@ public:
 	 * 두 테이블 모두 UnitRowName 을 키로 쓴다.
 	 */
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-
+	virtual const FHealthData GetHealthData_Implementation() override;
 	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }

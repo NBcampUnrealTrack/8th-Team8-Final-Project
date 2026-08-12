@@ -141,6 +141,9 @@ protected:
 	 */
 	bool ShouldDrawDebug() const;
 
+	/** 교전 반경·타겟 라인·상태 문자열을 그린다. Tick 어느 분기에서든 호출된다 */
+	void DrawCombatDebug() const;
+
 #pragma region Components
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -296,6 +299,9 @@ private:
 
 	/** "적이 없어 정지" 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bNoTargetReported : 1;
+
+	/** 진격 목표 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bAdvanceTargetReported : 1;
 
 	float AttackCooldownRemaining = 0.f;
 	float RetargetTimer = 0.f;

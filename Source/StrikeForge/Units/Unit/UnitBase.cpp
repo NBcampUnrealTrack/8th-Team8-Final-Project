@@ -35,6 +35,7 @@ AUnitBase::AUnitBase()
 	, bDrawCombatDebug(false)
 	, bStatInitialized(false)
 	, bNoTargetReported(false)
+	, bAdvanceTargetReported(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -135,6 +136,10 @@ bool AUnitBase::InitStatFromTable(FName InRowName)
 {
 	if (InRowName.IsNone()) return false;
 
+	// 조회 성공 여부와 무관하게 정체성은 먼저 기록한다.
+	// 실패해도 이 유닛이 무엇이었는지는 남아야 디버그·UI 에서 추적이 된다.
+	UnitRowName = InRowName;
+
 	const UWorld* World = GetWorld();
 	UGameInstance* GI = IsValid(World) ? World->GetGameInstance() : nullptr;
 	if (!IsValid(GI)) return false;
@@ -143,9 +148,17 @@ bool AUnitBase::InitStatFromTable(FName InRowName)
 	if (!IsValid(TableManager)) return false;
 
 	const FUnitStatData* Row = TableManager->GetDataRow<FUnitStatData>(EDataTableType::Unit, InRowName, TEXT("AUnitBase::InitStatFromTable"));
-	if (!Row) return false;
 
-	UnitRowName = InRowName;
+	if (!Row)
+	{
+		// 능력치가 BP 기본값으로 남는다. 조용히 넘어가면
+		// "왜 체력이 100 이지" 로 한참 헤매게 된다.
+		SF_LOG(Warning,
+			"[Unit] %s : DT_Units 에서 '%s' 행을 찾지 못했습니다. BP 기본 능력치로 동작합니다.",
+			*GetName(), *InRowName.ToString());
+		return false;
+	}
+
 	InitStat(*Row);
 	return true;
 }
@@ -501,7 +514,18 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 void AUnitBase::Advance()
 {
 	AUnitAIController* AI = GetUnitAI();
-	if (!AI) return;
+
+	// 조용히 빠져나가면 "왜 안 움직이지" 의 원인을 알 수 없다.
+	// AutoPossessAI 가 동작하지 않으면 여기 걸린다.
+	if (!AI)
+	{
+		if (!bNoTargetReported)
+		{
+			bNoTargetReported = true;
+			SF_LOG(Error, "[Unit] %s : AIController 가 없습니다. AutoPossessAI 설정을 확인하세요.", *GetName());
+		}
+		return;
+	}
 
 	// 라인이 지정돼 있으면 스플라인을 따라 단계적으로 전진한다.
 	// 라인은 "대략적인 진격로"일 뿐이고, 벽 회피는 NavMesh 가 맡는다.
@@ -528,6 +552,13 @@ void AUnitBase::Advance()
 		// 1순위 — 적 핵심 건물 (거리 제한 없음)
 		if (AActor* Core = Combat->FindNearestHostile(Origin, MyTeam, ETargetType::CoreBuilding, 0.f))
 		{
+			if (!bAdvanceTargetReported)
+			{
+				bAdvanceTargetReported = true;
+				SF_LOG(Warning, "[Unit] %s : 진격 목표 = %s (거리 %.0f)",
+					*GetName(), *Core->GetName(), FVector::Dist2D(Origin, Core->GetActorLocation()));
+			}
+
 			AI->RequestMoveToActor(Core, MoveAcceptanceRadius);
 			bNoTargetReported = false;
 			return;
@@ -537,6 +568,12 @@ void AUnitBase::Advance()
 		//         교전 반경 밖이라도 가장 가까운 적을 향해 전진한다.
 		if (AActor* Nearest = Combat->FindNearestHostileAny(Origin, MyTeam))
 		{
+			if (!bAdvanceTargetReported)
+			{
+				bAdvanceTargetReported = true;
+				SF_LOG(Warning, "[Unit] %s : 핵심 건물 없음. 대체 목표 = %s", *GetName(), *Nearest->GetName());
+			}
+
 			AI->RequestMoveToActor(Nearest, MoveAcceptanceRadius);
 			bNoTargetReported = false;
 			return;
@@ -580,11 +617,62 @@ void AUnitBase::FaceTarget(float DeltaSeconds)
 }
 
 // ─────────────────────────────────────────────────────────
+// 디버그 표시
+//
+// Tick 의 어느 분기에서 빠져나가든 반드시 그려져야 한다.
+// 예전에는 Tick 맨 아래에 있어서, 타겟이 없어 조기 return 하는
+// Advancing 상태에서는 아무것도 표시되지 않았다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::DrawCombatDebug() const
+{
+#if ENABLE_DRAW_DEBUG
+	if (!ShouldDrawDebug()) return;
+
+	const UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	DrawDebugCircle(World, GetActorLocation(), AggroRadius, 32, FColor::Yellow, false, -1.f, 0, 3.f,
+		FVector(1, 0, 0), FVector(0, 1, 0), false);
+
+	if (CurrentTarget)
+	{
+		const FColor LineColor = (CombatState == EUnitCombatState::Attacking) ? FColor::Red : FColor::Orange;
+		DrawDebugLine(World, GetActorLocation(), CurrentTarget->GetActorLocation(), LineColor, false, -1.f, 0, 4.f);
+	}
+
+	const TCHAR* StateText =
+		  CombatState == EUnitCombatState::Advancing ? TEXT("전진")
+		: CombatState == EUnitCombatState::Chasing   ? TEXT("추격")
+		: CombatState == EUnitCombatState::Attacking ? TEXT("교전")
+		:                                              TEXT("사망");
+
+	// RowName 이 None 이면 DT_Units 조회에 실패한 것이다.
+	// 능력치가 BP 기본값으로 남아 있다는 뜻이라 함께 표시한다.
+	const FString RowText = UnitRowName.IsNone() ? TEXT("RowName없음") : UnitRowName.ToString();
+
+	const FString Info = FString::Printf(
+		TEXT("Team%d | %s | %s | 대상:%s | 거리:%.0f | 속도:%.0f | HP:%.0f"),
+		GetTeamIndex(),
+		StateText,
+		*RowText,
+		CurrentTarget ? *CurrentTarget->GetName() : (bNoTargetReported ? TEXT("적 전멸") : TEXT("없음")),
+		CurrentTarget ? GetDistanceToTargetEdge(CurrentTarget) : -1.f,
+		GetVelocity().Size2D(),
+		HealthComponent ? HealthComponent->GetCurrentHealth() : 0.f);
+
+	DrawDebugString(World, FVector(0.f, 0.f, 140.f), Info, const_cast<AUnitBase*>(this), FColor::White, 0.f, true);
+#endif
+}
+
+// ─────────────────────────────────────────────────────────
 // 메인 루프
 // ─────────────────────────────────────────────────────────
 void AUnitBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// 어느 분기로 빠지든 표시되도록 맨 앞에서 그린다
+	DrawCombatDebug();
 
 	if (CombatState == EUnitCombatState::Dead) return;
 
@@ -696,35 +784,4 @@ void AUnitBase::Tick(float DeltaSeconds)
 		}
 	}
 
-#if ENABLE_DRAW_DEBUG
-	if (ShouldDrawDebug())
-	{
-		DrawDebugCircle(GetWorld(), GetActorLocation(), AggroRadius, 32, FColor::Yellow, false, -1.f, 0, 3.f,
-			FVector(1, 0, 0), FVector(0, 1, 0), false);
-
-		if (CurrentTarget)
-		{
-			const FColor LineColor = (CombatState == EUnitCombatState::Attacking) ? FColor::Red : FColor::Orange;
-			DrawDebugLine(GetWorld(), GetActorLocation(), CurrentTarget->GetActorLocation(), LineColor, false, -1.f, 0, 4.f);
-		}
-
-		// 상태를 머리 위에 띄운다. 어느 분기에 있는지 이게 없으면 알 수 없다.
-		const TCHAR* StateText =
-			  CombatState == EUnitCombatState::Advancing ? TEXT("전진")
-			: CombatState == EUnitCombatState::Chasing   ? TEXT("추격")
-			: CombatState == EUnitCombatState::Attacking ? TEXT("교전")
-			:                                              TEXT("사망");
-
-		const FString Info = FString::Printf(
-			TEXT("Team%d | %s | 대상:%s | 거리:%.0f | 속도:%.0f | HP:%.0f"),
-			GetTeamIndex(),
-			StateText,
-			CurrentTarget ? *CurrentTarget->GetName() : (bNoTargetReported ? TEXT("적 전멸") : TEXT("없음")),
-			CurrentTarget ? GetDistanceToTargetEdge(CurrentTarget) : -1.f,
-			GetVelocity().Size2D(),
-			HealthComponent ? HealthComponent->GetCurrentHealth() : 0.f);
-
-		DrawDebugString(GetWorld(), FVector(0.f, 0.f, 140.f), Info, this, FColor::White, 0.f, true);
-	}
-#endif
 }

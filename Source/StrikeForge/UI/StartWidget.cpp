@@ -26,6 +26,14 @@ void UStartWidget::NativeConstruct()
 	{
 		Exit_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnExitButtonClicked);
 	}
+	if (IsValid(BackUi_Btn))
+	{
+		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
+	}
+	if (IsValid(BackUi_Btn))
+	{
+		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
+	}
 
 	// 옵션 초기화 (이벤트 바인딩 전에 호출해야 불필요한 OnSelectionChanged 방지)
 	InitializeSettingOptions();
@@ -190,6 +198,11 @@ void UStartWidget::OnExitButtonClicked()
 	}
 }
 
+void UStartWidget::OnBackUiButtonClicked()
+{
+	SetSettingMenuVisible(false);
+}
+
 void UStartWidget::SetSettingMenuVisible(bool bIsVisible)
 {
 	ESlateVisibility SettingVis = bIsVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
@@ -197,6 +210,7 @@ void UStartWidget::SetSettingMenuVisible(bool bIsVisible)
 
 	if (IsValid(SettingPanel)) { SettingPanel->SetVisibility(SettingVis); }
 	if (IsValid(BackgroundBlur)) { BackgroundBlur->SetVisibility(SettingVis); }
+	if (IsValid(BackUi_Btn)) { BackUi_Btn->SetVisibility(SettingVis); }
 	if (IsValid(Title)) { Title->SetVisibility(MainUIVis); }
 	if (IsValid(Start_Btn)) { Start_Btn->SetVisibility(MainUIVis); }
 	if (IsValid(Setting_Btn)) { Setting_Btn->SetVisibility(MainUIVis); }

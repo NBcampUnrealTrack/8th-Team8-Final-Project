@@ -141,22 +141,6 @@ bool ASFGameMode::FinishStage(ESFStageResult NewStageResult)
 
 	SF_SCREEN_LOG(Log, 5.0f, ResultColor, "[SFGameMode] Stage finished. Result: %s", *UEnum::GetValueAsString(NewStageResult));
 
-	// 26.08.12 추가 및 삭제예정
-	USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
-
-	if (!IsValid(SFGameInstance))
-	{
-		SF_LOG(Warning, "[SFGameMode] Failed to move to lobby: GameInstance is invalid.");
-
-		return true;
-	}
-
-	if (!SFGameInstance->MoveToLobby())
-	{
-		SF_LOG(Warning, "[SFGameMode] Failed to move to lobby.");
-	}
-	// 여기까지
-
 	return true;
 }
 

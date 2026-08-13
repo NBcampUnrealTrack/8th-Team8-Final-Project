@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Game/GameState/SFGameState.h"
 #include "SFInGamePlayerController.generated.h"
 
 class ASFCommander;
@@ -59,6 +60,10 @@ public:
 protected:
     virtual void BeginPlay() override;
 
+    virtual void EndPlay(
+        const EEndPlayReason::Type EndPlayReason
+    ) override;
+
     virtual void SetupInputComponent() override;
 
 private:
@@ -69,6 +74,13 @@ private:
 
     void RegisterBaseMappingContext();
 
+    void BindStageResultEvent();
+
+    UFUNCTION()
+    void HandleStageResultChanged(
+        ESFStageResult NewStageResult
+    );
+
     void HandleSelectInput();
 
     void HandleMoveInput();
@@ -78,7 +90,6 @@ private:
     void HandleCancelBuildInput();
 
     void CreateInGameHUD();
-
     // 변수 영역
 protected:
     
@@ -193,6 +204,8 @@ private:
     TObjectPtr<ASFBaseBuilding> PendingConstructionBuilding;  // 확정, 커맨더 대기 중
     UPROPERTY()
     TWeakObjectPtr<ASFCommander> MyCommander;
+    UPROPERTY(Transient)
+    TObjectPtr<ASFGameState> SFGameState;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

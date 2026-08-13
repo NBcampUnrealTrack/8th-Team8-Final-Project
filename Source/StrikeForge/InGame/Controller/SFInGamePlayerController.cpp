@@ -11,9 +11,10 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
-#include "Logging/SFLog.h"
 #include "Units/Commander/SFCommander.h"
 #include "Units/Interfaces/Movable.h"
+#include "Game/GameState/SFGameState.h"
+#include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -124,8 +125,10 @@ void ASFInGamePlayerController::BeginPlay()
     SetSFControlMode(
         ESFControlMode::Gameplay
     );
-    CreateInGameHUD();
 
+    BindStageResultEvent();
+
+    CreateInGameHUD();
 }
 
 void ASFInGamePlayerController::SetupInputComponent()
@@ -356,8 +359,7 @@ HandleSelectInput()
     OnSelectInput.Broadcast();
 }
 
-void ASFInGamePlayerController::
-HandleMoveInput()
+void ASFInGamePlayerController::HandleMoveInput()
 {
     FHitResult Hit;
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
@@ -372,8 +374,7 @@ HandleMoveInput()
     IMovable::Execute_MoveToLocation(Target, Hit.Location);
 }
 
-void ASFInGamePlayerController::
-HandleConfirmBuildInput()
+void ASFInGamePlayerController::HandleConfirmBuildInput()
 {
     OnConfirmBuildInput.Broadcast();
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
@@ -412,8 +413,7 @@ HandleConfirmBuildInput()
     SetSFControlMode(ESFControlMode::Gameplay);
 }
 
-void ASFInGamePlayerController::
-HandleCancelBuildInput()
+void ASFInGamePlayerController::HandleCancelBuildInput()
 {
     OnCancelBuildInput.Broadcast();
 
@@ -425,8 +425,7 @@ HandleCancelBuildInput()
     SetSFControlMode(ESFControlMode::Gameplay);
 }
 
-void ASFInGamePlayerController::
-CreateInGameHUD()
+void ASFInGamePlayerController::CreateInGameHUD()
 {
     if (!IsLocalController())
     {
@@ -450,4 +449,73 @@ CreateInGameHUD()
     }
 
     InGameHUDWidget->AddToViewport();
+}
+
+void ASFInGamePlayerController::BindStageResultEvent()
+{
+    SFGameState =
+        GetWorld()->GetGameState<ASFGameState>();
+
+    if (!IsValid(SFGameState))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "SFGameState is invalid."
+        );
+
+        return;
+    }
+
+    SFGameState->OnStageResultChanged.AddUniqueDynamic(
+        this,
+        &ASFInGamePlayerController::HandleStageResultChanged
+    );
+}
+
+void ASFInGamePlayerController::HandleStageResultChanged(
+    ESFStageResult NewStageResult
+)
+{
+    switch (NewStageResult)
+    {
+    case ESFStageResult::Victory:
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Stage Result: Victory"
+        );
+        break;
+
+    case ESFStageResult::Defeat:
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Stage Result: Defeat"
+        );
+        break;
+
+    case ESFStageResult::Undetermined:
+    default:
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Stage Result: Undetermined"
+        );
+        break;
+    }
+}
+
+void ASFInGamePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (IsValid(SFGameState))
+    {
+        SFGameState->OnStageResultChanged.RemoveDynamic(
+            this,
+            &ASFInGamePlayerController::
+            HandleStageResultChanged
+        );
+    }
+
+    Super::EndPlay(EndPlayReason);
 }

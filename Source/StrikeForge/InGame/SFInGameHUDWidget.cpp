@@ -308,6 +308,14 @@ void USFInGameHUDWidget::ApplySelection(
 
     RefreshBuildModeOpenButtonVisibility();
 
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] SelectionPanel Valid: %s",
+        IsValid(SelectionPanel)
+        ? TEXT("True")
+        : TEXT("False")
+    );
+
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectedActorDestroyed

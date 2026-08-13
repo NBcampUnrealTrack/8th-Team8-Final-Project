@@ -77,9 +77,3 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 		SF_LOG(Warning, "[SFNexusBuilding] 스테이지 종료 요청이 거절됐습니다. 위 로그를 확인하세요.");
 	}
 }
-
-void ASFNexusBuilding::InitInfo(const FBuildingAppearance* InData)
-{
-	Super::InitInfo(InData);
-	
-}

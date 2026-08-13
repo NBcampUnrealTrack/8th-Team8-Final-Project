@@ -17,7 +17,6 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnBuildingDestroyed() override;
-	virtual void InitInfo(const FBuildingAppearance* InData) override;
 
 	/** 파괴 순간. 연출은 BP 에서 구현한다 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Nexus")

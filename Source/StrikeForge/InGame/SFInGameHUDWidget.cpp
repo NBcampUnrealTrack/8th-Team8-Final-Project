@@ -14,6 +14,10 @@
 #include "Widgets/CommonActivatableWidgetContainer.h"
 #include "Components/Button.h"
 
+#include "SFSelectInfo/SFSelectionUIDataRow.h"
+#include "Game/Subsystem/SFDataTableManager.h"
+#include "Game/GameInstance/SFGameInstance.h"
+
 void USFInGameHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
@@ -87,6 +91,8 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(
 
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    RefreshBuildModeOpenButtonVisibility();
 
     if (IsValid(SelectionPanel))
     {
@@ -169,10 +175,14 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         return;
     }
 
-    const FSFSelectableInfo SelectableInfo =
+    FSFSelectableInfo SelectableInfo =
         ISFSelectable::Execute_GetSelectableInfo(
             HitActor
         );
+
+    ApplySelectionUIData(
+        SelectableInfo
+    );
 
     ApplySelection(
         HitActor,
@@ -213,11 +223,26 @@ void USFInGameHUDWidget::ApplySelection(
         return;
     }
 
+    const bool bIsBuilding =
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    if (bIsBuilding)
+    {
+        CloseBuildingMode();
+    }
+
     // 같은 대상을 다시 선택하면 파괴 이벤트는 재연결하지 않고
     // 최신 선택 정보만 다시 표시한다.
     if (SelectedActor == NewSelectedActor)
     {
         SelectedInfo = NewSelectedInfo;
+
+        RefreshBuildModeOpenButtonVisibility();
 
         SF_LOG(
             Log,
@@ -281,6 +306,16 @@ void USFInGameHUDWidget::ApplySelection(
     SelectedActor = NewSelectedActor;
     SelectedInfo = NewSelectedInfo;
 
+    RefreshBuildModeOpenButtonVisibility();
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] SelectionPanel Valid: %s",
+        IsValid(SelectionPanel)
+        ? TEXT("True")
+        : TEXT("False")
+    );
+
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
@@ -330,6 +365,8 @@ void USFInGameHUDWidget::ClearSelection()
 
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    RefreshBuildModeOpenButtonVisibility();
 
     if (IsValid(SelectionPanel))
     {
@@ -410,12 +447,7 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
 
     ActiveBuildingModeWidget = nullptr;
 
-    if (IsValid(BuildModeOpenButton))
-    {
-        BuildModeOpenButton->SetVisibility(
-            ESlateVisibility::Visible
-        );
-    }
+    RefreshBuildModeOpenButtonVisibility();
 
     SF_LOG(
         Log,
@@ -428,4 +460,90 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
     
     SFPC->ClearSpawnedBuildingRef();
     SFPC->SetSFControlMode(ESFControlMode::Gameplay);
+}
+
+void USFInGameHUDWidget::ApplySelectionUIData(
+    FSFSelectableInfo& InOutSelectableInfo
+)
+{
+    if (InOutSelectableInfo.DataRowName.IsNone())
+    {
+        return;
+    }
+
+    UGameInstance* GameInstance =
+        GetGameInstance();
+
+    if (!IsValid(GameInstance))
+    {
+        return;
+    }
+
+    USFDataTableManager* DataTableManager =
+        GameInstance->GetSubsystem<USFDataTableManager>();
+
+    if (!IsValid(DataTableManager))
+    {
+        return;
+    }
+
+    const FSFSelectionUIDataRow* UIData =
+        DataTableManager->GetDataRow<FSFSelectionUIDataRow>(
+            EDataTableType::UI,
+            InOutSelectableInfo.DataRowName,
+            TEXT("ApplySelectionUIData")
+        );
+
+    if (!UIData)
+    {
+        return;
+    }
+
+    InOutSelectableInfo.DisplayName =
+        UIData->DisplayName;
+
+    InOutSelectableInfo.PortraitImage =
+        UIData->PortraitImage.LoadSynchronous();
+
+    InOutSelectableInfo.SelectionIcon =
+        UIData->SelectionIcon.LoadSynchronous();
+
+    InOutSelectableInfo.Description =
+        UIData->Description;
+
+    InOutSelectableInfo.bShowHealth =
+        UIData->bShowHealth;
+
+    InOutSelectableInfo.bShowAttackPower =
+        UIData->bShowAttackPower;
+
+    InOutSelectableInfo.bShowMoveSpeed =
+        UIData->bShowMoveSpeed;
+}
+
+void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
+{
+    if (!IsValid(BuildModeOpenButton))
+    {
+        return;
+    }
+
+    const bool bIsBuildingSelected =
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    const bool bIsBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    BuildModeOpenButton->SetVisibility(
+        bIsBuildingSelected ||
+        bIsBuildingModeActive
+        ? ESlateVisibility::Collapsed
+        : ESlateVisibility::Visible
+    );
 }

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "ActorComponent/Product/ProductInfo.h"
+#include "Datas/Resource/ResourceTypes.h"
 #include "Productable.generated.h"
 
 class UProductComponent;
@@ -24,6 +25,8 @@ struct FProductableData
 	TArray<FName> ProductableUnitFNames;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FProductInfo> CurrentProductingFNames;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FResources UpgradeCost;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TWeakObjectPtr<UProductComponent> ProductComponent;
 };

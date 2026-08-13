@@ -2,55 +2,157 @@
 
 #include "CoreMinimal.h"
 #include "Datas/Resource/ResourceTypes.h"
+#include "Engine/DataTable.h"
 #include "BuildingAppearance.generated.h"
 
+class ASFBaseBuilding;
+class UMaterialInterface;
+class USoundBase;
+class UStaticMesh;
+
 USTRUCT(BlueprintType)
-struct FOnBuildingMeshData
+struct STRIKEFORGE_API FBuildingStage
 {
 	GENERATED_BODY()
-	
-	// mesh by construct ratio
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TMap<float,TSoftObjectPtr<UStaticMesh>> Ratio_Mesh;  
-	// completed sound by tier
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Sound")
-	TObjectPtr<USoundBase> CompleteSoundBase;
-	// can spawn unit lists
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Units")
-	TArray<FName> SpawnableUnits;
-	// current tier cost
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Threshold = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage")
+	TSoftObjectPtr<UStaticMesh> Mesh;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingConstructionData
+{
+	GENERATED_BODY()
+
+	/** 해당 티어의 건설 또는 업그레이드 진행 시간 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction", meta = (ClampMin = "0.1"))
+	float Duration = 10.f;
+
+	/** 해당 티어를 최초 건설할 때 사용하는 비용 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
 	FResources ConstructCost;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cost")
-	FResources NextTierUpgradeCost;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction")
+	FResources UpgradeCost;
 };
 
 USTRUCT(BlueprintType)
-struct FBuildingTierData
+struct STRIKEFORGE_API FBuildingStatData
 {
 	GENERATED_BODY()
-	
-	// 1tier 2tier 3tier : array
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mesh")
-	TArray<FOnBuildingMeshData> TierBuildingState;
 
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Stats",	meta = (ClampMin = "1.0"))
+	float MaxHealth = 100.f;
 };
 
 USTRUCT(BlueprintType)
-struct FBuildingAppearance : public FTableRowBase
+struct STRIKEFORGE_API FBuildingVisualData
 {
 	GENERATED_BODY()
-	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Name")
+
+	/** 건설 중에만 사용하는 메시. 런타임에서 Threshold 오름차순으로 정렬한다. */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	TArray<FBuildingStage> ConstructionStages;
+
+	/** 건설 완료 상태의 기본 메시 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	TSoftObjectPtr<UStaticMesh> CompletedMesh;
+
+	/** 체력이 낮은 단계부터 Threshold 오름차순으로 입력한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TArray<FBuildingStage> DamageStages;
+
+	int32 FindDamageStageIndex(float HealthRatio) const
+	{
+		if (HealthRatio >= 1.f)
+		{
+			return INDEX_NONE;
+		}
+
+		for (int32 Index = 0;
+			Index < DamageStages.Num();
+			++Index)
+		{
+			if (HealthRatio
+				<= DamageStages[Index].Threshold)
+			{
+				return Index;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingAudioData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> ConstructionStart;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> ConstructionComplete;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingTier
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tier")
+	FBuildingConstructionData Construction;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingStatData Stats;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingVisualData Visual;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
+	FBuildingAudioData Audio;
+
+	/**
+	 * 생산 건물에서만 사용한다.
+	 * 건물별 기능 데이터가 더 늘어나면 Extension 구조로 이전한다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Tier|Production"
+	)
+	TArray<FName> SpawnableUnits;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingAppearance: public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Identity")
 	FText DisplayName;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Class")
-	TSubclassOf<AActor> BuildingClass;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Info|Building|Grid")
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Spawn")
+	TSoftClassPtr<ASFBaseBuilding> BuildingClass;
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement",	meta = (ClampMin = "1"))
 	FIntPoint GridSize = FIntPoint(1, 1);
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
-	TObjectPtr<UMaterialInstance> PreviewMeshMaterial;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Info|Building|Mesh")
-	FBuildingTierData AllTierBuildingStates;
-	//    ........ hp
-	
+
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement")
+	TSoftObjectPtr<UMaterialInterface>	PreviewMaterial;
+
+	/** 배열 인덱스 0이 게임의 1티어 */
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")
+	TArray<FBuildingTier> Tiers;
+
+	const FBuildingTier* FindTier(int32 TierIndex) const
+	{
+		return Tiers.IsValidIndex(TierIndex)
+			? &Tiers[TierIndex]
+			: nullptr;
+	}
 };

@@ -27,7 +27,8 @@ public:
 	// change speed
 	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
-
+	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
+	void SetDuration(float InSeconds);
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -6,6 +6,9 @@ USTRUCT(BlueprintType)
 struct FProductInfo
 {
 	GENERATED_BODY()
-	FName RowName;
-	float Duration;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Product")
+	FName RowName = NAME_None;
+	UPROPERTY(BlueprintReadOnly, Category = "Product")
+	float Duration = 0.f;
 };

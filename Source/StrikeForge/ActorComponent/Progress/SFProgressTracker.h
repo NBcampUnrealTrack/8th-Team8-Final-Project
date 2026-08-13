@@ -44,7 +44,7 @@ struct STRIKEFORGE_API FSFProgressTracker
 	FORCEINLINE float GetRatio() const
 	{
 		
-		return Complete_Accumulate > 0.f ? FMath::Clamp(UKismetMathLibrary::SafeDivide(Current_Accumulate, Complete_Accumulate), 0.f, 1.f) : 1.f;
+		return FMath::Clamp(UKismetMathLibrary::SafeDivide(Current_Accumulate, Complete_Accumulate), 0.f, 1.f);
 	}
 	
 	FORCEINLINE void ClearSpeedMultiplier()	{ SpeedMultiplier = 1.f; }

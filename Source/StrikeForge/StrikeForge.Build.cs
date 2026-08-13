@@ -19,7 +19,8 @@ public class StrikeForge : ModuleRules
 			// ui
 			"UMG", "Slate", "SlateCore", "CommonUI",
 
-
+			// effect
+			"Niagara",
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });

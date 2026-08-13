@@ -9,6 +9,7 @@ class ASFBaseBuilding;
 class UMaterialInterface;
 class USoundBase;
 class UStaticMesh;
+class UNiagaraSystem;
 
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingStage
@@ -64,6 +65,9 @@ struct STRIKEFORGE_API FBuildingVisualData
 	/** 체력이 낮은 단계부터 Threshold 오름차순으로 입력한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TArray<FBuildingStage> DamageStages;
+	
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
 
 	int32 FindDamageStageIndex(float HealthRatio) const
 	{
@@ -94,9 +98,9 @@ struct STRIKEFORGE_API FBuildingAudioData
 
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
 	TSoftObjectPtr<USoundBase> ConstructionStart;
-
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
 	TSoftObjectPtr<USoundBase> ConstructionComplete;
+	
 };
 
 USTRUCT(BlueprintType)
@@ -145,6 +149,12 @@ struct STRIKEFORGE_API FBuildingAppearance: public FTableRowBase
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement")
 	TSoftObjectPtr<UMaterialInterface>	PreviewMaterial;
 
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
+	TSoftObjectPtr<USoundBase> DestroyedSound;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect")
+	TSoftObjectPtr<UNiagaraSystem> DestroyedEffect;
+	
 	/** 배열 인덱스 0이 게임의 1티어 */
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")
 	TArray<FBuildingTier> Tiers;

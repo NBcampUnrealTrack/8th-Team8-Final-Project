@@ -1,28 +1,28 @@
-#pragma once
+﻿#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Input/Reply.h"
 #include "LobbyWidget.generated.h"
-
 class UButton;
 class UWidget;
 class UBackgroundBlur;
 class UComboBoxString;
 class USlider;
-
+// 26.08.11 추가
+class UTexture2D;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
 	GENERATED_BODY()
-
 protected:
 	virtual void NativeConstruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
-
 	UFUNCTION()
 	void OnBackButtonClicked();
 	UFUNCTION()
 	void OnSettingButtonClicked();
+	UFUNCTION()
+	void OnBackUiButtonClicked();
 	UFUNCTION()
 	void OnStage1Clicked();
 	UFUNCTION()
@@ -39,11 +39,16 @@ protected:
 	void OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 	UFUNCTION()
 	void OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-
 	void OpenStageLevel(int32 StageIndex);
+	// 26.08.11 추가
+	// 로비의 모든 스테이지 버튼 상태 갱신
+	void RefreshStageButtons();
+	// 스테이지 하나의 진행 상태와 이미지 갱신
+	void RefreshStageButton(UButton* StageButton, FName StageRowName);
+	// Texture를 버튼 Style에 적용
+	void ApplyStageButtonTexture(UButton* StageButton, UTexture2D* StageTexture);
 	void SetSettingMenuVisible(bool bIsVisible);
 	void InitializeSettingOptions();
-
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Stage1;
@@ -62,6 +67,8 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Back_Btn;
 	UPROPERTY(meta = (BindWidget))
+	UButton* BackUi_Btn;
+	UPROPERTY(meta = (BindWidget))
 	UWidget* SettingPanel;
 	UPROPERTY(meta = (BindWidget))
 	UBackgroundBlur* BackgroundBlur;
@@ -69,7 +76,6 @@ protected:
 	UComboBoxString* DisplayComboBox;
 	UPROPERTY(meta = (BindWidget))
 	UComboBoxString* FullScreenComboBox;
-
 	UPROPERTY(EditDefaultsOnly, Category = "Stage")
 	TArray<FName> StageRowNames = { TEXT("Stage1"), TEXT("Stage2"), TEXT("Stage3"), TEXT("Stage4"), TEXT("Stage5"), TEXT("Stage6") };
 };

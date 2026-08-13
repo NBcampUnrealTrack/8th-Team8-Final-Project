@@ -61,3 +61,14 @@ FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
 	Info.SelectableType = ESFSelectableType::ProductionBuilding;
 	return Info;
 }
+
+FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info =
+		Super::GetSelectableInfo_Implementation();
+
+	Info.SelectableType =
+		ESFSelectableType::ProductionBuilding;
+
+	return Info;
+}

@@ -1,4 +1,5 @@
 #include "SFSelectionPanelWidget.h"
+#include "Logging/SFLog.h"
 
 void USFSelectionPanelWidget::NativeConstruct()
 {
@@ -16,6 +17,15 @@ void USFSelectionPanelWidget::ShowSelection(
 
     SetVisibility(
         ESlateVisibility::HitTestInvisible
+    );
+
+    SF_LOG(
+        Log,
+        "[SFSelectionPanelWidget] ShowSelection | "
+        "Widget: %s | Class: %s | RowName: %s",
+        *GetName(),
+        *GetClass()->GetName(),
+        *SelectableInfo.DataRowName.ToString()
     );
 
     BP_OnSelectionInfoUpdated(

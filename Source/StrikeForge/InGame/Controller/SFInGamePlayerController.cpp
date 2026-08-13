@@ -13,9 +13,11 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "Kismet/GameplayStatics.h"
-#include "Logging/SFLog.h"
 #include "Units/Commander/SFCommander.h"
+#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
+#include "Game/GameState/SFGameState.h"
+#include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -160,8 +162,10 @@ void ASFInGamePlayerController::BeginPlay()
     SetSFControlMode(
         ESFControlMode::Gameplay
     );
-    CreateInGameHUD();
 
+    BindStageResultEvent();
+
+    CreateInGameHUD();
 }
 
 void ASFInGamePlayerController::SetupInputComponent()
@@ -392,8 +396,7 @@ HandleSelectInput()
     OnSelectInput.Broadcast();
 }
 
-void ASFInGamePlayerController::
-HandleMoveInput()
+void ASFInGamePlayerController::HandleMoveInput()
 {
     FHitResult Hit;
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
@@ -408,8 +411,7 @@ HandleMoveInput()
     IMovable::Execute_MoveToLocation(Target, Hit.Location);
 }
 
-void ASFInGamePlayerController::
-HandleConfirmBuildInput()
+void ASFInGamePlayerController::HandleConfirmBuildInput()
 {
     OnConfirmBuildInput.Broadcast();
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
@@ -448,17 +450,63 @@ HandleConfirmBuildInput()
     PendingConstructionBuilding = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
-    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
-    Commander->MoveToBuild(
-        PendingConstructionBuilding->GetActorLocation(),
-        PendingConstructionBuilding->GetBuildBounds(),
-        PendingConstructionBuilding->GetActorRotation().Yaw);
+    UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+    if (ensure(NavSys && NavSys->GetDefaultNavDataInstance()))
+    {
+        bool bCanBuild = false;
+
+        const float DistTolerance = 0.1f;   // 실제 건설위치와 근접한 내비메시 간 건설위치 오차 허용범위
+        const FVector QueryExt(100.f, 100.0f, 1000.f);
+        FVector BuildInLoc = PendingConstructionBuilding->GetActorLocation();
+        FNavLocation BuildCheckLoc;
+
+        do
+        {
+            // 1. 건설좌표가 NavMesh위에 투영이 가능한가?
+            if (!NavSys->ProjectPointToNavigation(BuildInLoc, BuildCheckLoc, QueryExt))
+            {
+                break;
+            }
+
+            // 2. Z축으로 라인트레이싱을 했을 때 유효한 값을 반환하는가?
+            FHitResult LandscapeTraceHit;
+            if (!GetWorld()->LineTraceSingleByChannel(LandscapeTraceHit, BuildInLoc + FVector::UpVector * 10.f, BuildInLoc - FVector::UpVector * 10.f, ECC_LANDSCAPE))
+            {
+                break;
+            }
+
+            // 3. 실제 건설좌표와 Z축 라인트레이싱 결과값이 오차범위 내인가?
+            if (FVector::DistXY(BuildInLoc, LandscapeTraceHit.Location) >= DistTolerance)
+            {
+                break;
+            }
+
+            // TODO : 다른 지형이나 폴리지와의 콜리전 검사를 로직 추가
+            //
+            
+            // 모든 검사를 통과하면 건설가능
+            bCanBuild = true;
+        } while (false);
+
+        if (bCanBuild)
+        {
+            // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
+            Commander->MoveToBuild(
+                PendingConstructionBuilding->GetActorLocation(),
+                PendingConstructionBuilding->GetBuildBounds(),
+                PendingConstructionBuilding->GetActorRotation().Yaw);
+        }
+        else
+        {
+            // 추후 UI 메세지 출력으로 수정
+            GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Build Error!!!"));
+        }
+    }
 
     SetSFControlMode(ESFControlMode::Gameplay);
 }
 
-void ASFInGamePlayerController::
-HandleCancelBuildInput()
+void ASFInGamePlayerController::HandleCancelBuildInput()
 {
     OnCancelBuildInput.Broadcast();
 
@@ -470,8 +518,7 @@ HandleCancelBuildInput()
     SetSFControlMode(ESFControlMode::Gameplay);
 }
 
-void ASFInGamePlayerController::
-CreateInGameHUD()
+void ASFInGamePlayerController::CreateInGameHUD()
 {
     if (!IsLocalController())
     {
@@ -495,4 +542,81 @@ CreateInGameHUD()
     }
 
     InGameHUDWidget->AddToViewport();
+}
+
+void ASFInGamePlayerController::BindStageResultEvent()
+{
+    SFGameState =
+        GetWorld()->GetGameState<ASFGameState>();
+
+    if (!IsValid(SFGameState))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "SFGameState is invalid."
+        );
+
+        return;
+    }
+
+    SFGameState->OnStageResultChanged.AddUniqueDynamic(
+        this,
+        &ASFInGamePlayerController::HandleStageResultChanged
+    );
+}
+
+void ASFInGamePlayerController::HandleStageResultChanged(
+    ESFStageResult NewStageResult
+)
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    switch (NewStageResult)
+    {
+    case ESFStageResult::Victory:
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Stage Result: Victory"
+        );
+
+        InGameHUDWidget->ShowResultWidget(
+            true
+        );
+        break;
+
+    case ESFStageResult::Defeat:
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Stage Result: Defeat"
+        );
+
+        InGameHUDWidget->ShowResultWidget(
+            false
+        );
+        break;
+
+    case ESFStageResult::Undetermined:
+    default:
+        break;
+    }
+}
+
+void ASFInGamePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (IsValid(SFGameState))
+    {
+        SFGameState->OnStageResultChanged.RemoveDynamic(
+            this,
+            &ASFInGamePlayerController::
+            HandleStageResultChanged
+        );
+    }
+
+    Super::EndPlay(EndPlayReason);
 }

@@ -80,6 +80,13 @@ public:
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
+		Category = "SF|Selection|Stat"
+    )
+    int32 Tier = 0;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
         Category = "SF|Selection|UI"
     )
     TObjectPtr<UTexture2D> PortraitImage = nullptr;

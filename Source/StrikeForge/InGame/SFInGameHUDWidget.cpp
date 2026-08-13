@@ -1,17 +1,27 @@
 #include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
+
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
+#include "SFSelectInfo/SFSelectionUIDataRow.h"
 
-#include "DrawDebugHelpers.h"
-#include "Engine/EngineTypes.h"
-#include "GameFramework/Actor.h"
-#include "Logging/SFLog.h"
+#include "HUD/Production/SFProductionBuildingPanelWidget.h"
+
+#include "UI/ResultWidget.h"
+
+#include "Game/Subsystem/SFDataTableManager.h"
 
 #include "CommonActivatableWidget.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
+
 #include "Components/Button.h"
+
+#include "Engine/EngineTypes.h"
+#include "GameFramework/Actor.h"
+
+#include "Logging/SFLog.h"
+
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -29,7 +39,6 @@ void USFInGameHUDWidget::NativeConstruct()
             "[SFInGameHUDWidget] "
             "SFInGamePlayerController is invalid."
         );
-
         return;
     }
 
@@ -38,11 +47,7 @@ void USFInGameHUDWidget::NativeConstruct()
         &USFInGameHUDWidget::HandleSelectInput
     );
 
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "OnSelectInput binding completed."
-    );
+    RefreshBuildModeOpenButtonVisibility();
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -87,16 +92,17 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
 
+    RefreshBuildModeOpenButtonVisibility();
+
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->ClearSelection();
     }
 
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Selected actor was destroyed. Selection cleared."
-    );
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
+    }
 }
 
 void USFInGameHUDWidget::PerformSelectionTrace()
@@ -126,12 +132,6 @@ void USFInGameHUDWidget::PerformSelectionTrace()
 
     if (!bHit)
     {
-        SF_LOG(
-            Log,
-            "[SFInGameHUDWidget] "
-            "Selection trace returned no hit."
-        );
-
         ClearSelection();
         return;
     }
@@ -145,54 +145,28 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         return;
     }
 
-    const bool bIsSelectable =
-        HitActor->GetClass()->ImplementsInterface(
+    if (
+        !HitActor->GetClass()->ImplementsInterface(
             USFSelectable::StaticClass()
-        );
-
-    if (!bIsSelectable)
+        )
+        )
     {
-        SF_LOG(
-            Log,
-            "[SFInGameHUDWidget] "
-            "%s is not selectable.",
-            *HitActor->GetName()
-        );
-
         ClearSelection();
         return;
     }
 
-    const FSFSelectableInfo SelectableInfo =
+    FSFSelectableInfo SelectableInfo =
         ISFSelectable::Execute_GetSelectableInfo(
             HitActor
         );
 
-    ApplySelection(
-        HitActor,
+    ApplySelectionUIData(
         SelectableInfo
     );
 
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Selected | Actor: %s | Name: %s | "
-        "Health: %.1f / %.1f | RowName: %s",
-        *HitActor->GetName(),
-        *SelectableInfo.DisplayName.ToString(),
-        SelectableInfo.CurrentHealth,
-        SelectableInfo.MaximumHealth,
-        *SelectableInfo.DataRowName.ToString()
-    );
-
-    DrawDebugSphere(
-        GetWorld(),
-        HitResult.ImpactPoint,
-        30.0f,
-        12,
-        FColor::Green,
-        false,
-        1.5f
+    ApplySelection(
+        HitActor,
+        SelectableInfo
     );
 }
 
@@ -207,37 +181,141 @@ void USFInGameHUDWidget::ApplySelection(
         return;
     }
 
-    // 같은 대상을 다시 선택하면 파괴 이벤트는 재연결하지 않고
-    // 최신 선택 정보만 다시 표시한다.
-    if (SelectedActor == NewSelectedActor)
+    const bool bIsBuilding =
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    if (bIsBuilding)
     {
-        SelectedInfo = NewSelectedInfo;
+        CloseBuildingMode();
+    }
 
-        if (IsValid(SelectionPanel))
-        {
-            SelectionPanel->ShowSelection(
-                SelectedInfo
-            );
-        }
+    if (SelectedActor != NewSelectedActor)
+    {
+        UnbindSelectedActorDestroyed();
 
+        SelectedActor = NewSelectedActor;
+
+        SelectedActor->OnDestroyed.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedActorDestroyed
+        );
+    }
+
+    SelectedInfo = NewSelectedInfo;
+
+    RefreshBuildModeOpenButtonVisibility();
+    RefreshSelectionPanels();
+}
+
+void USFInGameHUDWidget::ApplySelectionUIData(
+    FSFSelectableInfo& InOutSelectableInfo
+)
+{
+    if (InOutSelectableInfo.DataRowName.IsNone())
+    {
         return;
     }
 
-    UnbindSelectedActorDestroyed();
+    UGameInstance* GameInstance =
+        GetGameInstance();
 
-    SelectedActor = NewSelectedActor;
-    SelectedInfo = NewSelectedInfo;
+    if (!IsValid(GameInstance))
+    {
+        return;
+    }
 
-    SelectedActor->OnDestroyed.AddUniqueDynamic(
-        this,
-        &USFInGameHUDWidget::HandleSelectedActorDestroyed
-    );
+    USFDataTableManager* DataTableManager =
+        GameInstance->GetSubsystem<USFDataTableManager>();
 
+    if (!IsValid(DataTableManager))
+    {
+        return;
+    }
+
+    const FSFSelectionUIDataRow* UIData =
+        DataTableManager->GetDataRow<FSFSelectionUIDataRow>(
+            EDataTableType::UI,
+            InOutSelectableInfo.DataRowName,
+            TEXT("ApplySelectionUIData")
+        );
+
+    if (!UIData)
+    {
+        return;
+    }
+
+    InOutSelectableInfo.DisplayName =
+        UIData->DisplayName;
+
+    InOutSelectableInfo.PortraitImage =
+        UIData->PortraitImage.LoadSynchronous();
+
+    InOutSelectableInfo.SelectionIcon =
+        UIData->SelectionIcon.LoadSynchronous();
+
+    InOutSelectableInfo.Description =
+        UIData->Description;
+
+    InOutSelectableInfo.bShowHealth =
+        UIData->bShowHealth;
+
+    InOutSelectableInfo.bShowAttackPower =
+        UIData->bShowAttackPower;
+
+    InOutSelectableInfo.bShowMoveSpeed =
+        UIData->bShowMoveSpeed;
+}
+
+void USFInGameHUDWidget::RefreshSelectionPanels()
+{
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->ShowSelection(
             SelectedInfo
         );
+    }
+
+    if (!IsValid(ProductionBuildingPanel))
+    {
+        return;
+    }
+
+    if (
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding
+        )
+    {
+        ProductionBuildingPanel->ShowProductionBuilding(
+            SelectedActor.Get()
+        );
+        return;
+    }
+
+    ProductionBuildingPanel->HideProductionBuilding();
+}
+
+void USFInGameHUDWidget::ClearSelection()
+{
+    UnbindSelectedActorDestroyed();
+
+    SelectedActor = nullptr;
+    SelectedInfo = FSFSelectableInfo();
+
+    RefreshBuildModeOpenButtonVisibility();
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ClearSelection();
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
     }
 }
 
@@ -254,30 +332,11 @@ void USFInGameHUDWidget::UnbindSelectedActorDestroyed()
     );
 }
 
-void USFInGameHUDWidget::ClearSelection()
-{
-    UnbindSelectedActorDestroyed();
-
-    SelectedActor = nullptr;
-    SelectedInfo = FSFSelectableInfo();
-
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ClearSelection();
-    }
-
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Selection cleared."
-    );
-}
-
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (
         !IsValid(BuildingUIStack) ||
-        !IsValid(BuildingModeWidgetClass)
+        !BuildingModeWidgetClass
         )
     {
         return;
@@ -308,12 +367,7 @@ void USFInGameHUDWidget::OpenBuildingMode()
         &USFInGameHUDWidget::HandleBuildingModeDeactivated
     );
 
-    if (IsValid(BuildModeOpenButton))
-    {
-        BuildModeOpenButton->SetVisibility(
-            ESlateVisibility::Collapsed
-        );
-    }
+    RefreshBuildModeOpenButtonVisibility();
 }
 
 void USFInGameHUDWidget::CloseBuildingMode()
@@ -335,22 +389,91 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
 
     ActiveBuildingModeWidget = nullptr;
 
-    if (IsValid(BuildModeOpenButton))
-    {
-        BuildModeOpenButton->SetVisibility(
-            ESlateVisibility::Visible
+    RefreshBuildModeOpenButtonVisibility();
+
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
         );
+
+    if (!IsValid(PlayerController))
+    {
+        return;
     }
 
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Building mode deactivated."
+    PlayerController->ClearSpawnedBuildingRef();
+    PlayerController->SetSFControlMode(
+        ESFControlMode::Gameplay
     );
-    
-    ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
-    if (!IsValid(SFPC)) return;
-    
-    SFPC->ClearSpawnedBuildingRef();
-    SFPC->SetSFControlMode(ESFControlMode::Gameplay);
+}
+
+void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
+{
+    if (!IsValid(BuildModeOpenButton))
+    {
+        return;
+    }
+
+    const bool bIsBuildingSelected =
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ResourceBuilding;
+
+    const bool bIsBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    BuildModeOpenButton->SetVisibility(
+        bIsBuildingSelected ||
+        bIsBuildingModeActive
+        ? ESlateVisibility::Collapsed
+        : ESlateVisibility::Visible
+    );
+}
+
+void USFInGameHUDWidget::ShowResultWidget(
+    bool bIsWin
+)
+{
+    if (!IsValid(ResultWidget))
+    {
+        if (!ResultWidgetClass)
+        {
+            SF_LOG(
+                Error,
+                "[SFInGameHUDWidget] "
+                "ResultWidgetClass is not assigned."
+            );
+            return;
+        }
+
+        ResultWidget =
+            CreateWidget<UResultWidget>(
+                GetOwningPlayer(),
+                ResultWidgetClass
+            );
+
+        if (!IsValid(ResultWidget))
+        {
+            SF_LOG(
+                Error,
+                "[SFInGameHUDWidget] "
+                "Failed to create ResultWidget."
+            );
+            return;
+        }
+
+        ResultWidget->AddToViewport(100);
+    }
+
+    ResultWidget->SetResultState(
+        bIsWin
+    );
+
+    SetVisibility(
+        ESlateVisibility::Collapsed
+    );
 }

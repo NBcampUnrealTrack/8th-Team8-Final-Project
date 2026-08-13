@@ -155,19 +155,7 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         return;
     }
 
-    FSFSelectableInfo SelectableInfo =
-        ISFSelectable::Execute_GetSelectableInfo(
-            HitActor
-        );
-
-    ApplySelectionUIData(
-        SelectableInfo
-    );
-
-    ApplySelection(
-        HitActor,
-        SelectableInfo
-    );
+    SelectActor(HitActor);
 }
 
 void USFInGameHUDWidget::ApplySelection(
@@ -475,5 +463,38 @@ void USFInGameHUDWidget::ShowResultWidget(
 
     SetVisibility(
         ESlateVisibility::Collapsed
+    );
+}
+
+void USFInGameHUDWidget::SelectActor(
+    AActor* Actor
+)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    if (
+        !Actor->GetClass()->ImplementsInterface(
+            USFSelectable::StaticClass()
+        )
+        )
+    {
+        return;
+    }
+
+    FSFSelectableInfo SelectableInfo =
+        ISFSelectable::Execute_GetSelectableInfo(
+            Actor
+        );
+
+    ApplySelectionUIData(
+        SelectableInfo
+    );
+
+    ApplySelection(
+        Actor,
+        SelectableInfo
     );
 }

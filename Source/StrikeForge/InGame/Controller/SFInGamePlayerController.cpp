@@ -15,6 +15,7 @@
 #include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
 #include "Game/GameState/SFGameState.h"
+#include "SFRTSCameraPawn.h"
 #include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
@@ -187,6 +188,17 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::
             HandleCancelBuildInput
+        );
+    }
+
+    if (IsValid(FocusCommanderAction))
+    {
+        EnhancedInputComponent->BindAction(
+            FocusCommanderAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::
+            HandleFocusCommanderInput
         );
     }
     
@@ -574,4 +586,40 @@ void ASFInGamePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+void ASFInGamePlayerController::HandleFocusCommanderInput()
+{
+    ASFCommander* Commander =
+        MyCommander.Get();
+
+    if (!IsValid(Commander))
+    {
+        return;
+    }
+
+    SetSelectedActor(
+        Commander
+    );
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->SelectActor(
+            Commander
+        );
+    }
+
+    ASFRTSCameraPawn* CameraPawn =
+        Cast<ASFRTSCameraPawn>(
+            GetPawn()
+        );
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    CameraPawn->FocusOnWorldLocation(
+        Commander->GetActorLocation()
+    );
 }

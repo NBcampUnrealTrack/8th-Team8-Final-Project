@@ -395,3 +395,23 @@ void ASFRTSCameraPawn::SetEdgeScrollEnabled(
 {
     bEnableEdgeScroll = bEnabled;
 }
+
+void ASFRTSCameraPawn::FocusOnWorldLocation(
+    const FVector& WorldLocation
+)
+{
+    FVector NewLocation =
+        GetActorLocation();
+
+    NewLocation.X =
+        WorldLocation.X;
+
+    NewLocation.Y =
+        WorldLocation.Y;
+
+    SetActorLocation(
+        NewLocation
+    );
+
+    ClampCameraLocation();
+}

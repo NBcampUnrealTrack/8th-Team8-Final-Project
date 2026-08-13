@@ -67,6 +67,9 @@ void ULobbyWidget::NativeConstruct()
 
 	// 초기 상태: 설정창 숨김
 	SetSettingMenuVisible(false);
+
+	// 26.08.13 추가(로비 버튼 갱신 함수)
+	RefreshStageButtons();
 }
 
 void ULobbyWidget::OnBackButtonClicked()

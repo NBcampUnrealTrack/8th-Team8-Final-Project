@@ -15,10 +15,5 @@ public:
 	ASFNexusBuilding(const FObjectInitializer& ObjectInitializer);
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void OnBuildingDestroyed() override;
-	virtual void InitInfo(const FBuildingAppearance* InData) override;
-
-private:
-	
 };

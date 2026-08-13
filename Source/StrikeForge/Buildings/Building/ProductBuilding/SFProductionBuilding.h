@@ -8,20 +8,12 @@
 #include "Interfaces/Building/Productable.h"
 #include "SFProductionBuilding.generated.h"
 
-// USTRUCT(BlueprintType)
-// struct FSpawnableUnitsData
-// {
-// 	GENERATED_BODY()
-// 	
-// 	FName SpawnableUnitName;
-// 	FResources
-// };
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductUnitArrayChanged, TArray<FName>&, SpawnableRowNames);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductUnitArrayChanged, const TArray<FName>&, SpawnableRowNames);
 
 class UProductComponent;
 
 UCLASS()
-class STRIKEFORGE_API ASFProductionBuilding 
+class STRIKEFORGE_API ASFProductionBuilding
 	: public ASFBaseBuilding
 	, public IProductable
 {
@@ -30,24 +22,20 @@ class STRIKEFORGE_API ASFProductionBuilding
 public:
 	ASFProductionBuilding();
 
-protected:
+	UPROPERTY(BlueprintAssignable, Category = "Production")
+	FProductUnitArrayChanged OnSpawnableUnitsChanged;
 
-	virtual void BeginPlay() override;
-	virtual void OnConstructionFinished() override;
+protected:
+	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
+	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) override;
 	virtual void OnBuildingDestroyed() override;
-	virtual void InitInfo(const FBuildingAppearance* InData) override;
-	void UpdateSpawnableUnitNames(int32 InCurrentTier);
-	
+
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual void ProductUnits_Implementation(FName InUnitName) override;
 	virtual FProductableData GetProductableData_Implementation() override;
+
 	void TryAddUnitProductLine(FName InUnitName);
-	
-	const TArray<FName>& GetSpawnableUnitNames() const;
-public:
-	FProductUnitArrayChanged OnSpawnableUnitsChanged;
-	
-protected:
+
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
 

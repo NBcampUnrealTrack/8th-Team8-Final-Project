@@ -7,8 +7,6 @@
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
 
-//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FChangedBuildingState, EBuildingState, InCurrentState);
-
 class UProgressComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
@@ -22,16 +20,53 @@ enum class EBuildingState : uint8
 	Completed,
 	Destroyed
 };
-// repec=============================================
 UENUM(BlueprintType)
 enum class ESFBuildingSpawnMode : uint8
 {
 	ViewPortPlacedMode UMETA(DisplayName = "Viewport placed"),
 	PlayerPlacedMode UMETA(DisplayName = "PlayerController placed")
 };
-//=====================================================
+
+USTRUCT()
+struct FBuildingTierRuntimeAssets
+{
+	GENERATED_BODY()
+
+	int32 TierIndex = INDEX_NONE;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UStaticMesh>> ConstructionMeshes;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> CompletedMesh = nullptr;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UStaticMesh>> DamageMeshes;
+
+	UPROPERTY()
+	TObjectPtr<USoundBase> ConstructionStartSound = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<USoundBase> ConstructionCompleteSound = nullptr;
+
+	bool IsPreparedFor(int32 InTierIndex) const
+	{
+		return TierIndex == InTierIndex && IsValid(CompletedMesh);
+	}
+
+	void Reset()
+	{
+		TierIndex = INDEX_NONE;
+		ConstructionMeshes.Reset();
+		CompletedMesh = nullptr;
+		DamageMeshes.Reset();
+		ConstructionStartSound = nullptr;
+		ConstructionCompleteSound = nullptr;
+	}
+};
+
 UCLASS(Abstract, Blueprintable)
-class STRIKEFORGE_API ASFBaseBuilding 
+class STRIKEFORGE_API ASFBaseBuilding
 	: public ASFRootBase
 	, public IDamagable
 
@@ -40,86 +75,89 @@ class STRIKEFORGE_API ASFBaseBuilding
 
 public:
 	ASFBaseBuilding(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
-	
-	virtual void OnBuildingDestroyed() {};
-	virtual void OnConstructionFinished() {};
+
 	virtual void TakeDamaged_Implementation(float InDamage) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
-	//FChangedBuildingState OnChangedBuildingState;
 	
-	void InitializeBuildingData();
-	virtual void InitInfo(const FBuildingAppearance* InData);
-	// void LoadTierMeshList(int32 InCurrentTier);
-	// void LoadTierRatioList(int32 InCurrentTier);
-	void LoadTierData(int32 InCurrentTier);
+	/** 프리뷰 색상 갱신 */
+	void ApplyPreviewMaterial(bool bCanPlace);
 	
-	// state manager
-	UFUNCTION(BlueprintCallable)
-	void SetBuildingState(const EBuildingState InState);
-	void ApplyBuildingState(const EBuildingState InState);
-	
-	// preview state
-	void EnterPreviewState();
-	
-	// begin construct
-	void BeginConstruction();
-	//void ApplyPreviewMesh();
-	void ApplyPreviewMaterial(const bool CanPlaced);
-	void RefreshVisual();
-	UStaticMesh* ResolveMesh() const;
-	const FBuildingTier* GetCurrentTier() const;
-	
-	UFUNCTION()
-	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
-	void SetMesh(UStaticMesh* InMesh);
-	
-	// completed construct
-	UFUNCTION()
-	void HandleCompleteConstruction();
-	void EnterCompletedState();
-	void EnterDestroyedState();
-	void ApplyDestroyedCollision();
-	
-	void PlayBuildingEffect();
-	
-	// component delegate
-	void BindFunctionWithComponent();
-	void UnBindFunctionWithComponent();
-
-	UFUNCTION(BlueprintCallable)
-	void UpgradeBuilding(int32 UpgradeValue = 1);
-	
-	// inferfaces
-	// virtual FName OnSelected_Implementation() override;
-	// virtual void OnDeSelected_Implementation() override;
-	
-	UFUNCTION()
-	void OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP);
-	UFUNCTION()
-	void HandleHealthZero();
-	
-	// repec ========================================================================
-	void ApplySpawnMode();
+	// 커맨더 건설 시작 시작함수
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
+	
+	// 업그레이드 함수
+	UFUNCTION(BlueprintCallable, Category = "SF|Building")
+	void UpgradeBuilding(int32 UpgradeValue = 1);
+
+	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return CachedGridSize; }
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
-	//================================================================================
-	// UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
-	// int32 GetTeamIndex() const;
-private:
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	
+	// APPLY BUILDING's ABILITY
+	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) {}
+	// DELETE BUILDING's ABILITY
+	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) {}
+	// when construct destroyed, play effects
+	virtual void OnBuildingDestroyed() {}
 
+private:
+	bool LoadBuildingDefinition();
+	bool PrepareTier(int32 TierIndex);
+	bool CanStartPreparedConstruction() const;
+	bool CommitPreparedTier();
+	bool FinalizeTierActivation();
+	
+	// Deactivate Ability
+	void DeactivateActiveTier();
+	
+	void SetBuildingState(const EBuildingState InState);
+	void ApplyBuildingState(const EBuildingState InState);
+	void ApplySpawnMode();
+	
+	// constructing
+	void EnterPreviewState();
+	void BeginConstruction();
+	void EnterCompletedState();
+	void EnterDestroyedState();
+	void ApplyDestroyedCollision();
+	void PlayConstructionCompleteSound();
+	// delegate
+	void BindComponentDelegates();
+	void UnbindComponentDelegates();
+
+	UFUNCTION()
+	void HandleCompleteConstruction();
+
+	UFUNCTION()
+	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
+
+	UFUNCTION()
+	void HandleHealthChanged(float InBeforeHP, float InCurrentHP, float InMaxHP);
+
+	UFUNCTION()
+	void HandleHealthZero();
+
+	void RefreshVisual();
+	UStaticMesh* ResolveMesh() const;
+	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
+	const FBuildingTier* GetCurrentTier() const;
+protected:
+	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
@@ -127,52 +165,54 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
 	
+	// ui
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FText DisplayName;
+	// 적용전과 후 tier 인덱스
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true",AllowPrivateAccess=true))
 	int32 CurrentTier = 0;
+	int32 PendingTier = INDEX_NONE;
+	int32 CurrentStageIndex = 0;
+
+	// cost
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentConstructBuildCost;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentUpgradeBuildCost;
-
-	// 티어별 건설시메쉬, 데미지시 메쉬, 건설 사운드 모음집
 	
-	UPROPERTY()
-	TArray<FBuildingTier> CachedTiersInfo;
-
-	// ★Cached Meshes
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
-	TArray<TObjectPtr<UStaticMesh>> CurrentConstructionMeshes;
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
-	TArray<TObjectPtr<UStaticMesh>> CurrentDamageMeshes;
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Meshes", meta=(AllowPrivateAccess=true))
-	TObjectPtr<UStaticMesh> CurrentCompletedMesh;
+	// 전체 행 cached
+	UPROPERTY(Transient)
+	FBuildingAppearance CachedDefinition;
+	/**
+	 * 건설이 완료되어 현재 건물에 실제 적용 중인 티어 에셋.
+	 * Completed 및 Destroyed 상태에서 사용한다.
+	 */
+	UPROPERTY(Transient)
+	FBuildingTierRuntimeAssets ActiveTierAssets;
+	/**
+	 * 최초 건설 또는 업그레이드 중인 대상 티어 에셋.
+	 * Preview 및 UnderConstruction 상태에서 사용한다.
+	 */
+	UPROPERTY(Transient)
+	FBuildingTierRuntimeAssets PendingTierAssets;
 	
-	UPROPERTY()
-	int32 CurrentStageIndex = 0;
-
-	// UPROPERTY()
-	// TArray<float> CurrentTierRatios;
-	UPROPERTY()
-	TObjectPtr<USoundBase> BuildingStartSound;
-	UPROPERTY()
-	TObjectPtr<USoundBase> BuildingCompleteSound;
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
-	UPROPERTY()
-	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
-	EBuildingState CurrentBuildingState;
-	
-	// repec ============================================================================================
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
-	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;
-
-	/** FBuildingAppearance::GridSize 를 InitInfo 시점에 캐싱해 둔 값. 배치 컴포넌트가 겹침 검사에 쓴다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
+	EBuildingState CurrentBuildingState = EBuildingState::None;
+private:
+	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FIntPoint CachedGridSize = FIntPoint(1, 1);
-private:
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
+	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;
+	/* 업그레이드 중에는 이전 티어를 유지하고,
+	* 업그레이드 완료 시 새 티어로 교체한다.
+	*/// 거의 한순간 1회용 캐싱용도
+	int32 ActivatedGameplayTier = INDEX_NONE;
 };

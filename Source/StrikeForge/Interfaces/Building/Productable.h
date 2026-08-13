@@ -26,7 +26,7 @@ struct FProductableData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FProductInfo> CurrentProductingFNames;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FResources ConstructCost;
+	FResources UpgradeCost;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TWeakObjectPtr<UProductComponent> ProductComponent;
 };

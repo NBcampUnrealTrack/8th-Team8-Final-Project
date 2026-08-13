@@ -4,41 +4,33 @@
 ASFProductionBuilding::ASFProductionBuilding()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	
+
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
 }
 
-void ASFProductionBuilding::BeginPlay()
+void ASFProductionBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 {
-	Super::BeginPlay();
-	
+	Super::OnTierActivated(ActivatedTier);
+
+	StoredSpawnableUnitDatas = ActivatedTier.SpawnableUnits;
+	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
 }
 
-void ASFProductionBuilding::OnConstructionFinished()
+void ASFProductionBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
 {
-	Super::OnConstructionFinished();
-	
-	// product component initialize
-	UE_LOG(LogTemp, Warning, TEXT("AProductionBuilding::OnConstructionFinished: ProduceComponent Init."));
-	UpdateSpawnableUnitNames(CurrentTier);
-}
-
-void ASFProductionBuilding::OnBuildingDestroyed()
-{
-	Super::OnBuildingDestroyed();
-	
+	Super::OnTierDeactivated(DeactivatedTier);
+	// clear productline
 	ProductComponent->AllClearProductLine();
 }
 
-void ASFProductionBuilding::InitInfo(const FBuildingAppearance* InData)
-{
-	Super::InitInfo(InData);
+void ASFProductionBuilding::OnBuildingDestroyed()
+{ // deactivated -> destroy
+	Super::OnBuildingDestroyed();
+	
 }
-
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
 	TryAddUnitProductLine(InUnitName);
-	
 }
 
 FProductableData ASFProductionBuilding::GetProductableData_Implementation()
@@ -47,39 +39,19 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
 	ProductData.ProductComponent = ProductComponent;
+	ProductData.UpgradeCost = CurrentUpgradeBuildCost;
 	return ProductData;
 }
 
 void ASFProductionBuilding::TryAddUnitProductLine(FName InUnitName)
 {
-	// 건설완료상태일때만 생산할수있다
-	if (CurrentBuildingState == EBuildingState::Completed)
+	if (CurrentBuildingState != EBuildingState::Completed)
 	{
-		ProductComponent->AddProductInLine(InUnitName);
-		return;
-	}
-	UE_LOG(LogTemp, Error, TEXT("Building is not Completed."));
-}
-
-const TArray<FName>& ASFProductionBuilding::GetSpawnableUnitNames() const
-{
-	return StoredSpawnableUnitDatas;
-}
-
-void ASFProductionBuilding::UpdateSpawnableUnitNames(int32 InCurrentTier)
-{
-	StoredSpawnableUnitDatas.Reset();
-
-	if (!CachedTiersInfo.IsValidIndex(InCurrentTier))          // ★FIX
-	{
-		UE_LOG(LogTemp, Error, TEXT("UpdateSpawnableUnitNames: Invalid Tier %d / %d"),
-			InCurrentTier, CachedTiersInfo.Num());             // ★FIX
-		OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+		UE_LOG(LogTemp, Warning, TEXT("[%s] 완성되지 않은 건물은 유닛을 생산할 수 없습니다."), *GetName());
 		return;
 	}
 
-	StoredSpawnableUnitDatas = CachedTiersInfo[InCurrentTier].SpawnableUnits;   // ★FIX
-	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+	ProductComponent->AddProductInLine(InUnitName);
 }
 
 FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()

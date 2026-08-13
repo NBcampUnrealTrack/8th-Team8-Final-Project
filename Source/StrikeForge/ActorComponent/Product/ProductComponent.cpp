@@ -152,6 +152,7 @@ void UProductComponent::TickProduction()
 	{
 		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 		CompletedProduct(ProductLine[0].RowName);
+		return;
 	}
 	
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());

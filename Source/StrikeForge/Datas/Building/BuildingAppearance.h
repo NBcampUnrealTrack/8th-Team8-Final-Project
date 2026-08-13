@@ -14,9 +14,10 @@ USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingStage
 {
 	GENERATED_BODY()
-	
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Stage",	meta = (ClampMin = "0.0", ClampMax = "1.0"))
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Threshold = 0.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage")
 	TSoftObjectPtr<UStaticMesh> Mesh;
 };
@@ -52,45 +53,18 @@ struct STRIKEFORGE_API FBuildingVisualData
 {
 	GENERATED_BODY()
 
-	/** 건설 중에만 사용하는 메시. Threshold 오름차순 */
+	/** 건설 중에만 사용하는 메시. 런타임에서 Threshold 오름차순으로 정렬한다. */
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TArray<FBuildingStage> ConstructionStages;
 
 	/** 건설 완료 상태의 기본 메시 */
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> CompletedMesh;
-	
+
+	/** 체력이 낮은 단계부터 Threshold 오름차순으로 입력한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TArray<FBuildingStage> DamageStages;
-	
-	// find mesh index by progressratio ( = 0<0.5: 0index , 0.5<0.7: 1 , 0.7: 2 ) 
-	int32 FindConstructionStageIndex(float ProgressRatio) const
-	{
-		if (ConstructionStages.IsEmpty())
-		{
-			return INDEX_NONE;
-		}
 
-		int32 FoundIndex = 0;
-
-		for (int32 Index = 0;
-			Index < ConstructionStages.Num();
-			++Index)
-		{
-			if (ProgressRatio
-				>= ConstructionStages[Index].Threshold)
-			{
-				FoundIndex = Index;
-			}
-			else
-			{
-				break;
-			}
-		}
-
-		return FoundIndex;
-	}
-	// find mesh index by health ( <0.9: 2index, <0.5: 1, <0.1: 0)
 	int32 FindDamageStageIndex(float HealthRatio) const
 	{
 		if (HealthRatio >= 1.f)
@@ -155,8 +129,7 @@ struct STRIKEFORGE_API FBuildingTier
 };
 
 USTRUCT(BlueprintType)
-struct STRIKEFORGE_API FBuildingAppearance
-	: public FTableRowBase
+struct STRIKEFORGE_API FBuildingAppearance: public FTableRowBase
 {
 	GENERATED_BODY()
 
@@ -175,18 +148,11 @@ struct STRIKEFORGE_API FBuildingAppearance
 	/** 배열 인덱스 0이 게임의 1티어 */
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")
 	TArray<FBuildingTier> Tiers;
-	
+
 	const FBuildingTier* FindTier(int32 TierIndex) const
 	{
 		return Tiers.IsValidIndex(TierIndex)
 			? &Tiers[TierIndex]
 			: nullptr;
-	}
-
-	bool HasNextTier(int32 CurrentTierIndex) const
-	{
-		return Tiers.IsValidIndex(
-			CurrentTierIndex + 1
-		);
 	}
 };

@@ -355,7 +355,7 @@ void ASFCommander::BeginBuild()
 void ASFCommander::PrintMessage(FString Msg)
 {
 	// TODO : Msg 출력값을 UI와 연동해주세요. 현재 이곳에는 건설시도 실패 메세지가 주로 들어갑니다.
-	//GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, Msg);
+	GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, Msg);
 }
 
 void ASFCommander::StopMoving()

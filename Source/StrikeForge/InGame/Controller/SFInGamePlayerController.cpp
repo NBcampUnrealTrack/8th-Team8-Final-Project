@@ -12,6 +12,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "Units/Commander/SFCommander.h"
+#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
 #include "Game/GameState/SFGameState.h"
 #include "Logging/SFLog.h"
@@ -404,11 +405,58 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     PendingConstructionBuilding = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
-    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
-    Commander->MoveToBuild(
-        PendingConstructionBuilding->GetActorLocation(),
-        PendingConstructionBuilding->GetBuildBounds(),
-        PendingConstructionBuilding->GetActorRotation().Yaw);
+    UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+    if (ensure(NavSys && NavSys->GetDefaultNavDataInstance()))
+    {
+        bool bCanBuild = false;
+
+        const float DistTolerance = 0.1f;   // 실제 건설위치와 근접한 내비메시 간 건설위치 오차 허용범위
+        const FVector QueryExt(100.f, 100.0f, 1000.f);
+        FVector BuildInLoc = PendingConstructionBuilding->GetActorLocation();
+        FNavLocation BuildCheckLoc;
+
+        do
+        {
+            // 1. 건설좌표가 NavMesh위에 투영이 가능한가?
+            if (!NavSys->ProjectPointToNavigation(BuildInLoc, BuildCheckLoc, QueryExt))
+            {
+                break;
+            }
+
+            // 2. Z축으로 라인트레이싱을 했을 때 유효한 값을 반환하는가?
+            FHitResult LandscapeTraceHit;
+            if (!GetWorld()->LineTraceSingleByChannel(LandscapeTraceHit, BuildInLoc + FVector::UpVector * 10.f, BuildInLoc - FVector::UpVector * 10.f, ECC_LANDSCAPE))
+            {
+                break;
+            }
+
+            // 3. 실제 건설좌표와 Z축 라인트레이싱 결과값이 오차범위 내인가?
+            if (FVector::DistXY(BuildInLoc, LandscapeTraceHit.Location) >= DistTolerance)
+            {
+                break;
+            }
+
+            // TODO : 다른 지형이나 폴리지와의 콜리전 검사를 로직 추가
+            //
+            
+            // 모든 검사를 통과하면 건설가능
+            bCanBuild = true;
+        } while (false);
+
+        if (bCanBuild)
+        {
+            // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
+            Commander->MoveToBuild(
+                PendingConstructionBuilding->GetActorLocation(),
+                PendingConstructionBuilding->GetBuildBounds(),
+                PendingConstructionBuilding->GetActorRotation().Yaw);
+        }
+        else
+        {
+            // 추후 UI 메세지 출력으로 수정
+            GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Build Error!!!"));
+        }
+    }
 
     SetSFControlMode(ESFControlMode::Gameplay);
 }

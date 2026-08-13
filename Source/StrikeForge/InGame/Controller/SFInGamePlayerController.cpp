@@ -525,6 +525,11 @@ void ASFInGamePlayerController::HandleStageResultChanged(
     ESFStageResult NewStageResult
 )
 {
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
     switch (NewStageResult)
     {
     case ESFStageResult::Victory:
@@ -532,6 +537,10 @@ void ASFInGamePlayerController::HandleStageResultChanged(
             Log,
             "[SFInGamePlayerController] "
             "Stage Result: Victory"
+        );
+
+        InGameHUDWidget->ShowResultWidget(
+            true
         );
         break;
 
@@ -541,15 +550,14 @@ void ASFInGamePlayerController::HandleStageResultChanged(
             "[SFInGamePlayerController] "
             "Stage Result: Defeat"
         );
+
+        InGameHUDWidget->ShowResultWidget(
+            false
+        );
         break;
 
     case ESFStageResult::Undetermined:
     default:
-        SF_LOG(
-            Warning,
-            "[SFInGamePlayerController] "
-            "Stage Result: Undetermined"
-        );
         break;
     }
 }

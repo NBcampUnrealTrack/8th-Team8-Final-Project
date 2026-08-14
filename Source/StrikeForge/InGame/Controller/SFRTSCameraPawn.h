@@ -29,6 +29,8 @@ public:
     )
     void SetEdgeScrollEnabled(bool bEnabled);
 
+    void FocusOnWorldLocation(const FVector& WorldLocation);
+
 protected:
     virtual void BeginPlay() override;
 

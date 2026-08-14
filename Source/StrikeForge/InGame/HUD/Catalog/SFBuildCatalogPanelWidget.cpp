@@ -3,6 +3,7 @@
 #include "SFBuildCatalogEntryWidget.h"
 
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Logging/SFLog.h"
@@ -83,10 +84,23 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 			BuildingRowName
 		);
 		
-		BuildingEntryHorizontalBox
+		UHorizontalBoxSlot* EntrySlot =
+			BuildingEntryHorizontalBox
 			->AddChildToHorizontalBox(
 				EntryWidget
 			);
+
+		if (IsValid(EntrySlot))
+		{
+			EntrySlot->SetPadding(
+				FMargin(
+					5.0f,
+					0.0f,
+					5.0f,
+					0.0f
+				)
+			);
+		}
 
 		SF_LOG(
 			Log,

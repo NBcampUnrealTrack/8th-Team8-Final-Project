@@ -34,9 +34,9 @@ public:
     )
     void CloseBuildingMode();
 
-    void ShowResultWidget(
-        bool bIsWin
-    );
+    void ShowResultWidget(bool bIsWin);
+
+    void SelectActor(AActor* Actor);
 
 protected:
     virtual void NativeConstruct() override;

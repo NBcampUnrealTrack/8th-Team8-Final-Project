@@ -62,7 +62,8 @@ struct STRIKEFORGE_API FBuildingVisualData
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> CompletedMesh;
 
-	/** 체력이 낮은 단계부터 Threshold 오름차순으로 입력한다. */
+	/* 가벼운 손상부터 심각한 손상 순서로 사용한다.
+	* 런타임에서 Threshold 내림차순으로 정렬한다.*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TArray<FBuildingStage> DamageStages;
 	
@@ -71,23 +72,24 @@ struct STRIKEFORGE_API FBuildingVisualData
 
 	int32 FindDamageStageIndex(float HealthRatio) const
 	{
+		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);
+		
 		if (HealthRatio >= 1.f)
-		{
+		{	// 풀피
 			return INDEX_NONE;
 		}
 
-		for (int32 Index = 0;
-			Index < DamageStages.Num();
-			++Index)
+		int32 Result = INDEX_NONE;
+
+		for (int32 Index = 0; Index < DamageStages.Num(); ++Index)
 		{
-			if (HealthRatio
-				<= DamageStages[Index].Threshold)
+			if (HealthRatio <= DamageStages[Index].Threshold)
 			{
-				return Index;
+				Result = Index;
 			}
 		}
 
-		return INDEX_NONE;
+		return Result;
 	}
 };
 

@@ -11,6 +11,7 @@ class UProgressComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
+class UWidgetComponent;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -121,7 +122,9 @@ protected:
 	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) {}
 	// when construct destroyed, play effects
 	virtual void OnBuildingDestroyed() {}
-
+	
+	virtual void NotifyActorBeginCursorOver() override;
+	virtual void NotifyActorEndCursorOver() override;
 private:
 	bool LoadBuildingDefinition();
 	bool PrepareTier(int32 TierIndex);
@@ -152,18 +155,23 @@ private:
 	void BindComponentDelegates();
 	void UnbindComponentDelegates();
 
-	UFUNCTION()
+	// progress가 완료되면 호출되게 bind되있음
+	// Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate
+	UFUNCTION() 
 	void HandleCompleteConstruction();
-
-	UFUNCTION()
-	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
-
-	UFUNCTION()
+	
+	// 데미지 적용조건 함수
+	bool CanReceiveDamage() const;
+	// 체력 변경에 따른 이벤트함수
+	UFUNCTION() // BIND with healthcomponent.applydamage
 	void HandleHealthChanged(float InBeforeHP, float InCurrentHP, float InMaxHP);
-
+	void ChangeDamageStage(int32 InDamageStageIndex);
 	UFUNCTION()
 	void HandleHealthZero();
-
+	
+	// 메쉬 변경 함수
+	UFUNCTION()
+	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
@@ -172,6 +180,8 @@ protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UHealthComponent> HealthComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	TObjectPtr<UWidgetComponent> WidgetComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<UProgressComponent> ProgressComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))

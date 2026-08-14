@@ -26,11 +26,13 @@ void UHealthComponent::ApplyDamage(float InDamage)
 
 void UHealthComponent::InitHealth(float InMaxHealth)
 {
+	const float PreviousHealth = CurrentHealth;
+
 	MaxHealth = FMath::Max(1.f, InMaxHealth);
 	CurrentHealth = MaxHealth;
 	IsDead = false;
 
-	OnHealthValueChanged.Broadcast(0.f, CurrentHealth, MaxHealth);
+	OnHealthValueChanged.Broadcast(PreviousHealth, CurrentHealth, MaxHealth);
 }
 
 float UHealthComponent::GetHealthPercent() const

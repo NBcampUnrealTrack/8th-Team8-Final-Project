@@ -24,7 +24,7 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     bShowMouseCursor = true;
     bEnableClickEvents = true;
     bEnableMouseOverEvents = true;
-
+    
     DefaultMouseCursor = EMouseCursor::Default;
     
     PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
@@ -61,9 +61,7 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
     FRotator Rot(0.f, 90.f, 0.f);
-    FVector Scaled(1.f, 1.f, 1.f);
     Trans.SetRotation(Rot.Quaternion());
-    Trans.SetScale3D(Scaled);
     
     UClass* SpawnClass = Row->BuildingClass.LoadSynchronous();     // ★ADD
     if (!SpawnClass)
@@ -386,7 +384,7 @@ HandleSelectInput()
     {
         AActor* HitActor = Hit.GetActor();
         if (IsValid(HitActor) &&
-            HitActor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+        HitActor->Implements<USFSelectable>())
         {
             NewSelected = HitActor;
         }

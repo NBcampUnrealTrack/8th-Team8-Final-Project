@@ -8,6 +8,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Buildings/UI/BuildingHealthBar.h"
+#include "Components/WidgetComponent.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -15,9 +17,21 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	PrimaryActorTick.bCanEverTick = false;
 
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
+	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 	//CombatTargetComponent->SetTargetingEnabled(false);
+	
+	WidgetComponent->SetupAttachment(StaticMeshComponent);
+	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
+	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+
+	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WidgetComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WidgetComponent->SetGenerateOverlapEvents(false);
+	WidgetComponent->SetWindowFocusable(false);
+	WidgetComponent->SetDrawAtDesiredSize(false);
+	WidgetComponent->SetVisibility(false);
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -39,8 +53,8 @@ void ASFBaseBuilding::RefreshVisual()
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
-{
-	if (IsValid(HealthComponent))
+{	// HP있고 건설중, 건설완료상태이면 데이미 적용
+	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		HealthComponent->ApplyDamage(InDamage);
 	}
@@ -69,17 +83,53 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
 }
-// called by 죽기전까지
-void ASFBaseBuilding::HandleHealthChanged(float, float, float)
+// called by 죽기전까지 - 체력은 바뀔때마다 UI에 갱신해줘야함 > 바뀔때마다 broadcast필요
+void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0일때도 호출된다
+(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
 	if (CurrentBuildingState == EBuildingState::Completed)
 	{
-		RefreshVisual();
+		if (InCurrentHP <= 0.f)
+		{
+			return; // 최종 파괴는 HandleHealthZero가 담당	
+					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
+		}
+		
+		const FBuildingTier* Tier = GetCurrentTier();
+		if (!Tier)
+		{
+			SF_LOG(Error, "ASFBaseBuilding::HandleHealthChanged: Tier is INVALID");
+			return;
+		}
+		
+		const float BeforeRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InBeforeHP, InMaxHP), 0.f, 1.f);
+		const float AfterRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.f, 1.f);
+		// 비율을 집어넣으면 인덱스를 반환함
+		const int32 PreviousStage =	Tier->Visual.FindDamageStageIndex(BeforeRatio);
+		const int32 CurrentStage =	Tier->Visual.FindDamageStageIndex(AfterRatio);
+		// 똑같은 인덱스면 FX를 플레이 하지않는다
+		// 다만 이구조로 갈때 회복시 FX가 플레이되어비린다 나중에 회복이 도입되면 수정이 필요한 지점
+		if (PreviousStage == CurrentStage) return;
+		
+		ChangeDamageStage(CurrentStage);
 	}
 }
-// called by 죽을때
+
+void ASFBaseBuilding::ChangeDamageStage(int32 InDamageStageIndex)
+{
+	// HealthComponent의 현재 체력 비율을 기준으로 손상 메시 적용
+	RefreshVisual();
+	// TODO:: 손상 Effect 적용
+	
+	if (InDamageStageIndex == INDEX_NONE) return; // 풀피-나중에회복관련로직이생긴다면
+	
+	SF_LOG(Warning, "[%s] Damage stage entered: %d",*GetName(),InDamageStageIndex);
+}
+
+// 체력이 0일시 broadcast되는 델리게이트와 연결됨
 void ASFBaseBuilding::HandleHealthZero()
 {
+	// Set -> Apply -> EnterDestroyed
 	SetBuildingState(EBuildingState::Destroyed);
 }
 
@@ -171,6 +221,7 @@ void ASFBaseBuilding::EnterCompletedState()
 
 void ASFBaseBuilding::EnterDestroyedState()
 {
+	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
 
 	if (IsValid(ProgressComponent))
@@ -321,6 +372,12 @@ void ASFBaseBuilding::BindComponentDelegates()
 	{
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
+	
+	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
+	if (!IsValid(HealthComp)) return;
+	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
+	HealthComp->SetHealthBar(HealthComponent->GetCurrentHealth(),
+	HealthComponent->GetCurrentHealth(),HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
@@ -329,6 +386,10 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
+	
+	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
+	if (!IsValid(HealthComp)) return;
+	HealthComponent->OnHealthValueChanged.RemoveDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
 }
 
 void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
@@ -433,17 +494,15 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
-
-
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition()) return; // destroy actor?
+	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
 	// if load failed return
-	if (!PrepareTier(CurrentTier)) return; // destroy actor?
+	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
 }
@@ -480,14 +539,14 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	{   
 		Tier.Visual.ConstructionStages.Sort(
 			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{
+			{	// 오름차순정리 진행도가 "증가"함에 따라 메쉬가 적용
 				return Left.Threshold < Right.Threshold;
 			});
 
 		Tier.Visual.DamageStages.Sort(
 			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{
-				return Left.Threshold < Right.Threshold;
+			{	// 내림차순정리 Health가 "감소"함에 따라 메쉬가 적용
+				return Left.Threshold > Right.Threshold;
 			});
 	}
 	
@@ -734,6 +793,14 @@ void ASFBaseBuilding::PlayDestroyEffect()
 }
 #pragma endregion
 
+
+bool ASFBaseBuilding::CanReceiveDamage() const
+{	// 건설중, 건설완료 상태일때만 true -> TakeDamaged 인터페이스에서 조건으로 활용
+	return CurrentBuildingState == EBuildingState::UnderConstruction ||
+	   CurrentBuildingState == EBuildingState::Completed;
+}
+
+
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
@@ -743,3 +810,18 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 
 
 #pragma endregion Getter
+
+// overlap cursor
+void ASFBaseBuilding::NotifyActorBeginCursorOver()
+{
+	Super::NotifyActorBeginCursorOver();
+	if (CurrentBuildingState == EBuildingState::Preview) return;
+	WidgetComponent->SetVisibility(true);
+	SF_LOG(Warning, "NotifyActorBeginOverlap");
+}
+
+void ASFBaseBuilding::NotifyActorEndCursorOver()
+{
+	WidgetComponent->SetVisibility(false);
+	Super::NotifyActorEndCursorOver();
+}

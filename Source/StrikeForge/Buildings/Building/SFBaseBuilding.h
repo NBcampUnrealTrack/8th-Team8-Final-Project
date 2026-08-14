@@ -168,7 +168,9 @@ private:
 	void ChangeDamageStage(int32 InDamageStageIndex);
 	UFUNCTION()
 	void HandleHealthZero();
-	
+	// 박스 콜리젼 셋Set
+	void SetBoxExtentAndCollisioin(const FName& InProfileName);
+
 	// 메쉬 변경 함수
 	UFUNCTION()
 	void ChangeMeshByRatio(int32 InCurrentRatioIndex);

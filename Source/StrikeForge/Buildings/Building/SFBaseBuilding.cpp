@@ -9,6 +9,7 @@
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Buildings/UI/BuildingHealthBar.h"
+#include "Components/BoxComponent.h"
 #include "Components/WidgetComponent.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
@@ -22,7 +23,7 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 	//CombatTargetComponent->SetTargetingEnabled(false);
 	
-	WidgetComponent->SetupAttachment(StaticMeshComponent);
+	WidgetComponent->SetupAttachment(GetRootComponent());
 	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
 	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
 
@@ -78,7 +79,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 {
 	FHealthData Data;
 	Data.DisplayName = DisplayName;
-	Data.CurrentTier = CurrentTier;
+	Data.CurrentTier = CurrentTier + 1;
 	Data.HealthComponent = HealthComponent;
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
@@ -133,6 +134,21 @@ void ASFBaseBuilding::HandleHealthZero()
 	SetBuildingState(EBuildingState::Destroyed);
 }
 
+void ASFBaseBuilding::SetBoxExtentAndCollisioin(const FName& InProfileName)
+{
+	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
+	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
+	NewBoxExtent.X = MeshBoundary.BoxExtent.X * 0.8;
+	NewBoxExtent.Y = MeshBoundary.BoxExtent.Y * 0.8;
+	NewBoxExtent.Z = MeshBoundary.BoxExtent.Z * 0.8;
+	BoxComponent->SetBoxExtent(NewBoxExtent);
+	
+	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
+	RelativeLocation.Z = NewBoxExtent.Z; 
+	BoxComponent->SetRelativeLocation(RelativeLocation);
+	BoxComponent->SetCollisionProfileName(InProfileName);
+}
+
 void ASFBaseBuilding::ApplySpawnMode()
 {
 	switch (SpawnMode)
@@ -171,6 +187,8 @@ void ASFBaseBuilding::EnterPreviewState()
 {
 	//CombatTargetComponent->SetTargetingEnabled(false);
 	RefreshVisual();
+	
+	SetBoxExtentAndCollisioin("DestroyedBuilding");
 	ApplyPreviewMaterial(true);
 }
 
@@ -198,8 +216,10 @@ void ASFBaseBuilding::BeginConstruction()
 
 	CurrentStageIndex = 0;
 	StaticMeshComponent->SetMaterial(0, nullptr);
+	// mesh
 	RefreshVisual();
-
+	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
+	//
 	if (IsValid(PendingTierAssets.ConstructionStartSound))
 	{
 		UGameplayStatics::PlaySoundAtLocation(
@@ -217,6 +237,7 @@ void ASFBaseBuilding::EnterCompletedState()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
+	SetBoxExtentAndCollisioin("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -231,9 +252,10 @@ void ASFBaseBuilding::EnterDestroyedState()
 	// Deactivate Ability
 	DeactivateActiveTier();
 	
-	ApplyDestroyedCollision();
 	// mesh
 	RefreshVisual();
+	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
+	
 	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
 	PlayDestroyEffect();
 	// sound effect

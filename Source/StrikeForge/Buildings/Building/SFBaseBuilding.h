@@ -7,6 +7,7 @@
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
 
+class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
@@ -98,7 +99,10 @@ public:
 	// 업그레이드 함수
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	void UpgradeBuilding(int32 UpgradeValue = 1);
-
+	
+	// React
+	void PlayHitReaction(const FVector& LocalDirection);
+	
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
@@ -125,6 +129,12 @@ protected:
 	
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
+	
+	// React Delegate Function
+	UFUNCTION()
+	void UpdateHitReaction(float CurveValue);
+	UFUNCTION()
+	void FinishHitReaction();
 private:
 	bool LoadBuildingDefinition();
 	bool PrepareTier(int32 TierIndex);
@@ -169,7 +179,7 @@ private:
 	UFUNCTION()
 	void HandleHealthZero();
 	// 박스 콜리젼 셋Set
-	void SetBoxExtentAndCollisioin(const FName& InProfileName);
+	void SetBoxExtent();
 
 	// 메쉬 변경 함수
 	UFUNCTION()
@@ -180,14 +190,16 @@ private:
 	const FBuildingTier* GetCurrentTier() const;
 protected:
 	// components
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
 	TObjectPtr<UWidgetComponent> WidgetComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Mesh")
 	TObjectPtr<UProgressComponent> ProgressComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Combat")
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component|React")
+	TObjectPtr<UTimelineComponent> HitReactionTimeline;
 	
 	// ui
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
@@ -222,6 +234,21 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
 	EBuildingState CurrentBuildingState = EBuildingState::None;
+#pragma region React
+protected:
+	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
+	TObjectPtr<UCurveFloat> HitReactionCurve;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
+	float HitMoveDistance = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
+	float HitRotationAmount = 2.0f;
+
+	FVector OriginalMeshLocation;
+	FRotator OriginalMeshRotation;
+	FVector HitLocalDirection = FVector::ForwardVector;
+#pragma endregion 
 private:
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))

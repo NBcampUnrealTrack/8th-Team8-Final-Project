@@ -10,6 +10,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "Buildings/UI/BuildingHealthBar.h"
 #include "Components/BoxComponent.h"
+#include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
@@ -33,6 +34,11 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetWindowFocusable(false);
 	WidgetComponent->SetDrawAtDesiredSize(false);
 	WidgetComponent->SetVisibility(false);
+	
+	HitReactionTimeline =
+	CreateDefaultSubobject<UTimelineComponent>(
+		TEXT("HitReactionTimeline")
+	);
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -50,6 +56,7 @@ void ASFBaseBuilding::RefreshVisual()
 	if (IsValid(StaticMeshComponent) && StaticMeshComponent->GetStaticMesh() != ResolvedMesh)
 	{
 		StaticMeshComponent->SetStaticMesh(ResolvedMesh);
+		SetBoxExtent();
 	}
 }
 
@@ -58,6 +65,7 @@ void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		HealthComponent->ApplyDamage(InDamage);
+		PlayHitReaction(FVector::ForwardVector);
 	}
 }
 
@@ -84,6 +92,8 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
 }
+// Damagable 인터페이스 -> CanbeDamaged조건(underconstruct, completed : pass) ->
+// HealthComp이동 데미지적용 -> broadcast -> 이함수 실행 -> 이 함수는 체력별 비율을 인덱스로변환하고 인덱스를 메쉬적용함수에 전달한다
 // called by 죽기전까지 - 체력은 바뀔때마다 UI에 갱신해줘야함 > 바뀔때마다 broadcast필요
 void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0일때도 호출된다
 (float InBeforeHP, float InCurrentHP, float InMaxHP)
@@ -134,7 +144,7 @@ void ASFBaseBuilding::HandleHealthZero()
 	SetBuildingState(EBuildingState::Destroyed);
 }
 
-void ASFBaseBuilding::SetBoxExtentAndCollisioin(const FName& InProfileName)
+void ASFBaseBuilding::SetBoxExtent()
 {
 	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
 	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
@@ -146,7 +156,6 @@ void ASFBaseBuilding::SetBoxExtentAndCollisioin(const FName& InProfileName)
 	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
 	RelativeLocation.Z = NewBoxExtent.Z; 
 	BoxComponent->SetRelativeLocation(RelativeLocation);
-	BoxComponent->SetCollisionProfileName(InProfileName);
 }
 
 void ASFBaseBuilding::ApplySpawnMode()
@@ -188,7 +197,7 @@ void ASFBaseBuilding::EnterPreviewState()
 	//CombatTargetComponent->SetTargetingEnabled(false);
 	RefreshVisual();
 	
-	SetBoxExtentAndCollisioin("DestroyedBuilding");
+	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
 	ApplyPreviewMaterial(true);
 }
 
@@ -237,7 +246,7 @@ void ASFBaseBuilding::EnterCompletedState()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
-	SetBoxExtentAndCollisioin("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
+	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -527,6 +536,41 @@ void ASFBaseBuilding::BeginPlay()
 	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
+	
+	
+	OriginalMeshLocation = StaticMeshComponent->GetRelativeLocation();
+	OriginalMeshRotation = StaticMeshComponent->GetRelativeRotation();
+
+	if (IsValid(HitReactionCurve))
+	{
+		// 타임라인전용 line-float 델리게이트 만들고 함수와 연결
+		FOnTimelineFloat UpdateDelegate;
+		UpdateDelegate.BindUFunction(
+			this,
+			FName(TEXT("UpdateHitReaction"))
+		);
+		
+		// InterpFloat을 쓸려고 Add
+		HitReactionTimeline->AddInterpFloat(
+			HitReactionCurve, // CurveFloat
+			UpdateDelegate	// CurveFloat라인과 델리게이트 연결
+		);
+		
+		// 타임라인전용 이벤트델리게이트 만들고 함수와 연결
+		FOnTimelineEvent FinishedDelegate;
+		FinishedDelegate.BindUFunction(
+			this,
+			FName(TEXT("FinishHitReaction"))
+		);
+		
+		// end delegate
+		HitReactionTimeline->SetTimelineFinishedFunc(FinishedDelegate);
+
+		HitReactionTimeline->SetLooping(false); // 반복안함
+		HitReactionTimeline->SetTimelineLengthMode(ETimelineLengthMode::TL_LastKeyFrame); 
+			//	TL_TimelineLength :: 시간을 다 소비하고 끝냄
+			//	TL_LastKeyFrame	  :: Key를 다 지나면 끝냄
+	}
 }
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -846,4 +890,46 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
 	WidgetComponent->SetVisibility(false);
 	Super::NotifyActorEndCursorOver();
+}
+
+void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
+{
+	const FVector Offset =
+		HitLocalDirection *
+		HitMoveDistance *
+		CurveValue;
+
+	const FRotator RotationOffset(
+		HitRotationAmount * CurveValue,
+		0.0f,
+		-HitRotationAmount * CurveValue
+	);
+
+	StaticMeshComponent->SetRelativeLocation(
+		OriginalMeshLocation + Offset
+	);
+
+	StaticMeshComponent->SetRelativeRotation(
+		OriginalMeshRotation + RotationOffset
+	);
+}
+
+void ASFBaseBuilding::FinishHitReaction()
+{
+	// Root로 원상복귀
+	StaticMeshComponent->SetRelativeLocation(OriginalMeshLocation);
+	StaticMeshComponent->SetRelativeRotation(OriginalMeshRotation);
+}
+
+void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
+{
+	if (!IsValid(HitReactionTimeline) ||
+		!IsValid(HitReactionCurve))
+	{
+		return;
+	}
+	// 때린 방향 캐싱 - 타임라인은 인자가없다
+	HitLocalDirection = LocalDirection.GetSafeNormal();
+	// 타임라인은 인자가 없다
+	HitReactionTimeline->PlayFromStart();
 }

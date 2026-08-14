@@ -28,18 +28,11 @@ class STRIKEFORGE_API UProductComponent : public UActorComponent
 
 public:
 	UProductComponent();
-	void InitProductCostMap();
+	void AllClearProductLine();
 	
-	UFUNCTION(BlueprintCallable)
 	void AddProductInLine(FName InProductName);
 	void RemoveProductInLine(int32 InProductLineIndex);
 	
-	void StartProductLine();
-	void CompletedProduct(const FName& InCompletedName);
-	void StopProductLine();
-	
-	/** progress ratio 0~1 */
-
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	bool IsProducing() const { return !ProductLine.IsEmpty(); }
 
@@ -56,9 +49,11 @@ public:
 	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
 protected:
 	virtual void BeginPlay() override;
-
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	
+private:
+	void StartProductLine();
+	void CompletedProduct(const FName& InCompletedName);
+	void StopProductLine();
 	void TickProduction();
 private:
 	TArray<FProductInfo> ProductLine;

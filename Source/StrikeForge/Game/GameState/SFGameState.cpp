@@ -207,3 +207,24 @@ void ASFGameState::SetPopulation(
 		MaximumPopulation
 	);
 }
+
+bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const
+{
+	return Mineral >= FMath::Max(0, InMineral)
+		&& Ether   >= FMath::Max(0, InEther);
+}
+
+bool ASFGameState::TrySpendCost(int32 InMineral, int32 InEther)
+{
+	if (!CanAfford(InMineral, InEther)) return false;
+
+	SetMineral(Mineral - FMath::Max(0, InMineral));
+	SetEther(Ether - FMath::Max(0, InEther));
+	return true;
+}
+
+void ASFGameState::RefundCost(int32 InMineral, int32 InEther)
+{
+	SetMineral(Mineral + FMath::Max(0, InMineral));
+	SetEther(Ether + FMath::Max(0, InEther));
+}

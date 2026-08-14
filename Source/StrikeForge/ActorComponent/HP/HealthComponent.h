@@ -30,14 +30,13 @@ public:
 	float GetHealthPercent() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
-	float GetCurrentHealth() const { return CurrentHealth; }
+	FORCEINLINE float GetCurrentHealth() const { return CurrentHealth; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
-	float GetMaxHealth() const { return MaxHealth; }
+	FORCEINLINE float GetMaxHealth() const { return MaxHealth; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
-	bool IsDead() const { return bIsDead != 0; }
-	
+	FORCEINLINE bool GetIsDead() const { return IsDead; }
 #pragma region Properties
 	
 	UPROPERTY(BlueprintAssignable)
@@ -45,13 +44,13 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnDeath OnHealthIsZero;
 	
-	UPROPERTY()
-	uint8 bIsDead;
 #pragma endregion 
 protected:
 	virtual void BeginPlay() override;
 	
 private:
+	UPROPERTY()
+	bool IsDead = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float CurrentHealth = 0.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))

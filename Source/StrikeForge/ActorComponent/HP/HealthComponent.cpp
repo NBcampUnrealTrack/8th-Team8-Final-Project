@@ -2,27 +2,24 @@
 
 
 UHealthComponent::UHealthComponent()
-	:bIsDead(false)
+	:IsDead(false)
 {
 	PrimaryComponentTick.bCanEverTick = false;
 
 }
-
 void UHealthComponent::ApplyDamage(float InDamage)
 {
 	// 이미 죽은 대상이 사망 이벤트를 다시 쏘지 않게 막는다.
 	// 같은 프레임에 광역 피해를 여러 번 맞는 경우가 있다.
-	if (bIsDead) return;
+	if (IsDead) return;
 
 	const float TempCurrentHealth = CurrentHealth;
 	CurrentHealth = FMath::Clamp(CurrentHealth - InDamage, 0, MaxHealth);
 	OnHealthValueChanged.Broadcast(TempCurrentHealth, CurrentHealth, MaxHealth);
-	
+
 	if (CurrentHealth <= 0.f )
 	{
-		// 사망 플래그를 먼저 세운다.
-		// 델리게이트 수신부에서 IsDead 를 물어볼 수 있어야 한다.
-		bIsDead = true;
+		IsDead = true;
 		OnHealthIsZero.Broadcast();
 	}
 }
@@ -31,7 +28,7 @@ void UHealthComponent::InitHealth(float InMaxHealth)
 {
 	MaxHealth = FMath::Max(1.f, InMaxHealth);
 	CurrentHealth = MaxHealth;
-	bIsDead = false;
+	IsDead = false;
 
 	OnHealthValueChanged.Broadcast(0.f, CurrentHealth, MaxHealth);
 }

@@ -134,7 +134,17 @@ public:
         int32 NewCurrentPopulation,
         int32 NewMaximumPopulation
     );
+    
+    /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다. */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Resource")
+    bool CanAfford(int32 InMineral, int32 InEther) const;
 
+    /** 충분하면 차감하고 true. 실패 시 아무것도 바꾸지 않는다. */
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    bool TrySpendCost(int32 InMineral, int32 InEther);
+    
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void RefundCost(int32 InMineral, int32 InEther); 
     // 여기까지
 
 public:

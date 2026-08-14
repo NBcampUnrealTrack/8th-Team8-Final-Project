@@ -1,95 +1,97 @@
 ﻿#include "SFBaseBuilding.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
-#include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "Datas/Building/BuildingAppearance.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
-	:Super(ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
-	
+
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
+	//CombatTargetComponent->SetTargetingEnabled(false);
 }
 
-void ASFBaseBuilding::InitializeBuildingData()
+void ASFBaseBuilding::RefreshVisual()
 {
-	USFDataTableManager* Subsystem = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-	if (!IsValid(Subsystem)) return;
-	
-	const FBuildingAppearance* Row = Subsystem->GetDataRow<FBuildingAppearance>(EDataTableType::Building, RowName);
-	if (!Row)
+	UStaticMesh* const ResolvedMesh = ResolveMesh();
+	if (!IsValid(ResolvedMesh))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Building RowName is INVALID"));
+		UE_LOG(LogTemp, Warning, TEXT("[%s] 적용할 메시가 없습니다. State=%d, Row=%s"),
+			*GetName(),
+			static_cast<int32>(CurrentBuildingState),
+			*RowName.ToString());
 		return;
 	}
-	
-	InitInfo(Row); 
-	LoadTierRatioList(CurrentTier); // get ratio at datatable
-	LoadTierMeshList(CurrentTier);
-	/////////////////////////////////////////////////////////////////
-	///
-	// ApplyPreviewMesh(); // set preview mesh
-	// ApplyPreviewMaterial(true); // true = green false = red;
+
+	if (IsValid(StaticMeshComponent) && StaticMeshComponent->GetStaticMesh() != ResolvedMesh)
+	{
+		StaticMeshComponent->SetStaticMesh(ResolvedMesh);
+	}
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 {
-	HealthComponent->ApplyDamage(InDamage);
+	if (IsValid(HealthComponent))
+	{
+		HealthComponent->ApplyDamage(InDamage);
+	}
 }
 
-void ASFBaseBuilding::OnTakeAttacking(float InBeforeHP, float InCurrentHP, float InMaxHP)
+FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
 {
-	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnTakeAttacking"));
-	
-	// play taken dmg montage
-	// play sound
+	FSFSelectableInfo BuildingInfo = Super::GetSelectableInfo_Implementation();
+	BuildingInfo.DisplayName = DisplayName;
+	BuildingInfo.CurrentHealth = HealthComponent->GetCurrentHealth();
+	BuildingInfo.MaximumHealth = HealthComponent->GetMaxHealth();
+	BuildingInfo.SelectableType = ESFSelectableType::None;
+	BuildingInfo.bShowAttackPower = false;
+	BuildingInfo.bShowMoveSpeed = false;
+	BuildingInfo.bShowHealth = true;
+	BuildingInfo.MoveSpeed = 0.f;
+	return BuildingInfo;
+}
+
+const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
+{
+	FHealthData Data;
+	Data.DisplayName = DisplayName;
+	Data.CurrentTier = CurrentTier;
+	Data.HealthComponent = HealthComponent;
+	Data.UpgradeCost = CurrentUpgradeBuildCost;
+	return Data;
+}
+
+void ASFBaseBuilding::HandleHealthChanged(float, float, float)
+{
+	if (CurrentBuildingState == EBuildingState::Completed)
+	{
+		RefreshVisual();
+	}
 }
 
 void ASFBaseBuilding::HandleHealthZero()
 {
-	UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::OnDeath"));
-	
-	// play sound
-	// destroy mesh
-	// collision unenable
-	// stop progress
-	
-	// do not destroy()
-	
-	// virtual function
-	OnBuildingDestroyed();
+	SetBuildingState(EBuildingState::Destroyed);
 }
 
 void ASFBaseBuilding::ApplySpawnMode()
 {
-	// ApplySpawnMode() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] ApplySpawnMode: SpawnMode=%d, Time=%f"), *GetName(), (int32)SpawnMode, GetWorld()->GetTimeSeconds());
-	
 	switch (SpawnMode)
 	{
+		// build completed
 	case ESFBuildingSpawnMode::ViewPortPlacedMode:
-		{
-			// 건설 연출(진행 게이지, 사운드) 없이 곧장 완성 상태로 진입한다.
-			SetBuildingState(EBuildingState::Completed);
-
-			// 생산 건물의 스폰 가능 유닛 목록 채우기 등,
-			// "건설이 끝났을 때" 필요한 후크는 연출 유무와 무관하게 실행해 준다.
-			OnConstructionFinished();
-			break;
-		}
-
+		FinalizeTierActivation(); // called when building completed.
+		break;
+		// wait player build
 	case ESFBuildingSpawnMode::PlayerPlacedMode:
-		{
-			// 고스트 메시 + 초록 프리뷰 머티리얼로 시작한다.
-			// 실제 진행(UnderConstruction)은 배치가 확정될 때 TryStartConstruction() 이 담당한다.
-			SetBuildingState(EBuildingState::Preview);
-			break;
-		}
+		SetBuildingState(EBuildingState::Preview);
+		break;
 
 	default:
 		break;
@@ -98,183 +100,248 @@ void ASFBaseBuilding::ApplySpawnMode()
 
 bool ASFBaseBuilding::TryStartConstruction()
 {
-	if (CurrentBuildingState != EBuildingState::Preview)
+	if (CurrentBuildingState != EBuildingState::Preview || !CanStartPreparedConstruction())
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("ASFBaseBuilding::TryStartConstruction: Preview 상태가 아니어서 거부됩니다. Current=%d"),
-			static_cast<int32>(CurrentBuildingState));
+			TEXT("[%s] 건설을 시작할 수 없습니다. State=%d, PendingTier=%d"),
+			*GetName(),
+			static_cast<int32>(CurrentBuildingState),
+			PendingTier);
 		return false;
 	}
 
 	SetBuildingState(EBuildingState::UnderConstruction);
 	return true;
-
-}
-
-void ASFBaseBuilding::LoadTierRatioList(int32 InCurrentTier)
-{
-	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierRatioList: Invalid Tier %d / %d"),
-			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-		return;
-	}
-	
-	int32 CountKeys = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh.GetKeys(CurrentTierRatios);
-	
-	CurrentTierRatios.Sort([](const float A, const float B)
-	{
-		return A < B;
-	});
-	
-	if (CountKeys <= 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::GetTierRatioList: TMap_ratio is Invalid"));
-		return;
-	}
-	
-	ProgressComponent->SetQuarterOfRatios(CurrentTierRatios);
-	BuildingCompleteSound = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].CompleteSoundBase;
 }
 
 void ASFBaseBuilding::EnterPreviewState()
 {
-	//SetBuildingState(EBuildingState::Preview);
-
-	ApplyPreviewMesh();
+	//CombatTargetComponent->SetTargetingEnabled(false);
+	RefreshVisual();
 	ApplyPreviewMaterial(true);
 }
 
 void ASFBaseBuilding::BeginConstruction()
 {
-	//SetBuildingState(EBuildingState::UnderConstruction);
-	// BeginConstruction() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] BeginConstruction, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
-	
-	LoadTierRatioList(CurrentTier); // get ratio at datatable
-	LoadTierMeshList(CurrentTier);
-	
-	StaticMeshComponent->SetMaterial(0, nullptr);
-
-	if (CurrentTierMeshes.IsValidIndex(0))
+	if (!CanStartPreparedConstruction())
 	{
-		SetMesh(CurrentTierMeshes[0]);
+		UE_LOG(LogTemp, Error, TEXT("[%s] 준비된 건설 티어가 없습니다."), *GetName());
+		return;
 	}
 
+	// Active가 없으면 최초 건설이다.
+	// 업그레이드 중에는 기존 체력을 유지해야 하므로 초기화하지 않는다.
+	if (ActiveTierAssets.TierIndex == INDEX_NONE)
+	{
+		const FBuildingTier* const InitialTier = CachedDefinition.FindTier(PendingTier);
+
+		if (!InitialTier || !IsValid(HealthComponent))
+		{
+			return;
+		}
+
+		HealthComponent->InitHealth(InitialTier->Stats.MaxHealth);
+	}
+
+	CurrentStageIndex = 0;
+	StaticMeshComponent->SetMaterial(0, nullptr);
+	RefreshVisual();
+
+	if (IsValid(PendingTierAssets.ConstructionStartSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			GetWorld(),
+			PendingTierAssets.ConstructionStartSound,
+			GetActorLocation());
+	}
+
+	//CombatTargetComponent->SetTargetingEnabled(true);
 	ProgressComponent->StartProgress();
 }
 
 void ASFBaseBuilding::EnterCompletedState()
-{ // set last mesh completed
-	//SetBuildingState(EBuildingState::Completed);
-	//ProgressComponent->StopProgress();
-	// EnterCompletedState() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] EnterCompletedState, Time=%f"), *GetName(), GetWorld()->GetTimeSeconds());
-	
+{
+	//CombatTargetComponent->SetTargetingEnabled(true);
 	StaticMeshComponent->SetMaterial(0, nullptr);
-	if (!CurrentTierMeshes.IsEmpty())
-	{
-		SetMesh(CurrentTierMeshes.Last());
-	}
+	RefreshVisual();
 }
 
-void ASFBaseBuilding::ApplyPreviewMesh()
+void ASFBaseBuilding::EnterDestroyedState()
 {
-	if (CurrentTierMeshes.IsEmpty())
+	//CombatTargetComponent->SetTargetingEnabled(false);
+
+	if (IsValid(ProgressComponent))
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ApplyPreviewMesh:CurrentTierMeshes is Empty"));
-		return;
+		ProgressComponent->StopProgress();
 	}
-	UStaticMesh* InMesh = CurrentTierMeshes[CurrentTierMeshes.Num() - 1];
-	StaticMeshComponent->SetStaticMesh(InMesh);
+	// Deactivate Ability
+	DeactivateActiveTier();
+	
+	ApplyDestroyedCollision();
+	RefreshVisual();
+	OnBuildingDestroyed();
 }
 
-void ASFBaseBuilding::ApplyPreviewMaterial(const bool CanPlaced)
+void ASFBaseBuilding::ApplyDestroyedCollision()
 {
-	// ApplyPreviewMaterial() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] ApplyPreviewMaterial(%d), Time=%f"), *GetName(), CanPlaced, GetWorld()->GetTimeSeconds());
+	if (!IsValid(StaticMeshComponent)) return;
+
+	StaticMeshComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	StaticMeshComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	StaticMeshComponent->SetCanEverAffectNavigation(false);
+}
+
+void ASFBaseBuilding::ApplyPreviewMaterial(bool bCanPlace)
+{
 	if (!IsValid(BuildingPreviewMaterialInstance))
 	{
-		UE_LOG(LogTemp, Error, TEXT("PreviewMeshMaterial is None"));
 		return;
 	}
-	
-	if (CanPlaced)
+	// make once
+	if (!IsValid(OverlayMID))
 	{
 		OverlayMID = UMaterialInstanceDynamic::Create(BuildingPreviewMaterialInstance, this);
-		OverlayMID->SetVectorParameterValue("PreviewColor", FLinearColor(0.048881,1.000000,0.000000,1.000000));
-		StaticMeshComponent->SetMaterial(0, OverlayMID);
 	}
-	else
+
+	if (!IsValid(OverlayMID) || !IsValid(StaticMeshComponent))
 	{
-		OverlayMID = UMaterialInstanceDynamic::Create(BuildingPreviewMaterialInstance, this);
-		OverlayMID->SetVectorParameterValue("PreviewColor", FLinearColor(0.700000,0.000000,0.000000,1.000000));
-		StaticMeshComponent->SetMaterial(0, OverlayMID);
+		return;
+	}
+
+	const FLinearColor PreviewColor = bCanPlace
+		? FLinearColor(0.048881f, 1.f, 0.f, 1.f)
+		: FLinearColor(0.7f, 0.f, 0.f, 1.f);
+
+	OverlayMID->SetVectorParameterValue(TEXT("PreviewColor"), PreviewColor);
+	StaticMeshComponent->SetMaterial(0, OverlayMID);
+}
+
+UStaticMesh* ASFBaseBuilding::ResolveMesh() const
+{
+	switch (CurrentBuildingState)
+	{
+	case EBuildingState::Preview:
+		return PendingTierAssets.CompletedMesh;
+
+	case EBuildingState::UnderConstruction:
+	{
+		if (PendingTierAssets.ConstructionMeshes.IsValidIndex(CurrentStageIndex))
+		{
+			UStaticMesh* ConstructionMesh =	PendingTierAssets.ConstructionMeshes[CurrentStageIndex];
+
+			if (IsValid(ConstructionMesh))
+			{
+				return ConstructionMesh;
+			}
+		}
+
+		return PendingTierAssets.CompletedMesh;
+	}
+
+	case EBuildingState::Completed:
+		return ResolveDamageMesh(ActiveTierAssets);
+
+	case EBuildingState::Destroyed:
+		{
+			const FBuildingTierRuntimeAssets& DestroyedAssets =
+				ActiveTierAssets.TierIndex != INDEX_NONE
+					? ActiveTierAssets
+					: PendingTierAssets;
+
+			return ResolveDamageMesh(DestroyedAssets);
+		}
+	default:
+		return nullptr;
 	}
 }
 
-void ASFBaseBuilding::BindFunctionWithComponent()
+UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
 {
-	if (false == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
+	const FBuildingTier* Tier =
+	CachedDefinition.FindTier(Assets.TierIndex);
+
+	if (!Tier || !IsValid(HealthComponent))
+	{
+		return Assets.CompletedMesh;
+	}
+
+	const int32 DamageIndex =
+		Tier->Visual.FindDamageStageIndex(
+			HealthComponent->GetHealthPercent());
+
+	if (Assets.DamageMeshes.IsValidIndex(DamageIndex))
+	{
+		UStaticMesh* DamageMesh =
+			Assets.DamageMeshes[DamageIndex];
+
+		if (IsValid(DamageMesh))
+		{
+			return DamageMesh;
+		}
+	}
+
+	return Assets.CompletedMesh;
+}
+
+const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
+{
+	return CachedDefinition.FindTier(CurrentTier);
+}
+
+void ASFBaseBuilding::BindComponentDelegates()
+{
+	if (!ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
 	{
 		ProgressComponent->OnChangedRatio.AddDynamic(this, &ThisClass::ChangeMeshByRatio);
 	}
-	if (false == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
+
+	if (!ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
 	{
 		ProgressComponent->OnCompletedBuilding.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
 	}
-	
-	if (false == HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::OnTakeAttacking))
+
+	if (!HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::HandleHealthChanged))
 	{
-		HealthComponent->OnHealthValueChanged.AddDynamic(this, &ThisClass::OnTakeAttacking);
+		HealthComponent->OnHealthValueChanged.AddDynamic(this, &ThisClass::HandleHealthChanged);
 	}
-	if (false == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::HandleHealthZero))
+
+	if (!HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::HandleHealthZero))
 	{
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
-	
 }
 
-void ASFBaseBuilding::UnBindFunctionWithComponent()
+void ASFBaseBuilding::UnbindComponentDelegates()
 {
-	if (true == ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
-	{
-		ProgressComponent->OnChangedRatio.RemoveDynamic(this, &ThisClass::ChangeMeshByRatio);
-	}
-	if (true == ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
-	{
-		ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
-	}
-	
-	if (true == HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::OnTakeAttacking))
-	{
-		HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::OnTakeAttacking);
-	}
-	if (true == HealthComponent->OnHealthIsZero.IsAlreadyBound(this, &ThisClass::HandleHealthZero))
-	{
-		HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
-	}
+	ProgressComponent->OnChangedRatio.RemoveDynamic(this, &ThisClass::ChangeMeshByRatio);
+	ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
+	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
+	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
 }
 
 void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
 {
-	if (!CurrentTierMeshes.IsValidIndex(InCurrentRatioIndex))
+	if (!PendingTierAssets.ConstructionMeshes.IsValidIndex(
+				InCurrentRatioIndex))
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::ChangeMeshByRatio: Invalid Index %d / %d"),
-			InCurrentRatioIndex, CurrentTierMeshes.Num());
 		return;
 	}
-	SetMesh(CurrentTierMeshes[InCurrentRatioIndex]);
+
+	CurrentStageIndex = InCurrentRatioIndex;
+	RefreshVisual();
 }
 
-void ASFBaseBuilding::PlayBuildingEffect()
+void ASFBaseBuilding::PlayConstructionCompleteSound()
 {
+	if (!IsValid(ActiveTierAssets.ConstructionCompleteSound))
+	{
+		return;
+	}
+
 	UGameplayStatics::PlaySoundAtLocation(
 		GetWorld(),
-		BuildingCompleteSound,
-		GetActorLocation(),
-		FRotator::ZeroRotator);
-
+		ActiveTierAssets.ConstructionCompleteSound,
+		GetActorLocation());
 }
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
@@ -303,130 +370,331 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 	case EBuildingState::Completed:
 		EnterCompletedState();
 		break;
-		
+	case EBuildingState::Destroyed:
+		EnterDestroyedState();
+		break;
+
 	default:
 		break;
 	}
 }
 
-void ASFBaseBuilding::LoadTierMeshList(int32 InCurrentTier)
-{
-	// load > will change assetmanager
-	CurrentTierMeshes.Empty();
-	
-	if (!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(InCurrentTier))
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::LoadTierMeshList: Invalid Tier %d / %d"),
-			InCurrentTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-		return;
-	}
-	
-	for ( auto Key : CurrentTierRatios)
-	{
-		UStaticMesh* LoadMesh = AllTierMeshesSoftArray.TierBuildingState[InCurrentTier].Ratio_Mesh[Key].LoadSynchronous();
-		CurrentTierMeshes.Add(LoadMesh);
-	}
-}
-
-void ASFBaseBuilding::InitInfo(const FBuildingAppearance* InData)
-{
-	if (!InData)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes::InData: Invalid"));
-		return;
-	}
-	
-	AllTierMeshesSoftArray = InData->AllTierBuildingStates;
-	// material apply
-	// completedbuiling apply material
-	//
-	///////
-	//SetMesh(InData->PreviewMesh);
-	CachedGridSize = InData->GridSize;
-	DisplayName = InData->DisplayName;
-	BuildingPreviewMaterialInstance = InData->PreviewMeshMaterial;
-	//BuildingCompleteSound = InData->AllTierBuildingStates.CompleteSoundBase;
-	
-	UE_LOG(LogTemp, Warning, TEXT("InitInfo_SetMeshes:: Completed."));
-}
-
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
-	if (CurrentBuildingState == EBuildingState::Completed)
+	if (CurrentBuildingState != EBuildingState::Completed ||
+		UpgradeValue <= 0 ||
+		PendingTier != INDEX_NONE)
 	{
-		int32 TempTier = CurrentTier + UpgradeValue;
-		if(!AllTierMeshesSoftArray.TierBuildingState.IsValidIndex(TempTier))
-		{
-			UE_LOG(LogTemp, Error, TEXT("ABuildingBase::UpgradeBuilding: Excess Index %d / %d"),
-				TempTier, AllTierMeshesSoftArray.TierBuildingState.Num());
-			return;
-		}
-		// if ( resource is property )
-		//
-		//
-		//
-		//
-		////////////////////////////
-		///
-		CurrentTier += UpgradeValue;
-		SetBuildingState(EBuildingState::UnderConstruction);
-	}
-}
-
-void ASFBaseBuilding::SetMesh(UStaticMesh* InMesh)
-{
-	// SetMesh() 맨 앞
-	UE_LOG(LogTemp, Warning, TEXT("[%s] SetMesh: %s, Time=%f"), *GetName(), InMesh ? *InMesh->GetName() : TEXT("null"), GetWorld()->GetTimeSeconds());
-	
-	if (!InMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABuildingBase::SetMesh: InMesh is None"));
 		return;
 	}
-	StaticMeshComponent->SetStaticMesh(InMesh);
+
+	const int32 NextTier = CurrentTier + UpgradeValue;
+	if (!CachedDefinition.Tiers.IsValidIndex(NextTier))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[%s] 업그레이드 티어가 유효하지 않습니다. Tier=%d, Count=%d"),
+			*GetName(),
+			NextTier, CachedDefinition.Tiers.Num());
+		return;
+	}
+
+	// ASFGameState* const GameState = GetWorld()->GetGameState<ASFGameState>();
+	// if (!IsValid(GameState) ||
+	// 	!GameState->CanAfford(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
+	// {
+	// 	return;
+	// }
+
+	if (!PrepareTier(NextTier))
+	{
+		return;
+	}
+
+	// if (!GameState->TrySpendCost(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
+	// {
+	// 	PendingTierAssets.Reset();
+	// 	PendingTier = INDEX_NONE;
+	// 	return;
+	// }
+
+	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
 void ASFBaseBuilding::HandleCompleteConstruction()
 {
-	SetBuildingState(EBuildingState::Completed);
-	PlayBuildingEffect();
-	// product begin in childclass
-	OnConstructionFinished();
+	if (!FinalizeTierActivation())
+	{
+		UE_LOG(	LogTemp,Error, TEXT("[%s] 티어 활성화에 실패했습니다."),
+			*GetName()
+		);
+		return;
+	}
+
+	PlayConstructionCompleteSound();
 }
 
-// int32 ASFBaseBuilding::GetTeamIndex() const
-// {
-// 	if (!IsValid(CombatTargetComponent))
-// 	{
-// 		UE_LOG(LogTemp, Error, TEXT("ASFBaseBuilding::GetTeamIndex:CombatTargetComponent is INVALID"));
-// 		return Targetable::NeutralTeam;
-// 	}
-// 	
-// 	return CombatTargetComponent->GetTeamIndex();
-// }
 
+
+void ASFBaseBuilding::BeginPlay()
+{
+	Super::BeginPlay();
+	// delegate bind - healthcomp, progresscomp
+	BindComponentDelegates();
+	// try take info at data table
+	if (!LoadBuildingDefinition()) return;
+	// if load failed return
+	if (!PrepareTier(CurrentTier)) return;
+	// set viewport mode or controller construct mode
+	ApplySpawnMode();
+}
+
+void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DeactivateActiveTier();
+	UnbindComponentDelegates();
+	Super::EndPlay(EndPlayReason);
+}
+
+bool ASFBaseBuilding::LoadBuildingDefinition()
+{
+	const USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
+	if (!IsValid(DataManager)) return false;
+
+	const FBuildingAppearance* Definition = DataManager->GetDataRow<FBuildingAppearance>(
+		EDataTableType::Building,
+		RowName,
+		TEXT("ASFBaseBuilding::LoadBuildingDefinition"));
+	// CHECK data table empty 
+	if (!Definition || Definition->Tiers.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] Tiers가 비어 있습니다. Row=%s"),
+			*GetName(),
+			*RowName.ToString());
+		return false;
+	}
+	// CACHED building appearance about all tiers
+	CachedDefinition = *Definition;
+	
+	// FORLOOP building's Tiers / Sort By Ratio
+	for (FBuildingTier& Tier : CachedDefinition.Tiers) 
+	{   
+		Tier.Visual.ConstructionStages.Sort(
+			[](const FBuildingStage& Left, const FBuildingStage& Right)
+			{
+				return Left.Threshold < Right.Threshold;
+			});
+
+		Tier.Visual.DamageStages.Sort(
+			[](const FBuildingStage& Left, const FBuildingStage& Right)
+			{
+				return Left.Threshold < Right.Threshold;
+			});
+	}
+	
+	// CACHED once in allgameplay = never changed in runtime
+	DisplayName = CachedDefinition.DisplayName;
+	CachedGridSize = CachedDefinition.GridSize;
+	BuildingPreviewMaterialInstance = CachedDefinition.PreviewMaterial.LoadSynchronous();
+	
+	return true;
+}
+
+bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
+{
+	// Getter TierInfo by currentTier
+	const FBuildingTier* const Tier = CachedDefinition.FindTier(TierIndex);
+	if (!Tier || !IsValid(ProgressComponent))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] 티어를 준비할 수 없습니다. Tier=%d, Count=%d"),
+			*GetName(),
+			TierIndex,
+			CachedDefinition.Tiers.Num());
+		return false;
+	}
+	
+	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
+	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
+	
+	// CACHED LoadAsset by currentTier
+	FBuildingTierRuntimeAssets NewAssets;
+	NewAssets.TierIndex = TierIndex;
+
+	const FBuildingVisualData& Visual = Tier->Visual;
+	// CHECK data table empty
+	if (Visual.ConstructionStages.IsEmpty() || Visual.DamageStages.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d의 건설 또는 피해 단계가 비어 있습니다."),
+			*RowName.ToString(),
+			TierIndex);
+		return false;
+	}
+	if (Visual.CompletedMesh.IsNull())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d CompletedMesh가 없습니다."),
+			*RowName.ToString(),
+			TierIndex);
+		return false;
+	}
+
+	// DEFINE lamda function CACHED Meshes
+	auto LoadStageMeshes = [this, TierIndex](
+		const TArray<FBuildingStage>& Stages,
+		TArray<TObjectPtr<UStaticMesh>>& OutMeshes, 
+		const TCHAR* StageName)
+	{
+		bool bAllLoaded = true;
+		OutMeshes.Reserve(Stages.Num());
+
+		for (int32 Index = 0; Index < Stages.Num(); ++Index)
+		{
+			UStaticMesh* const Mesh = Stages[Index].Mesh.LoadSynchronous();
+			OutMeshes.Add(Mesh);
+
+			if (!IsValid(Mesh))
+			{
+				bAllLoaded = false;
+				UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d %s[%d] 로드 실패"),
+					*RowName.ToString(), TierIndex, StageName, Index);
+			}
+		}
+
+		return bAllLoaded;
+	};
+
+	// CACHED ratio(construct)
+	TArray<float> ConstructionThresholds;
+	ConstructionThresholds.Reserve(Visual.ConstructionStages.Num());
+	for (const FBuildingStage& Stage : Visual.ConstructionStages)
+	{
+		ConstructionThresholds.Add(Stage.Threshold);
+	}
+	
+	// CACHED construct_meshes using lamda function
+	const bool bConstructionMeshesLoaded = LoadStageMeshes(
+		Visual.ConstructionStages,
+		NewAssets.ConstructionMeshes,
+		TEXT("ConstructionStage"));
+	// CACHED damaged_meshes using lamda function
+	const bool bDamageMeshesLoaded = LoadStageMeshes(
+		Visual.DamageStages,
+		NewAssets.DamageMeshes,
+		TEXT("DamageStage"));
+	
+	// CACHED completed_mesh
+	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
+	// CACHED failed return false
+	if (!bConstructionMeshesLoaded ||
+		!bDamageMeshesLoaded ||
+		!IsValid(NewAssets.CompletedMesh))
+	{
+		return false;
+	}
+
+	// CACHED sounds
+	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.LoadSynchronous();
+	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.LoadSynchronous();
+	
+	// CACHED load assets
+	PendingTierAssets = MoveTemp(NewAssets);
+	PendingTier = TierIndex;
+
+	ProgressComponent->SetQuarterOfRatios(ConstructionThresholds);
+	ProgressComponent->SetDuration(Tier->Construction.Duration);
+
+	CurrentStageIndex = 0;
+
+	return true;
+}
+
+bool ASFBaseBuilding::CanStartPreparedConstruction() const
+{
+	return PendingTierAssets.IsPreparedFor(PendingTier) &&
+		IsValid(HealthComponent) &&
+		IsValid(ProgressComponent) &&
+		IsValid(StaticMeshComponent);
+}
+
+bool ASFBaseBuilding::CommitPreparedTier()
+{// MOVE Current <- Pending
+	
+	if (!PendingTierAssets.IsPreparedFor(PendingTier) || !IsValid(HealthComponent))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] 확정할 티어가 준비되지 않았습니다."), *GetName());
+		return false;
+	}
+
+	const FBuildingTier* const Tier = CachedDefinition.FindTier(PendingTier);
+	if (!Tier)
+	{
+		return false;
+	}
+
+	const int32 CommittedTier = PendingTier;
+	ActiveTierAssets = MoveTemp(PendingTierAssets);
+	PendingTierAssets.Reset();
+	PendingTier = INDEX_NONE;
+
+	CurrentTier = CommittedTier;
+	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
+	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
+
+	HealthComponent->InitHealth(Tier->Stats.MaxHealth);
+
+	return true;
+}
+
+bool ASFBaseBuilding::FinalizeTierActivation()
+{
+	if (!CommitPreparedTier())
+	{
+		return false;
+	}
+
+	const FBuildingTier* ActivatedTier = GetCurrentTier();
+	if (!ActivatedTier)
+	{
+		return false;
+	}
+
+	SetBuildingState(EBuildingState::Completed);
+	ActivatedGameplayTier = CurrentTier;
+	OnTierActivated(*ActivatedTier);
+
+	return true;
+}
+
+void ASFBaseBuilding::DeactivateActiveTier()
+{
+	if (ActivatedGameplayTier == INDEX_NONE)
+	{
+		return;
+	}
+
+	const int32 TierToDeactivate = ActivatedGameplayTier;
+
+	// 가상 함수 안에서 Destroy 등이 다시 발생해도
+	// 두 번 회수되지 않도록 먼저 초기화한다.
+	ActivatedGameplayTier = INDEX_NONE;
+
+	const FBuildingTier* DeactivatedTier = CachedDefinition.FindTier(TierToDeactivate);
+
+	if (!DeactivatedTier)
+	{
+		UE_LOG(	LogTemp,Warning,TEXT("[%s] 비활성화할 티어를 찾을 수 없습니다. Tier=%d"),
+			*GetName(),
+			TierToDeactivate
+		);
+		return;
+	}
+
+	OnTierDeactivated(*DeactivatedTier);
+}
+
+#pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
 	const UStaticMesh* Mesh = StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr;
 	return Mesh ? Mesh->GetBounds() : FBoxSphereBounds(ForceInit);
 }
 
-void ASFBaseBuilding::BeginPlay()
-{
-	Super::BeginPlay();
-	
-	BindFunctionWithComponent(); // bind progress
-	
-	InitializeBuildingData();
-	// repec ================================================
-	ApplySpawnMode();
-	// repec ================================================
-}
 
-void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	UnBindFunctionWithComponent();
-	Super::EndPlay(EndPlayReason);
-	
-}
-
+#pragma endregion Getter

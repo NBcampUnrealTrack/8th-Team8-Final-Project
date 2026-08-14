@@ -10,8 +10,8 @@ struct FUnitProductData: public FTableRowBase
 {
 	GENERATED_BODY()
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Product")
-	FName UnitRowName;
+	// UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Product")
+	// FName UnitRowName;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Product")
 	float UnitProductionDuration;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Product")

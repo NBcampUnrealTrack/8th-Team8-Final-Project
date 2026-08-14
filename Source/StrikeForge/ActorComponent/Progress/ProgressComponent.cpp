@@ -1,21 +1,16 @@
 ﻿#include "ProgressComponent.h"
 
-#include "Kismet/KismetMathLibrary.h"
-
 UProgressComponent::UProgressComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-
 }
 
 void UProgressComponent::StartProgress()
 {
-	// 메쉬적용 broadcast
-	// will change getword()->gettimeseconds() > managesubsystem's timer
 	InitializeProperties();
-	OnChangedRatio.Broadcast(CurrentRatioIndex); // currentratio = 0 fill mesh 0 index
+	OnChangedRatio.Broadcast(CurrentRatioIndex);
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
-	
+
 	GetWorld()->GetTimerManager().SetTimer(
 	ProgressTimerHandle,
 	[this]()
@@ -29,25 +24,14 @@ void UProgressComponent::StartProgress()
 
 		const bool bCompleted = Tracker.Advance(ActualDelta);
 		CurrentRatio = Tracker.GetRatio();
-		UE_LOG(LogTemp, Warning, TEXT("UProgressComponent::Ratio: %f"), CurrentRatio);
-		
-		//const float Ratio = FMath::Clamp(UKismetMathLibrary::SafeDivide(Accumulate,CompleteAmount), 0.f, 1.f);
-		//UE_LOG(LogTemp, Warning, TEXT("UProgressComponent::Ratio: %f"), Ratio);
-		// 메쉬적용 broadcast
-		// max인지 확인
-		const int32 TempRatioIndex = FindRatioIndex(CurrentRatio);
-		
-		if ( TempRatioIndex != CurrentRatioIndex ) // set mesh twice when completed
+		const int32 NewRatioIndex = FindRatioIndex(CurrentRatio);
+
+		if (NewRatioIndex != CurrentRatioIndex)
 		{
-			CurrentRatioIndex = TempRatioIndex;
+			CurrentRatioIndex = NewRatioIndex;
 			OnChangedRatio.Broadcast(CurrentRatioIndex);
 		}
-		// if (QuarterofRatios.Num() > 0 && CurrentRatio >= QuarterofRatios[QuarterofRatios.Num() - 1])
-		// {
-		// 	StopProgress();
-		// 	OnCompletedBuilding.Broadcast();
-		// }
-		
+
 		if (bCompleted)
 		{
 			StopProgress();
@@ -94,14 +78,23 @@ void UProgressComponent::SetQuarterOfRatios(TArray<float> InQuarterOfRatios)
 	QuarterofRatios = InQuarterOfRatios;
 }
 
+void UProgressComponent::SetDuration(float InSeconds)
+{
+	if (InSeconds <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UProgressComponent::SetDuration: Invalid duration %f"), InSeconds);
+		return;
+	}
+	AccumulateSpeed = CompleteAmount / InSeconds;
+}
+
 void UProgressComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	//InitializeProperties(); when save load maybe this logic make trouble
 }
 
 void UProgressComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopProgress(); // defence code
+	StopProgress();
 	Super::EndPlay(EndPlayReason);
 }

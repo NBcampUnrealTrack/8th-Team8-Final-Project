@@ -9,8 +9,10 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "Kismet/GameplayStatics.h"
 #include "Units/Commander/SFCommander.h"
 #include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
@@ -29,23 +31,33 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
 }
 
-void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
+bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
 {
     // 자원이 충분한가 아닌가 검사 로직. 가능구역2
     if (IsValid(SpawnedBuildingRef))
     {
         UE_LOG(LogTemp, Error, TEXT("Exist Spawned Building Ref"));
-        return;
+        return false;
     }
     USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-    if (!IsValid(DataManager)) return;
+    if (!IsValid(DataManager)) return false;
     
     const FBuildingAppearance* Row = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, InRowName);
     if (!Row)
     {
         UE_LOG(LogTemp, Error, TEXT("No build table for %s"), *InRowName.ToString());
-        return;
+        return false;
     }
+    
+#pragma region CheckResources 
+    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
+    // if (!IsValid(SFGameState)) return false;
+    //
+    // if (!SFGameState->CanAfford(
+    //     Row->GetConstructBuildCost(0)->Mineral,
+    //     Row->GetConstructBuildCost(0)->Ether))
+    //     return false;
+#pragma endregion 
     
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
@@ -54,21 +66,37 @@ void ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     Trans.SetRotation(Rot.Quaternion());
     Trans.SetScale3D(Scaled);
     
+    UClass* SpawnClass = Row->BuildingClass.LoadSynchronous();     // ★ADD
+    if (!SpawnClass)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
+            *InRowName.ToString());
+        return false;
+    }
+    
     ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
-        Row->BuildingClass,
+        SpawnClass,
         Trans,
         nullptr,
         nullptr,
         ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
         );
+    
+    if (!IsValid(DeferredActor))                                   // ★ADD
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
+        return false;
+    }
+    
     DeferredActor->SetRowName(InRowName);
     // deferred spawn finished
     DeferredActor->FinishSpawning(Trans);
-    
+
     // gird init. preivew mode init.
     //DeferredActor->SetBuildingState(EBuildingState::Preview);
     PlacementComponent->StartPlacementMode(DeferredActor);
     SpawnedBuildingRef = DeferredActor;
+    return true;
 }
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()
@@ -85,7 +113,7 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     if (IsValid(PendingConstructionBuilding))
     {
-        PendingConstructionBuilding->SetBuildingState(EBuildingState::UnderConstruction);
+        PendingConstructionBuilding->TryStartConstruction();
     }
 
     // 건물은 파괴하지 않는다. 건설이 진행되어야 하므로 참조만 놓는다.
@@ -101,7 +129,15 @@ void ASFInGamePlayerController::CancelPendingConstruction()
 
     SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingConstructionBuilding->GetName());
 
-    // TODO: 자원 환불 (자원 차감을 넣은 뒤)
+#pragma region CheckCost
+    // ★ADD: 배치 확정 시 차감했으므로 되돌려준다.
+    // if (ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>())
+    // {
+    //     SFGameState->RefundCost(
+    //     PendingConstructionBuilding->GetConstructCost().Mineral,
+    //     PendingConstructionBuilding->GetConstructCost().Ether);
+    // }
+#pragma endregion 
     // TODO: 그리드 점유 해제 (TryRegistBuildingGrid 를 연결한 뒤)
 
     PendingConstructionBuilding->Destroy();
@@ -396,7 +432,16 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     {
         return;
     }
-
+#pragma region CheckCost
+    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
+    // if (!IsValid(SFGameState)) return;
+    // const FResources NeedCost = SpawnedBuildingRef->GetConstructCost();
+    // if (!SFGameState->TrySpendCost(NeedCost.Mineral, NeedCost.Ether))
+    // {
+    //     SF_LOG(Warning, "[SFPC] 자원이 부족해 배치를 확정할 수 없습니다.");
+    //     return;                                  // 배치 모드 유지 — 취소는 우클릭으로
+    // }
+#pragma endregion 
     PlacementComponent->ConfirmPlacementMode();
 
     ASFCommander* Commander = MyCommander.Get();

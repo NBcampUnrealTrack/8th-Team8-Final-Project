@@ -315,6 +315,15 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 	return Info;
 }
 
+const FHealthData AUnitBase::GetHealthData_Implementation()
+{
+	FHealthData Data;
+	Data.DisplayName = FText::FromString(TEXT("NeedSetName"));
+	Data.CurrentTier = -1;
+	Data.HealthComponent = HealthComponent;
+	return Data;
+}
+
 // ─────────────────────────────────────────────────────────
 // 거리 · 시야
 // ─────────────────────────────────────────────────────────

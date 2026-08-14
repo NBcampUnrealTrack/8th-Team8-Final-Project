@@ -1,4 +1,4 @@
-#include "StartWidget.h"
+ï»¿#include "StartWidget.h"
 #include "Components/Button.h"
 #include "Components/Widget.h"
 #include "Components/BackgroundBlur.h"
@@ -13,7 +13,7 @@ void UStartWidget::NativeConstruct()
 	Super::NativeConstruct();
 	SetIsFocusable(true);
 
-	// ¹öÆ° Å¬¸¯ ÀÌº¥Æ® ¹ÙÀÎµù
+	// ë²„íŠ¼ í´ë¦­ ì´ë²¤íŠ¸ ë°”ì¸ë”©
 	if (IsValid(Start_Btn))
 	{
 		Start_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnStartButtonClicked);
@@ -30,15 +30,11 @@ void UStartWidget::NativeConstruct()
 	{
 		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
 	}
-	if (IsValid(BackUi_Btn))
-	{
-		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
-	}
 
-	// ¿É¼Ç ÃÊ±âÈ­ (ÀÌº¥Æ® ¹ÙÀÎµù Àü¿¡ È£ÃâÇØ¾ß ºÒÇÊ¿äÇÑ OnSelectionChanged ¹æÁö)
+	// ì˜µì…˜ ì´ˆê¸°í™” (ì´ë²¤íŠ¸ ë°”ì¸ë”© ì „ì— í˜¸ì¶œí•´ì•¼ ë¶ˆí•„ìš”í•œ OnSelectionChanged ë°©ì§€)
 	InitializeSettingOptions();
 
-	// ÄŞº¸¹Ú½º ¼±ÅÃ º¯°æ ÀÌº¥Æ® ¹ÙÀÎµù
+	// ì½¤ë³´ë°•ìŠ¤ ì„ íƒ ë³€ê²½ ì´ë²¤íŠ¸ ë°”ì¸ë”©
 	if (IsValid(DisplayComboBox))
 	{
 		DisplayComboBox->OnSelectionChanged.AddDynamic(this, &UStartWidget::OnResolutionChanged);
@@ -48,7 +44,7 @@ void UStartWidget::NativeConstruct()
 		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &UStartWidget::OnFullscreenModeChanged);
 	}
 
-	// ÃÊ±â »óÅÂ: ¼³Á¤Ã¢ ¼û±è
+	// ì´ˆê¸° ìƒíƒœ: ì„¤ì •ì°½ ìˆ¨ê¹€
 	SetSettingMenuVisible(false);
 }
 
@@ -82,7 +78,7 @@ void UStartWidget::InitializeSettingOptions()
 		return;
 	}
 
-	// 1. ÇØ»óµµ ¿É¼Ç ¼³Á¤
+	// 1. í•´ìƒë„ ì˜µì…˜ ì„¤ì •
 	if (IsValid(DisplayComboBox))
 	{
 		DisplayComboBox->ClearOptions();
@@ -106,7 +102,7 @@ void UStartWidget::InitializeSettingOptions()
 		}
 	}
 
-	// 2. ÀüÃ¼È­¸é ¸ğµå ¿É¼Ç ¼³Á¤
+	// 2. ì „ì²´í™”ë©´ ëª¨ë“œ ì˜µì…˜ ì„¤ì •
 	if (IsValid(FullScreenComboBox))
 	{
 		FullScreenComboBox->ClearOptions();
@@ -132,7 +128,7 @@ void UStartWidget::InitializeSettingOptions()
 
 void UStartWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
-	// ÄÚµå ³»ºÎ ÁöÁ¤À¸·Î ÀÎÇÑ Æ®¸®°Å ¹æÁö
+	// ì½”ë“œ ë‚´ë¶€ ì§€ì •ìœ¼ë¡œ ì¸í•œ íŠ¸ë¦¬ê±° ë°©ì§€
 	if (SelectionType == ESelectInfo::Direct)
 	{
 		return;

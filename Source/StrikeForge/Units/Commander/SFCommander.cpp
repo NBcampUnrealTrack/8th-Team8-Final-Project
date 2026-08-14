@@ -260,7 +260,7 @@ void ASFCommander::CheckFailMoving(bool IsSuccessed)
 
 	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 	{
-		SFPC->CancelPendingConstruction();
+		SFPC->ClearPendingBuildingRef();
 	}
 
 	StopMoving();
@@ -272,7 +272,7 @@ void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 	{
 		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 		{
-			SFPC->CancelPendingConstruction();
+			SFPC->ClearPendingBuildingRef();
 		}
 	}
 	

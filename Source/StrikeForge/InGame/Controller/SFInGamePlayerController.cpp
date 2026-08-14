@@ -111,23 +111,23 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
-    if (IsValid(PendingConstructionBuilding))
+    if (IsValid(PendingSpawnedBuildingRef))
     {
-        PendingConstructionBuilding->TryStartConstruction();
+        PendingSpawnedBuildingRef->TryStartConstruction();
     }
 
     // 건물은 파괴하지 않는다. 건설이 진행되어야 하므로 참조만 놓는다.
-    PendingConstructionBuilding = nullptr;
+    PendingSpawnedBuildingRef = nullptr;
 }
 
-void ASFInGamePlayerController::CancelPendingConstruction()
+void ASFInGamePlayerController::ClearPendingBuildingRef()
 {
-    if (!IsValid(PendingConstructionBuilding))
+    if (!IsValid(PendingSpawnedBuildingRef))
     {
         return;
     }
 
-    SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingConstructionBuilding->GetName());
+    SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingSpawnedBuildingRef->GetName());
 
 #pragma region CheckCost
     // ★ADD: 배치 확정 시 차감했으므로 되돌려준다.
@@ -140,8 +140,8 @@ void ASFInGamePlayerController::CancelPendingConstruction()
 #pragma endregion 
     // TODO: 그리드 점유 해제 (TryRegistBuildingGrid 를 연결한 뒤)
 
-    PendingConstructionBuilding->Destroy();
-    PendingConstructionBuilding = nullptr;
+    PendingSpawnedBuildingRef->Destroy();
+    PendingSpawnedBuildingRef = nullptr;
 }
 
 void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
@@ -454,12 +454,12 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     }
 
     // ★ADD: 이전 건설 명령이 남아 있으면 먼저 취소한다.
-    CancelPendingConstruction();
+    ClearPendingBuildingRef();
 
     // ★ADD: 고스트 → 대기 슬롯으로 소유권 이전.
     //        SpawnedBuildingRef 를 비워야 다음 건물을 고를 수 있고,
     //        빌드 패널을 닫아도 ClearSpawnedBuildingRef 에 파괴되지 않는다.
-    PendingConstructionBuilding = SpawnedBuildingRef;
+    PendingSpawnedBuildingRef = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
     UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
@@ -469,7 +469,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
 
         const float DistTolerance = 0.1f;   // 실제 건설위치와 근접한 내비메시 간 건설위치 오차 허용범위
         const FVector QueryExt(100.f, 100.0f, 1000.f);
-        FVector BuildInLoc = PendingConstructionBuilding->GetActorLocation();
+        FVector BuildInLoc = PendingSpawnedBuildingRef->GetActorLocation();
         FNavLocation BuildCheckLoc;
 
         do
@@ -504,14 +504,16 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
         {
             // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
             Commander->MoveToBuild(
-                PendingConstructionBuilding->GetActorLocation(),
-                PendingConstructionBuilding->GetBuildBounds(),
-                PendingConstructionBuilding->GetActorRotation().Yaw);
+                PendingSpawnedBuildingRef->GetActorLocation(),
+                PendingSpawnedBuildingRef->GetBuildBounds(),
+                PendingSpawnedBuildingRef->GetActorRotation().Yaw);
         }
         else
         {
             // 추후 UI 메세지 출력으로 수정
             GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Build Error!!!"));
+            // delete building
+            ClearPendingBuildingRef();
         }
     }
 

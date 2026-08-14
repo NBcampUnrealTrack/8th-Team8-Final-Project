@@ -52,8 +52,8 @@ public:
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
     bool SpawnBuildingFunction(const FName& InRowName);
     void ClearSpawnedBuildingRef();
+    void ClearPendingBuildingRef();
     void NotifyBuilderArrived();
-    void CancelPendingConstruction();
     
     void SetSelectedActor(AActor* InActor);
     void RegisterCommander(ASFCommander* InCommander);
@@ -209,7 +209,7 @@ private:
     UPROPERTY()
     TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef;           // 드래그 중인 고스트
     UPROPERTY()
-    TObjectPtr<ASFBaseBuilding> PendingConstructionBuilding;  // 확정, 커맨더 대기 중
+    TObjectPtr<ASFBaseBuilding> PendingSpawnedBuildingRef;  // 확정, 커맨더 대기 중
     UPROPERTY()
     TWeakObjectPtr<ASFCommander> MyCommander;
     UPROPERTY(Transient)

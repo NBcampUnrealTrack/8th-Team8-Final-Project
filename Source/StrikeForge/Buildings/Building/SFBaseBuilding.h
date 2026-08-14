@@ -10,6 +10,7 @@
 class UProgressComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
+class UNiagaraSystem;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -44,6 +45,9 @@ struct FBuildingTierRuntimeAssets
 	TArray<TObjectPtr<UStaticMesh>> DamageMeshes;
 
 	UPROPERTY()
+	TObjectPtr<UStaticMesh> DestroyedMesh = nullptr;
+	
+	UPROPERTY()
 	TObjectPtr<USoundBase> ConstructionStartSound = nullptr;
 
 	UPROPERTY()
@@ -57,9 +61,12 @@ struct FBuildingTierRuntimeAssets
 	void Reset()
 	{
 		TierIndex = INDEX_NONE;
+		
 		ConstructionMeshes.Reset();
 		CompletedMesh = nullptr;
+		DestroyedMesh = nullptr;
 		DamageMeshes.Reset();
+		
 		ConstructionStartSound = nullptr;
 		ConstructionCompleteSound = nullptr;
 	}
@@ -131,11 +138,16 @@ private:
 	
 	// constructing
 	void EnterPreviewState();
+	
 	void BeginConstruction();
+	
 	void EnterCompletedState();
+	
 	void EnterDestroyedState();
 	void ApplyDestroyedCollision();
+	void PlayDestroyEffect();
 	void PlayConstructionCompleteSound();
+	
 	// delegate
 	void BindComponentDelegates();
 	void UnbindComponentDelegates();
@@ -181,21 +193,21 @@ protected:
 	FResources CurrentUpgradeBuildCost;
 	
 	// 전체 행 cached
-	UPROPERTY(Transient)
+	UPROPERTY(Transient) 
 	FBuildingAppearance CachedDefinition;
 	/**
 	 * 건설이 완료되어 현재 건물에 실제 적용 중인 티어 에셋.
 	 * Completed 및 Destroyed 상태에서 사용한다.
 	 */
-	UPROPERTY(Transient)
+	UPROPERTY(Transient) // Advance
 	FBuildingTierRuntimeAssets ActiveTierAssets;
 	/**
 	 * 최초 건설 또는 업그레이드 중인 대상 티어 에셋.
 	 * Preview 및 UnderConstruction 상태에서 사용한다.
 	 */
-	UPROPERTY(Transient)
+	UPROPERTY(Transient) // 일시적으로 가지고 있는 에셋(temp용)
 	FBuildingTierRuntimeAssets PendingTierAssets;
-	
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta=(AllowPrivateAccess=true))
 	EBuildingState CurrentBuildingState = EBuildingState::None;
 private:
@@ -208,6 +220,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
+	
+	UPROPERTY()
+	TObjectPtr<USoundBase> DestroyedSound;
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> DestroyedEffect;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;

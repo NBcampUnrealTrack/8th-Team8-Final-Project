@@ -1,10 +1,13 @@
 ﻿#include "SFBaseBuilding.h"
+#include "Logging/SFLog.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraSystem.h"
+#include "NiagaraFunctionLibrary.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -66,7 +69,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
 }
-
+// called by 죽기전까지
 void ASFBaseBuilding::HandleHealthChanged(float, float, float)
 {
 	if (CurrentBuildingState == EBuildingState::Completed)
@@ -74,7 +77,7 @@ void ASFBaseBuilding::HandleHealthChanged(float, float, float)
 		RefreshVisual();
 	}
 }
-
+// called by 죽을때
 void ASFBaseBuilding::HandleHealthZero()
 {
 	SetBuildingState(EBuildingState::Destroyed);
@@ -178,7 +181,11 @@ void ASFBaseBuilding::EnterDestroyedState()
 	DeactivateActiveTier();
 	
 	ApplyDestroyedCollision();
+	// mesh
 	RefreshVisual();
+	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
+	PlayDestroyEffect();
+	// sound effect
 	OnBuildingDestroyed();
 }
 
@@ -227,11 +234,10 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 	{
 		if (PendingTierAssets.ConstructionMeshes.IsValidIndex(CurrentStageIndex))
 		{
-			UStaticMesh* ConstructionMesh =	PendingTierAssets.ConstructionMeshes[CurrentStageIndex];
-
-			if (IsValid(ConstructionMesh))
+			if (UStaticMesh* Mesh =
+				PendingTierAssets.ConstructionMeshes[CurrentStageIndex])
 			{
-				return ConstructionMesh;
+				return Mesh;
 			}
 		}
 
@@ -242,14 +248,20 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 		return ResolveDamageMesh(ActiveTierAssets);
 
 	case EBuildingState::Destroyed:
-		{
-			const FBuildingTierRuntimeAssets& DestroyedAssets =
-				ActiveTierAssets.TierIndex != INDEX_NONE
-					? ActiveTierAssets
-					: PendingTierAssets;
+	{
+		const FBuildingTierRuntimeAssets& DestroyedAssets =
+			ActiveTierAssets.TierIndex != INDEX_NONE
+				? ActiveTierAssets
+				: PendingTierAssets;
 
-			return ResolveDamageMesh(DestroyedAssets);
+		if (IsValid(DestroyedAssets.DestroyedMesh))
+		{
+			return DestroyedAssets.DestroyedMesh.Get();
 		}
+
+		// 예상치 못한 에셋 누락 시 마지막 피해 메시로 대체한다.
+		return ResolveDamageMesh(DestroyedAssets);
+	}
 	default:
 		return nullptr;
 	}
@@ -331,18 +343,7 @@ void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
 	RefreshVisual();
 }
 
-void ASFBaseBuilding::PlayConstructionCompleteSound()
-{
-	if (!IsValid(ActiveTierAssets.ConstructionCompleteSound))
-	{
-		return;
-	}
 
-	UGameplayStatics::PlaySoundAtLocation(
-		GetWorld(),
-		ActiveTierAssets.ConstructionCompleteSound,
-		GetActorLocation());
-}
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
@@ -440,9 +441,9 @@ void ASFBaseBuilding::BeginPlay()
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition()) return;
+	if (!LoadBuildingDefinition()) return; // destroy actor?
 	// if load failed return
-	if (!PrepareTier(CurrentTier)) return;
+	if (!PrepareTier(CurrentTier)) return; // destroy actor?
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
 }
@@ -493,6 +494,10 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	// CACHED once in allgameplay = never changed in runtime
 	DisplayName = CachedDefinition.DisplayName;
 	CachedGridSize = CachedDefinition.GridSize;
+	// CACHED once
+	DestroyedSound = Definition->DestroyedSound.LoadSynchronous();
+	DestroyedEffect = Definition->DestroyedEffect.LoadSynchronous();
+	
 	BuildingPreviewMaterialInstance = CachedDefinition.PreviewMaterial.LoadSynchronous();
 	
 	return true;
@@ -500,6 +505,7 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 
 bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 {
+	// appear -> tier[0,1,2] -> tier[0] -> construct[0,1,2], dmg[0,1,2]
 	// Getter TierInfo by currentTier
 	const FBuildingTier* const Tier = CachedDefinition.FindTier(TierIndex);
 	if (!Tier || !IsValid(ProgressComponent))
@@ -520,13 +526,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 
 	const FBuildingVisualData& Visual = Tier->Visual;
 	// CHECK data table empty
-	if (Visual.ConstructionStages.IsEmpty() || Visual.DamageStages.IsEmpty())
-	{
-		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d의 건설 또는 피해 단계가 비어 있습니다."),
-			*RowName.ToString(),
-			TierIndex);
-		return false;
-	}
+	// support no construct mesh
 	if (Visual.CompletedMesh.IsNull())
 	{
 		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d CompletedMesh가 없습니다."),
@@ -534,7 +534,13 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 			TierIndex);
 		return false;
 	}
-
+	if (Visual.DestroyedMesh.IsNull())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d DestroyedMesh가 없습니다."),
+			*RowName.ToString(),
+			TierIndex);
+		return false;
+	}
 	// DEFINE lamda function CACHED Meshes
 	auto LoadStageMeshes = [this, TierIndex](
 		const TArray<FBuildingStage>& Stages,
@@ -581,11 +587,15 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	
 	// CACHED completed_mesh
 	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
+	NewAssets.DestroyedMesh = Visual.DestroyedMesh.LoadSynchronous();
+	
 	// CACHED failed return false
 	if (!bConstructionMeshesLoaded ||
 		!bDamageMeshesLoaded ||
-		!IsValid(NewAssets.CompletedMesh))
+		!IsValid(NewAssets.CompletedMesh) ||
+		!IsValid(NewAssets.DestroyedMesh))
 	{
+		SF_LOG(Error, "ASFBaseBuilding::PrepareTier: no completedmesh no destroymesh");
 		return false;
 	}
 
@@ -688,6 +698,41 @@ void ASFBaseBuilding::DeactivateActiveTier()
 
 	OnTierDeactivated(*DeactivatedTier);
 }
+#pragma region Sound
+void ASFBaseBuilding::PlayConstructionCompleteSound()
+{
+	if (!IsValid(ActiveTierAssets.ConstructionCompleteSound))
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(
+		GetWorld(),
+		ActiveTierAssets.ConstructionCompleteSound,
+		GetActorLocation());
+}
+
+void ASFBaseBuilding::PlayDestroyEffect()
+{
+	const FVector EffectLocation =
+		IsValid(StaticMeshComponent)
+			? StaticMeshComponent->Bounds.Origin
+			: GetActorLocation();
+	
+	if (DestroyedEffect)
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			DestroyedEffect,
+			EffectLocation,
+			GetActorRotation());
+	
+	if (DestroyedSound)
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			DestroyedSound,
+			EffectLocation);
+}
+#pragma endregion
 
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const

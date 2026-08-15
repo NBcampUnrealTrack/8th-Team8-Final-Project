@@ -56,7 +56,6 @@ void ASFBaseBuilding::RefreshVisual()
 	if (IsValid(StaticMeshComponent) && StaticMeshComponent->GetStaticMesh() != ResolvedMesh)
 	{
 		StaticMeshComponent->SetStaticMesh(ResolvedMesh);
-		SetBoxExtent();
 	}
 }
 
@@ -144,18 +143,35 @@ void ASFBaseBuilding::HandleHealthZero()
 	SetBuildingState(EBuildingState::Destroyed);
 }
 
-void ASFBaseBuilding::SetBoxExtent()
+void ASFBaseBuilding::HandleConstructionProgress(float PreviousRatio, float CurrentRatio)
 {
-	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
-	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
-	NewBoxExtent.X = MeshBoundary.BoxExtent.X * 0.8;
-	NewBoxExtent.Y = MeshBoundary.BoxExtent.Y * 0.8;
-	NewBoxExtent.Z = MeshBoundary.BoxExtent.Z * 0.8;
-	BoxComponent->SetBoxExtent(NewBoxExtent);
-	
-	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
-	RelativeLocation.Z = NewBoxExtent.Z; 
-	BoxComponent->SetRelativeLocation(RelativeLocation);
+	// underconstruct일때만 진행도에 따른 메쉬 적용
+	if (CurrentBuildingState == EBuildingState::UnderConstruction)
+	{
+		const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+		if (!PendingTierData) return;
+
+		// 건설 메시 변경
+		const int32 NewStageIndex =	PendingTierData->Visual.FindConstructionStageIndex(CurrentRatio);
+
+		if (NewStageIndex != INDEX_NONE &&
+			NewStageIndex != CurrentStageIndex && // 메쉬 인덱스 다름
+			PendingTierAssets.ConstructionMeshes.IsValidIndex(NewStageIndex))
+		{
+			CurrentStageIndex = NewStageIndex;
+			RefreshVisual();
+			SetBoxExtent();
+		}
+
+		// 이번 진행에서 증가한 비율
+		const float DeltaRatio = FMath::Clamp(CurrentRatio - PreviousRatio, 0.f, 1.f);
+		if (DeltaRatio <= 0.f)	return;
+
+		// 최초 건설과 업그레이드가 동일한 로직 사용
+		const float HealthIncrease = ConstructionHealthIncrease * DeltaRatio;
+
+		HealthComponent->IncreaseMaxAndCurrentHealth(HealthIncrease);
+	}
 }
 
 void ASFBaseBuilding::ApplySpawnMode()
@@ -164,8 +180,15 @@ void ASFBaseBuilding::ApplySpawnMode()
 	{
 		// build completed
 	case ESFBuildingSpawnMode::ViewPortPlacedMode:
-		FinalizeTierActivation(); // called when building completed.
-		break;
+		{
+			// 현재티어
+			const FBuildingTier* InitialTier = CachedDefinition.FindTier(PendingTier);
+			if (!InitialTier) return;
+			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
+		
+			FinalizeTierActivation(); // called when building completed.
+			break;
+		}
 		// wait player build
 	case ESFBuildingSpawnMode::PlayerPlacedMode:
 		SetBuildingState(EBuildingState::Preview);
@@ -209,25 +232,24 @@ void ASFBaseBuilding::BeginConstruction()
 		return;
 	}
 
-	// Active가 없으면 최초 건설이다.
-	// 업그레이드 중에는 기존 체력을 유지해야 하므로 초기화하지 않는다.
+	const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+	if (!PendingTierData) return;
+	// 최초 건설은 1/1에서 시작
 	if (ActiveTierAssets.TierIndex == INDEX_NONE)
 	{
-		const FBuildingTier* const InitialTier = CachedDefinition.FindTier(PendingTier);
-
-		if (!InitialTier || !IsValid(HealthComponent))
-		{
-			return;
-		}
-
-		HealthComponent->InitHealth(InitialTier->Stats.MaxHealth);
+		HealthComponent->InitializeHealth(1.f, 1.f);
 	}
+	// 최대체력을 캐생
+	const float StartMaxHealth = HealthComponent->GetMaxHealth();
+	// 지을건물과 현재건물의 최대체력의 차이를 구함 (추가된 최대체력만큼 현재체력을 상승할 에정)
+	ConstructionHealthIncrease = FMath::Max(0.f,PendingTierData->Stats.MaxHealth - StartMaxHealth);
 
 	CurrentStageIndex = 0;
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	// mesh
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
+	SetBoxExtent();
 	//
 	if (IsValid(PendingTierAssets.ConstructionStartSound))
 	{
@@ -236,7 +258,15 @@ void ASFBaseBuilding::BeginConstruction()
 			PendingTierAssets.ConstructionStartSound,
 			GetActorLocation());
 	}
-
+	// 초기값이면 초기건설 = 업글x, 그외 = 전부 업글판정
+	// 이경우일때 만약 건물을 3티어부터 생산할수있게되면 오류가 날 수 있음
+	const bool bIsUpgrade = ActiveTierAssets.TierIndex != INDEX_NONE;
+	// 업그레이드때문에 건설로직에 들어온다면
+	if (bIsUpgrade)
+	{	// 생산컴포넌트 pause 로직
+		OnUpgradeStarted();
+	}
+	
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	ProgressComponent->StartProgress();
 }
@@ -247,6 +277,7 @@ void ASFBaseBuilding::EnterCompletedState()
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
+	SetBoxExtent();
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -264,20 +295,11 @@ void ASFBaseBuilding::EnterDestroyedState()
 	// mesh
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
-	
+	SetBoxExtent();
 	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
 	PlayDestroyEffect();
 	// sound effect
 	OnBuildingDestroyed();
-}
-
-void ASFBaseBuilding::ApplyDestroyedCollision()
-{
-	if (!IsValid(StaticMeshComponent)) return;
-
-	StaticMeshComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	StaticMeshComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	StaticMeshComponent->SetCanEverAffectNavigation(false);
 }
 
 void ASFBaseBuilding::ApplyPreviewMaterial(bool bCanPlace)
@@ -384,14 +406,14 @@ const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
 
 void ASFBaseBuilding::BindComponentDelegates()
 {
-	if (!ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
+	if (!ProgressComponent->OnChangedProgressRatio.IsAlreadyBound(this, &ThisClass::HandleConstructionProgress))
 	{
-		ProgressComponent->OnChangedRatio.AddDynamic(this, &ThisClass::ChangeMeshByRatio);
+		ProgressComponent->OnChangedProgressRatio.AddDynamic(this, &ThisClass::HandleConstructionProgress);
 	}
 
-	if (!ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
+	if (!ProgressComponent->OnCompletedProgress.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
 	{
-		ProgressComponent->OnCompletedBuilding.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
+		ProgressComponent->OnCompletedProgress.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
 	}
 
 	if (!HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::HandleHealthChanged))
@@ -413,8 +435,8 @@ void ASFBaseBuilding::BindComponentDelegates()
 
 void ASFBaseBuilding::UnbindComponentDelegates()
 {
-	ProgressComponent->OnChangedRatio.RemoveDynamic(this, &ThisClass::ChangeMeshByRatio);
-	ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
+	ProgressComponent->OnChangedProgressRatio.RemoveDynamic(this, &ThisClass::HandleConstructionProgress);
+	ProgressComponent->OnCompletedProgress.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
 	
@@ -422,20 +444,6 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	if (!IsValid(HealthComp)) return;
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
 }
-
-void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
-{
-	if (!PendingTierAssets.ConstructionMeshes.IsValidIndex(
-				InCurrentRatioIndex))
-	{
-		return;
-	}
-
-	CurrentStageIndex = InCurrentRatioIndex;
-	RefreshVisual();
-}
-
-
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
@@ -537,7 +545,7 @@ void ASFBaseBuilding::BeginPlay()
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
 	
-	
+	// cached staticmesh location, before hit react
 	OriginalMeshLocation = StaticMeshComponent->GetRelativeLocation();
 	OriginalMeshRotation = StaticMeshComponent->GetRelativeRotation();
 
@@ -666,6 +674,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 			TierIndex);
 		return false;
 	}
+	
 	// DEFINE lamda function CACHED Meshes
 	auto LoadStageMeshes = [this, TierIndex](
 		const TArray<FBuildingStage>& Stages,
@@ -690,21 +699,14 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 
 		return bAllLoaded;
 	};
-
-	// CACHED ratio(construct)
-	TArray<float> ConstructionThresholds;
-	ConstructionThresholds.Reserve(Visual.ConstructionStages.Num());
-	for (const FBuildingStage& Stage : Visual.ConstructionStages)
-	{
-		ConstructionThresholds.Add(Stage.Threshold);
-	}
 	
-	// CACHED construct_meshes using lamda function
+	// CACHED construct_meshes using lamda function(LoadStageMeshes)
 	const bool bConstructionMeshesLoaded = LoadStageMeshes(
 		Visual.ConstructionStages,
 		NewAssets.ConstructionMeshes,
 		TEXT("ConstructionStage"));
-	// CACHED damaged_meshes using lamda function
+	
+	// CACHED damaged_meshes using lamda function(LoadStageMeshes)
 	const bool bDamageMeshesLoaded = LoadStageMeshes(
 		Visual.DamageStages,
 		NewAssets.DamageMeshes,
@@ -732,8 +734,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	ProgressComponent->SetQuarterOfRatios(ConstructionThresholds);
-	ProgressComponent->SetDuration(Tier->Construction.Duration);
+	ProgressComponent->InitProgressWorks(Tier->Construction.RequiredWork, 1.f);
 
 	CurrentStageIndex = 0;
 
@@ -772,8 +773,6 @@ bool ASFBaseBuilding::CommitPreparedTier()
 	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
 	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
 
-	HealthComponent->InitHealth(Tier->Stats.MaxHealth);
-
 	return true;
 }
 
@@ -783,12 +782,11 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	{
 		return false;
 	}
-
+	
+	DeactivateActiveTier();
+	
 	const FBuildingTier* ActivatedTier = GetCurrentTier();
-	if (!ActivatedTier)
-	{
-		return false;
-	}
+	if (!ActivatedTier) return false;
 
 	SetBuildingState(EBuildingState::Completed);
 	ActivatedGameplayTier = CurrentTier;
@@ -796,16 +794,12 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 
 	return true;
 }
-
+// enterdestorystate call this function
 void ASFBaseBuilding::DeactivateActiveTier()
-{
-	if (ActivatedGameplayTier == INDEX_NONE)
-	{
-		return;
-	}
-
+{	// 초기건설에는 능력치를 비활성화하지않습니다
+	if (ActivatedGameplayTier == INDEX_NONE) return;
+	// 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
 	const int32 TierToDeactivate = ActivatedGameplayTier;
-
 	// 가상 함수 안에서 Destroy 등이 다시 발생해도
 	// 두 번 회수되지 않도록 먼저 초기화한다.
 	ActivatedGameplayTier = INDEX_NONE;
@@ -820,7 +814,7 @@ void ASFBaseBuilding::DeactivateActiveTier()
 		);
 		return;
 	}
-
+	// 간단하게 현재 티어의 능력치를 반환함
 	OnTierDeactivated(*DeactivatedTier);
 }
 #pragma region Sound
@@ -866,6 +860,19 @@ bool ASFBaseBuilding::CanReceiveDamage() const
 	   CurrentBuildingState == EBuildingState::Completed;
 }
 
+void ASFBaseBuilding::SetBoxExtent()
+{
+	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
+	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
+	NewBoxExtent.X = MeshBoundary.BoxExtent.X * 0.8;
+	NewBoxExtent.Y = MeshBoundary.BoxExtent.Y * 0.8;
+	NewBoxExtent.Z = MeshBoundary.BoxExtent.Z * 0.8;
+	BoxComponent->SetBoxExtent(NewBoxExtent);
+	
+	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
+	RelativeLocation.Z = NewBoxExtent.Z; 
+	BoxComponent->SetRelativeLocation(RelativeLocation);
+}
 
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
@@ -877,7 +884,7 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 
 #pragma endregion Getter
 
-// overlap cursor
+#pragma region Widget
 void ASFBaseBuilding::NotifyActorBeginCursorOver()
 {
 	Super::NotifyActorBeginCursorOver();
@@ -891,7 +898,9 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 	WidgetComponent->SetVisibility(false);
 	Super::NotifyActorEndCursorOver();
 }
+#pragma endregion 
 
+#pragma region HitReact
 void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 {
 	const FVector Offset =
@@ -933,3 +942,4 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 	// 타임라인은 인자가 없다
 	HitReactionTimeline->PlayFromStart();
 }
+#pragma endregion 

@@ -15,8 +15,8 @@ UProductComponent::UProductComponent()
 
 void UProductComponent::AllClearProductLine()
 {
-	StopProductLine();
 	ProductLine.Reset();
+	ResetProductProgress();
 	OnProductLineChanged.Broadcast(ProductLine);
 }
 
@@ -77,7 +77,48 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 	}
 	else
 	{
-		StopProductLine();
+		ResetProductProgress();
+	}
+}
+
+void UProductComponent::PauseProductLine()
+{
+	if (bProductionPaused) return;
+
+	// 대기열 존재 여부와 상관없이
+	// 건물의 생산 기능 자체를 일시정지 상태로 만든다.
+	bProductionPaused = true;
+
+	if (ProductLine.IsEmpty()) return;
+	
+	// 마지막 갱신부터 Pause 순간까지의 작업량 반영
+	ProcessProductionToNow();
+
+	// Advance 과정에서 현재 생산이 완료돼
+	// 대기열이 비었을 수도 있다.
+	if (!ProductLine.IsEmpty())
+	{
+		GetWorld()->GetTimerManager().PauseTimer(CurrentTimerHandle);
+	}
+}
+
+void UProductComponent::ResumeProductLine()
+{
+	if (!bProductionPaused) return;
+	bProductionPaused = false;
+
+	if (ProductLine.IsEmpty()) return;
+	
+	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
+
+	if (TimerManager.IsTimerPaused(CurrentTimerHandle))
+	{
+		LastAdvanceTime = GetWorld()->GetTimeSeconds();
+		TimerManager.UnPauseTimer(CurrentTimerHandle);
+	}
+	else
+	{
+		StartProductLine();
 	}
 }
 
@@ -96,6 +137,12 @@ void UProductComponent::StartProductLine()
 		&UProductComponent::TickProduction,
 		TickInterval,
 		true);
+	
+	if (bProductionPaused)
+	{
+		GetWorld()->GetTimerManager().PauseTimer(
+			CurrentTimerHandle);
+	}
 }
 
 void UProductComponent::CompletedProduct(const FName& InCompletedName)
@@ -118,42 +165,47 @@ void UProductComponent::CompletedProduct(const FName& InCompletedName)
 		return;
 	}
 	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
-	StopProductLine();
+	ResetProductProgress();
 }
 
-void UProductComponent::StopProductLine()
+void UProductComponent::ResetProductProgress()
 {
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	Tracker.Reset(0.f, 0.f);
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 }
 
-void UProductComponent::BeginPlay()
+void UProductComponent::ProcessProductionToNow()
 {
-	Super::BeginPlay();
+	if (ProductLine.IsEmpty()) return;
+	
+	const float Now = GetWorld()->GetTimeSeconds();
+	const float ActualDelta = FMath::Max(0.f, Now - LastAdvanceTime);
+	LastAdvanceTime = Now;
 
+	if (ActualDelta <= KINDA_SMALL_NUMBER) return;
+
+	
+	if (Tracker.Advance(ActualDelta))
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
+
+		const FName CompletedProductName =	ProductLine[0].RowName;
+
+		CompletedProduct(CompletedProductName);
+		return;
+	}
+
+	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 }
 
 void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopProductLine();
+	ResetProductProgress();
 	Super::EndPlay(EndPlayReason);
 }
 
 void UProductComponent::TickProduction()
 {
-	const float Now = GetWorld()->GetTimeSeconds();
-	const float ActualDelta = Now - LastAdvanceTime;
-	LastAdvanceTime = Now;
-	UE_LOG(LogTemp, Warning, TEXT("Now: %f, Delta: %f"), Now, ActualDelta);
-	
-	//if (Tracker.Advance(TickInterval))
-	if (Tracker.Advance(ActualDelta))
-	{
-		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
-		CompletedProduct(ProductLine[0].RowName);
-		return;
-	}
-	
-	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
+	ProcessProductionToNow();
 }

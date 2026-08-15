@@ -27,10 +27,9 @@ USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingConstructionData
 {
 	GENERATED_BODY()
-
-	/** 해당 티어의 건설 또는 업그레이드 진행 시간 */
+	// 작업총량
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction", meta = (ClampMin = "0.1"))
-	float Duration = 10.f;
+	float RequiredWork = 10.f; 
 
 	/** 해당 티어를 최초 건설할 때 사용하는 비용 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
@@ -70,6 +69,28 @@ struct STRIKEFORGE_API FBuildingVisualData
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
 
+	int32 FindConstructionStageIndex(float ProgressRatio) const
+	{
+		if (ConstructionStages.IsEmpty()) return INDEX_NONE;
+
+		ProgressRatio = FMath::Clamp(ProgressRatio,0.f,1.f);
+		int32 Result = 0;
+
+		for (int32 Index = 0; Index < ConstructionStages.Num(); ++Index)
+		{	// 입력된 proogressratio가 states에서 가지고 있는 float(treshold)보다 크면 index반환
+			if (ProgressRatio >= ConstructionStages[Index].Threshold)
+			{
+				Result = Index;
+			}
+			else
+			{
+				// 크지않으면 index누적 종료
+				break;
+			}
+		}
+
+		return Result;
+	}
 	int32 FindDamageStageIndex(float HealthRatio) const
 	{
 		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);

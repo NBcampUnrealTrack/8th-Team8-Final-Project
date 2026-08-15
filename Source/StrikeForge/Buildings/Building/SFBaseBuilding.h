@@ -122,6 +122,8 @@ protected:
 	
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) {}
+	// PRODUCT STOP
+	virtual void OnUpgradeStarted() {}
 	// DELETE BUILDING's ABILITY
 	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) {}
 	// when construct destroyed, play effects
@@ -157,7 +159,6 @@ private:
 	void EnterCompletedState();
 	
 	void EnterDestroyedState();
-	void ApplyDestroyedCollision();
 	void PlayDestroyEffect();
 	void PlayConstructionCompleteSound();
 	
@@ -183,7 +184,7 @@ private:
 
 	// 메쉬 변경 함수
 	UFUNCTION()
-	void ChangeMeshByRatio(int32 InCurrentRatioIndex);
+	void HandleConstructionProgress(float PreviousRatio, float CurrentRatio);
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
@@ -209,7 +210,8 @@ protected:
 	int32 CurrentTier = 0;
 	int32 PendingTier = INDEX_NONE;
 	int32 CurrentStageIndex = 0;
-
+	// 이번 건설에서 증가시킬 전체 체력
+	float ConstructionHealthIncrease = 0.f;
 	// cost
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentConstructBuildCost;
@@ -271,4 +273,5 @@ private:
 	* 업그레이드 완료 시 새 티어로 교체한다.
 	*/// 거의 한순간 1회용 캐싱용도
 	int32 ActivatedGameplayTier = INDEX_NONE;
+
 };

@@ -27,6 +27,7 @@ public:
 
 protected:
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
+	virtual void OnUpgradeStarted() override;
 	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) override;
 	virtual void OnBuildingDestroyed() override;
 

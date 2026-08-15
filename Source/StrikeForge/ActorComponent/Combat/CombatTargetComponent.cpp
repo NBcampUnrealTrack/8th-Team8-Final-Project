@@ -31,7 +31,7 @@ void UCombatTargetComponent::BeginPlay()
 
 	if (OverrideMaxHealth > 0.f)
 	{
-		HealthComponent->InitHealth(OverrideMaxHealth);
+		HealthComponent->InitializeHealth(OverrideMaxHealth);
 	}
 
 	HealthComponent->OnHealthIsZero.AddDynamic(this, &UCombatTargetComponent::HandleOwnerDeath);

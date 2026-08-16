@@ -211,7 +211,7 @@ protected:
 	int32 PendingTier = INDEX_NONE;
 	int32 CurrentStageIndex = 0;
 	// 이번 건설에서 증가시킬 전체 체력
-	float ConstructionHealthIncrease = 0.f;
+	float ConstructionCurrentHealthIncrease  = 0.f;
 	// cost
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentConstructBuildCost;

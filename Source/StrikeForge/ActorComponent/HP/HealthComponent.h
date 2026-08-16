@@ -25,8 +25,8 @@ public:
 	// 현재체력만 증가. 건물 수리시 적용에정. 
 	void IncreaseCurrentHealth(float InAmount);
 
-	// 최대체력과 현재체력을 같은 값만큼 증가
-	void IncreaseMaxAndCurrentHealth(float InAmount);
+	// // 최대체력과 현재체력을 같은 값만큼 증가
+	// void IncreaseMaxAndCurrentHealth(float InAmount);
 
 	/** 체력바 · 디버그 표시용 0~1 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")

@@ -35,10 +35,7 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetDrawAtDesiredSize(false);
 	WidgetComponent->SetVisibility(false);
 	
-	HitReactionTimeline =
-	CreateDefaultSubobject<UTimelineComponent>(
-		TEXT("HitReactionTimeline")
-	);
+	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -168,9 +165,9 @@ void ASFBaseBuilding::HandleConstructionProgress(float PreviousRatio, float Curr
 		if (DeltaRatio <= 0.f)	return;
 
 		// 최초 건설과 업그레이드가 동일한 로직 사용
-		const float HealthIncrease = ConstructionHealthIncrease * DeltaRatio;
+		const float HealthIncrease = ConstructionCurrentHealthIncrease * DeltaRatio;
 
-		HealthComponent->IncreaseMaxAndCurrentHealth(HealthIncrease);
+		HealthComponent->IncreaseCurrentHealth(HealthIncrease);
 	}
 }
 
@@ -235,14 +232,21 @@ void ASFBaseBuilding::BeginConstruction()
 	const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
 	if (!PendingTierData) return;
 	// 최초 건설은 1/1에서 시작
-	if (ActiveTierAssets.TierIndex == INDEX_NONE)
-	{
-		HealthComponent->InitializeHealth(1.f, 1.f);
-	}
-	// 최대체력을 캐생
-	const float StartMaxHealth = HealthComponent->GetMaxHealth();
-	// 지을건물과 현재건물의 최대체력의 차이를 구함 (추가된 최대체력만큼 현재체력을 상승할 에정)
-	ConstructionHealthIncrease = FMath::Max(0.f,PendingTierData->Stats.MaxHealth - StartMaxHealth);
+	const bool bIsUpgrade =	ActiveTierAssets.TierIndex != INDEX_NONE;
+	const float TargetMaxHealth = FMath::Max(1.f, PendingTierData->Stats.MaxHealth);
+	// 최초 건설은 1/TargetMaxHealth에서 시작한다.
+	// 업그레이드는 기존 최대체력과 현재체력을 보존해서 시작한다.
+	const float StartMaxHealth = bIsUpgrade	?
+				HealthComponent->GetMaxHealth()	: 1.f;
+
+	const float StartCurrentHealth = bIsUpgrade	?
+				HealthComponent->GetCurrentHealth()	: 1.f;
+	// 건설 진행 중 현재체력에 더할 전체 수치
+	ConstructionCurrentHealthIncrease = FMath::Max(0.f,TargetMaxHealth - StartMaxHealth);
+
+	// 최대체력은 건설 시작 즉시 새 티어 값 적용
+	// 현재체력은 아직 증가시키지 않는다.
+	HealthComponent->InitializeHealth(TargetMaxHealth,	StartCurrentHealth);
 
 	CurrentStageIndex = 0;
 	StaticMeshComponent->SetMaterial(0, nullptr);
@@ -260,7 +264,6 @@ void ASFBaseBuilding::BeginConstruction()
 	}
 	// 초기값이면 초기건설 = 업글x, 그외 = 전부 업글판정
 	// 이경우일때 만약 건물을 3티어부터 생산할수있게되면 오류가 날 수 있음
-	const bool bIsUpgrade = ActiveTierAssets.TierIndex != INDEX_NONE;
 	// 업그레이드때문에 건설로직에 들어온다면
 	if (bIsUpgrade)
 	{	// 생산컴포넌트 pause 로직

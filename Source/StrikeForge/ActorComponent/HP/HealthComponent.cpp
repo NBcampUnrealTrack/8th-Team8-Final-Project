@@ -54,15 +54,15 @@ void UHealthComponent::IncreaseCurrentHealth(float InAmount)
 	}
 }
 
-void UHealthComponent::IncreaseMaxAndCurrentHealth(float InAmount)
-{	// 최대체력과 현재체력을 같이 증가 ( 건설중 )
-	if (IsDead || InAmount <= 0.f) return;
-
-	const float PreviousHealth = CurrentHealth;
-	MaxHealth += InAmount;
-	CurrentHealth += InAmount;
-	OnHealthValueChanged.Broadcast(PreviousHealth,	CurrentHealth,	MaxHealth);
-}
+// void UHealthComponent::IncreaseMaxAndCurrentHealth(float InAmount)
+// {	// 최대체력과 현재체력을 같이 증가 ( 건설중 )
+// 	if (IsDead || InAmount <= 0.f) return;
+//
+// 	const float PreviousHealth = CurrentHealth;
+// 	MaxHealth += InAmount;
+// 	CurrentHealth += InAmount;
+// 	OnHealthValueChanged.Broadcast(PreviousHealth,	CurrentHealth,	MaxHealth);
+// }
 
 float UHealthComponent::GetHealthPercent() const
 {

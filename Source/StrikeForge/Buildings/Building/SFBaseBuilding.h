@@ -125,13 +125,16 @@ protected:
 	// PRODUCT STOP
 	virtual void OnUpgradeStarted() {}
 	// DELETE BUILDING's ABILITY
+	// 건물이 부숴질때 호출
 	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) {}
 	// when construct destroyed, play effects
+	// 
 	virtual void OnBuildingDestroyed() {}
 	
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
 	
+	const FBuildingTier* GetCurrentTier() const;
 	// React Delegate Function
 	UFUNCTION()
 	void UpdateHitReaction(float CurveValue);
@@ -167,7 +170,7 @@ private:
 	void UnbindComponentDelegates();
 
 	// progress가 완료되면 호출되게 bind되있음
-	// Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate
+	// Handle -> Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate
 	UFUNCTION() 
 	void HandleCompleteConstruction();
 	
@@ -188,7 +191,7 @@ private:
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
-	const FBuildingTier* GetCurrentTier() const;
+
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
@@ -251,7 +254,6 @@ protected:
 	FRotator OriginalMeshRotation;
 	FVector HitLocalDirection = FVector::ForwardVector;
 #pragma endregion 
-private:
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FIntPoint CachedGridSize = FIntPoint(1, 1);
@@ -273,5 +275,6 @@ private:
 	* 업그레이드 완료 시 새 티어로 교체한다.
 	*/// 거의 한순간 1회용 캐싱용도
 	int32 ActivatedGameplayTier = INDEX_NONE;
-
+private:
+	
 };

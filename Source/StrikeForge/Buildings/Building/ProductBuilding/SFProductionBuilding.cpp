@@ -1,7 +1,8 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
 
-ASFProductionBuilding::ASFProductionBuilding()
+ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
+	:Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 

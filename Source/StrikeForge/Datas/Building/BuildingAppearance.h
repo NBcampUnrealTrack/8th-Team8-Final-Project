@@ -147,12 +147,12 @@ struct STRIKEFORGE_API FBuildingTier
 	 * 생산 건물에서만 사용한다.
 	 * 건물별 기능 데이터가 더 늘어나면 Extension 구조로 이전한다.
 	 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "Tier|Production"
-	)
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,Category = "Tier|Production")
 	TArray<FName> SpawnableUnits;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|House")
+	int32 PopulationCapacity = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
+	float MiningIncomeRate = 0.f; // 광산기획이 어떻게 되는거지... 물어봐야할 문제
 };
 
 USTRUCT(BlueprintType)

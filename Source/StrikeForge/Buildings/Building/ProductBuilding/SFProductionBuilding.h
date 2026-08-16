@@ -20,7 +20,7 @@ class STRIKEFORGE_API ASFProductionBuilding
 	GENERATED_BODY()
 
 public:
-	ASFProductionBuilding();
+	ASFProductionBuilding(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(BlueprintAssignable, Category = "Production")
 	FProductUnitArrayChanged OnSpawnableUnitsChanged;

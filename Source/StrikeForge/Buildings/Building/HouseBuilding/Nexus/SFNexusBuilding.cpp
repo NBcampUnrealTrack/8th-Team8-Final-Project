@@ -13,6 +13,13 @@ ASFNexusBuilding::ASFNexusBuilding(const FObjectInitializer& ObjectInitializer)
 	PrimaryActorTick.bCanEverTick = false;
 }
 
+FSFSelectableInfo ASFNexusBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info =  Super::GetSelectableInfo_Implementation();
+	Info.SelectableType = ESFSelectableType::MainBuilding;
+	return Info;
+}
+
 void ASFNexusBuilding::BeginPlay()
 {
 	Super::BeginPlay();

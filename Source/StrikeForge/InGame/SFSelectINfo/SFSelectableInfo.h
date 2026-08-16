@@ -12,6 +12,7 @@ enum class ESFSelectableType : uint8
     None                UMETA(DisplayName = "None"),
     Commander           UMETA(DisplayName = "Commander"),
     MainBuilding        UMETA(DisplayName = "Main Building"),
+    NormalBuilding      UMETA(DisplayName = "Normal Building"),
     ProductionBuilding  UMETA(DisplayName = "Production Building"),
     ResourceBuilding    UMETA(DisplayName = "Resource Building"),
     Unit                UMETA(DisplayName = "Unit")

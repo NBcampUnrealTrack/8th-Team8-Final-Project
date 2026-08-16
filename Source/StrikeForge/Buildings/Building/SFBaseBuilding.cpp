@@ -85,6 +85,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.DisplayName = DisplayName;
 	Data.CurrentTier = CurrentTier + 1;
 	Data.HealthComponent = HealthComponent;
+	Data.ConstructCost = CurrentConstructBuildCost;
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
 }
@@ -228,7 +229,7 @@ void ASFBaseBuilding::BeginConstruction()
 		UE_LOG(LogTemp, Error, TEXT("[%s] 준비된 건설 티어가 없습니다."), *GetName());
 		return;
 	}
-
+	
 	const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
 	if (!PendingTierData) return;
 	// 최초 건설은 1/1에서 시작
@@ -269,7 +270,6 @@ void ASFBaseBuilding::BeginConstruction()
 	{	// 생산컴포넌트 pause 로직
 		OnUpgradeStarted();
 	}
-	
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	ProgressComponent->StartProgress();
 }
@@ -586,7 +586,6 @@ void ASFBaseBuilding::BeginPlay()
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	DeactivateActiveTier();
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
 }
@@ -785,9 +784,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	{
 		return false;
 	}
-	
-	DeactivateActiveTier();
-	
+
 	const FBuildingTier* ActivatedTier = GetCurrentTier();
 	if (!ActivatedTier) return false;
 

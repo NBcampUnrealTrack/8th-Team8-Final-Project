@@ -1,4 +1,5 @@
 ﻿#include "SFBuildingGridSubsystem.h"
+#include "GameFramework/Actor.h"
 
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -34,18 +35,24 @@ FVector USFBuildingGridSubsystem::GridToWorldCoordinate(const FIntPoint& GridCoo
 	return GridOrigin + FVector(
 	GridCoord.X * CellSize + CellSize * 0.5f,
 	GridCoord.Y * CellSize + CellSize * 0.5f,
-	GridOrigin.Z);
+	0.f);
 }
 
-bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize)
+bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
 {
-	
-	for (int Y = 0; Y < GridSize.Y; Y++)
+	// gridsize = 차지할 공간길이(length) 절대 음수 불가
+	if (!IsValid(Owner) || !GridInfo.IsValid()) return false;
+
+	for (int Y = 0; Y < GridInfo.GridSize.Y; Y++)
 	{
-		for (int X = 0; X < GridSize.X; X++)
-		{
-			const FIntPoint TempCoordinate = FIntPoint(OriginCoordinate.X + X, OriginCoordinate.Y + Y);
-			if (PlacedCells.Contains(TempCoordinate))
+		for (int X = 0; X < GridInfo.GridSize.X; X++)
+		{	// X는 X값에 Y는 Y값에 더해주는 +연산자 오버로딩 있음
+			const FIntPoint TempCoordinate = GridInfo.OriginCell + FIntPoint(X, Y); 
+			// TMap에서 Key값으로 값이 존재하는지 검사
+			const TWeakObjectPtr<AActor>* ExistingOwner = OccupiedCells.Find(TempCoordinate);
+			// TMap에서 존재하면 점유중, 본인이 본인자리에 배치는 가능(예외), 갑자기 nullptr 방지(destroy)
+			// 가장 첫번째 조건을 검사함 > nullptr이면 isvalid 오류남 nullptr검사부터
+			if (ExistingOwner != nullptr && ExistingOwner->IsValid() && ExistingOwner->Get() != Owner)
 			{
 				return false;
 			}
@@ -55,25 +62,87 @@ bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const FIntPoint& OriginCoord
 	return true;
 }
 
-bool USFBuildingGridSubsystem::TryRegistBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize)
+bool USFBuildingGridSubsystem::TryRegistBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
-	if (!CanPlaceBuildingGrid(OriginCoordinate, GridSize))
+	// ! > 누군가 점유중
+	if (!CanPlaceBuildingGrid(Owner, GridInfo))
 	{
 		return false;
 	}
-
-	for (int32 Y = 0; Y < GridSize.Y; ++Y)
+	// 점유 등록
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
-		for (int32 X = 0; X < GridSize.X; ++X)
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
-			const FIntPoint CellCoordinate =
-				OriginCoordinate + FIntPoint(X, Y);
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
 
-			PlacedCells.Add(CellCoordinate);
+			OccupiedCells.Add(CellCoordinate, Owner);
 		}
 	}
 
 	return true;
+}
+
+void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo)
+{
+	
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+
+			const TWeakObjectPtr<AActor>* ExistingOwner = OccupiedCells.Find(CellCoordinate);
+
+			if (ExistingOwner == nullptr)
+			{
+				continue;
+			}
+
+			if (!ExistingOwner->IsValid() || ExistingOwner->Get() == Owner)
+			{
+				OccupiedCells.Remove(CellCoordinate);
+			}
+		}
+	}
+}
+
+FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return GridOrigin;
+	}
+
+	const FVector OriginCellCenter =
+		GridToWorldCoordinate(GridInfo.OriginCell);
+
+	return OriginCellCenter + FVector(
+		(GridInfo.GridSize.X - 1) * CellSize * 0.5f,
+		(GridInfo.GridSize.Y - 1) * CellSize * 0.5f,
+		0.0f);
+}
+
+FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& InGridSize) const
+{
+	FBuildingGridInfo Result;
+	Result.GridSize = InGridSize;
+
+	if (!Result.IsValid() || CellSize <= 0.0f)
+	{
+		return Result;
+	}
+
+	const FVector LocalCenter =
+		(WorldCenter - GridOrigin) / CellSize;
+
+	Result.OriginCell = FIntPoint(
+		FMath::RoundToInt(
+			LocalCenter.X - InGridSize.X * 0.5f),
+		FMath::RoundToInt(
+			LocalCenter.Y - InGridSize.Y * 0.5f));
+
+	return Result;
 }
 
 void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
@@ -136,7 +205,7 @@ void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const
 {
 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
-	ApplyGridVector.Z += WorldLocation.Z + 5.f; // look well
+	ApplyGridVector.Z = WorldLocation.Z + 5.f; // look well
 	
 	const float HalfCell = CellSize * 0.5f;
 
@@ -152,6 +221,90 @@ void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const
 			FVector(HalfCell, HalfCell, 5.f),
 			FColor::Green,
 			false, 5.f, 0, 4.f);
+		}
+	}
+}
+
+void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const FVector BoxExtent(
+		CellSize * 0.5f,
+		CellSize * 0.5f,
+		10.0f);
+
+	for (const TPair<
+			FIntPoint,
+			TWeakObjectPtr<AActor>>& OccupiedCell
+		: OccupiedCells)
+	{
+		AActor* Owner = OccupiedCell.Value.Get();
+
+		// 이미 Destroy된 액터의 오래된 정보는 표시하지 않습니다.
+		if (!IsValid(Owner))
+		{
+			continue;
+		}
+
+		FVector CellCenter =
+			GridToWorldCoordinate(OccupiedCell.Key);
+
+		// 점유 중인 건물의 높이를 기준으로 표시합니다.
+		CellCenter.Z =
+			Owner->GetActorLocation().Z + 10.0f;
+
+		DrawDebugBox(
+			World,
+			CellCenter,
+			BoxExtent,
+			FColor::Red,
+			false,
+			Duration,
+			0,
+			3.0f);
+	}
+}
+
+void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ, bool bCanPlace,
+	float Duration) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const float HalfCell = CellSize * 0.5f;
+	const FVector BoxExtent(HalfCell,HalfCell,5.0f);
+
+	const FColor GridColor = bCanPlace ?
+		FColor::Green: FColor::Red;
+
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
+
+			CellCenter.Z = WorldZ + 5.0f;
+			DrawDebugBox(World,	CellCenter,	BoxExtent,
+				GridColor,
+				false,
+				Duration,
+				0,
+				3.0f);
 		}
 	}
 }

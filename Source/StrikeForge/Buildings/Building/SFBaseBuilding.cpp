@@ -12,6 +12,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -183,8 +184,28 @@ void ASFBaseBuilding::ApplySpawnMode()
 			const FBuildingTier* InitialTier = CachedDefinition.FindTier(PendingTier);
 			if (!InitialTier) return;
 			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
-		
-			FinalizeTierActivation(); // called when building completed.
+			
+			if (!TryRegistInitialGrid())
+			{
+				ensureAlwaysMsgf(
+					false,
+					TEXT("%s failed to register its initial grid. Be Destroyed"),
+					*GetName());
+				Destroy();
+				return;
+			}
+			
+			if (!FinalizeTierActivation())
+			{
+				SF_LOG(
+					Error,
+					"[%s] 초기 티어 활성화 실패",
+					*GetName());
+				
+				Destroy();
+				return;
+			}
+
 			break;
 		}
 		// wait player build
@@ -586,6 +607,15 @@ void ASFBaseBuilding::BeginPlay()
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (bGridRegistered)
+	{
+		if (USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			Grid->UnregisterBuildingGrid(this, RegisteredGridInfo);
+			bGridRegistered = false;
+		}
+	}
+	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
 }
@@ -628,7 +658,7 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	
 	// CACHED once in allgameplay = never changed in runtime
 	DisplayName = CachedDefinition.DisplayName;
-	CachedGridSize = CachedDefinition.GridSize;
+	ConfiguredGridSize = CachedDefinition.GridSize;
 	// CACHED once
 	DestroyedSound = Definition->DestroyedSound.LoadSynchronous();
 	DestroyedEffect = Definition->DestroyedEffect.LoadSynchronous();
@@ -930,6 +960,7 @@ void ASFBaseBuilding::FinishHitReaction()
 	StaticMeshComponent->SetRelativeRotation(OriginalMeshRotation);
 }
 
+
 void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 {
 	if (!IsValid(HitReactionTimeline) ||
@@ -941,5 +972,44 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 	HitLocalDirection = LocalDirection.GetSafeNormal();
 	// 타임라인은 인자가 없다
 	HitReactionTimeline->PlayFromStart();
+}
+#pragma endregion 
+
+#pragma region GridSystem
+void ASFBaseBuilding::SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo)
+{
+	//RegisteredGridInfo.OriginCell = InGridInfo.OriginCell;
+	RegisteredGridInfo = InGridInfo;
+	bGridRegistered = true;
+}
+
+bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
+{
+	if (bGridRegistered || !GridInfo.IsValid()) return false;
+
+	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(GridSubsystem)) return false;
+	
+	// TMap에 등록시도
+	if (!GridSubsystem->TryRegistBuildingGrid(this, GridInfo))
+	{
+		return false;
+	}
+	// 등록성공하면 건물이 정보를 저장
+	SetRegisteredGridInfo(GridInfo);
+	return true;
+}
+
+bool ASFBaseBuilding::TryRegistInitialGrid()
+{
+	USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(Grid)) return false;
+	FBuildingGridInfo GridInfo = Grid->WorldCenterToGridInfo(GetActorLocation(), ConfiguredGridSize);
+	if (!TryRegisterGrid(GridInfo))
+	{
+		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
+		return false;
+	}
+	return true;
 }
 #pragma endregion 

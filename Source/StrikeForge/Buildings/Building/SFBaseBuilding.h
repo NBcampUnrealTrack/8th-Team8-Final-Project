@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Buildings/SFRootBase.h"
 #include "Datas/Building/BuildingAppearance.h"
+#include "Game/Subsystem/BuildingGridInfo.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
@@ -103,12 +104,17 @@ public:
 	// React
 	void PlayHitReaction(const FVector& LocalDirection);
 	
+	// Grid System
+	
+	bool TryRegisterGrid(const FBuildingGridInfo& GridInfo);
+	//FIntPoint GetEffectiveGridSize() const;
+	
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
-	FORCEINLINE FIntPoint GetGridSize() const { return CachedGridSize; }
+	FORCEINLINE FIntPoint GetGridSize() const { return ConfiguredGridSize; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
@@ -140,6 +146,10 @@ protected:
 	void UpdateHitReaction(float CurveValue);
 	UFUNCTION()
 	void FinishHitReaction();
+	
+	// grid system
+	bool TryRegistInitialGrid();
+	bool bGridRegistered = false;
 private:
 	bool LoadBuildingDefinition();
 	bool PrepareTier(int32 TierIndex);
@@ -191,7 +201,10 @@ private:
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
-
+	
+	// grid system
+	void SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo);
+	
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
@@ -255,9 +268,11 @@ protected:
 	FVector HitLocalDirection = FVector::ForwardVector;
 #pragma endregion 
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
+	UPROPERTY()
+	FIntPoint ConfiguredGridSize = FIntPoint(1, 1);
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	FIntPoint CachedGridSize = FIntPoint(1, 1);
-
+	FBuildingGridInfo RegisteredGridInfo;
+	
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
 

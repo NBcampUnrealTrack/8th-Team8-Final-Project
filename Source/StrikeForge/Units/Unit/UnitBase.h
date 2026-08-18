@@ -12,6 +12,7 @@ class UHealthComponent;
 class UCombatTargetComponent;
 class UWidgetComponent;
 class AUnitAIController;
+class UNiagaraSystem;
 class ALanePath;
 
 /** 전투 상태 머신 */
@@ -85,6 +86,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool HasLineOfSight(const AActor* InTarget) const;
 
+	/** 이 유닛이 차지하는 인구수. 데이터테이블에서 주입된다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE int32 GetPopulationCost() const { return PopulationCost; }
+
 	/** 대상이 건물 계열인가. 사거리 여유를 줄지 판단한다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool IsBuildingTarget(const AActor* InTarget) const;
@@ -140,6 +145,16 @@ protected:
 	AUnitAIController* GetUnitAI() const;
 
 	/**
+	 * 인구수를 증감한다.
+	 * 생산 시 +PopulationCost, 사망 시 -PopulationCost.
+	 * ASFGameState 가 없으면 조용히 넘어간다(테스트 레벨 대응).
+	 */
+	void ApplyPopulationDelta(int32 InDelta);
+
+	/** 이펙트를 지정 위치에 스폰한다. 시스템이 비어 있으면 아무것도 안 한다 */
+	void SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const;
+
+	/**
 	 * 디버그 표시 여부.
 	 * 유닛별 bDrawCombatDebug 또는 콘솔 sf.DrawCombatDebug 중 하나라도 켜지면 true.
 	 */
@@ -190,6 +205,16 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true))
 	float SplashRadius = 0.f;
+
+	/** 이 유닛이 차지하는 인구수 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true, ClampMin = "0"))
+	int32 PopulationCost = 1;
+
+	/**
+	 * 인구수를 이미 반영했는가.
+	 * 생산과 사망에서 각각 한 번씩만 계산되도록 막는다.
+	 */
+	uint8 bPopulationApplied : 1;
 
 	/** 광역 피해가 주 대상 대비 몇 배인가 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true, ClampMin = "0.0", ClampMax = "1.0"))
@@ -291,6 +316,21 @@ private:
 #pragma endregion
 
 #pragma region State
+
+	/**
+	 * 공격이 성립한 순간 재생할 이펙트.
+	 * 타겟 위치에 스폰된다. 비워두면 아무것도 나오지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UNiagaraSystem> AttackEffect;
+
+	/** 사망 순간 재생할 이펙트. 자기 위치에 스폰된다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UNiagaraSystem> DeathEffect;
+
+	/** 이펙트 스폰 높이 보정. 발밑이 아니라 몸통 높이에서 나오게 한다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
+	float EffectHeightOffset = 60.f;
 
 	/** 사망 후 액터가 남아 있는 시간(초). 0 이면 즉시 소멸 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "State", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))

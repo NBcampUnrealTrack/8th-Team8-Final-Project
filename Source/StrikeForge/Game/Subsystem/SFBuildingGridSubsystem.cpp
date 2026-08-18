@@ -4,7 +4,8 @@
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-
+	// 맵마다 기준점이 0,0,0으로 시작하지않고 각자 다른 중점을 가진다면
+	// 맵마다 중점을 origin에 입력을 해야하는 로직이 필요합니다.
 	UE_LOG(LogTemp,	Log, TEXT("BuildingGridSubsystem Initialized. CellSize: %.1f"),	CellSize);
 }
 
@@ -15,20 +16,20 @@ void USFBuildingGridSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-FIntPoint USFBuildingGridSubsystem::WorldCoordinateToGrid(const FVector& WorldLocation) const
-{
-	// startpoint maybe 0,0,0 or maybe 100, 50, 0
-	// so -gridorigin == apply pivot point
-	const FVector LocalLocation = WorldLocation - GridOrigin;
-
-	const int32 GridX =
-		FMath::FloorToInt(LocalLocation.X / CellSize);
-
-	const int32 GridY =
-		FMath::FloorToInt(LocalLocation.Y / CellSize);
-
-	return FIntPoint(GridX, GridY);
-}
+// FIntPoint USFBuildingGridSubsystem::WorldCoordinateToGrid(const FVector& WorldLocation) const
+// {
+// 	// startpoint maybe 0,0,0 or maybe 100, 50, 0
+// 	// so -gridorigin == apply pivot point
+// 	const FVector LocalLocation = WorldLocation - GridOrigin;
+//
+// 	const int32 GridX =
+// 		FMath::FloorToInt(LocalLocation.X / CellSize);
+//
+// 	const int32 GridY =
+// 		FMath::FloorToInt(LocalLocation.Y / CellSize);
+//
+// 	return FIntPoint(GridX, GridY);
+// }
 
 FVector USFBuildingGridSubsystem::GridToWorldCoordinate(const FIntPoint& GridCoord) const
 {
@@ -108,12 +109,12 @@ void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const
 }
 
 FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const
-{
+{	// GridInfo.OriginCell = WorldCenterToGridInfo에서 계산한값
 	if (!GridInfo.IsValid())
 	{
 		return GridOrigin;
 	}
-
+	
 	const FVector OriginCellCenter =
 		GridToWorldCoordinate(GridInfo.OriginCell);
 
@@ -123,8 +124,9 @@ FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo&
 		0.0f);
 }
 
+// 건물의 월드 중심과 점유 크기를 바탕으로, 해당 건물이 점유해야 할 첫 번째 Grid 셀 좌표를 계산한다.
 FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& InGridSize) const
-{
+{	// vector = mousecursor, size = buildingGridsize
 	FBuildingGridInfo Result;
 	Result.GridSize = InGridSize;
 
@@ -132,10 +134,12 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 	{
 		return Result;
 	}
-
+	
+	// Fintpoint
 	const FVector LocalCenter =
 		(WorldCenter - GridOrigin) / CellSize;
-
+	
+	// Size까지 고려해 중점 맞추고 Fintpoint 반환
 	Result.OriginCell = FIntPoint(
 		FMath::RoundToInt(
 			LocalCenter.X - InGridSize.X * 0.5f),
@@ -145,85 +149,85 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 	return Result;
 }
 
-void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
-{
-	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
-	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
-	ApplyGridVector.Z += 5.f; // look well
-	
-	FMatrix Mat = FMatrix::Identity;
-	Mat.SetOrigin(ApplyGridVector);
-	
-	DrawDebugCircle(
-		GetWorld(), ApplyGridVector, Radius, 24, FColor::Red,
-		false, 5.f, 0, 0.f,
-		FVector(1, 0, 0),   // YAxis = 월드 X
-		FVector(0, 1, 0),   // ZAxis = 월드 Y
-		true
-	);
-	
-	// 유효한 포인트만 표시해보기
-	
-	//float Normalize = Radius / CellSize;
-	const float HalfCell = CellSize * 0.5f;
-	const float RadiusSq = Radius * Radius;   // 반지름 미리 제곱
+// void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
+// {
+// 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
+// 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
+// 	ApplyGridVector.Z += 5.f; // look well
+// 	
+// 	FMatrix Mat = FMatrix::Identity;
+// 	Mat.SetOrigin(ApplyGridVector);
+// 	
+// 	DrawDebugCircle(
+// 		GetWorld(), ApplyGridVector, Radius, 24, FColor::Red,
+// 		false, 5.f, 0, 0.f,
+// 		FVector(1, 0, 0),   // YAxis = 월드 X
+// 		FVector(0, 1, 0),   // ZAxis = 월드 Y
+// 		true
+// 	);
+// 	
+// 	// 유효한 포인트만 표시해보기
+// 	
+// 	//float Normalize = Radius / CellSize;
+// 	const float HalfCell = CellSize * 0.5f;
+// 	const float RadiusSq = Radius * Radius;   // 반지름 미리 제곱
+//
+// 	for (float Y = -Radius; Y <= Radius; Y += CellSize)
+// 	{
+// 		for (float X = -Radius; X <= Radius; X += CellSize)
+// 		{
+// 			const FVector CellCenter(
+// 				ApplyGridVector.X + X,
+// 				ApplyGridVector.Y + Y,
+// 				ApplyGridVector.Z);
+//
+// 			// point = dist currentpoint, pivotpoint
+// 			const FVector2D CenterOffset(X, Y);
+// 			if (CenterOffset.SizeSquared() <= RadiusSq)
+// 			{
+// 				DrawDebugPoint(GetWorld(), CellCenter, 10.f, FColor::Cyan, false, 5.f);
+// 			}
+//
+// 			// square = max distance point
+// 			const FVector2D FarCorner(
+// 				FMath::Abs(X) + HalfCell,
+// 				FMath::Abs(Y) + HalfCell);
+// 			if (FarCorner.SizeSquared() <= RadiusSq)
+// 			{
+// 				DrawDebugBox(
+// 					GetWorld(),
+// 					CellCenter,
+// 					FVector(HalfCell, HalfCell, 5.f),
+// 					FColor::Green,
+// 					false, 5.f, 0, 4.f);
+// 			}
+// 		}
+// 	}
+// }
 
-	for (float Y = -Radius; Y <= Radius; Y += CellSize)
-	{
-		for (float X = -Radius; X <= Radius; X += CellSize)
-		{
-			const FVector CellCenter(
-				ApplyGridVector.X + X,
-				ApplyGridVector.Y + Y,
-				ApplyGridVector.Z);
-
-			// point = dist currentpoint, pivotpoint
-			const FVector2D CenterOffset(X, Y);
-			if (CenterOffset.SizeSquared() <= RadiusSq)
-			{
-				DrawDebugPoint(GetWorld(), CellCenter, 10.f, FColor::Cyan, false, 5.f);
-			}
-
-			// square = max distance point
-			const FVector2D FarCorner(
-				FMath::Abs(X) + HalfCell,
-				FMath::Abs(Y) + HalfCell);
-			if (FarCorner.SizeSquared() <= RadiusSq)
-			{
-				DrawDebugBox(
-					GetWorld(),
-					CellCenter,
-					FVector(HalfCell, HalfCell, 5.f),
-					FColor::Green,
-					false, 5.f, 0, 4.f);
-			}
-		}
-	}
-}
-
-void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize)
-{
-	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
-	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
-	ApplyGridVector.Z = WorldLocation.Z + 5.f; // look well
-	
-	const float HalfCell = CellSize * 0.5f;
-
-	for (int Y = 0; Y < InGridSize.Y; Y++)
-	{
-		for (int X = 0; X < InGridSize.X; X++)
-		{
-			FVector TempGridCenter(ApplyGridVector.X + X * CellSize, ApplyGridVector.Y + Y * CellSize, ApplyGridVector.Z);
-			
-			DrawDebugBox(
-			GetWorld(),
-			TempGridCenter,
-			FVector(HalfCell, HalfCell, 5.f),
-			FColor::Green,
-			false, 5.f, 0, 4.f);
-		}
-	}
-}
+// void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize)
+// {
+// 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
+// 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
+// 	ApplyGridVector.Z = WorldLocation.Z + 5.f; // look well
+// 	
+// 	const float HalfCell = CellSize * 0.5f;
+//
+// 	for (int Y = 0; Y < InGridSize.Y; Y++)
+// 	{
+// 		for (int X = 0; X < InGridSize.X; X++)
+// 		{
+// 			FVector TempGridCenter(ApplyGridVector.X + X * CellSize, ApplyGridVector.Y + Y * CellSize, ApplyGridVector.Z);
+// 			
+// 			DrawDebugBox(
+// 			GetWorld(),
+// 			TempGridCenter,
+// 			FVector(HalfCell, HalfCell, 5.f),
+// 			FColor::Green,
+// 			false, 5.f, 0, 4.f);
+// 		}
+// 	}
+// }
 
 void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 {

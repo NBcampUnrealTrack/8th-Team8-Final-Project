@@ -4,6 +4,9 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "SFMiningBuilding.generated.h"
 
+class AResourceBase;
+enum class EResourceType : uint8;
+
 UCLASS()
 class STRIKEFORGE_API ASFMiningBuilding : public ASFBaseBuilding
 {
@@ -23,9 +26,27 @@ public:
 	// when construct destroyed, play effects
 	// OnDestroyed2
 	virtual void OnBuildingDestroyed() override;
+	
+	void TryLinkResource(AResourceBase* InResourceRef);
 protected:
+	// timer start
+	void StartMining();
+	void StopMining();
+	void PauseMining();
+	void UnPauseMining();
+	
+	void Mining();
 	
 private:
 	// Mining Income Rate
-	float MiningIncomeRate;
+	float DiggingIncomeRate; // = (생산량 / 타이머 인터벌)
+	
+	int32 DiggingAmount = 5; // 임시하드코딩
+	
+	float DiggingInterval = 5.f; // 임시하드코딩
+	
+	FTimerHandle DiggingProductTimerHandle;
+	
+	//EResourceType MiningResourceType;
+	TWeakObjectPtr<AActor> LinkedResource;
 };

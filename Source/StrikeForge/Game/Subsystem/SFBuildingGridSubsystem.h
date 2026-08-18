@@ -16,28 +16,29 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	
-	UFUNCTION(BlueprintCallable)
-	FIntPoint WorldCoordinateToGrid(const FVector& WorldLocation) const;
+	// // WorldCenterToGridInfo로 전환됨. 현재는 사용x
+	// FIntPoint WorldCoordinateToGrid(const FVector& WorldLocation) const;
 	UFUNCTION(BlueprintCallable)
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
-	//check TMap, 지을수있는지없는지 판단
+	//check TMap하고 등록되있는지 판단만
 	bool CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
+	// 점유o이면 x, 점유x면 regist까지 진행
 	bool TryRegistBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 	void UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo);
 	
 	FVector GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const;
-	
+	// world location -> grid
 	FBuildingGridInfo WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& GridSize) const;
 	// upgrade?
 	//bool TryResizeBuildingGrid(AActor* Owner, const FBuildingGridInfo& OldFootprint, const FBuildingGridInfo& NewFootprint);
 	FORCEINLINE float GetCellSize() const { return CellSize; }
 	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
 #pragma region Debug
-	UFUNCTION(BlueprintCallable)
-	void DebugDrawRadius(const FVector& WorldLocation, float Radius);
-	UFUNCTION(BlueprintCallable) 
-	void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
+	// UFUNCTION(BlueprintCallable)
+	// void DebugDrawRadius(const FVector& WorldLocation, float Radius);
+	// UFUNCTION(BlueprintCallable) 
+	// void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
 	void DebugDrawOccupiedCells(float Duration = 5.0f) const;
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")

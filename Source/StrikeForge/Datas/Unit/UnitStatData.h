@@ -63,6 +63,15 @@ struct FUnitStatData : public FTableRowBase
 	float MoveSpeed = 400.f;
 
 	/**
+	 * 이 유닛이 차지하는 인구수.
+	 *
+	 * 생산 시 증가하고 사망 시 감소한다.
+	 * 0 이면 인구를 차지하지 않는다(지휘관 등).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat|Population", meta = (ClampMin = "0"))
+	int32 PopulationCost = 1;
+
+	/**
 	 * 이 행으로 생성할 유닛 블루프린트.
 	 *
 	 * 생산 시간·비용은 FUnitProductData(EDataTableType::Product)가 담당하므로

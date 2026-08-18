@@ -13,6 +13,9 @@
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Game/GameState/SFGameState.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Logging/SFLog.h"
 
 /**
@@ -37,6 +40,7 @@ AUnitBase::AUnitBase()
 	, bNoTargetReported(false)
 	, bAdvanceTargetReported(false)
 	, bRangeUnreachableReported(false)
+	, bPopulationApplied(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -94,11 +98,32 @@ void AUnitBase::BeginPlay()
 		CombatTarget->OnTargetDestroyed.AddDynamic(this, &AUnitBase::HandleDeath);
 	}
 
+	// 생산 시점이 아니라 BeginPlay 에서 올린다.
+	// 스포너·생산 건물·레벨 직접 배치 어느 경로로 생겨도 동일하게 반영된다.
+	if (!bPopulationApplied)
+	{
+		bPopulationApplied = true;
+		ApplyPopulationDelta(+PopulationCost);
+	}
+
 	RetargetTimer = 0.f;	// 첫 틱에 바로 탐색이 돌게 한다
 }
 
 void AUnitBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// 사망을 거치지 않고 사라지는 경로(강제 파괴 등)에서도 인구를 되돌린다.
+	// HandleDeath 를 이미 탔으면 플래그가 꺼져 있어 중복되지 않는다.
+	//
+	// 레벨 전환 시에는 GameState 도 함께 파괴되므로 굳이 되돌릴 필요가 없고,
+	// 오히려 파괴 중인 객체를 건드리게 되므로 제외한다.
+	if (bPopulationApplied && EndPlayReason != EEndPlayReason::LevelTransition
+		&& EndPlayReason != EEndPlayReason::EndPlayInEditor
+		&& EndPlayReason != EEndPlayReason::Quit)
+	{
+		bPopulationApplied = false;
+		ApplyPopulationDelta(-PopulationCost);
+	}
+
 	// 레지스트리 해제는 CombatTargetComponent::EndPlay 가 처리한다
 	Super::EndPlay(EndPlayReason);
 }
@@ -119,6 +144,7 @@ void AUnitBase::InitStat(const FUnitStatData& InRow)
 	AttackCooldown	= InRow.AttackCooldown;
 	Penetration		= InRow.Penetration;
 	SplashRadius	= InRow.SplashRadius;
+	PopulationCost	= InRow.PopulationCost;
 
 	if (HealthComponent)
 	{
@@ -198,6 +224,17 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 
 	CurrentTarget = nullptr;
 	SetCombatState(EUnitCombatState::Dead);
+
+	// 인구 반환. EndPlay 가 아니라 여기서 하는 이유는
+	// 사망 연출 동안(DeathLifeSpan) 인구를 계속 차지하면
+	// "죽었는데 왜 못 뽑지" 가 되기 때문이다.
+	if (bPopulationApplied)
+	{
+		bPopulationApplied = false;
+		ApplyPopulationDelta(-PopulationCost);
+	}
+
+	SpawnEffectAt(DeathEffect, GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
 
 	// 레지스트리 해제는 CombatTargetComponent 가 이미 처리했다.
 
@@ -322,6 +359,45 @@ const FHealthData AUnitBase::GetHealthData_Implementation()
 	Data.CurrentTier = -1;
 	Data.HealthComponent = HealthComponent;
 	return Data;
+}
+
+// ─────────────────────────────────────────────────────────
+// 인구수
+//
+// 생산 시 +, 사망 시 - 한 번씩만 반영한다.
+// 같은 프레임에 광역 피해를 여러 번 맞아도 중복 차감되지 않게
+// bPopulationApplied 로 막는다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::ApplyPopulationDelta(int32 InDelta)
+{
+	if (PopulationCost <= 0 || InDelta == 0) return;
+
+	const UWorld* World = GetWorld();
+	ASFGameState* GameState = IsValid(World) ? World->GetGameState<ASFGameState>() : nullptr;
+
+	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
+	if (!IsValid(GameState)) return;
+
+	const int32 NewCurrent = GameState->GetCurrentPopulation() + InDelta;
+
+	GameState->SetPopulation(NewCurrent, GameState->GetMaximumPopulation());
+}
+
+void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const
+{
+	if (!InSystem) return;
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World,
+		InSystem,
+		InLocation,
+		FRotator::ZeroRotator,
+		FVector::OneVector,
+		true,   // bAutoDestroy — 재생이 끝나면 알아서 정리된다
+		true);  // bAutoActivate
 }
 
 // ─────────────────────────────────────────────────────────
@@ -530,6 +606,9 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 			}
 		}
 	}
+
+	// 타겟 위치에 이펙트. 몽타주 노티파이로 옮기면 타이밍이 더 정확해진다.
+	SpawnEffectAt(AttackEffect, InTarget->GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
 
 	OnAttackPerformed(InTarget);
 }

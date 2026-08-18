@@ -88,6 +88,8 @@ private:
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
+    
+    void HandleFocusCommanderInput();
 
     void CreateInGameHUD();
     // 변수 영역
@@ -185,8 +187,14 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Input"
     )
-    ESFControlMode CurrentControlMode =
-        ESFControlMode::Gameplay;
+    ESFControlMode CurrentControlMode = ESFControlMode::Gameplay;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input"
+    )
+    TObjectPtr<UInputAction> FocusCommanderAction = nullptr;
 
 private:
     UPROPERTY(

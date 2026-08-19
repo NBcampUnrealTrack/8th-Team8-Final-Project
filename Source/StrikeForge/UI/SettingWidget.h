@@ -6,6 +6,7 @@
 
 class UButton;
 class UComboBoxString;
+class UBackgroundBlur;
 
 UCLASS()
 class STRIKEFORGE_API USettingWidget : public UUserWidget
@@ -36,4 +37,6 @@ protected:
 	UComboBoxString* DisplayComboBox;
 	UPROPERTY(meta = (BindWidget))
 	UComboBoxString* FullScreenComboBox;
+	UPROPERTY(meta = (BindWidget))
+	UBackgroundBlur* BackgroundBlur;
 };

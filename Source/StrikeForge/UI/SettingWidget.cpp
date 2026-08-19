@@ -1,6 +1,7 @@
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
+#include "Components/BackgroundBlur.h"
 #include "GameFramework/GameUserSettings.h"
 
 void USettingWidget::NativeConstruct()

@@ -5,6 +5,12 @@
 #include "SFSelectableInfo.h"
 #include "SFSelectionPanelWidget.generated.h"
 
+class UButton;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(
+    FSFOnTierUpgradeRequested
+);
+
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFSelectionPanelWidget
     : public UUserWidget
@@ -33,8 +39,21 @@ public:
     )
     bool HasSelection() const;
 
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Selection|Building"
+    )
+    FSFOnTierUpgradeRequested OnTierUpgradeRequested;
+
+    UFUNCTION(
+        BlueprintPure,
+        Category = "SF|Selection|Building"
+    )
+    bool IsTierUpButtonHovered() const;
+
 protected:
     virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
 
     UFUNCTION(
         BlueprintImplementableEvent,
@@ -56,6 +75,14 @@ protected:
     )
     void BP_OnSelectionCleared();
 
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UButton> TierUpButton = nullptr;
+
+
     // 변수 영역
 protected:
     UPROPERTY(
@@ -69,4 +96,9 @@ protected:
         Category = "SF|Selection"
     )
     bool bHasSelection = false;
+
+private:
+    UFUNCTION()
+    void HandleTierUpgradeButtonClicked();
+
 };

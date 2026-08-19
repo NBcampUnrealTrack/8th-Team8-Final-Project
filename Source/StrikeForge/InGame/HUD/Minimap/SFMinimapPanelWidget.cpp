@@ -8,6 +8,10 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/Controller/SFRTSCameraPawn.h"
+#include "InputCoreTypes.h"
+#include "Logging/SFLog.h"
 
 bool USFMinimapPanelWidget::HasValidMapBounds() const
 {
@@ -546,4 +550,139 @@ FLinearColor USFMinimapPanelWidget::GetMarkerColor(
     default:
         return FLinearColor::Transparent;
     }
+}
+
+FVector USFMinimapPanelWidget::MinimapToWorldLocation(const FVector2D& MinimapPosition) const
+{
+    if (!HasValidMapBounds() || !IsValid(MinimapMarkerLayer))
+    {
+        return FVector::ZeroVector;
+    }
+
+    const FVector2D MinimapSize = MinimapMarkerLayer->GetCachedGeometry().GetLocalSize();
+
+    if (MinimapSize.X <= 0.0f || MinimapSize.Y <= 0.0f)
+    {
+        return FVector::ZeroVector;
+    }
+
+    const float NormalizedHorizontal = FMath::Clamp(MinimapPosition.X / MinimapSize.X, 0.0f, 1.0f);
+    const float NormalizedVertical = FMath::Clamp(MinimapPosition.Y / MinimapSize.Y, 0.0f, 1.0f);
+
+    return FVector(
+        FMath::Lerp(MapWorldMin.X, MapWorldMax.X, 1.0f - NormalizedVertical),
+        FMath::Lerp(MapWorldMin.Y, MapWorldMax.Y, NormalizedHorizontal),
+        0.0f
+    );
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (!IsValid(MinimapMarkerLayer))
+    {
+        return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    }
+
+    const FGeometry MinimapGeometry = MinimapMarkerLayer->GetCachedGeometry();
+    const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+
+    if (!MinimapGeometry.IsUnderLocation(ScreenPosition))
+    {
+        return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    }
+
+    const FVector2D LocalPosition = MinimapGeometry.AbsoluteToLocal(ScreenPosition);
+    const FVector WorldLocation = MinimapToWorldLocation(LocalPosition);
+
+    ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (!IsValid(PlayerController))
+    {
+        return FReply::Handled();
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        bIsMinimapCameraDragging = true;
+        MoveCameraToPointerPosition(InMouseEvent);
+
+        SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag started.");
+
+        return FReply::Handled().CaptureMouse(TakeWidget());
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+    {
+        PlayerController->IssueMoveCommand(WorldLocation);
+        SF_LOG(Log, "[SFMinimapPanelWidget] Move requested | Location: %s", *WorldLocation.ToString());
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+void USFMinimapPanelWidget::MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent)
+{
+    if (!IsValid(MinimapMarkerLayer))
+    {
+        return;
+    }
+
+    const FGeometry MinimapGeometry = MinimapMarkerLayer->GetCachedGeometry();
+    const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+
+    if (!MinimapGeometry.IsUnderLocation(ScreenPosition))
+    {
+        return;
+    }
+
+    ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    ASFRTSCameraPawn* CameraPawn = Cast<ASFRTSCameraPawn>(PlayerController->GetPawn());
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    const FVector2D LocalPosition = MinimapGeometry.AbsoluteToLocal(ScreenPosition);
+    const FVector WorldLocation = MinimapToWorldLocation(LocalPosition);
+
+    CameraPawn->FocusOnWorldLocation(WorldLocation);
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (!bIsMinimapCameraDragging)
+    {
+        return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+    }
+
+    if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+    {
+        bIsMinimapCameraDragging = false;
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+
+    MoveCameraToPointerPosition(InMouseEvent);
+    return FReply::Handled();
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bIsMinimapCameraDragging)
+    {
+        bIsMinimapCameraDragging = false;
+
+        SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag ended.");
+
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+
+    return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }

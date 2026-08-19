@@ -58,6 +58,18 @@ void ASFCommander::BeginPlay()
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(LoadPCTimer);
+	
+	if (CommandAction == ECommandAction::BUILD &&
+	EndPlayReason == EEndPlayReason::Destroyed)
+	{
+		if (ASFInGamePlayerController* SFPC =
+			GetWorld()->GetFirstPlayerController<
+				ASFInGamePlayerController>())
+		{
+			SFPC->ClearPendingBuildingRef();
+		}
+	}
+	
 	Super::EndPlay(EndPlayReason);
 }
 

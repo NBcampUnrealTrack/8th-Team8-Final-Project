@@ -148,7 +148,7 @@ void AUnitBase::InitStat(const FUnitStatData& InRow)
 
 	if (HealthComponent)
 	{
-		HealthComponent->InitHealth(InRow.MaxHealth);
+		HealthComponent->InitializeHealth(InRow.MaxHealth);
 	}
 
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())

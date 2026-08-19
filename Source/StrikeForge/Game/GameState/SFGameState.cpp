@@ -206,6 +206,44 @@ void ASFGameState::SetPopulation(
 		CurrentPopulation,
 		MaximumPopulation
 	);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddCurrentPopulation(int32 NewCurrentPopulation)
+{	// 현재인구 증가
+	//const int32 IncreasePopValue = FMath::Max(0, NewCurrentPopulation);
+	//if (IncreasePopValue <= 0) return;
+	CurrentPopulation += NewCurrentPopulation;
+	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddMaxPopulation(int32 NewMaximumPopulation)
+{	// 최대인구 증가
+	//const int32 IncreasePopValue = FMath::Max(0, NewMaximumPopulation);
+	//if (IncreasePopValue <= 0) return;
+	MaximumPopulation += NewMaximumPopulation;
+	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddMineralIncomeRate(float NewMineralIncomeRate)
+{
+	MineralIncomeRate += NewMineralIncomeRate;
+	OnMineralChanged.Broadcast(Mineral, MineralIncomeRate);
+	
+	SF_LOG(Warning, "Current MineralRate: %d / %f", Mineral, MineralIncomeRate);
+}
+
+void ASFGameState::AddEtherIncomeRate(float NewEtherIncomeRate)
+{
+	EtherIncomeRate += NewEtherIncomeRate;
+	OnEtherChanged.Broadcast(Ether, EtherIncomeRate);
+	
+	SF_LOG(Warning, "Current EtherRate: %d / %f", Ether, EtherIncomeRate);
 }
 
 bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const

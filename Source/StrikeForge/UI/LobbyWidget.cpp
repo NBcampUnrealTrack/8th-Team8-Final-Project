@@ -1,10 +1,6 @@
 ﻿#include "LobbyWidget.h"
+#include "SettingWidget.h"
 #include "Components/Button.h"
-#include "Components/Widget.h"
-#include "Components/BackgroundBlur.h"
-#include "Components/ComboBoxString.h"
-#include "GameFramework/GameUserSettings.h"
-#include "Kismet/GameplayStatics.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
 #include "Datas/Stage/SFStageData.h"
 #include "Engine/Texture2D.h"
@@ -14,7 +10,6 @@
 void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	SetIsFocusable(true);
 
 	if (IsValid(Back_Btn))
 	{
@@ -23,10 +18,6 @@ void ULobbyWidget::NativeConstruct()
 	if (IsValid(Setting_Btn))
 	{
 		Setting_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnSettingButtonClicked);
-	}
-	if (IsValid(BackUi_Btn))
-	{
-		BackUi_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnBackUiButtonClicked);
 	}
 	if (IsValid(Stage1))
 	{
@@ -52,24 +43,6 @@ void ULobbyWidget::NativeConstruct()
 	{
 		Stage6->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
-
-	// 옵션 초기화 (이벤트 바인딩 전에 호출해야 불필요한 OnSelectionChanged 방지)
-	InitializeSettingOptions();
-
-	if (IsValid(DisplayComboBox))
-	{
-		DisplayComboBox->OnSelectionChanged.AddDynamic(this, &ULobbyWidget::OnResolutionChanged);
-	}
-	if (IsValid(FullScreenComboBox))
-	{
-		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &ULobbyWidget::OnFullscreenModeChanged);
-	}
-
-	// 초기 상태: 설정창 숨김
-	SetSettingMenuVisible(false);
-
-	// 26.08.13 추가(로비 버튼 갱신 함수)
-	RefreshStageButtons();
 }
 
 void ULobbyWidget::OnBackButtonClicked()
@@ -85,18 +58,10 @@ void ULobbyWidget::OnBackButtonClicked()
 
 void ULobbyWidget::OnSettingButtonClicked()
 {
-	if (!IsValid(SettingPanel))
+	if (IsValid(SettingWidget))
 	{
-		return;
+		SettingWidget->OpenSetting();
 	}
-
-	const bool bCurrentlyVisible = (SettingPanel->GetVisibility() == ESlateVisibility::Visible);
-	SetSettingMenuVisible(!bCurrentlyVisible);
-}
-
-void ULobbyWidget::OnBackUiButtonClicked()
-{
-	SetSettingMenuVisible(false);
 }
 
 void ULobbyWidget::OnStage1Clicked() { OpenStageLevel(0); }
@@ -237,142 +202,3 @@ void ULobbyWidget::ApplyStageButtonTexture(UButton* StageButton, UTexture2D* Sta
 	StageButton->SetStyle(ButtonStyle);
 }
 // 여기까지
-
-void ULobbyWidget::SetSettingMenuVisible(bool bIsVisible)
-{
-	const ESlateVisibility SettingVis = bIsVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-
-	if (IsValid(SettingPanel)) { SettingPanel->SetVisibility(SettingVis); }
-	if (IsValid(BackgroundBlur)) { BackgroundBlur->SetVisibility(SettingVis); }
-	if (IsValid(BackUi_Btn)) { BackUi_Btn->SetVisibility(SettingVis); }
-
-	if (bIsVisible)
-	{
-		SetFocus();
-	}
-}
-
-FReply ULobbyWidget::NativeOnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
-{
-	if (InKeyEvent.GetKey() == EKeys::Escape)
-	{
-		if (IsValid(SettingPanel) && SettingPanel->GetVisibility() == ESlateVisibility::Visible)
-		{
-			SetSettingMenuVisible(false);
-			return FReply::Handled();
-		}
-	}
-	return Super::NativeOnKeyDown(MyGeometry, InKeyEvent);
-}
-
-void ULobbyWidget::InitializeSettingOptions()
-{
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	if (IsValid(DisplayComboBox))
-	{
-		DisplayComboBox->ClearOptions();
-		DisplayComboBox->AddOption(TEXT("1024x576"));
-		DisplayComboBox->AddOption(TEXT("1280x720"));
-		DisplayComboBox->AddOption(TEXT("1366x768"));
-		DisplayComboBox->AddOption(TEXT("1600x900"));
-		DisplayComboBox->AddOption(TEXT("1920x1080"));
-		DisplayComboBox->AddOption(TEXT("2560x1440"));
-
-		const FIntPoint CurrentRes = Settings->GetScreenResolution();
-		const FString CurrentResStr = FString::Printf(TEXT("%dx%d"), CurrentRes.X, CurrentRes.Y);
-
-		if (DisplayComboBox->FindOptionIndex(CurrentResStr) != INDEX_NONE)
-		{
-			DisplayComboBox->SetSelectedOption(CurrentResStr);
-		}
-		else
-		{
-			DisplayComboBox->SetSelectedOption(TEXT("1920x1080"));
-		}
-	}
-
-	if (IsValid(FullScreenComboBox))
-	{
-		FullScreenComboBox->ClearOptions();
-		FullScreenComboBox->AddOption(TEXT("Fullscreen"));
-		FullScreenComboBox->AddOption(TEXT("WindowedFullscreen"));
-		FullScreenComboBox->AddOption(TEXT("Windowed"));
-
-		switch (Settings->GetFullscreenMode())
-		{
-		case EWindowMode::Fullscreen:
-			FullScreenComboBox->SetSelectedOption(TEXT("Fullscreen"));
-			break;
-		case EWindowMode::WindowedFullscreen:
-			FullScreenComboBox->SetSelectedOption(TEXT("WindowedFullscreen"));
-			break;
-		case EWindowMode::Windowed:
-		default:
-			FullScreenComboBox->SetSelectedOption(TEXT("Windowed"));
-			break;
-		}
-	}
-}
-
-void ULobbyWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (SelectionType == ESelectInfo::Direct)
-	{
-		return;
-	}
-
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	FString WidthStr, HeightStr;
-	if (SelectedItem.Split(TEXT("x"), &WidthStr, &HeightStr))
-	{
-		const int32 Width = FCString::Atoi(*WidthStr);
-		const int32 Height = FCString::Atoi(*HeightStr);
-
-		Settings->SetScreenResolution(FIntPoint(Width, Height));
-		Settings->ApplySettings(false);
-		Settings->SaveSettings();
-	}
-}
-
-void ULobbyWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (SelectionType == ESelectInfo::Direct)
-	{
-		return;
-	}
-
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	EWindowMode::Type NewMode = EWindowMode::Windowed;
-
-	if (SelectedItem == TEXT("Fullscreen"))
-	{
-		NewMode = EWindowMode::Fullscreen;
-	}
-	else if (SelectedItem == TEXT("WindowedFullscreen"))
-	{
-		NewMode = EWindowMode::WindowedFullscreen;
-	}
-	else if (SelectedItem == TEXT("Windowed"))
-	{
-		NewMode = EWindowMode::Windowed;
-	}
-
-	Settings->SetFullscreenMode(NewMode);
-	Settings->ApplySettings(false);
-	Settings->SaveSettings();
-}

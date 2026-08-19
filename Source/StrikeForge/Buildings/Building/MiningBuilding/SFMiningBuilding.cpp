@@ -1,6 +1,4 @@
 ﻿#include "SFMiningBuilding.h"
-
-#include "Buildings/Resource/Interface/Minable.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "Logging/SFLog.h"
@@ -16,6 +14,13 @@ FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
 	FSFSelectableInfo Info = Super::GetSelectableInfo_Implementation();
 	Info.SelectableType = ESFSelectableType::NormalBuilding;
 	return Info;
+}
+
+void ASFMiningBuilding::OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition)
+{
+	Super::OnBuildingDefinitionLoaded(Definition);
+	
+	CanDigResourceType = Definition.CanDigResourceType;
 }
 
 void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)

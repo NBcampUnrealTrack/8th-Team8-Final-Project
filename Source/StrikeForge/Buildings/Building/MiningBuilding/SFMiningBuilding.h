@@ -16,6 +16,7 @@ public:
 	ASFMiningBuilding();
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	
+	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) override;
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
 	//

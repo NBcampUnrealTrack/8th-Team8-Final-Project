@@ -152,7 +152,8 @@ struct STRIKEFORGE_API FBuildingTier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|House")
 	int32 PopulationCapacity = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
-	float MiningIncomeRate = 0.f; // 광산기획이 어떻게 되는거지... 물어봐야할 문제
+	float MiningIncomeRate = 0.f; // 일단 초당 증가량으로
+
 };
 
 USTRUCT(BlueprintType)
@@ -177,6 +178,9 @@ struct STRIKEFORGE_API FBuildingAppearance: public FTableRowBase
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect")
 	TSoftObjectPtr<UNiagaraSystem> DestroyedEffect;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
+	EResourceType CanDigResourceType;
 	
 	/** 배열 인덱스 0이 게임의 1티어 */
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")

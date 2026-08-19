@@ -126,7 +126,16 @@ bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
 			CachedGridSubsystem->FindResourceInGrid
 				(Building, TargetBuildingGridInfo);
 		
-		return bBuildingGridEmpty && IsValid(Resource);
+		bool IsResourceTypeMatch = false;
+		
+		if (IsValid(Resource))
+		{
+			IsResourceTypeMatch = 
+				Cast<ASFMiningBuilding>(Building)->GetMineResourceType() 
+					== Resource->GetResourceType();
+		}
+		
+		return bBuildingGridEmpty && IsValid(Resource) && IsResourceTypeMatch;
 	}
 	
 	return CachedGridSubsystem->CanPlaceNormalBuildingGrid
@@ -194,9 +203,15 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 			bCanPlaceCurrentLocation = false;
 			Building->ApplyPreviewMaterial(false);
 			return false;
+		} // 자원 있을때 + 일치하지않을때
+		if (MiningBuilding->GetMineResourceType() != ResourceToLink->GetResourceType())
+		{
+			bCanPlaceCurrentLocation = false;
+			Building->ApplyPreviewMaterial(false);
+			return false;
 		}
-	}
 
+	}
 	// building안에서 grid subsystem을 부르고 등록가능한지 판단
 	// 가능하면 set TargetBuildingGridInfo
 	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))

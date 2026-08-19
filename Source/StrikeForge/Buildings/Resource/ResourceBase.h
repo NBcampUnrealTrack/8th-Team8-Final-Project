@@ -3,20 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/SFResourceTypes.h"
+#include "Game/Subsystem/BuildingGridInfo.h"
 #include "GameFramework/Actor.h"
 #include "Interface/Minable.h"
 #include "ResourceBase.generated.h"
 
 class UBoxComponent;
 
-UENUM(BlueprintType)
-enum class EResourceType: uint8
-{
-	Mineral,
-	Ether
-};
-
-UCLASS()
+UCLASS(Abstract)
 class STRIKEFORGE_API AResourceBase 
 	: public AActor
 	, public IMinable
@@ -26,8 +21,18 @@ class STRIKEFORGE_API AResourceBase
 public:
 	// Sets default values for this actor's properties
 	AResourceBase();
+	virtual int32 Extract(int32 InDigAmount) override;
 	
-	EResourceType GetResourceType() const;
+	// Getter
+	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
+	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
+	FORCEINLINE int32 GetResourceTier() const { return ResourceTier; }
+	
+	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
+	
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneComponent;
@@ -36,8 +41,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoxComponent> BoxComponent;
 	
-	EResourceType ResourceType;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
+	EResourceType ResourceType = EResourceType::Mineral;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
+	int32 ResourceDeposit = 0;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	int32 ResourceTier = 1;
 	
-	int32 ResourceDeposit;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource|Grid")
+	FIntPoint ResourceGridSize = FIntPoint(2, 2);
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Grid")
+	FBuildingGridInfo RegisteredResourceGridInfo;
+	bool bResourceGridRegistered  = false;
 private:
 };

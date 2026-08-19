@@ -18,5 +18,5 @@ class STRIKEFORGE_API IMinable
 {
 	GENERATED_BODY()
 public:
-	virtual bool Digging(const int32 InDigAmount) = 0;
+	virtual int32 Extract(const int32 InDigAmount) = 0;
 };

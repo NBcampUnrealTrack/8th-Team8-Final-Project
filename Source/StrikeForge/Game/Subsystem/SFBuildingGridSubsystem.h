@@ -5,7 +5,18 @@
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "SFBuildingGridSubsystem.generated.h"
 
-
+class AResourceBase;
+// 블루프린트 노출 x
+struct FSFGridCellData
+{
+	TWeakObjectPtr<AResourceBase> ResourceActor;
+	TWeakObjectPtr<AActor> BuildingActor;
+	
+	bool IsEmpty() const
+	{
+		return !ResourceActor.IsValid() && !BuildingActor.IsValid();
+	}
+};
 
 UCLASS()
 class STRIKEFORGE_API USFBuildingGridSubsystem : public UWorldSubsystem
@@ -21,11 +32,21 @@ public:
 	UFUNCTION(BlueprintCallable)
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
-	//check TMap하고 등록되있는지 판단만
+	// check
+	// 건물끼리 겹치는지 검사
 	bool CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
+	// 일반건물 - 건물과 자원 모두 없어야 배치 가능
+	bool CanPlaceNormalBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
+	
+	// building
 	// 점유o이면 x, 점유x면 regist까지 진행
-	bool TryRegistBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
+	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 	void UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo);
+	// resource
+	bool TryRegisterResourceGrid(AResourceBase* Resource, const FBuildingGridInfo& GridInfo);
+	void UnregisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo);
+	// filter resource
+	AResourceBase* FindResourceInGrid(const AActor* InBuilding, const FBuildingGridInfo& GridInfo) const;
 	
 	FVector GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const;
 	// world location -> grid
@@ -52,5 +73,5 @@ private:
 	
 	// array of placed grid // (1, 1)
 	// (1, 1) = 1(X) * cellsize + cellsize / 2
-	TMap<FIntPoint, TWeakObjectPtr<AActor>> OccupiedCells; 
+	TMap<FIntPoint, FSFGridCellData> GridCells; 
 };

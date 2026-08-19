@@ -58,7 +58,7 @@ void ASFBaseBuilding::RefreshVisual()
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
-{	// HP있고 건설중, 건설완료상태이면 데이미 적용
+{	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		HealthComponent->ApplyDamage(InDamage);
@@ -991,7 +991,7 @@ bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
 	if (!IsValid(GridSubsystem)) return false;
 	
 	// TMap에 등록시도
-	if (!GridSubsystem->TryRegistBuildingGrid(this, GridInfo))
+	if (!GridSubsystem->TryRegisterBuildingGrid(this, GridInfo))
 	{
 		return false;
 	}

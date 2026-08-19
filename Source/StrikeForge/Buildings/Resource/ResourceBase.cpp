@@ -1,7 +1,7 @@
 ﻿#include "ResourceBase.h"
-
-#include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
 #include "Components/BoxComponent.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "Logging/SFLog.h"
 
 AResourceBase::AResourceBase()
 {
@@ -23,7 +23,49 @@ AResourceBase::AResourceBase()
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
 }
 
-EResourceType AResourceBase::GetResourceType() const
+int32 AResourceBase::Extract(int32 InDigAmount)
 {
-	return ResourceType;
+	if (InDigAmount <= 0) return 0;
+	
+	const int32 ExtractedAmount = FMath::Min(InDigAmount, ResourceDeposit);
+	
+	ResourceDeposit -= ExtractedAmount;
+	SF_LOG(Warning, "%s :: Left Deposit: %d", *UEnum::GetValueAsString(ResourceType), ResourceDeposit);
+	
+	return ExtractedAmount;
+}
+
+void AResourceBase::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(GridSubsystem)) return;
+	
+	RegisteredResourceGridInfo = GridSubsystem->WorldCenterToGridInfo(
+		GetActorLocation(),
+		ResourceGridSize);
+	
+	bResourceGridRegistered  = 
+	GridSubsystem->TryRegisterResourceGrid(this, RegisteredResourceGridInfo);
+	
+	if (!bResourceGridRegistered )
+	{
+		SF_LOG(Warning, "Resource: %s Failed to Register GridSystem", *GetName());
+	}
+}
+
+void AResourceBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (bResourceGridRegistered )
+	{
+		if (USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			GridSubsystem->UnregisterResourceGrid(this, RegisteredResourceGridInfo);
+		}
+		
+		bResourceGridRegistered  = false;
+	}
+	
+	Super::EndPlay(EndPlayReason);
 }

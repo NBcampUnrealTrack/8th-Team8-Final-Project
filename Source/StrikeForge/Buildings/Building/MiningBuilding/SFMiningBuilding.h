@@ -28,6 +28,9 @@ public:
 	virtual void OnBuildingDestroyed() override;
 	
 	void TryLinkResource(AResourceBase* InResourceRef);
+	
+	// getter
+	FORCEINLINE EResourceType GetMineResourceType() const { return CanDigResourceType; }
 protected:
 	// timer start
 	void StartMining();
@@ -47,6 +50,6 @@ private:
 	
 	FTimerHandle DiggingProductTimerHandle;
 	
-	//EResourceType MiningResourceType;
-	TWeakObjectPtr<AActor> LinkedResource;
+	EResourceType CanDigResourceType;
+	TWeakObjectPtr<AResourceBase> LinkedResource;
 };

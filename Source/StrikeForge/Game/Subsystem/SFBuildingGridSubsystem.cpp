@@ -1,4 +1,6 @@
 ﻿#include "SFBuildingGridSubsystem.h"
+
+#include "Buildings/Resource/ResourceBase.h"
 #include "GameFramework/Actor.h"
 
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -50,10 +52,12 @@ bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const F
 		{	// X는 X값에 Y는 Y값에 더해주는 +연산자 오버로딩 있음
 			const FIntPoint TempCoordinate = GridInfo.OriginCell + FIntPoint(X, Y); 
 			// TMap에서 Key값으로 값이 존재하는지 검사
-			const TWeakObjectPtr<AActor>* ExistingOwner = OccupiedCells.Find(TempCoordinate);
+			const FSFGridCellData* Cell = GridCells.Find(TempCoordinate);
+			if (!Cell) continue;
 			// TMap에서 존재하면 점유중, 본인이 본인자리에 배치는 가능(예외), 갑자기 nullptr 방지(destroy)
 			// 가장 첫번째 조건을 검사함 > nullptr이면 isvalid 오류남 nullptr검사부터
-			if (ExistingOwner != nullptr && ExistingOwner->IsValid() && ExistingOwner->Get() != Owner)
+			AActor* ExistingBuilding = Cell->BuildingActor.Get();
+			if (IsValid(ExistingBuilding) && ExistingBuilding != Owner)
 			{
 				return false;
 			}
@@ -63,7 +67,30 @@ bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const F
 	return true;
 }
 
-bool USFBuildingGridSubsystem::TryRegistBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
+bool USFBuildingGridSubsystem::CanPlaceNormalBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+{
+	if (!IsValid(Owner) || !GridInfo.IsValid()) return false;
+	
+	for (int Y = 0; Y < GridInfo.GridSize.Y; Y++)
+	{
+		for (int X = 0; X < GridInfo.GridSize.X; X++)
+		{
+			const FIntPoint TempCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			const FSFGridCellData* Cell = GridCells.Find(TempCoordinate);
+			if (!Cell) continue; // 맵에 키값이 있는지 판단
+			// 있다면 actor가 존재하는지 판단 ( 둘중하나라도 존재하면 false 건설불가 )
+			
+			if (Cell->ResourceActor.IsValid()) return false;
+			
+			if (Cell->BuildingActor.IsValid() && Cell->BuildingActor.Get() != Owner)
+				return false;
+		}
+	}
+	
+	return true;
+}
+
+bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
 	// ! > 누군가 점유중
 	if (!CanPlaceBuildingGrid(Owner, GridInfo))
@@ -76,8 +103,10 @@ bool USFBuildingGridSubsystem::TryRegistBuildingGrid(AActor* Owner, const FBuild
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
 			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-
-			OccupiedCells.Add(CellCoordinate, Owner);
+			
+			// 찾거나 추가
+			FSFGridCellData& Cell = GridCells.FindOrAdd(CellCoordinate);
+			Cell.BuildingActor = Owner;
 		}
 	}
 
@@ -86,6 +115,7 @@ bool USFBuildingGridSubsystem::TryRegistBuildingGrid(AActor* Owner, const FBuild
 
 void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
+	if (!GridInfo.IsValid()) return;
 	
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
@@ -93,19 +123,110 @@ void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const
 		{
 			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
 
-			const TWeakObjectPtr<AActor>* ExistingOwner = OccupiedCells.Find(CellCoordinate);
+			FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) continue;
 
-			if (ExistingOwner == nullptr)
+			if (!Cell->BuildingActor.IsValid() ||
+				Cell->BuildingActor.Get() == Owner)
 			{
-				continue;
+				Cell->BuildingActor.Reset();
 			}
 
-			if (!ExistingOwner->IsValid() || ExistingOwner->Get() == Owner)
+			if (Cell->IsEmpty())
 			{
-				OccupiedCells.Remove(CellCoordinate);
+				GridCells.Remove(
+					CellCoordinate);
 			}
 		}
 	}
+}
+
+bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
+{
+	if (!IsValid(Resource) || !GridInfo.IsValid()) return false;
+	
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) continue;
+			// 셀에 이미 자원엑터가 존재하고, 배치되어있는 자원이 등록하려는 자원과 같지않을때 
+			if (Cell->ResourceActor.IsValid() && Cell->ResourceActor.Get() != Resource) return false;
+			// 샐에 건물이 배치되어있을때
+			if (Cell->BuildingActor.IsValid()) return false;
+		}
+	}
+	
+	// register
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			FSFGridCellData& Cell = GridCells.FindOrAdd(CellCoordinate);
+			
+			Cell.ResourceActor = Resource;
+		}
+	}
+	
+	return true;
+}
+
+void USFBuildingGridSubsystem::UnregisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
+{
+	if (!GridInfo.IsValid()) return;
+	
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) continue;
+			// ResourceActor가 등록안돼있거나 등록된게 나자신이면
+			if (!Cell->ResourceActor.IsValid() || Cell->ResourceActor.Get() == Resource)
+			{	// delete value
+				Cell->ResourceActor.Reset();
+			}
+			// 빌딩도 없고 자원도 없다면
+			if (Cell->IsEmpty())
+			{	// map요소 삭제
+				GridCells.Remove(CellCoordinate);
+			}
+		}
+	}
+}
+
+AResourceBase* USFBuildingGridSubsystem::FindResourceInGrid(const AActor* InBuilding,
+	const FBuildingGridInfo& GridInfo) const
+{
+	AResourceBase* FoundResource = nullptr;
+	
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) return nullptr; // 하나라도 없으면 끝
+			
+			AResourceBase* CellResource = Cell->ResourceActor.Get();
+			if (!IsValid(CellResource)) return nullptr;
+			
+			if (!FoundResource) // nullptr일때만 값을 set
+			{
+				FoundResource = CellResource;
+			}
+			else if (FoundResource != CellResource) // 
+			{
+				return nullptr;
+			}
+		}
+	}
+		
+	return FoundResource;
 }
 
 FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const
@@ -244,23 +365,21 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 
 	for (const TPair<
 			FIntPoint,
-			TWeakObjectPtr<AActor>>& OccupiedCell
-		: OccupiedCells)
+			FSFGridCellData>& GridCell
+		: GridCells)
 	{
-		AActor* Owner = OccupiedCell.Value.Get();
+		AActor* OccupiedActor = (GridCell.Value.BuildingActor.IsValid()) ?
+					GridCell.Value.BuildingActor.Get() : GridCell.Value.ResourceActor.Get();
 
 		// 이미 Destroy된 액터의 오래된 정보는 표시하지 않습니다.
-		if (!IsValid(Owner))
-		{
-			continue;
-		}
+		if (!IsValid(OccupiedActor)) continue;
 
 		FVector CellCenter =
-			GridToWorldCoordinate(OccupiedCell.Key);
+			GridToWorldCoordinate(GridCell.Key);
 
 		// 점유 중인 건물의 높이를 기준으로 표시합니다.
 		CellCenter.Z =
-			Owner->GetActorLocation().Z + 10.0f;
+			OccupiedActor->GetActorLocation().Z + 10.0f;
 
 		DrawDebugBox(
 			World,

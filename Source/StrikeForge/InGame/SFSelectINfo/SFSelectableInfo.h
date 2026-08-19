@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Datas/Resource/ResourceTypes.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectableInfo.generated.h"
 
 class UTexture2D;

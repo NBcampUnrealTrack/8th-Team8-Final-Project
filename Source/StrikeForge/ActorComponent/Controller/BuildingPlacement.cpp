@@ -1,7 +1,10 @@
 ﻿#include "BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Resource/ResourceBase.h"
+#include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
+#include "Logging/SFLog.h"
 
 UBuildingPlacement::UBuildingPlacement()
 {
@@ -33,21 +36,21 @@ bool UBuildingPlacement::StartPlacementMode(ASFBaseBuilding* InTargetBuilding)
 	UpdatePlacementMode();
 	
 	// BuildingRef이 isvalid 한가 확인, tick이 on인지 확인
-	return IsPlacementActive();
+	return TargetBuilding.IsValid() && IsComponentTickEnabled();
 }
 
 void UBuildingPlacement::UpdatePlacementMode()
 {
 	if (!TargetBuilding.IsValid())
 	{
-		CancelPlacementMode();
+		EndPlacementSession();
 		UE_LOG(LogTemp, Error, TEXT("UBuildingPlacement::UpdatePlacementMode:TargetActor is Invalid"));
 		return;
 	}
 
 	if (!OwnerController.IsValid())
 	{
-		CancelPlacementMode();
+		EndPlacementSession();
 		UE_LOG(LogTemp, Error, TEXT("UBuildingPlacement::UpdatePlacementMode:Controller is Invalid"));
 		return;
 	}
@@ -74,12 +77,15 @@ void UBuildingPlacement::UpdatePlacementMode()
 		TargetBuilding->SetActorLocation(
 			BuildingLocation);
 
-		const bool bCanPlaceOnGrid =
-			CachedGridSubsystem->CanPlaceBuildingGrid(
-				TargetBuilding.Get(),
-				TargetBuildingGridInfo);
+		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
+		
+		//SF_LOG(Error, "bCanPlaceOnGrid : %d", bCanPlaceOnGrid);
+		
+		const bool bIsMiningBuilding =
+			TargetBuilding->IsA<ASFMiningBuilding>();
 
 		const bool bCanPlaceOnNavigation =
+			bIsMiningBuilding ||
 			CanPlaceOnNavMeshXY(BuildingLocation);
 
 		bCanPlaceCurrentLocation =
@@ -87,10 +93,10 @@ void UBuildingPlacement::UpdatePlacementMode()
 			bCanPlaceOnNavigation;
 		
 		CachedGridSubsystem->DebugDrawGridInfo(
-			TargetBuildingGridInfo,
-			BuildingLocation.Z,
-			bCanPlaceCurrentLocation,
-			0.0f);
+		TargetBuildingGridInfo,
+		BuildingLocation.Z,
+		bCanPlaceCurrentLocation,
+		0.0f);
 		
 		TargetBuilding->ApplyPreviewMaterial(
 			bCanPlaceCurrentLocation);
@@ -101,6 +107,30 @@ void UBuildingPlacement::UpdatePlacementMode()
 		TargetBuilding->ApplyPreviewMaterial(false);
 		return;
 	}
+}
+
+bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
+{
+	ASFBaseBuilding* Building = TargetBuilding.Get();
+	
+	if (!IsValid(Building) || !IsValid(CachedGridSubsystem) || !TargetBuildingGridInfo.IsValid())
+		return false;
+	
+	if (Building->IsA<ASFMiningBuilding>())
+	{
+		const bool bBuildingGridEmpty = 
+			CachedGridSubsystem->CanPlaceBuildingGrid
+				(Building, TargetBuildingGridInfo);
+		
+		AResourceBase* Resource = 
+			CachedGridSubsystem->FindResourceInGrid
+				(Building, TargetBuildingGridInfo);
+		
+		return bBuildingGridEmpty && IsValid(Resource);
+	}
+	
+	return CachedGridSubsystem->CanPlaceNormalBuildingGrid
+		(Building, TargetBuildingGridInfo);
 }
 
 void UBuildingPlacement::EndPlacementSession()
@@ -134,15 +164,39 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	{
 		return false;
 	}
+	// MineBuilding 이라면
+	ASFMiningBuilding* MiningBuilding =
+		Cast<ASFMiningBuilding>(Building);
 	
 	// NavMesh 범위 판단
-	if (!CanPlaceOnNavMeshXY(Building->GetActorLocation()))
+
+	const bool bCanPlaceOnNavigation =
+		IsValid(MiningBuilding) ||
+		CanPlaceOnNavMeshXY(Building->GetActorLocation());
+
+	if (!CanPlaceOnCurrentGrid() ||
+		!bCanPlaceOnNavigation)
 	{
 		bCanPlaceCurrentLocation = false;
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
+	// 광산이라면 자원조회
 	
+	AResourceBase* ResourceToLink = nullptr;
+	if (IsValid(MiningBuilding))
+	{
+		ResourceToLink = CachedGridSubsystem->FindResourceInGrid
+			(Building, TargetBuildingGridInfo);
+		// 발견되는 자원없을때
+		if (!IsValid(ResourceToLink))
+		{
+			bCanPlaceCurrentLocation = false;
+			Building->ApplyPreviewMaterial(false);
+			return false;
+		}
+	}
+
 	// building안에서 grid subsystem을 부르고 등록가능한지 판단
 	// 가능하면 set TargetBuildingGridInfo
 	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))
@@ -152,19 +206,16 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		return false;
 	}
 	
+	// grid 등록 성공시
+	
+	// 광산건물일때
+	if (IsValid(MiningBuilding))
+	{
+		MiningBuilding->TryLinkResource(ResourceToLink);
+	}
 	// tick off
 	EndPlacementSession();
 	return true;
-}
-
-void UBuildingPlacement::CancelPlacementMode()
-{
-	EndPlacementSession();
-}
-
-bool UBuildingPlacement::IsPlacementActive() const
-{
-	return TargetBuilding.IsValid() && IsComponentTickEnabled();
 }
 
 bool UBuildingPlacement::CanPlaceOnNavMeshXY(const FVector& WorldLocation) const

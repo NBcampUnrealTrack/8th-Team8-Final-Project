@@ -2,6 +2,7 @@
 
 #include "Buildings/Resource/Interface/Minable.h"
 #include "Game/GameState/SFGameState.h"
+#include "Buildings/Resource/ResourceBase.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
@@ -28,7 +29,7 @@ void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	SFGameState->AddMineralIncomeRate(DiggingIncomeRate);
+	SFGameState->AddResourceIncomeRate(LinkedResource->GetResourceType(), DiggingIncomeRate);
 	StartMining();
 }
 
@@ -50,8 +51,7 @@ void ASFMiningBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
 	
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
-	SFGameState->AddMineralIncomeRate(DiggingIncomeRate * -1);
-	
+	SFGameState->AddResourceIncomeRate(LinkedResource->GetResourceType(), DiggingIncomeRate * -1);
 }
 
 void ASFMiningBuilding::OnBuildingDestroyed()
@@ -63,6 +63,8 @@ void ASFMiningBuilding::OnBuildingDestroyed()
 
 void ASFMiningBuilding::StartMining()
 {
+	if (!LinkedResource.IsValid()) return;
+	
 	GetWorldTimerManager().SetTimer(
 		DiggingProductTimerHandle,
 		this,
@@ -90,15 +92,25 @@ void ASFMiningBuilding::Mining()
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	if (IMinable* Minable =	Cast<IMinable>(LinkedResource.Get()))
+	if (!LinkedResource.IsValid())
 	{
-		if (Minable->Digging(DiggingAmount))
-		{
-			SF_LOG(Warning, "Mine_Digging!");
-			return;
-		}
-		SF_LOG(Warning, "Mine_Dig_Failed...");
+		StopMining();
+		SF_LOG(Error, "Mine에 LinkedResource가 등록되지않았습니다.");
+		return;
 	}
+	
+	const int32 ExtractedAmount = 
+	LinkedResource.Get()->Extract(DiggingAmount);
+	
+	if (ExtractedAmount <= 0) // 자원고갈
+	{
+		StopMining();
+		SF_LOG(Error, "Mine에 LinkedResource의 자원이 고갈되었습니다.");
+		return;
+	}
+	
+	SFGameState->AddResource(
+		LinkedResource.Get()->GetResourceType(), ExtractedAmount);
 }
 
 void ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)

@@ -22,13 +22,12 @@ public:
 	bool StartPlacementMode(ASFBaseBuilding* InTargetBuilding);
 	bool TryConfirmPlacementMode();
 	// = endplacementmode == tick off cachedproperty nullptr
-	void CancelPlacementMode();
-	bool IsPlacementActive() const;
 	
+	void EndPlacementSession();
 private:
 	void UpdatePlacementMode();
-	void EndPlacementSession();
 	
+	bool CanPlaceOnCurrentGrid() const;
 	// nav
 	bool CanPlaceOnNavMeshXY(const FVector& WorldLocation) const;
 

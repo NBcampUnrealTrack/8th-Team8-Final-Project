@@ -27,10 +27,9 @@ USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingConstructionData
 {
 	GENERATED_BODY()
-
-	/** 해당 티어의 건설 또는 업그레이드 진행 시간 */
+	// 작업총량
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Construction", meta = (ClampMin = "0.1"))
-	float Duration = 10.f;
+	float RequiredWork = 10.f; 
 
 	/** 해당 티어를 최초 건설할 때 사용하는 비용 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
@@ -62,32 +61,56 @@ struct STRIKEFORGE_API FBuildingVisualData
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> CompletedMesh;
 
-	/** 체력이 낮은 단계부터 Threshold 오름차순으로 입력한다. */
+	/* 가벼운 손상부터 심각한 손상 순서로 사용한다.
+	* 런타임에서 Threshold 내림차순으로 정렬한다.*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TArray<FBuildingStage> DamageStages;
 	
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
 
-	int32 FindDamageStageIndex(float HealthRatio) const
+	int32 FindConstructionStageIndex(float ProgressRatio) const
 	{
-		if (HealthRatio >= 1.f)
-		{
-			return INDEX_NONE;
-		}
+		if (ConstructionStages.IsEmpty()) return INDEX_NONE;
 
-		for (int32 Index = 0;
-			Index < DamageStages.Num();
-			++Index)
-		{
-			if (HealthRatio
-				<= DamageStages[Index].Threshold)
+		ProgressRatio = FMath::Clamp(ProgressRatio,0.f,1.f);
+		int32 Result = 0;
+
+		for (int32 Index = 0; Index < ConstructionStages.Num(); ++Index)
+		{	// 입력된 proogressratio가 states에서 가지고 있는 float(treshold)보다 크면 index반환
+			if (ProgressRatio >= ConstructionStages[Index].Threshold)
 			{
-				return Index;
+				Result = Index;
+			}
+			else
+			{
+				// 크지않으면 index누적 종료
+				break;
 			}
 		}
 
-		return INDEX_NONE;
+		return Result;
+	}
+	int32 FindDamageStageIndex(float HealthRatio) const
+	{
+		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);
+		
+		if (HealthRatio >= 1.f)
+		{	// 풀피
+			return INDEX_NONE;
+		}
+
+		int32 Result = INDEX_NONE;
+
+		for (int32 Index = 0; Index < DamageStages.Num(); ++Index)
+		{
+			if (HealthRatio <= DamageStages[Index].Threshold)
+			{
+				Result = Index;
+			}
+		}
+
+		return Result;
 	}
 };
 
@@ -124,12 +147,12 @@ struct STRIKEFORGE_API FBuildingTier
 	 * 생산 건물에서만 사용한다.
 	 * 건물별 기능 데이터가 더 늘어나면 Extension 구조로 이전한다.
 	 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "Tier|Production"
-	)
+	UPROPERTY(EditAnywhere,	BlueprintReadOnly,Category = "Tier|Production")
 	TArray<FName> SpawnableUnits;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|House")
+	int32 PopulationCapacity = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
+	float MiningIncomeRate = 0.f; // 광산기획이 어떻게 되는거지... 물어봐야할 문제
 };
 
 USTRUCT(BlueprintType)

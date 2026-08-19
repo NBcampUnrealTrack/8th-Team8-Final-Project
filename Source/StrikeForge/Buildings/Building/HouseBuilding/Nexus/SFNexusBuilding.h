@@ -3,16 +3,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Building/HouseBuilding/SFHouseBuilding.h"
 #include "SFNexusBuilding.generated.h"
 
 UCLASS()
-class STRIKEFORGE_API ASFNexusBuilding : public ASFBaseBuilding
+class STRIKEFORGE_API ASFNexusBuilding : public ASFHouseBuilding
 {
 	GENERATED_BODY()
 
 public:
 	ASFNexusBuilding(const FObjectInitializer& ObjectInitializer);
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 
 protected:
 	virtual void BeginPlay() override;

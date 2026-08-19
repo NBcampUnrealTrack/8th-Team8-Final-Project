@@ -5,8 +5,8 @@
 #include "Components/ActorComponent.h"
 #include "ProgressComponent.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FChangedProgressRatio, int32, RatioIndex);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCompletedBuilding);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FChangedProgressRatio, float, InPreviousRatio, float, InCurrentRatio);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCompletedProgress);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProgressComponent : public UActorComponent
@@ -17,50 +17,45 @@ public:
 	UProgressComponent();
 	
 	void StartProgress();
-	int32 FindRatioIndex(float InRatio) const;
 	void StopProgress();
 	
 	void InitializeProperties();
 	
-	void SetQuarterOfRatios(TArray<float> InQuarterOfRatios);
-	
 	// change speed
 	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
-	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
+	void SetWorkRateMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
 	UFUNCTION(BlueprintCallable, Category = "SF|Progress")
-	void SetDuration(float InSeconds);
+	//void SetDuration(float InSeconds);
+	void InitProgressWorks(float InRequiredWork, float InBaseWorkRate);
+	// getter
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Progress")
+	FORCEINLINE float GetCurrentProgressRatio() const { return CurrentRatio; }
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+private:
+	void AdvanceProgress();	
 public:
 	
 	UPROPERTY()
 	FTimerHandle ProgressTimerHandle;
-	
-	float LastAdvanceTime = 0.f;
-	// UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	// float Accumulate = 0.f;
-	/** 타이머 주기(초). ProductComponent와 값을 맞추고 싶으면 같은 수치를 쓰면 된다 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress")
-	float TickInterval = 1.f;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float CompleteAmount = 100.f;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
-	float AccumulateSpeed = 10.f;
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Progress")
-	FSFProgressTracker Tracker;
-	
-	UPROPERTY()
-	int32 CurrentRatioIndex = 0;
 	UPROPERTY()
 	float CurrentRatio = 0.f;
 	UPROPERTY()
-	TArray<float> QuarterofRatios;
+	float LastAdvanceTime = 0.f;
+	/** 타이머 주기(초).**/
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress")
+	float TickInterval = 0.1f;
 	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
+	float RequiredWork = 100.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Progress", meta = (AllowPrivateAccess = true))
+	float BaseWorkRate = 10.f;
+	// time structure
+	UPROPERTY(BlueprintReadOnly, Category = "Progress")
+	FSFProgressTracker Tracker;
+	// delegate
 	UPROPERTY(BlueprintAssignable)
-	FChangedProgressRatio OnChangedRatio;
+	FChangedProgressRatio OnChangedProgressRatio;
 	UPROPERTY(BlueprintAssignable)
-	FCompletedBuilding OnCompletedBuilding;
+	FCompletedProgress OnCompletedProgress;
 };

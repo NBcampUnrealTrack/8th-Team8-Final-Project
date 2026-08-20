@@ -1,34 +1,24 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Input/Reply.h"
 #include "StartWidget.generated.h"
 class UButton;
 class UWidget;
-class UBackgroundBlur;
-class UComboBoxString;
-class UTextBlock;
+class USettingWidget;
 UCLASS()
 class STRIKEFORGE_API UStartWidget : public UUserWidget
 {
 	GENERATED_BODY()
 protected:
 	virtual void NativeConstruct() override;
-	virtual FReply NativeOnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+
 	UFUNCTION()
 	void OnStartButtonClicked();
 	UFUNCTION()
 	void OnSettingButtonClicked();
 	UFUNCTION()
 	void OnExitButtonClicked();
-	UFUNCTION()
-	void OnBackUiButtonClicked();
-	UFUNCTION()
-	void OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-	UFUNCTION()
-	void OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
-	void SetSettingMenuVisible(bool bIsVisible);
-	void InitializeSettingOptions();
+
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UWidget* Title;
@@ -38,14 +28,8 @@ protected:
 	UButton* Setting_Btn;
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn;
+
+	// WBP_Start 캔버스에 직접 배치된 WBP_Setting 인스턴스 (Visibility 토글로 열고 닫음)
 	UPROPERTY(meta = (BindWidget))
-	UButton* BackUi_Btn;
-	UPROPERTY(meta = (BindWidget))
-	UWidget* SettingPanel;
-	UPROPERTY(meta = (BindWidget))
-	UBackgroundBlur* BackgroundBlur;
-	UPROPERTY(meta = (BindWidget))
-	UComboBoxString* DisplayComboBox;
-	UPROPERTY(meta = (BindWidget))
-	UComboBoxString* FullScreenComboBox;
+	USettingWidget* SettingWidget;
 };

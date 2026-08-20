@@ -1,6 +1,4 @@
 ﻿// SFGameState.cpp
-
-
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
@@ -231,20 +229,48 @@ void ASFGameState::AddMaxPopulation(int32 NewMaximumPopulation)
 	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
 }
 
-void ASFGameState::AddMineralIncomeRate(float NewMineralIncomeRate)
+void ASFGameState::AddResourceIncomeRate(EResourceType InResourceType, float InIncomeRate)
 {
-	MineralIncomeRate += NewMineralIncomeRate;
-	OnMineralChanged.Broadcast(Mineral, MineralIncomeRate);
-	
-	SF_LOG(Warning, "Current MineralRate: %d / %f", Mineral, MineralIncomeRate);
+	switch (InResourceType)
+	{
+	case EResourceType::Ether:
+		{
+			SetEtherIncomeRate(EtherIncomeRate + InIncomeRate);
+			break;
+		}
+	case EResourceType::Mineral:
+		{
+			SetMineralIncomeRate(MineralIncomeRate + InIncomeRate);
+			break;
+		}
+	default:
+		{
+			SF_LOG(Warning, "Unknown Resource Type");
+			break;
+		}
+	}
 }
 
-void ASFGameState::AddEtherIncomeRate(float NewEtherIncomeRate)
+void ASFGameState::AddResource(EResourceType InResourceType, int32 InResourceAmount)
 {
-	EtherIncomeRate += NewEtherIncomeRate;
-	OnEtherChanged.Broadcast(Ether, EtherIncomeRate);
-	
-	SF_LOG(Warning, "Current EtherRate: %d / %f", Ether, EtherIncomeRate);
+	switch (InResourceType)
+	{
+	case EResourceType::Ether:
+		{
+			SetEther(Ether + InResourceAmount);
+			break;
+		}
+	case EResourceType::Mineral:
+		{
+			SetMineral(Mineral + InResourceAmount);
+			break;
+		}
+	default:
+		{
+			SF_LOG(Warning, "Unknown Resource Type");
+			break;
+		}
+	}
 }
 
 bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const

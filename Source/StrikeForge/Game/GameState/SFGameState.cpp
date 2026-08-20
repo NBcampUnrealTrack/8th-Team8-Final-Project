@@ -3,6 +3,7 @@
 
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
+#include "Buildings/Building/Nexus/SFNexusBuilding.h"
 
 ASFGameState::ASFGameState()
 {
@@ -266,3 +267,73 @@ void ASFGameState::RefundCost(int32 InMineral, int32 InEther)
 	SetMineral(Mineral + FMath::Max(0, InMineral));
 	SetEther(Ether + FMath::Max(0, InEther));
 }
+
+// 26.08.18
+bool ASFGameState::RegisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
+{
+	if (TeamIndex == INDEX_NONE)
+	{
+		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: TeamIndex is invalid.");
+
+		return false;
+	}
+
+	if (!IsValid(Nexus))
+	{
+		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: Nexus is invalid.");
+
+		return false;
+	}
+
+	ASFNexusBuilding* ExistingNexus = GetNexus(TeamIndex);
+
+	if (IsValid(ExistingNexus) && ExistingNexus != Nexus)
+	{
+		SF_LOG(Warning, "[SFGameState] Existing Nexus will be replaced. Team: %d, Old: %s, New: %s", TeamIndex, *GetNameSafe(ExistingNexus), *GetNameSafe(Nexus));
+	}
+
+	NexusByTeam.Add(TeamIndex, Nexus);
+
+	SF_LOG(Log, "[SFGameState] Nexus registered. Team: %d, Nexus: %s", TeamIndex, *GetNameSafe(Nexus));
+
+	return true;
+}
+
+bool ASFGameState::UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
+{
+	ASFNexusBuilding* RegisteredNexus = GetNexus(TeamIndex);
+
+	if (!IsValid(RegisteredNexus))
+	{
+		return false;
+	}
+
+	// 같은 팀에 새 넥서스가 등록된 경우 잘못 제거하지 않도록 비교
+	if (RegisteredNexus != Nexus)
+	{
+		SF_LOG(Warning, "[SFGameState] UnregisterNexus rejected: Nexus does not match. Team: %d", TeamIndex);
+
+		return false;
+	}
+
+	NexusByTeam.Remove(TeamIndex);
+
+	SF_LOG(Log, "[SFGameState] Nexus unregistered. Team: %d", TeamIndex);
+
+	return true;
+}
+
+ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
+{
+	const TObjectPtr<ASFNexusBuilding>* FoundNexus = NexusByTeam.Find(TeamIndex);
+
+	if (FoundNexus == nullptr)
+	{
+		return nullptr;
+	}
+
+	ASFNexusBuilding* Nexus = FoundNexus->Get();
+
+	return IsValid(Nexus) ? Nexus : nullptr;
+}
+// 여기까지 추가분

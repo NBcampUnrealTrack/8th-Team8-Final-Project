@@ -25,13 +25,16 @@ AResourceBase::AResourceBase()
 
 int32 AResourceBase::Extract(int32 InDigAmount)
 {
-	if (InDigAmount <= 0) return 0;
+	if (InDigAmount <= 0 || ResourceDeposit <= 0) return 0; 
 	
 	const int32 ExtractedAmount = FMath::Min(InDigAmount, ResourceDeposit);
 	
 	ResourceDeposit -= ExtractedAmount;
-	SF_LOG(Warning, "%s :: Left Deposit: %d", *UEnum::GetValueAsString(ResourceType), ResourceDeposit);
-	
+	if (ResourceDeposit <= 0)
+	{
+		SF_LOG(Log, "%s :: 고갈", *UEnum::GetValueAsString(ResourceType));
+		OnDepleted.Broadcast(this);
+	}
 	return ExtractedAmount;
 }
 

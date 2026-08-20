@@ -1,6 +1,13 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
-#include "ResourceTypes.generated.h"
+#include "SFResourceTypes.generated.h"
+
+UENUM(BlueprintType)
+enum class EResourceType: uint8
+{
+	Mineral,
+	Ether
+};
 
 USTRUCT(BlueprintType)
 struct FResources

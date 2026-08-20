@@ -58,7 +58,7 @@ void ASFBaseBuilding::RefreshVisual()
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
-{	// HP있고 건설중, 건설완료상태이면 데이미 적용
+{	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		HealthComponent->ApplyDamage(InDamage);
@@ -84,7 +84,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 {
 	FHealthData Data;
 	Data.DisplayName = DisplayName;
-	Data.CurrentTier = CurrentTier + 1;
+	Data.CurrentTier = CurrentTier;
 	Data.HealthComponent = HealthComponent;
 	Data.ConstructCost = CurrentConstructBuildCost;
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
@@ -564,6 +564,8 @@ void ASFBaseBuilding::BeginPlay()
 	BindComponentDelegates();
 	// try take info at data table
 	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
+	
+	OnBuildingDefinitionLoaded(CachedDefinition);
 	// if load failed return
 	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode
@@ -892,16 +894,15 @@ bool ASFBaseBuilding::CanReceiveDamage() const
 
 void ASFBaseBuilding::SetBoxExtent()
 {
-	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
-	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
-	NewBoxExtent.X = MeshBoundary.BoxExtent.X * 0.8;
-	NewBoxExtent.Y = MeshBoundary.BoxExtent.Y * 0.8;
-	NewBoxExtent.Z = MeshBoundary.BoxExtent.Z * 0.8;
-	BoxComponent->SetBoxExtent(NewBoxExtent);
+	FBoxSphereBounds BoundsInParent =	StaticMeshComponent->CalcBounds(
+			StaticMeshComponent->GetRelativeTransform());
 	
-	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
-	RelativeLocation.Z = NewBoxExtent.Z; 
-	BoxComponent->SetRelativeLocation(RelativeLocation);
+	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
+	BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
+	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
+	// FVector Extent = BoundsInParent.BoxExtent;
+	// Extent.X *= 0.8f;
+	// Extent.Y *= 0.8f;
 }
 
 #pragma region Getter
@@ -991,7 +992,7 @@ bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
 	if (!IsValid(GridSubsystem)) return false;
 	
 	// TMap에 등록시도
-	if (!GridSubsystem->TryRegistBuildingGrid(this, GridInfo))
+	if (!GridSubsystem->TryRegisterBuildingGrid(this, GridInfo))
 	{
 		return false;
 	}

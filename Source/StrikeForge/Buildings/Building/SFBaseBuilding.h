@@ -126,6 +126,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
+	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) {}
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) {}
 	// PRODUCT STOP

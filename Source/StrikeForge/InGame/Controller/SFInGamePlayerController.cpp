@@ -102,7 +102,7 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 {
-    PlacementComponent->CancelPlacementMode();
+    PlacementComponent->EndPlacementSession();
     
     if (IsValid(SpawnedBuildingRef))
     {

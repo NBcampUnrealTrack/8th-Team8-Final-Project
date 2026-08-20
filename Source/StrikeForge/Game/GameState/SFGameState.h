@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
-#include "Datas/Resource/ResourceTypes.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFGameState.generated.h"
 
 // 상태 정의 = 진행 상황
@@ -139,9 +139,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
     void AddMaxPopulation(int32 NewMaximumPopulation);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void AddMineralIncomeRate(float NewMineralIncomeRate);
+    void AddResourceIncomeRate(EResourceType InResourceType, float InIncomeRate);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void AddEtherIncomeRate(float NewEtherIncomeRate);
+    void AddResource(EResourceType InResourceType, int32 InResourceAmount);
+    
     
     /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다. */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Resource")

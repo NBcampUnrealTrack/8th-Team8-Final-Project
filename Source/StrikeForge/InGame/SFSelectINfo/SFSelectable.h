@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "SFSelectableInfo.h"
-#include "Datas/Resource/ResourceTypes.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectable.generated.h"
 
 class UHealthComponent;

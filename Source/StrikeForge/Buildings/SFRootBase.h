@@ -26,9 +26,9 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Information", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	FName RowName;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	int32 TeamIndex; // << 죽은 코드: combatcomponent가 teamindex 로직을 수행한다
-						// 하지만 불수불가결하게 gamemode가 teamindex를 주는방향으로 개선되어야할것
+						// 하지만 필수불가결하게 gamemode가 teamindex를 주는방향으로 개선되어야할것
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component", meta=(AllowPrivateAccess=true))
 	TObjectPtr<USceneComponent> SceneComponent;

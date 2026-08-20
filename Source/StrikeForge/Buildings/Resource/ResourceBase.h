@@ -3,21 +3,55 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Buildings/SFRootBase.h"
+#include "Datas/Resource/SFResourceTypes.h"
+#include "Game/Subsystem/BuildingGridInfo.h"
 #include "GameFramework/Actor.h"
+#include "Interface/Minable.h"
 #include "ResourceBase.generated.h"
 
-UCLASS()
+class UBoxComponent;
+
+UCLASS(Abstract)
 class STRIKEFORGE_API AResourceBase 
-	: public ASFRootBase
+	: public AActor
+	, public IMinable
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this actor's properties
 	AResourceBase();
-
+	virtual int32 Extract(int32 InDigAmount) override;
 	
+	// Getter
+	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
+	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
+	FORCEINLINE int32 GetResourceTier() const { return ResourceTier; }
+	
+	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
+	
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> SceneComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> StaticMeshComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoxComponent> BoxComponent;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
+	EResourceType ResourceType = EResourceType::Mineral;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
+	int32 ResourceDeposit = 0;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	int32 ResourceTier = 1;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource|Grid")
+	FIntPoint ResourceGridSize = FIntPoint(2, 2);
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Grid")
+	FBuildingGridInfo RegisteredResourceGridInfo;
+	bool bResourceGridRegistered  = false;
 private:
-	
 };

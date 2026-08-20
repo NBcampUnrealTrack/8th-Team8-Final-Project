@@ -8,6 +8,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Buildings/UI/BuildingHealthBar.h"
+#include "Components/BoxComponent.h"
+#include "Components/TimelineComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -15,9 +20,23 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	PrimaryActorTick.bCanEverTick = false;
 
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
+	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 	//CombatTargetComponent->SetTargetingEnabled(false);
+	
+	WidgetComponent->SetupAttachment(GetRootComponent());
+	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
+	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+
+	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WidgetComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WidgetComponent->SetGenerateOverlapEvents(false);
+	WidgetComponent->SetWindowFocusable(false);
+	WidgetComponent->SetDrawAtDesiredSize(false);
+	WidgetComponent->SetVisibility(false);
+	
+	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -39,10 +58,11 @@ void ASFBaseBuilding::RefreshVisual()
 }
 
 void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
-{
-	if (IsValid(HealthComponent))
+{	// HP있고 건설중, 건설완료상태이면 데이미 적용
+	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		HealthComponent->ApplyDamage(InDamage);
+		PlayHitReaction(FVector::ForwardVector);
 	}
 }
 
@@ -64,23 +84,93 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 {
 	FHealthData Data;
 	Data.DisplayName = DisplayName;
-	Data.CurrentTier = CurrentTier;
+	Data.CurrentTier = CurrentTier + 1;
 	Data.HealthComponent = HealthComponent;
+	Data.ConstructCost = CurrentConstructBuildCost;
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
 	return Data;
 }
-// called by 죽기전까지
-void ASFBaseBuilding::HandleHealthChanged(float, float, float)
+// Damagable 인터페이스 -> CanbeDamaged조건(underconstruct, completed : pass) ->
+// HealthComp이동 데미지적용 -> broadcast -> 이함수 실행 -> 이 함수는 체력별 비율을 인덱스로변환하고 인덱스를 메쉬적용함수에 전달한다
+// called by 죽기전까지 - 체력은 바뀔때마다 UI에 갱신해줘야함 > 바뀔때마다 broadcast필요
+void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0일때도 호출된다
+(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
 	if (CurrentBuildingState == EBuildingState::Completed)
 	{
-		RefreshVisual();
+		if (InCurrentHP <= 0.f)
+		{
+			return; // 최종 파괴는 HandleHealthZero가 담당	
+					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
+		}
+		
+		const FBuildingTier* Tier = GetCurrentTier();
+		if (!Tier)
+		{
+			SF_LOG(Error, "ASFBaseBuilding::HandleHealthChanged: Tier is INVALID");
+			return;
+		}
+		
+		const float BeforeRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InBeforeHP, InMaxHP), 0.f, 1.f);
+		const float AfterRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.f, 1.f);
+		// 비율을 집어넣으면 인덱스를 반환함
+		const int32 PreviousStage =	Tier->Visual.FindDamageStageIndex(BeforeRatio);
+		const int32 CurrentStage =	Tier->Visual.FindDamageStageIndex(AfterRatio);
+		// 똑같은 인덱스면 FX를 플레이 하지않는다
+		// 다만 이구조로 갈때 회복시 FX가 플레이되어비린다 나중에 회복이 도입되면 수정이 필요한 지점
+		if (PreviousStage == CurrentStage) return;
+		
+		ChangeDamageStage(CurrentStage);
 	}
 }
-// called by 죽을때
+
+void ASFBaseBuilding::ChangeDamageStage(int32 InDamageStageIndex)
+{
+	// HealthComponent의 현재 체력 비율을 기준으로 손상 메시 적용
+	RefreshVisual();
+	// TODO:: 손상 Effect 적용
+	
+	if (InDamageStageIndex == INDEX_NONE) return; // 풀피-나중에회복관련로직이생긴다면
+	
+	SF_LOG(Warning, "[%s] Damage stage entered: %d",*GetName(),InDamageStageIndex);
+}
+
+// 체력이 0일시 broadcast되는 델리게이트와 연결됨
 void ASFBaseBuilding::HandleHealthZero()
 {
+	// Set -> Apply -> EnterDestroyed
 	SetBuildingState(EBuildingState::Destroyed);
+}
+
+void ASFBaseBuilding::HandleConstructionProgress(float PreviousRatio, float CurrentRatio)
+{
+	// underconstruct일때만 진행도에 따른 메쉬 적용
+	if (CurrentBuildingState == EBuildingState::UnderConstruction)
+	{
+		const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+		if (!PendingTierData) return;
+
+		// 건설 메시 변경
+		const int32 NewStageIndex =	PendingTierData->Visual.FindConstructionStageIndex(CurrentRatio);
+
+		if (NewStageIndex != INDEX_NONE &&
+			NewStageIndex != CurrentStageIndex && // 메쉬 인덱스 다름
+			PendingTierAssets.ConstructionMeshes.IsValidIndex(NewStageIndex))
+		{
+			CurrentStageIndex = NewStageIndex;
+			RefreshVisual();
+			SetBoxExtent();
+		}
+
+		// 이번 진행에서 증가한 비율
+		const float DeltaRatio = FMath::Clamp(CurrentRatio - PreviousRatio, 0.f, 1.f);
+		if (DeltaRatio <= 0.f)	return;
+
+		// 최초 건설과 업그레이드가 동일한 로직 사용
+		const float HealthIncrease = ConstructionCurrentHealthIncrease * DeltaRatio;
+
+		HealthComponent->IncreaseCurrentHealth(HealthIncrease);
+	}
 }
 
 void ASFBaseBuilding::ApplySpawnMode()
@@ -89,8 +179,35 @@ void ASFBaseBuilding::ApplySpawnMode()
 	{
 		// build completed
 	case ESFBuildingSpawnMode::ViewPortPlacedMode:
-		FinalizeTierActivation(); // called when building completed.
-		break;
+		{
+			// 현재티어
+			const FBuildingTier* InitialTier = CachedDefinition.FindTier(PendingTier);
+			if (!InitialTier) return;
+			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
+			
+			if (!TryRegistInitialGrid())
+			{
+				ensureAlwaysMsgf(
+					false,
+					TEXT("%s failed to register its initial grid. Be Destroyed"),
+					*GetName());
+				Destroy();
+				return;
+			}
+			
+			if (!FinalizeTierActivation())
+			{
+				SF_LOG(
+					Error,
+					"[%s] 초기 티어 활성화 실패",
+					*GetName());
+				
+				Destroy();
+				return;
+			}
+
+			break;
+		}
 		// wait player build
 	case ESFBuildingSpawnMode::PlayerPlacedMode:
 		SetBuildingState(EBuildingState::Preview);
@@ -121,6 +238,8 @@ void ASFBaseBuilding::EnterPreviewState()
 {
 	//CombatTargetComponent->SetTargetingEnabled(false);
 	RefreshVisual();
+	
+	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
 	ApplyPreviewMaterial(true);
 }
 
@@ -131,25 +250,33 @@ void ASFBaseBuilding::BeginConstruction()
 		UE_LOG(LogTemp, Error, TEXT("[%s] 준비된 건설 티어가 없습니다."), *GetName());
 		return;
 	}
+	
+	const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+	if (!PendingTierData) return;
+	// 최초 건설은 1/1에서 시작
+	const bool bIsUpgrade =	ActiveTierAssets.TierIndex != INDEX_NONE;
+	const float TargetMaxHealth = FMath::Max(1.f, PendingTierData->Stats.MaxHealth);
+	// 최초 건설은 1/TargetMaxHealth에서 시작한다.
+	// 업그레이드는 기존 최대체력과 현재체력을 보존해서 시작한다.
+	const float StartMaxHealth = bIsUpgrade	?
+				HealthComponent->GetMaxHealth()	: 1.f;
 
-	// Active가 없으면 최초 건설이다.
-	// 업그레이드 중에는 기존 체력을 유지해야 하므로 초기화하지 않는다.
-	if (ActiveTierAssets.TierIndex == INDEX_NONE)
-	{
-		const FBuildingTier* const InitialTier = CachedDefinition.FindTier(PendingTier);
+	const float StartCurrentHealth = bIsUpgrade	?
+				HealthComponent->GetCurrentHealth()	: 1.f;
+	// 건설 진행 중 현재체력에 더할 전체 수치
+	ConstructionCurrentHealthIncrease = FMath::Max(0.f,TargetMaxHealth - StartMaxHealth);
 
-		if (!InitialTier || !IsValid(HealthComponent))
-		{
-			return;
-		}
-
-		HealthComponent->InitHealth(InitialTier->Stats.MaxHealth);
-	}
+	// 최대체력은 건설 시작 즉시 새 티어 값 적용
+	// 현재체력은 아직 증가시키지 않는다.
+	HealthComponent->InitializeHealth(TargetMaxHealth,	StartCurrentHealth);
 
 	CurrentStageIndex = 0;
 	StaticMeshComponent->SetMaterial(0, nullptr);
+	// mesh
 	RefreshVisual();
-
+	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
+	SetBoxExtent();
+	//
 	if (IsValid(PendingTierAssets.ConstructionStartSound))
 	{
 		UGameplayStatics::PlaySoundAtLocation(
@@ -157,7 +284,13 @@ void ASFBaseBuilding::BeginConstruction()
 			PendingTierAssets.ConstructionStartSound,
 			GetActorLocation());
 	}
-
+	// 초기값이면 초기건설 = 업글x, 그외 = 전부 업글판정
+	// 이경우일때 만약 건물을 3티어부터 생산할수있게되면 오류가 날 수 있음
+	// 업그레이드때문에 건설로직에 들어온다면
+	if (bIsUpgrade)
+	{	// 생산컴포넌트 pause 로직
+		OnUpgradeStarted();
+	}
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	ProgressComponent->StartProgress();
 }
@@ -167,10 +300,13 @@ void ASFBaseBuilding::EnterCompletedState()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
+	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
+	SetBoxExtent();
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
 {
+	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
 
 	if (IsValid(ProgressComponent))
@@ -180,22 +316,14 @@ void ASFBaseBuilding::EnterDestroyedState()
 	// Deactivate Ability
 	DeactivateActiveTier();
 	
-	ApplyDestroyedCollision();
 	// mesh
 	RefreshVisual();
+	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
+	SetBoxExtent();
 	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
 	PlayDestroyEffect();
 	// sound effect
 	OnBuildingDestroyed();
-}
-
-void ASFBaseBuilding::ApplyDestroyedCollision()
-{
-	if (!IsValid(StaticMeshComponent)) return;
-
-	StaticMeshComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	StaticMeshComponent->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	StaticMeshComponent->SetCanEverAffectNavigation(false);
 }
 
 void ASFBaseBuilding::ApplyPreviewMaterial(bool bCanPlace)
@@ -302,14 +430,14 @@ const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
 
 void ASFBaseBuilding::BindComponentDelegates()
 {
-	if (!ProgressComponent->OnChangedRatio.IsAlreadyBound(this, &ThisClass::ChangeMeshByRatio))
+	if (!ProgressComponent->OnChangedProgressRatio.IsAlreadyBound(this, &ThisClass::HandleConstructionProgress))
 	{
-		ProgressComponent->OnChangedRatio.AddDynamic(this, &ThisClass::ChangeMeshByRatio);
+		ProgressComponent->OnChangedProgressRatio.AddDynamic(this, &ThisClass::HandleConstructionProgress);
 	}
 
-	if (!ProgressComponent->OnCompletedBuilding.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
+	if (!ProgressComponent->OnCompletedProgress.IsAlreadyBound(this, &ThisClass::HandleCompleteConstruction))
 	{
-		ProgressComponent->OnCompletedBuilding.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
+		ProgressComponent->OnCompletedProgress.AddDynamic(this, &ThisClass::HandleCompleteConstruction);
 	}
 
 	if (!HealthComponent->OnHealthValueChanged.IsAlreadyBound(this, &ThisClass::HandleHealthChanged))
@@ -321,29 +449,25 @@ void ASFBaseBuilding::BindComponentDelegates()
 	{
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
+	
+	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
+	if (!IsValid(HealthComp)) return;
+	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
+	HealthComp->SetHealthBar(HealthComponent->GetCurrentHealth(),
+	HealthComponent->GetCurrentHealth(),HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
 {
-	ProgressComponent->OnChangedRatio.RemoveDynamic(this, &ThisClass::ChangeMeshByRatio);
-	ProgressComponent->OnCompletedBuilding.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
+	ProgressComponent->OnChangedProgressRatio.RemoveDynamic(this, &ThisClass::HandleConstructionProgress);
+	ProgressComponent->OnCompletedProgress.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
+	
+	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
+	if (!IsValid(HealthComp)) return;
+	HealthComponent->OnHealthValueChanged.RemoveDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
 }
-
-void ASFBaseBuilding::ChangeMeshByRatio(int32 InCurrentRatioIndex)
-{
-	if (!PendingTierAssets.ConstructionMeshes.IsValidIndex(
-				InCurrentRatioIndex))
-	{
-		return;
-	}
-
-	CurrentStageIndex = InCurrentRatioIndex;
-	RefreshVisual();
-}
-
-
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
@@ -433,24 +557,65 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
-
-
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition()) return; // destroy actor?
+	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
 	// if load failed return
-	if (!PrepareTier(CurrentTier)) return; // destroy actor?
+	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
+	
+	// cached staticmesh location, before hit react
+	OriginalMeshLocation = StaticMeshComponent->GetRelativeLocation();
+	OriginalMeshRotation = StaticMeshComponent->GetRelativeRotation();
+
+	if (IsValid(HitReactionCurve))
+	{
+		// 타임라인전용 line-float 델리게이트 만들고 함수와 연결
+		FOnTimelineFloat UpdateDelegate;
+		UpdateDelegate.BindUFunction(
+			this,
+			FName(TEXT("UpdateHitReaction"))
+		);
+		
+		// InterpFloat을 쓸려고 Add
+		HitReactionTimeline->AddInterpFloat(
+			HitReactionCurve, // CurveFloat
+			UpdateDelegate	// CurveFloat라인과 델리게이트 연결
+		);
+		
+		// 타임라인전용 이벤트델리게이트 만들고 함수와 연결
+		FOnTimelineEvent FinishedDelegate;
+		FinishedDelegate.BindUFunction(
+			this,
+			FName(TEXT("FinishHitReaction"))
+		);
+		
+		// end delegate
+		HitReactionTimeline->SetTimelineFinishedFunc(FinishedDelegate);
+
+		HitReactionTimeline->SetLooping(false); // 반복안함
+		HitReactionTimeline->SetTimelineLengthMode(ETimelineLengthMode::TL_LastKeyFrame); 
+			//	TL_TimelineLength :: 시간을 다 소비하고 끝냄
+			//	TL_LastKeyFrame	  :: Key를 다 지나면 끝냄
+	}
 }
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	DeactivateActiveTier();
+	if (bGridRegistered)
+	{
+		if (USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			Grid->UnregisterBuildingGrid(this, RegisteredGridInfo);
+			bGridRegistered = false;
+		}
+	}
+	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
 }
@@ -480,20 +645,20 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	{   
 		Tier.Visual.ConstructionStages.Sort(
 			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{
+			{	// 오름차순정리 진행도가 "증가"함에 따라 메쉬가 적용
 				return Left.Threshold < Right.Threshold;
 			});
 
 		Tier.Visual.DamageStages.Sort(
 			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{
-				return Left.Threshold < Right.Threshold;
+			{	// 내림차순정리 Health가 "감소"함에 따라 메쉬가 적용
+				return Left.Threshold > Right.Threshold;
 			});
 	}
 	
 	// CACHED once in allgameplay = never changed in runtime
 	DisplayName = CachedDefinition.DisplayName;
-	CachedGridSize = CachedDefinition.GridSize;
+	ConfiguredGridSize = CachedDefinition.GridSize;
 	// CACHED once
 	DestroyedSound = Definition->DestroyedSound.LoadSynchronous();
 	DestroyedEffect = Definition->DestroyedEffect.LoadSynchronous();
@@ -541,6 +706,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 			TierIndex);
 		return false;
 	}
+	
 	// DEFINE lamda function CACHED Meshes
 	auto LoadStageMeshes = [this, TierIndex](
 		const TArray<FBuildingStage>& Stages,
@@ -565,21 +731,14 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 
 		return bAllLoaded;
 	};
-
-	// CACHED ratio(construct)
-	TArray<float> ConstructionThresholds;
-	ConstructionThresholds.Reserve(Visual.ConstructionStages.Num());
-	for (const FBuildingStage& Stage : Visual.ConstructionStages)
-	{
-		ConstructionThresholds.Add(Stage.Threshold);
-	}
 	
-	// CACHED construct_meshes using lamda function
+	// CACHED construct_meshes using lamda function(LoadStageMeshes)
 	const bool bConstructionMeshesLoaded = LoadStageMeshes(
 		Visual.ConstructionStages,
 		NewAssets.ConstructionMeshes,
 		TEXT("ConstructionStage"));
-	// CACHED damaged_meshes using lamda function
+	
+	// CACHED damaged_meshes using lamda function(LoadStageMeshes)
 	const bool bDamageMeshesLoaded = LoadStageMeshes(
 		Visual.DamageStages,
 		NewAssets.DamageMeshes,
@@ -607,8 +766,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	ProgressComponent->SetQuarterOfRatios(ConstructionThresholds);
-	ProgressComponent->SetDuration(Tier->Construction.Duration);
+	ProgressComponent->InitProgressWorks(Tier->Construction.RequiredWork, 1.f);
 
 	CurrentStageIndex = 0;
 
@@ -647,8 +805,6 @@ bool ASFBaseBuilding::CommitPreparedTier()
 	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
 	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
 
-	HealthComponent->InitHealth(Tier->Stats.MaxHealth);
-
 	return true;
 }
 
@@ -660,10 +816,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	}
 
 	const FBuildingTier* ActivatedTier = GetCurrentTier();
-	if (!ActivatedTier)
-	{
-		return false;
-	}
+	if (!ActivatedTier) return false;
 
 	SetBuildingState(EBuildingState::Completed);
 	ActivatedGameplayTier = CurrentTier;
@@ -671,16 +824,12 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 
 	return true;
 }
-
+// enterdestorystate call this function
 void ASFBaseBuilding::DeactivateActiveTier()
-{
-	if (ActivatedGameplayTier == INDEX_NONE)
-	{
-		return;
-	}
-
+{	// 초기건설에는 능력치를 비활성화하지않습니다
+	if (ActivatedGameplayTier == INDEX_NONE) return;
+	// 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
 	const int32 TierToDeactivate = ActivatedGameplayTier;
-
 	// 가상 함수 안에서 Destroy 등이 다시 발생해도
 	// 두 번 회수되지 않도록 먼저 초기화한다.
 	ActivatedGameplayTier = INDEX_NONE;
@@ -695,7 +844,7 @@ void ASFBaseBuilding::DeactivateActiveTier()
 		);
 		return;
 	}
-
+	// 간단하게 현재 티어의 능력치를 반환함
 	OnTierDeactivated(*DeactivatedTier);
 }
 #pragma region Sound
@@ -734,6 +883,27 @@ void ASFBaseBuilding::PlayDestroyEffect()
 }
 #pragma endregion
 
+
+bool ASFBaseBuilding::CanReceiveDamage() const
+{	// 건설중, 건설완료 상태일때만 true -> TakeDamaged 인터페이스에서 조건으로 활용
+	return CurrentBuildingState == EBuildingState::UnderConstruction ||
+	   CurrentBuildingState == EBuildingState::Completed;
+}
+
+void ASFBaseBuilding::SetBoxExtent()
+{
+	const FBoxSphereBounds& MeshBoundary = StaticMeshComponent->GetStaticMesh()->GetExtendedBounds();
+	auto NewBoxExtent = BoxComponent->GetScaledBoxExtent();
+	NewBoxExtent.X = MeshBoundary.BoxExtent.X * 0.8;
+	NewBoxExtent.Y = MeshBoundary.BoxExtent.Y * 0.8;
+	NewBoxExtent.Z = MeshBoundary.BoxExtent.Z * 0.8;
+	BoxComponent->SetBoxExtent(NewBoxExtent);
+	
+	FVector RelativeLocation = BoxComponent->GetRelativeLocation();
+	RelativeLocation.Z = NewBoxExtent.Z; 
+	BoxComponent->SetRelativeLocation(RelativeLocation);
+}
+
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
@@ -743,3 +913,103 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 
 
 #pragma endregion Getter
+
+#pragma region Widget
+void ASFBaseBuilding::NotifyActorBeginCursorOver()
+{
+	Super::NotifyActorBeginCursorOver();
+	if (CurrentBuildingState == EBuildingState::Preview) return;
+	WidgetComponent->SetVisibility(true);
+	SF_LOG(Warning, "NotifyActorBeginOverlap");
+}
+
+void ASFBaseBuilding::NotifyActorEndCursorOver()
+{
+	WidgetComponent->SetVisibility(false);
+	Super::NotifyActorEndCursorOver();
+}
+#pragma endregion 
+
+#pragma region HitReact
+void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
+{
+	const FVector Offset =
+		HitLocalDirection *
+		HitMoveDistance *
+		CurveValue;
+
+	const FRotator RotationOffset(
+		HitRotationAmount * CurveValue,
+		0.0f,
+		-HitRotationAmount * CurveValue
+	);
+
+	StaticMeshComponent->SetRelativeLocation(
+		OriginalMeshLocation + Offset
+	);
+
+	StaticMeshComponent->SetRelativeRotation(
+		OriginalMeshRotation + RotationOffset
+	);
+}
+
+void ASFBaseBuilding::FinishHitReaction()
+{
+	// Root로 원상복귀
+	StaticMeshComponent->SetRelativeLocation(OriginalMeshLocation);
+	StaticMeshComponent->SetRelativeRotation(OriginalMeshRotation);
+}
+
+
+void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
+{
+	if (!IsValid(HitReactionTimeline) ||
+		!IsValid(HitReactionCurve))
+	{
+		return;
+	}
+	// 때린 방향 캐싱 - 타임라인은 인자가없다
+	HitLocalDirection = LocalDirection.GetSafeNormal();
+	// 타임라인은 인자가 없다
+	HitReactionTimeline->PlayFromStart();
+}
+#pragma endregion 
+
+#pragma region GridSystem
+void ASFBaseBuilding::SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo)
+{
+	//RegisteredGridInfo.OriginCell = InGridInfo.OriginCell;
+	RegisteredGridInfo = InGridInfo;
+	bGridRegistered = true;
+}
+
+bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
+{
+	if (bGridRegistered || !GridInfo.IsValid()) return false;
+
+	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(GridSubsystem)) return false;
+	
+	// TMap에 등록시도
+	if (!GridSubsystem->TryRegistBuildingGrid(this, GridInfo))
+	{
+		return false;
+	}
+	// 등록성공하면 건물이 정보를 저장
+	SetRegisteredGridInfo(GridInfo);
+	return true;
+}
+
+bool ASFBaseBuilding::TryRegistInitialGrid()
+{
+	USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(Grid)) return false;
+	FBuildingGridInfo GridInfo = Grid->WorldCenterToGridInfo(GetActorLocation(), ConfiguredGridSize);
+	if (!TryRegisterGrid(GridInfo))
+	{
+		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
+		return false;
+	}
+	return true;
+}
+#pragma endregion 

@@ -9,18 +9,6 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductRatioChanged, float, OutProductRatio);
 
-// USTRUCT(BlueprintType)
-// struct FRecordTimeInfo
-// {
-// 	GENERATED_BODY()
-// 	float StartTime;
-// 	float CurrentTime;
-// 	float Duration;
-// 	float Ratio;
-// };
-
-
-
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
 {
@@ -32,13 +20,14 @@ public:
 	
 	void AddProductInLine(FName InProductName);
 	void RemoveProductInLine(int32 InProductLineIndex);
-	
+	void PauseProductLine();
+	void ResumeProductLine();
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
-	bool IsProducing() const { return !ProductLine.IsEmpty(); }
+	bool bIsHasProducts() const { return !ProductLine.IsEmpty(); }
 
 	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
+	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
@@ -48,12 +37,13 @@ public:
 	// current product value
 	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void StartProductLine();
 	void CompletedProduct(const FName& InCompletedName);
-	void StopProductLine();
+	void ResetProductProgress();
+	
+	void ProcessProductionToNow();
 	void TickProduction();
 private:
 	TArray<FProductInfo> ProductLine;
@@ -63,13 +53,14 @@ private:
 
 	/** 진행률 재계산 주기(초) */
 	UPROPERTY(EditDefaultsOnly, Category = "Product", meta = (AllowPrivateAccess = true))
-	float TickInterval = 1.f;
+	float TickInterval = 0.1f;
 	
 	FTimerHandle CurrentTimerHandle;
 	float LastAdvanceTime = 0.f;
 	
 	int32 MaxLineCount = 5;
 	
+	bool bProductionPaused = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

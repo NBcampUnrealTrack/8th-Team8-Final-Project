@@ -24,6 +24,8 @@ struct FHealthData
     UPROPERTY()
     int32 CurrentTier;
     UPROPERTY()
+    FResources ConstructCost;
+    UPROPERTY()
     FResources UpgradeCost;
     UPROPERTY()
     TWeakObjectPtr<UHealthComponent> HealthComponent;

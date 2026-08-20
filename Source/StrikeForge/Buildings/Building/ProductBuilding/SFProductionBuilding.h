@@ -20,13 +20,14 @@ class STRIKEFORGE_API ASFProductionBuilding
 	GENERATED_BODY()
 
 public:
-	ASFProductionBuilding();
+	ASFProductionBuilding(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(BlueprintAssignable, Category = "Production")
 	FProductUnitArrayChanged OnSpawnableUnitsChanged;
 
 protected:
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
+	virtual void OnUpgradeStarted() override;
 	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) override;
 	virtual void OnBuildingDestroyed() override;
 

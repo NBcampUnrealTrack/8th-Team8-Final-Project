@@ -24,6 +24,8 @@ struct FHealthData
     UPROPERTY()
     int32 CurrentTier;
     UPROPERTY()
+    FResources ConstructCost;
+    UPROPERTY()
     FResources UpgradeCost;
     UPROPERTY()
     TWeakObjectPtr<UHealthComponent> HealthComponent;
@@ -38,8 +40,7 @@ public:
     UFUNCTION(
         BlueprintNativeEvent,
         BlueprintCallable,
-        Category = "SF|Selection"
-    )
+        Category = "SF|Selection")
     FSFSelectableInfo GetSelectableInfo();
     
     UFUNCTION(
@@ -47,4 +48,10 @@ public:
     BlueprintCallable,
     Category = "SF|Selection")
     const FHealthData GetHealthData();
+
+    UFUNCTION(
+        BlueprintNativeEvent,
+        BlueprintCallable,
+        Category = "SF|Selection|Building")
+    void RequestTierUpgrade();
 };

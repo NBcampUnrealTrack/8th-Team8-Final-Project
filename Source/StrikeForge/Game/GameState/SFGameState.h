@@ -66,6 +66,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
     NewMaximumPopulation
 );
 
+class ASFNexusBuilding;
+
 UCLASS()
 class STRIKEFORGE_API ASFGameState : public AGameStateBase
 {
@@ -130,10 +132,16 @@ public:
     void SetEtherIncomeRate(float NewEtherIncomeRate);
 
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void SetPopulation(
-        int32 NewCurrentPopulation,
-        int32 NewMaximumPopulation
-    );
+    void SetPopulation(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
+    
+    UFUNCTION(BlueprintCallable, Category = "SF|Population")
+    void AddCurrentPopulation(int32 NewCurrentPopulation);
+    UFUNCTION(BlueprintCallable, Category = "SF|Population")
+    void AddMaxPopulation(int32 NewMaximumPopulation);
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void AddMineralIncomeRate(float NewMineralIncomeRate);
+    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
+    void AddEtherIncomeRate(float NewEtherIncomeRate);
     
     /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다. */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Resource")
@@ -146,6 +154,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
     void RefundCost(int32 InMineral, int32 InEther); 
     // 여기까지
+
+    // 26.08.18
+    // Nexus
+    // 팀별 넥서스 포인터 등록
+    UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
+    bool RegisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus);
+
+    // 등록된 넥서스 포인터 제거
+    UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
+    bool UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus);
+
+    // 팀 번호를 이용해 넥서스 조회
+    UFUNCTION(BlueprintPure, Category = "SF|Nexus")
+    ASFNexusBuilding* GetNexus(int32 TeamIndex) const;
 
 public:
 
@@ -196,5 +218,10 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Population", meta = (AllowPrivateAccess = "true"))
     int32 MaximumPopulation = 0;
+
+    // 26.08.18
+    // TeamIndex를 기준으로 각 팀의 넥서스를 저장
+    UPROPERTY()
+    TMap<int32, TObjectPtr<ASFNexusBuilding>> NexusByTeam;
 	
 };

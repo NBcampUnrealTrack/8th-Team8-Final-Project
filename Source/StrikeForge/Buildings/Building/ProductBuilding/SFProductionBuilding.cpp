@@ -1,7 +1,8 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
 
-ASFProductionBuilding::ASFProductionBuilding()
+ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
+	:Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -14,19 +15,25 @@ void ASFProductionBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 
 	StoredSpawnableUnitDatas = ActivatedTier.SpawnableUnits;
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+	ProductComponent->ResumeProductLine();
+}
+
+void ASFProductionBuilding::OnUpgradeStarted()
+{
+	Super::OnUpgradeStarted();
+	ProductComponent->PauseProductLine();
 }
 
 void ASFProductionBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
 {
 	Super::OnTierDeactivated(DeactivatedTier);
-	// clear productline
-	ProductComponent->AllClearProductLine();
+	
 }
 
 void ASFProductionBuilding::OnBuildingDestroyed()
 { // deactivated -> destroy
 	Super::OnBuildingDestroyed();
-	
+	ProductComponent->AllClearProductLine();
 }
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {

@@ -3,6 +3,7 @@
 
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 
 ASFGameState::ASFGameState()
 {
@@ -206,6 +207,44 @@ void ASFGameState::SetPopulation(
 		CurrentPopulation,
 		MaximumPopulation
 	);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddCurrentPopulation(int32 NewCurrentPopulation)
+{	// 현재인구 증가
+	//const int32 IncreasePopValue = FMath::Max(0, NewCurrentPopulation);
+	//if (IncreasePopValue <= 0) return;
+	CurrentPopulation += NewCurrentPopulation;
+	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddMaxPopulation(int32 NewMaximumPopulation)
+{	// 최대인구 증가
+	//const int32 IncreasePopValue = FMath::Max(0, NewMaximumPopulation);
+	//if (IncreasePopValue <= 0) return;
+	MaximumPopulation += NewMaximumPopulation;
+	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
+	
+	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
+}
+
+void ASFGameState::AddMineralIncomeRate(float NewMineralIncomeRate)
+{
+	MineralIncomeRate += NewMineralIncomeRate;
+	OnMineralChanged.Broadcast(Mineral, MineralIncomeRate);
+	
+	SF_LOG(Warning, "Current MineralRate: %d / %f", Mineral, MineralIncomeRate);
+}
+
+void ASFGameState::AddEtherIncomeRate(float NewEtherIncomeRate)
+{
+	EtherIncomeRate += NewEtherIncomeRate;
+	OnEtherChanged.Broadcast(Ether, EtherIncomeRate);
+	
+	SF_LOG(Warning, "Current EtherRate: %d / %f", Ether, EtherIncomeRate);
 }
 
 bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const
@@ -228,3 +267,73 @@ void ASFGameState::RefundCost(int32 InMineral, int32 InEther)
 	SetMineral(Mineral + FMath::Max(0, InMineral));
 	SetEther(Ether + FMath::Max(0, InEther));
 }
+
+// 26.08.18
+bool ASFGameState::RegisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
+{
+	if (TeamIndex == INDEX_NONE)
+	{
+		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: TeamIndex is invalid.");
+
+		return false;
+	}
+
+	if (!IsValid(Nexus))
+	{
+		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: Nexus is invalid.");
+
+		return false;
+	}
+
+	ASFNexusBuilding* ExistingNexus = GetNexus(TeamIndex);
+
+	if (IsValid(ExistingNexus) && ExistingNexus != Nexus)
+	{
+		SF_LOG(Warning, "[SFGameState] Existing Nexus will be replaced. Team: %d, Old: %s, New: %s", TeamIndex, *GetNameSafe(ExistingNexus), *GetNameSafe(Nexus));
+	}
+
+	NexusByTeam.Add(TeamIndex, Nexus);
+
+	SF_LOG(Log, "[SFGameState] Nexus registered. Team: %d, Nexus: %s", TeamIndex, *GetNameSafe(Nexus));
+
+	return true;
+}
+
+bool ASFGameState::UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
+{
+	ASFNexusBuilding* RegisteredNexus = GetNexus(TeamIndex);
+
+	if (!IsValid(RegisteredNexus))
+	{
+		return false;
+	}
+
+	// 같은 팀에 새 넥서스가 등록된 경우 잘못 제거하지 않도록 비교
+	if (RegisteredNexus != Nexus)
+	{
+		SF_LOG(Warning, "[SFGameState] UnregisterNexus rejected: Nexus does not match. Team: %d", TeamIndex);
+
+		return false;
+	}
+
+	NexusByTeam.Remove(TeamIndex);
+
+	SF_LOG(Log, "[SFGameState] Nexus unregistered. Team: %d", TeamIndex);
+
+	return true;
+}
+
+ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
+{
+	const TObjectPtr<ASFNexusBuilding>* FoundNexus = NexusByTeam.Find(TeamIndex);
+
+	if (FoundNexus == nullptr)
+	{
+		return nullptr;
+	}
+
+	ASFNexusBuilding* Nexus = FoundNexus->Get();
+
+	return IsValid(Nexus) ? Nexus : nullptr;
+}
+// 여기까지 추가분

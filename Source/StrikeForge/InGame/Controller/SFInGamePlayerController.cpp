@@ -14,9 +14,8 @@
 #include "InGame/SFInGameHUDWidget.h"
 #include "Kismet/GameplayStatics.h"
 #include "Units/Commander/SFCommander.h"
-#include "NavigationSystem.h"
+//#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
-#include "Game/GameState/SFGameState.h"
 #include "SFRTSCameraPawn.h"
 #include "Logging/SFLog.h"
 
@@ -25,7 +24,7 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     bShowMouseCursor = true;
     bEnableClickEvents = true;
     bEnableMouseOverEvents = true;
-
+    
     DefaultMouseCursor = EMouseCursor::Default;
     
     PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
@@ -62,9 +61,7 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
     FRotator Rot(0.f, 90.f, 0.f);
-    FVector Scaled(1.f, 1.f, 1.f);
     Trans.SetRotation(Rot.Quaternion());
-    Trans.SetScale3D(Scaled);
     
     UClass* SpawnClass = Row->BuildingClass.LoadSynchronous();     // ★ADD
     if (!SpawnClass)
@@ -92,15 +89,21 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     // deferred spawn finished
     DeferredActor->FinishSpawning(Trans);
 
-    // gird init. preivew mode init.
-    //DeferredActor->SetBuildingState(EBuildingState::Preview);
-    PlacementComponent->StartPlacementMode(DeferredActor);
+    // gird init
+    // 배치가능여부 return
+    if (!PlacementComponent->StartPlacementMode(DeferredActor))
+    {   // 배치불가한데 배치하려하면 destroy
+        DeferredActor->Destroy();
+        return false;
+    }
     SpawnedBuildingRef = DeferredActor;
     return true;
 }
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 {
+    PlacementComponent->CancelPlacementMode();
+    
     if (IsValid(SpawnedBuildingRef))
     {
         SpawnedBuildingRef->Destroy();
@@ -110,13 +113,19 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
-    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
-    if (IsValid(PendingSpawnedBuildingRef))
+    if (!IsValid(PendingSpawnedBuildingRef)) return;
+
+    if (!PendingSpawnedBuildingRef->TryStartConstruction())
     {
-        PendingSpawnedBuildingRef->TryStartConstruction();
+        SF_LOG(
+            Error,
+            "[SFPC] 건설 시작 실패: %s",
+            *PendingSpawnedBuildingRef->GetName());
+
+        ClearPendingBuildingRef();
+        return;
     }
 
-    // 건물은 파괴하지 않는다. 건설이 진행되어야 하므로 참조만 놓는다.
     PendingSpawnedBuildingRef = nullptr;
 }
 
@@ -138,7 +147,6 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
     //     PendingConstructionBuilding->GetConstructCost().Ether);
     // }
 #pragma endregion 
-    // TODO: 그리드 점유 해제 (TryRegistBuildingGrid 를 연결한 뒤)
 
     PendingSpawnedBuildingRef->Destroy();
     PendingSpawnedBuildingRef = nullptr;
@@ -147,6 +155,12 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
 void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 {
     SelectedActor = InActor;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Command target changed: %s",
+        IsValid(InActor) ? *InActor->GetName() : TEXT("None")
+    );
 }
 
 void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
@@ -236,6 +250,15 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::
             HandleFocusCommanderInput
         );
+    }
+    if (IsValid(ToggleSettingsAction))
+    {
+        EnhancedInputComponent->BindAction(
+            ToggleSettingsAction, 
+            ETriggerEvent::Started, 
+            this, 
+            &ASFInGamePlayerController::
+            HandleToggleSettingsInput);
     }
     
 }
@@ -344,8 +367,7 @@ GetEnhancedInputSubsystem() const
     >(LocalPlayer);
 }
 
-void ASFInGamePlayerController::
-ConfigureMouseInput()
+void ASFInGamePlayerController::ConfigureMouseInput()
 {
     bShowMouseCursor = true;
     bEnableClickEvents = true;
@@ -364,8 +386,7 @@ ConfigureMouseInput()
     SetInputMode(InputMode);
 }
 
-void ASFInGamePlayerController::
-RegisterBaseMappingContext()
+void ASFInGamePlayerController::RegisterBaseMappingContext()
 {
     UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
         GetEnhancedInputSubsystem();
@@ -389,49 +410,73 @@ RegisterBaseMappingContext()
 void ASFInGamePlayerController::
 HandleSelectInput()
 {
-    // ★CHANGED: 선택만 담당한다. 이동 명령은 HandleMoveInput 으로 옮겼다.
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "SelectAction triggered."
+    );
+
     FHitResult Hit;
-    const ETraceTypeQuery TraceType = UEngineTypes::ConvertToTraceType(ECC_Visibility);
+
+    const ETraceTypeQuery TraceType =
+        UEngineTypes::ConvertToTraceType(
+            ECC_Visibility
+        );
 
     AActor* NewSelected = nullptr;
-    if (GetHitResultUnderCursorByChannel(TraceType, false, Hit))
+
+    if (
+        GetHitResultUnderCursorByChannel(
+            TraceType,
+            false,
+            Hit
+        )
+        )
     {
         AActor* HitActor = Hit.GetActor();
-        if (IsValid(HitActor) &&
-            HitActor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+
+        if (
+            IsValid(HitActor)
+            && HitActor->GetClass()->ImplementsInterface(
+                USFSelectable::StaticClass()
+            )
+            )
         {
             NewSelected = HitActor;
         }
     }
 
-    SetSelectedActor(NewSelected);   // 빈 곳을 클릭하면 선택 해제된다
+    SetSelectedActor(NewSelected);
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Broadcasting OnSelectInput."
+    );
+
     OnSelectInput.Broadcast();
 }
-
 void ASFInGamePlayerController::HandleMoveInput()
 {
     FHitResult Hit;
-    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
 
-    OnMoveInput.Broadcast(Hit.Location);
+    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+    {
+        return;
+    }
 
-    // ★ADD: 선택된 액터에게 이동 명령 (HandleSelectInput 에서 옮겨옴)
-    AActor* Target = SelectedActor.Get();
-    if (!IsValid(Target)) return;
-    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
-
-    IMovable::Execute_MoveToLocation(Target, Hit.Location);
+    IssueMoveCommand(Hit.Location);
 }
 
 void ASFInGamePlayerController::HandleConfirmBuildInput()
 {
-    OnConfirmBuildInput.Broadcast();
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
 
     if (!IsValid(SpawnedBuildingRef))
     {
         return;
     }
+    
 #pragma region CheckCost
     // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
     // if (!IsValid(SFGameState)) return;
@@ -442,8 +487,6 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     //     return;                                  // 배치 모드 유지 — 취소는 우클릭으로
     // }
 #pragma endregion 
-    PlacementComponent->ConfirmPlacementMode();
-
     ASFCommander* Commander = MyCommander.Get();
     if (!IsValid(Commander))
     {
@@ -452,70 +495,23 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
         SetSFControlMode(ESFControlMode::Gameplay);
         return;
     }
+    
+    if (!PlacementComponent->TryConfirmPlacementMode())
+    {
+        return;
+    }
 
-    // ★ADD: 이전 건설 명령이 남아 있으면 먼저 취소한다.
     ClearPendingBuildingRef();
-
-    // ★ADD: 고스트 → 대기 슬롯으로 소유권 이전.
-    //        SpawnedBuildingRef 를 비워야 다음 건물을 고를 수 있고,
-    //        빌드 패널을 닫아도 ClearSpawnedBuildingRef 에 파괴되지 않는다.
     PendingSpawnedBuildingRef = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
-    UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
-    if (ensure(NavSys && NavSys->GetDefaultNavDataInstance()))
-    {
-        bool bCanBuild = false;
-
-        const float DistTolerance = 0.1f;   // 실제 건설위치와 근접한 내비메시 간 건설위치 오차 허용범위
-        const FVector QueryExt(100.f, 100.0f, 1000.f);
-        FVector BuildInLoc = PendingSpawnedBuildingRef->GetActorLocation();
-        FNavLocation BuildCheckLoc;
-
-        do
-        {
-            // 1. 건설좌표가 NavMesh위에 투영이 가능한가?
-            if (!NavSys->ProjectPointToNavigation(BuildInLoc, BuildCheckLoc, QueryExt))
-            {
-                break;
-            }
-
-            // 2. Z축으로 라인트레이싱을 했을 때 유효한 값을 반환하는가?
-            FHitResult LandscapeTraceHit;
-            if (!GetWorld()->LineTraceSingleByChannel(LandscapeTraceHit, BuildInLoc + FVector::UpVector * 10.f, BuildInLoc - FVector::UpVector * 10.f, ECC_LANDSCAPE))
-            {
-                break;
-            }
-
-            // 3. 실제 건설좌표와 Z축 라인트레이싱 결과값이 오차범위 내인가?
-            if (FVector::DistXY(BuildInLoc, LandscapeTraceHit.Location) >= DistTolerance)
-            {
-                break;
-            }
-
-            // TODO : 다른 지형이나 폴리지와의 콜리전 검사를 로직 추가
-            //
-            
-            // 모든 검사를 통과하면 건설가능
-            bCanBuild = true;
-        } while (false);
-
-        if (bCanBuild)
-        {
-            // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
-            Commander->MoveToBuild(
-                PendingSpawnedBuildingRef->GetActorLocation(),
-                PendingSpawnedBuildingRef->GetBuildBounds(),
-                PendingSpawnedBuildingRef->GetActorRotation().Yaw);
-        }
-        else
-        {
-            // 추후 UI 메세지 출력으로 수정
-            GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("Build Error!!!"));
-            // delete building
-            ClearPendingBuildingRef();
-        }
-    }
+    OnConfirmBuildInput.Broadcast();
+    
+    // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
+    Commander->MoveToBuild(
+        PendingSpawnedBuildingRef->GetActorLocation(),
+        PendingSpawnedBuildingRef->GetBuildBounds(),
+        PendingSpawnedBuildingRef->GetActorRotation().Yaw);
 
     SetSFControlMode(ESFControlMode::Gameplay);
 }
@@ -527,7 +523,6 @@ void ASFInGamePlayerController::HandleCancelBuildInput()
     // ★ADD: 배치 중이던 고스트 정리 + 컨트롤 모드 복귀
     //        IA_SFCancelBuild 는 IMC_SFBuildPlacement 에만 있으므로
     //        배치 중에만 발동한다. 확정된 건설은 건드리지 않는다.
-    PlacementComponent->ConfirmPlacementMode();
     ClearSpawnedBuildingRef();
     SetSFControlMode(ESFControlMode::Gameplay);
 }
@@ -669,4 +664,40 @@ void ASFInGamePlayerController::HandleFocusCommanderInput()
     CameraPawn->FocusOnWorldLocation(
         Commander->GetActorLocation()
     );
+}
+
+void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    OnMoveInput.Broadcast(Destination);
+
+    AActor* Target = SelectedActor.Get();
+
+    if (!IsValid(Target))
+    {
+        return;
+    }
+
+    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+    {
+        return;
+    }
+
+    IMovable::Execute_MoveToLocation(Target, Destination);
+
+    SF_LOG(Log, "[SFInGamePlayerController] Move command | Target: %s | Location: %s", *Target->GetName(), *Destination.ToString());
+}
+
+void ASFInGamePlayerController::HandleToggleSettingsInput()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->ToggleSettings();
 }

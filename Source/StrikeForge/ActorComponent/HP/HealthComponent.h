@@ -15,15 +15,18 @@ public:
 	UHealthComponent();
 	
 	void ApplyDamage(float InDamage);
+	
+	// 최대체력으로 완전히 채워 초기화
+	void InitializeHealth(float InMaxHealth);
 
-	// ── 아래는 전투 AI 를 위해 추가한 부분 ──────────────
+	// 최대체력과 현재체력을 각각 지정
+	void InitializeHealth(float InMaxHealth, float InCurrentHealth);
 
-	/**
-	 * 최대 체력을 다시 잡고 가득 채운다.
-	 * 스폰 시 데이터테이블 수치를 주입할 때 쓴다.
-	 * BeginPlay 보다 먼저 불려도 안전하다.
-	 */
-	void InitHealth(float InMaxHealth);
+	// 현재체력만 증가. 건물 수리시 적용에정. 
+	void IncreaseCurrentHealth(float InAmount);
+
+	// // 최대체력과 현재체력을 같은 값만큼 증가
+	// void IncreaseMaxAndCurrentHealth(float InAmount);
 
 	/** 체력바 · 디버그 표시용 0~1 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
@@ -45,14 +48,12 @@ public:
 	FOnDeath OnHealthIsZero;
 	
 #pragma endregion 
-protected:
-	virtual void BeginPlay() override;
 	
 private:
 	UPROPERTY()
 	bool IsDead = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
-	float CurrentHealth = 0.f;
+	float CurrentHealth = 1.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float MaxHealth = 100.f;
 };

@@ -1,6 +1,7 @@
 ﻿#include "SFRootBase.h"
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 
 ASFRootBase::ASFRootBase(const FObjectInitializer& ObjectInitializer)
@@ -8,9 +9,18 @@ ASFRootBase::ASFRootBase(const FObjectInitializer& ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	
+	SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
+	SetRootComponent(SceneComponent);
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMesh");
-	//StaticMeshComponent->SetupAttachment(GetRootComponent());
-	SetRootComponent(StaticMeshComponent);
+	StaticMeshComponent->SetupAttachment(GetRootComponent());
+	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
+	BoxComponent = CreateDefaultSubobject<UBoxComponent>("BoxComponent");
+	BoxComponent->SetupAttachment(GetRootComponent());
+
+	BoxComponent->SetVisibility(true);
+	BoxComponent->SetLineThickness(2.f);
+	BoxComponent->SetHiddenInGame(false);
 }
 
 FSFSelectableInfo ASFRootBase::GetSelectableInfo_Implementation()

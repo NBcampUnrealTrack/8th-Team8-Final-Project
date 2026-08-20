@@ -894,14 +894,15 @@ bool ASFBaseBuilding::CanReceiveDamage() const
 
 void ASFBaseBuilding::SetBoxExtent()
 {
-	const FBoxSphereBounds BoundsInParent =	StaticMeshComponent->CalcBounds(
+	FBoxSphereBounds BoundsInParent =	StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
-
+	
+	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
+	BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
 	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
 	// FVector Extent = BoundsInParent.BoxExtent;
 	// Extent.X *= 0.8f;
 	// Extent.Y *= 0.8f;
-	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
 }
 
 #pragma region Getter

@@ -23,7 +23,16 @@ bool UBuildingPlacement::StartPlacementMode(ASFBaseBuilding* InTargetBuilding)
 	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
 	if (!IsValid(GridSubsystem)) return false;
 	
-	GridSubsystem->DebugDrawOccupiedCells(5.f);
+	
+	if (InTargetBuilding->IsA<ASFMiningBuilding>())
+	{
+		EResourceType Type = Cast<ASFMiningBuilding>(InTargetBuilding)->GetMineResourceType();
+		GridSubsystem->DebugDrawResourceCells(Type, 10.f);
+	}
+	else
+	{
+		GridSubsystem->DebugDrawOccupiedCells(5.f);
+	}
 	
 	TargetBuilding = InTargetBuilding;
 	OwnerController = Controller;

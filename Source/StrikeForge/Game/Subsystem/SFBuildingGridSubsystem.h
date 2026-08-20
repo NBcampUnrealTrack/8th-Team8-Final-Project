@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "SFBuildingGridSubsystem.generated.h"
@@ -64,6 +65,7 @@ public:
 	void DebugDrawOccupiedCells(float Duration = 5.0f) const;
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
 	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;
+	void DebugDrawResourceCells(EResourceType ResourceType, float Duration = 5.0f) const;
 #pragma endregion 
 private:
 	// size of grid

@@ -392,7 +392,7 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 			3.0f);
 	}
 }
-
+// 빌딩의 gridsize debug
 void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ, bool bCanPlace,
 	float Duration) const
 {
@@ -429,5 +429,32 @@ void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridIn
 				0,
 				3.0f);
 		}
+	}
+}
+
+void USFBuildingGridSubsystem::DebugDrawResourceCells(EResourceType ResourceType, float Duration) const
+{
+	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f,	10.0f);
+	
+	for (const TPair<FIntPoint,	FSFGridCellData>& GridCell: GridCells)
+	{
+		AResourceBase* OccupiedResource = GridCell.Value.ResourceActor.Get();
+		if (!IsValid(OccupiedResource)) continue;
+		
+		if (OccupiedResource->GetResourceType() != ResourceType) continue;
+		// 자원발견 + 같은 타입
+		FVector CellCenter = GridToWorldCoordinate(GridCell.Key);
+		// 점유 중인 건물의 높이를 기준으로 표시
+		CellCenter.Z = OccupiedResource->GetActorLocation().Z + 10.0f;
+		
+		DrawDebugBox(
+		GetWorld(),
+		CellCenter,
+		BoxExtent,
+		FColor::Green,
+		false,
+		Duration,
+		0,
+		3.0f);
 	}
 }

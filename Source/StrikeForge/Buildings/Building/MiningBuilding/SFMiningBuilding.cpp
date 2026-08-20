@@ -33,7 +33,7 @@ void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 	
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
-	
+	if (!LinkedResource.IsValid()) return;
 	SFGameState->AddResourceIncomeRate(LinkedResource->GetResourceType(), DiggingIncomeRate);
 	StartMining();
 }

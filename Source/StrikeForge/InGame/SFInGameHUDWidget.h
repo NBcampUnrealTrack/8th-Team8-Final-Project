@@ -7,12 +7,15 @@
 
 class AActor;
 class UButton;
+class UBorder;
 class UCommonActivatableWidget;
 class UCommonActivatableWidgetStack;
 class UResultWidget;
 class USFProductionBuildingPanelWidget;
 class USFSelectionPanelWidget;
 class UHealthComponent;
+class UDecalComponent;
+class UMaterialInterface;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -59,6 +62,8 @@ protected:
 
     void UnbindSelectedHealthDelegate();
 
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
 private:
     UFUNCTION()
     void HandleSelectInput();
@@ -97,6 +102,34 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveSettingsWidget = nullptr;
 
+    void ShowSelectionIndicator(AActor* Actor);
+
+    void HideSelectionIndicator(AActor* Actor);
+
+    void HideAllSelectionIndicators();
+
+    UFUNCTION()
+    void HandleSelectionDragStarted(FVector2D StartScreenPosition);
+
+    UFUNCTION()
+    void HandleSelectionDragCompleted(
+        FVector2D StartScreenPosition,
+        FVector2D EndScreenPosition
+    );
+
+    void UpdateSelectionDragBox(FVector2D CurrentScreenPosition);
+
+    void PerformDragSelection(
+        FVector2D StartScreenPosition,
+        FVector2D EndScreenPosition
+    );
+
+    void ApplyMultipleSelection(
+        const TArray<AActor*>& NewSelectedActors
+    );
+
+    int32 GetSelectionPriority(AActor* Actor) const;
+
     // ==================== Variables ====================
 
 protected:
@@ -106,6 +139,13 @@ protected:
         Category = "SF|Selection"
     )
     TObjectPtr<AActor> SelectedActor = nullptr;
+
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    TArray<TObjectPtr<AActor>> SelectedActors;
 
     UPROPERTY(
         Transient,
@@ -151,10 +191,13 @@ protected:
     TSubclassOf<UCommonActivatableWidget> BuildingModeWidgetClass;
 
     UPROPERTY(
-        EditDefaultsOnly,
         BlueprintReadOnly,
-        Category = "SF|HUD|Result"
+        Category = "SF|Selection",
+        meta = (BindWidget)
     )
+    TObjectPtr<UBorder> SelectionDragBox = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Result")
     TSubclassOf<UResultWidget> ResultWidgetClass;
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|HUD|Settings", meta = (BindWidget))
@@ -162,6 +205,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Settings")
     TSubclassOf<UCommonActivatableWidget> SettingsWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Feedback")
+    TObjectPtr<UMaterialInterface> SelectionIndicatorMaterial = nullptr;
 
 private:
     UPROPERTY(Transient)
@@ -172,4 +218,10 @@ private:
 
     UPROPERTY(Transient)
     TWeakObjectPtr<UHealthComponent> SelectedHealthComponent;
+
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;
+
+    FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
+    bool bIsSelectionDragging = false;
 };

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Input/Reply.h"
 #include "SFMinimapMarkerInfo.h"
 #include "SFMinimapPanelWidget.generated.h"
 
@@ -32,16 +33,21 @@ public:
         const FVector& WorldLocation
     ) const;
 
+    UFUNCTION(BlueprintPure, Category = "SF|Minimap|Coordinate")
+    FVector MinimapToWorldLocation(const FVector2D& MinimapPosition) const;
+
 protected:
     virtual void NativeConstruct() override;
 
     virtual void NativeDestruct() override;
 
-    virtual void NativeTick(
-        const FGeometry& MyGeometry,
-        float InDeltaTime
-    ) override;
+    virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime) override;
 
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+    virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+   
+    virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 private:
     void CreateMinimapMarkers();
 
@@ -60,6 +66,10 @@ private:
     void UpdatePlayerViewIndicator();
 
     void UpdateMinimapMarkers();
+
+    void MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent);
+
+    bool bIsMinimapCameraDragging = false;
 
     void SetMarkerLayerPosition(
         UWidget* MarkerWidget,

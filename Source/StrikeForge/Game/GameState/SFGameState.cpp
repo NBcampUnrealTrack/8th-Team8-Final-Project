@@ -3,7 +3,7 @@
 
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
-#include "Buildings/Building/Nexus/SFNexusBuilding.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 
 ASFGameState::ASFGameState()
 {

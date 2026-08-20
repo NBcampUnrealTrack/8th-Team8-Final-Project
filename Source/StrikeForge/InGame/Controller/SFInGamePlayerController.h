@@ -57,6 +57,7 @@ public:
     
     void SetSelectedActor(AActor* InActor);
     void RegisterCommander(ASFCommander* InCommander);
+    void IssueMoveCommand(const FVector& Destination);
 protected:
     virtual void BeginPlay() override;
 
@@ -92,6 +93,8 @@ private:
     void HandleFocusCommanderInput();
 
     void CreateInGameHUD();
+    
+    void HandleToggleSettingsInput();
     // 변수 영역
 protected:
     
@@ -195,6 +198,13 @@ protected:
         Category = "SF|Input"
     )
     TObjectPtr<UInputAction> FocusCommanderAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly, 
+        BlueprintReadOnly, 
+        Category = "SF|Input"
+    )
+    TObjectPtr<UInputAction> ToggleSettingsAction = nullptr;
 
 private:
     UPROPERTY(

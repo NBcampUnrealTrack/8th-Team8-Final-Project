@@ -155,6 +155,12 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
 void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 {
     SelectedActor = InActor;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Command target changed: %s",
+        IsValid(InActor) ? *InActor->GetName() : TEXT("None")
+    );
 }
 
 void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
@@ -244,6 +250,15 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::
             HandleFocusCommanderInput
         );
+    }
+    if (IsValid(ToggleSettingsAction))
+    {
+        EnhancedInputComponent->BindAction(
+            ToggleSettingsAction, 
+            ETriggerEvent::Started, 
+            this, 
+            &ASFInGamePlayerController::
+            HandleToggleSettingsInput);
     }
     
 }
@@ -352,8 +367,7 @@ GetEnhancedInputSubsystem() const
     >(LocalPlayer);
 }
 
-void ASFInGamePlayerController::
-ConfigureMouseInput()
+void ASFInGamePlayerController::ConfigureMouseInput()
 {
     bShowMouseCursor = true;
     bEnableClickEvents = true;
@@ -372,8 +386,7 @@ ConfigureMouseInput()
     SetInputMode(InputMode);
 }
 
-void ASFInGamePlayerController::
-RegisterBaseMappingContext()
+void ASFInGamePlayerController::RegisterBaseMappingContext()
 {
     UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
         GetEnhancedInputSubsystem();
@@ -397,38 +410,62 @@ RegisterBaseMappingContext()
 void ASFInGamePlayerController::
 HandleSelectInput()
 {
-    // ★CHANGED: 선택만 담당한다. 이동 명령은 HandleMoveInput 으로 옮겼다.
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "SelectAction triggered."
+    );
+
     FHitResult Hit;
-    const ETraceTypeQuery TraceType = UEngineTypes::ConvertToTraceType(ECC_Visibility);
+
+    const ETraceTypeQuery TraceType =
+        UEngineTypes::ConvertToTraceType(
+            ECC_Visibility
+        );
 
     AActor* NewSelected = nullptr;
-    if (GetHitResultUnderCursorByChannel(TraceType, false, Hit))
+
+    if (
+        GetHitResultUnderCursorByChannel(
+            TraceType,
+            false,
+            Hit
+        )
+        )
     {
         AActor* HitActor = Hit.GetActor();
-        if (IsValid(HitActor) &&
-        HitActor->Implements<USFSelectable>())
+
+        if (
+            IsValid(HitActor)
+            && HitActor->GetClass()->ImplementsInterface(
+                USFSelectable::StaticClass()
+            )
+            )
         {
             NewSelected = HitActor;
         }
     }
 
-    SetSelectedActor(NewSelected);   // 빈 곳을 클릭하면 선택 해제된다
+    SetSelectedActor(NewSelected);
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Broadcasting OnSelectInput."
+    );
+
     OnSelectInput.Broadcast();
 }
-
 void ASFInGamePlayerController::HandleMoveInput()
 {
     FHitResult Hit;
-    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit)) return;
 
-    OnMoveInput.Broadcast(Hit.Location);
+    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+    {
+        return;
+    }
 
-    // ★ADD: 선택된 액터에게 이동 명령 (HandleSelectInput 에서 옮겨옴)
-    AActor* Target = SelectedActor.Get();
-    if (!IsValid(Target)) return;
-    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass())) return;
-
-    IMovable::Execute_MoveToLocation(Target, Hit.Location);
+    IssueMoveCommand(Hit.Location);
 }
 
 void ASFInGamePlayerController::HandleConfirmBuildInput()
@@ -627,4 +664,40 @@ void ASFInGamePlayerController::HandleFocusCommanderInput()
     CameraPawn->FocusOnWorldLocation(
         Commander->GetActorLocation()
     );
+}
+
+void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    OnMoveInput.Broadcast(Destination);
+
+    AActor* Target = SelectedActor.Get();
+
+    if (!IsValid(Target))
+    {
+        return;
+    }
+
+    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+    {
+        return;
+    }
+
+    IMovable::Execute_MoveToLocation(Target, Destination);
+
+    SF_LOG(Log, "[SFInGamePlayerController] Move command | Target: %s | Location: %s", *Target->GetName(), *Destination.ToString());
+}
+
+void ASFInGamePlayerController::HandleToggleSettingsInput()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->ToggleSettings();
 }

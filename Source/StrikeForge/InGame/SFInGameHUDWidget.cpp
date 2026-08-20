@@ -11,6 +11,7 @@
 #include "UI/ResultWidget.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "GameFramework/PlayerController.h"
 
 #include "CommonActivatableWidget.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
@@ -19,6 +20,9 @@
 
 #include "Engine/EngineTypes.h"
 #include "GameFramework/Actor.h"
+
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "ActorComponent/HP/HealthComponent.h"
 
 #include "Logging/SFLog.h"
 
@@ -48,16 +52,38 @@ void USFInGameHUDWidget::NativeConstruct()
     );
 
     RefreshBuildModeOpenButtonVisibility();
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->OnTierUpgradeRequested.RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleTierUpgradeRequested
+            );
+
+        SelectionPanel->OnTierUpgradeRequested.AddUniqueDynamic(
+                this,
+                &USFInGameHUDWidget::HandleTierUpgradeRequested
+            );
+
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "Tier upgrade delegate binding completed."
+        );
+    }
 }
 
 void USFInGameHUDWidget::NativeDestruct()
 {
     if (IsValid(ActiveBuildingModeWidget))
     {
-        ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
+        ActiveBuildingModeWidget
+            ->OnDeactivated()
+            .RemoveAll(this);
     }
 
     UnbindSelectedActorDestroyed();
+    UnbindSelectedHealthDelegate();
 
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
@@ -67,9 +93,22 @@ void USFInGameHUDWidget::NativeDestruct()
     if (IsValid(PlayerController))
     {
         PlayerController->OnSelectInput.RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSelectInput
-        );
+                this,
+                &USFInGameHUDWidget::HandleSelectInput
+            );
+    }
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->OnTierUpgradeRequested.RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleTierUpgradeRequested
+            );
+    }
+
+    if (IsValid(ActiveSettingsWidget))
+    {
+        ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
     }
 
     Super::NativeDestruct();
@@ -77,6 +116,12 @@ void USFInGameHUDWidget::NativeDestruct()
 
 void USFInGameHUDWidget::HandleSelectInput()
 {
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Select input received."
+    );
+
     PerformSelectionTrace();
 }
 
@@ -89,8 +134,15 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(
         return;
     }
 
+    UnbindSelectedHealthDelegate();
+
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    {
+        PlayerController->SetSelectedActor(nullptr);
+    }
 
     RefreshBuildModeOpenButtonVisibility();
 
@@ -185,6 +237,7 @@ void USFInGameHUDWidget::ApplySelection(
     if (SelectedActor != NewSelectedActor)
     {
         UnbindSelectedActorDestroyed();
+        UnbindSelectedHealthDelegate();
 
         SelectedActor = NewSelectedActor;
 
@@ -195,6 +248,13 @@ void USFInGameHUDWidget::ApplySelection(
     }
 
     SelectedInfo = NewSelectedInfo;
+
+    if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    {
+        PlayerController->SetSelectedActor(SelectedActor.Get());
+    }
+
+    BindSelectedHealthDelegate(SelectedActor.Get());
 
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
@@ -290,9 +350,15 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 void USFInGameHUDWidget::ClearSelection()
 {
     UnbindSelectedActorDestroyed();
+    UnbindSelectedHealthDelegate();
 
     SelectedActor = nullptr;
     SelectedInfo = FSFSelectableInfo();
+
+    if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    {
+        PlayerController->SetSelectedActor(nullptr);
+    }
 
     RefreshBuildModeOpenButtonVisibility();
 
@@ -466,35 +532,225 @@ void USFInGameHUDWidget::ShowResultWidget(
     );
 }
 
-void USFInGameHUDWidget::SelectActor(
-    AActor* Actor
-)
+void USFInGameHUDWidget::SelectActor(AActor* Actor)
 {
     if (!IsValid(Actor))
     {
         return;
     }
 
-    if (
-        !Actor->GetClass()->ImplementsInterface(
-            USFSelectable::StaticClass()
-        )
-        )
+    if (!Actor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
     {
         return;
     }
 
-    FSFSelectableInfo SelectableInfo =
-        ISFSelectable::Execute_GetSelectableInfo(
-            Actor
+    FSFSelectableInfo SelectableInfo = ISFSelectable::Execute_GetSelectableInfo(Actor);
+
+    const bool bIsBuilding =
+        SelectableInfo.SelectableType == ESFSelectableType::MainBuilding ||
+        SelectableInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+        SelectableInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+
+    if (bIsBuilding)
+    {
+        const FHealthData HealthData = ISFSelectable::Execute_GetHealthData(Actor);
+        SelectableInfo.Tier = HealthData.CurrentTier + 1;
+    }
+
+    ApplySelectionUIData(SelectableInfo);
+    ApplySelection(Actor, SelectableInfo);
+}
+
+bool USFInGameHUDWidget::IsPointerOverSelectionAction() const
+{
+    return
+        IsValid(SelectionPanel) &&
+        SelectionPanel->IsTierUpButtonHovered();
+}
+
+void USFInGameHUDWidget::HandleTierUpgradeRequested()
+{
+    if (!IsValid(SelectedActor))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "Tier upgrade failed: "
+            "SelectedActor is invalid."
+        );
+        return;
+    }
+
+    const bool bCanTierUpgrade =
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding;
+
+    if (!bCanTierUpgrade)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "Tier upgrade failed: "
+            "Invalid selectable type."
+        );
+        return;
+    }
+
+    ASFBaseBuilding* SelectedBuilding =
+        Cast<ASFBaseBuilding>(
+            SelectedActor.Get()
         );
 
-    ApplySelectionUIData(
-        SelectableInfo
+    if (!IsValid(SelectedBuilding))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] "
+            "Tier upgrade failed: "
+            "SelectedActor is not SFBaseBuilding."
+        );
+        return;
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Tier upgrade requested | Building: %s",
+        *SelectedBuilding->GetName()
     );
 
-    ApplySelection(
-        Actor,
-        SelectableInfo
+    // 건물 담당자가 이미 구현한 기존 함수 사용
+    SelectedBuilding->UpgradeBuilding(1);
+}
+
+void USFInGameHUDWidget::BindSelectedHealthDelegate(AActor* Actor)
+{
+    UnbindSelectedHealthDelegate();
+
+    if (!IsValid(Actor) || !Actor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+    {
+        return;
+    }
+
+    const FHealthData HealthData = ISFSelectable::Execute_GetHealthData(Actor);
+    UHealthComponent* HealthComponent = HealthData.HealthComponent.Get();
+
+    if (!IsValid(HealthComponent))
+    {
+        SF_LOG(Warning, "[SFInGameHUDWidget] Selected actor has no HealthComponent.");
+        return;
+    }
+
+    SelectedHealthComponent = HealthComponent;
+
+    HealthComponent->OnHealthValueChanged.RemoveDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedHealthChanged
     );
+
+    HealthComponent->OnHealthValueChanged.AddUniqueDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedHealthChanged
+    );
+
+    SF_LOG(Log, "[SFInGameHUDWidget] Health delegate binding completed.");
+}
+
+void USFInGameHUDWidget::UnbindSelectedHealthDelegate()
+{
+    UHealthComponent* HealthComponent = SelectedHealthComponent.Get();
+
+    if (IsValid(HealthComponent))
+    {
+        HealthComponent->OnHealthValueChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedHealthChanged
+        );
+    }
+
+    SelectedHealthComponent.Reset();
+}
+
+void USFInGameHUDWidget::HandleSelectedHealthChanged(float BeforeHP, float CurrentHP, float MaxHP)
+{
+    if (!SelectedHealthComponent.IsValid())
+    {
+        return;
+    }
+
+    SelectedInfo.CurrentHealth = CurrentHP;
+    SelectedInfo.MaximumHealth = MaxHP;
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(SelectedInfo);
+    }
+
+    SF_LOG(Log, "[SFInGameHUDWidget] Health changed | %.1f -> %.1f / %.1f", BeforeHP, CurrentHP, MaxHP);
+}
+
+void USFInGameHUDWidget::ToggleSettings()
+{
+    if (IsValid(ActiveSettingsWidget) && ActiveSettingsWidget->IsActivated())
+    {
+        ActiveSettingsWidget->DeactivateWidget();
+        return;
+    }
+
+    if (!IsValid(SettingsUIStack) || !SettingsWidgetClass)
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] SettingsUIStack or SettingsWidgetClass is invalid.");
+        return;
+    }
+
+    ActiveSettingsWidget = SettingsUIStack->AddWidget<UCommonActivatableWidget>(SettingsWidgetClass);
+
+    if (!IsValid(ActiveSettingsWidget))
+    {
+        return;
+    }
+
+    ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
+    ActiveSettingsWidget->OnDeactivated().AddUObject(this, &USFInGameHUDWidget::HandleSettingsDeactivated);
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (IsValid(PlayerController))
+    {
+        FInputModeGameAndUI InputMode;
+        InputMode.SetWidgetToFocus(ActiveSettingsWidget->TakeWidget());
+        InputMode.SetHideCursorDuringCapture(false);
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+
+        PlayerController->SetInputMode(InputMode);
+        PlayerController->bShowMouseCursor = true;
+    }
+
+    SF_LOG(Log, "[SFInGameHUDWidget] Settings opened.");
+}
+
+void USFInGameHUDWidget::HandleSettingsDeactivated()
+{
+    if (IsValid(ActiveSettingsWidget))
+    {
+        ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
+    }
+
+    ActiveSettingsWidget = nullptr;
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (IsValid(PlayerController))
+    {
+        FInputModeGameAndUI InputMode;
+        InputMode.SetHideCursorDuringCapture(false);
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+
+        PlayerController->SetInputMode(InputMode);
+        PlayerController->bShowMouseCursor = true;
+    }
+
+    SF_LOG(Log, "[SFInGameHUDWidget] Settings closed.");
 }

@@ -4,6 +4,10 @@
 #include "SFGameMode.h"
 #include "Logging/SFLog.h"
 #include "Game/GameInstance/SFGameInstance.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/BuildingAppearance.h"
+#include "Game/Subsystem/SFDataTableManager.h"
 
 ASFGameMode::ASFGameMode()
 {
@@ -147,4 +151,130 @@ bool ASFGameMode::FinishStage(ESFStageResult NewStageResult)
 ASFGameState* ASFGameMode::GetSFGameState() const
 {
 	return SFGameState;
+}
+
+// 26.08.18
+ASFNexusBuilding* ASFGameMode::SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex)
+{
+    if (NexusRowName.IsNone())
+    {
+        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Nexus RowName is None.");
+
+        return nullptr;
+    }
+
+    if (TeamIndex == INDEX_NONE)
+    {
+        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: TeamIndex is invalid.");
+
+        return nullptr;
+    }
+
+    UGameInstance* GameInstance = GetGameInstance();
+
+    if (!IsValid(GameInstance))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: GameInstance is invalid.");
+
+        return nullptr;
+    }
+
+    USFDataTableManager* DataManager = GameInstance->GetSubsystem<USFDataTableManager>();
+
+    if (!IsValid(DataManager))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: DataTableManager is invalid.");
+
+        return nullptr;
+    }
+
+    const FBuildingAppearance* NexusData = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, NexusRowName, TEXT("SpawnNexus"));
+
+    if (NexusData == nullptr)
+    {
+        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Row was not found. Row: %s", *NexusRowName.ToString());
+
+        return nullptr;
+    }
+
+    UClass* NexusClass = NexusData->BuildingClass.LoadSynchronous();
+
+    if (!IsValid(NexusClass))
+    {
+        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is invalid. Row: %s", *NexusRowName.ToString());
+
+        return nullptr;
+    }
+
+    if (!NexusClass->IsChildOf(ASFNexusBuilding::StaticClass()))
+    {
+        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is not an SFNexusBuilding. Class: %s", *GetNameSafe(NexusClass));
+
+        return nullptr;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: World is invalid.");
+
+        return nullptr;
+    }
+
+    ASFNexusBuilding* SpawnedNexus = World->SpawnActorDeferred<ASFNexusBuilding>(NexusClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+
+    if (!IsValid(SpawnedNexus))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SpawnActorDeferred failed.");
+
+        return nullptr;
+    }
+
+    // BeginPlay 전에 데이터테이블 RowName 설정
+    SpawnedNexus->SetRowName(NexusRowName);
+
+    // BeginPlay 전에 전투 팀 설정
+    UCombatTargetComponent* CombatTarget = SpawnedNexus->FindComponentByClass<UCombatTargetComponent>();
+
+    if (!IsValid(CombatTarget))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: CombatTargetComponent is invalid.");
+
+        SpawnedNexus->Destroy();
+
+        return nullptr;
+    }
+
+    CombatTarget->SetTeamIndex(TeamIndex);
+
+    // 여기서 BeginPlay가 실행됨
+    SpawnedNexus->FinishSpawning(SpawnTransform);
+
+    if (!IsValid(SFGameState))
+    {
+        SFGameState = GetGameState<ASFGameState>();
+    }
+
+    if (!IsValid(SFGameState))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SFGameState is invalid.");
+
+        SpawnedNexus->Destroy();
+
+        return nullptr;
+    }
+
+    if (!SFGameState->RegisterNexus(TeamIndex, SpawnedNexus))
+    {
+        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: Nexus registration failed.");
+
+        SpawnedNexus->Destroy();
+
+        return nullptr;
+    }
+
+    SF_LOG(Log, "[SFGameMode] Nexus spawned. Team: %d, Row: %s, Nexus: %s", TeamIndex, *NexusRowName.ToString(), *GetNameSafe(SpawnedNexus));
+
+    return SpawnedNexus;
 }

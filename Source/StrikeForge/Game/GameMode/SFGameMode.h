@@ -9,6 +9,8 @@
 
 #include "SFGameMode.generated.h"
 
+class ASFNexusBuilding;
+
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
 {
@@ -42,6 +44,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ASFGameState* GetSFGameState() const;
+
+	// 26.08.18
+	// 데이터테이블 정보를 이용해 지정된 위치에 넥서스를 생성
+	UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
+	ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
 
 private:
 	UPROPERTY()

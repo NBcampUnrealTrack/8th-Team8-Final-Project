@@ -5,7 +5,7 @@
 #include "Logging/SFLog.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "Buildings/Building/Nexus/SFNexusBuilding.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/BuildingAppearance.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 

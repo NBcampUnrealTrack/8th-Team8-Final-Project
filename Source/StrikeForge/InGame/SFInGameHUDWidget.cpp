@@ -5,6 +5,7 @@
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
 #include "SFSelectInfo/SFSelectionUIDataRow.h"
+#include "SFSelectInfo/SFMultiSelectionPanelWidget.h"
 
 #include "HUD/Production/SFProductionBuildingPanelWidget.h"
 #include "UI/ResultWidget.h"
@@ -97,6 +98,11 @@ void USFInGameHUDWidget::NativeConstruct()
             "[SFInGameHUDWidget] "
             "Tier upgrade delegate binding completed."
         );
+    }
+
+    if (IsValid(MultiSelectionPanel))
+    {
+        MultiSelectionPanel->ClearSelections();
     }
 }
 
@@ -421,6 +427,11 @@ void USFInGameHUDWidget::ClearSelection()
     if (IsValid(ProductionBuildingPanel))
     {
         ProductionBuildingPanel->HideProductionBuilding();
+    }
+
+    if (IsValid(MultiSelectionPanel))
+    {
+        MultiSelectionPanel->ClearSelections();
     }
 }
 
@@ -1203,8 +1214,9 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         return;
     }
 
-    AActor* PrimaryActor =
-        NewSelectedActors[0];
+    CloseBuildingMode();
+
+    AActor* PrimaryActor = NewSelectedActors[0];
 
     if (!IsValid(PrimaryActor))
     {
@@ -1212,7 +1224,6 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         return;
     }
 
-    // 0번 액터를 기존 왼쪽 정보 패널에 표시한다.
     SelectActor(PrimaryActor);
 
     SelectedActors.Reset();
@@ -1229,10 +1240,73 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         ShowSelectionIndicator(Actor);
     }
 
+    RefreshMultiSelectionPanel();
+
     SF_LOG(
         Log,
         "[SFInGameHUDWidget] Multiple selection applied | Count: %d | Primary: %s",
         SelectedActors.Num(),
         *PrimaryActor->GetName()
+    );
+}
+
+void USFInGameHUDWidget::RefreshMultiSelectionPanel()
+{
+    if (!IsValid(MultiSelectionPanel))
+    {
+        return;
+    }
+
+    if (SelectedActors.Num() <= 1)
+    {
+        MultiSelectionPanel->ClearSelections();
+        return;
+    }
+
+    TArray<TObjectPtr<AActor>> ValidActors;
+    TArray<FSFSelectableInfo> SelectableInfos;
+
+    ValidActors.Reserve(SelectedActors.Num());
+    SelectableInfos.Reserve(SelectedActors.Num());
+
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        if (!Actor->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+        {
+            continue;
+        }
+
+        FSFSelectableInfo SelectableInfo =
+            ISFSelectable::Execute_GetSelectableInfo(Actor);
+
+        ApplySelectionUIData(SelectableInfo);
+
+        ValidActors.Add(Actor);
+        SelectableInfos.Add(SelectableInfo);
+    }
+
+    SelectedActors = MoveTemp(ValidActors);
+
+    if (SelectedActors.Num() <= 1)
+    {
+        MultiSelectionPanel->ClearSelections();
+        return;
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
+    }
+
+    MultiSelectionPanel->ShowSelections(
+        SelectedActors,
+        SelectableInfos
     );
 }

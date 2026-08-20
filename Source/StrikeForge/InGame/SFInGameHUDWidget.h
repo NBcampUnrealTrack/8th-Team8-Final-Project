@@ -16,6 +16,7 @@ class USFSelectionPanelWidget;
 class UHealthComponent;
 class UDecalComponent;
 class UMaterialInterface;
+class USFMultiSelectionPanelWidget;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -130,6 +131,8 @@ private:
 
     int32 GetSelectionPriority(AActor* Actor) const;
 
+    void RefreshMultiSelectionPanel();
+
     // ==================== Variables ====================
 
 protected:
@@ -160,6 +163,13 @@ protected:
         meta = (BindWidgetOptional)
     )
     TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Selection",
+        meta = (BindWidget)
+    )
+    TObjectPtr<USFMultiSelectionPanelWidget> MultiSelectionPanel = nullptr;
 
     UPROPERTY(
         BlueprintReadOnly,

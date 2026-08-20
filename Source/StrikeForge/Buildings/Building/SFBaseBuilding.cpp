@@ -84,7 +84,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 {
 	FHealthData Data;
 	Data.DisplayName = DisplayName;
-	Data.CurrentTier = CurrentTier + 1;
+	Data.CurrentTier = CurrentTier;
 	Data.HealthComponent = HealthComponent;
 	Data.ConstructCost = CurrentConstructBuildCost;
 	Data.UpgradeCost = CurrentUpgradeBuildCost;
@@ -898,10 +898,10 @@ void ASFBaseBuilding::SetBoxExtent()
 			StaticMeshComponent->GetRelativeTransform());
 
 	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
-	FVector Extent = BoundsInParent.BoxExtent;
-	Extent.X *= 0.8f;
-	Extent.Y *= 0.8f;
-	BoxComponent->SetBoxExtent(Extent);
+	// FVector Extent = BoundsInParent.BoxExtent;
+	// Extent.X *= 0.8f;
+	// Extent.Y *= 0.8f;
+	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
 }
 
 #pragma region Getter

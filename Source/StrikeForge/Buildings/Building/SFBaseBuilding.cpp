@@ -104,7 +104,7 @@ void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0�
 					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
 		}
 		
-		const FBuildingTier* Tier = GetCurrentTier();
+		const FBuildingTier* Tier = GetCurrentTierInfo();
 		if (!Tier)
 		{
 			SF_LOG(Error, "ASFBaseBuilding::HandleHealthChanged: Tier is INVALID");
@@ -424,7 +424,7 @@ UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets
 	return Assets.CompletedMesh;
 }
 
-const FBuildingTier* ASFBaseBuilding::GetCurrentTier() const
+const FBuildingTier* ASFBaseBuilding::GetCurrentTierInfo() const
 {
 	return CachedDefinition.FindTier(CurrentTier);
 }
@@ -513,7 +513,6 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	{
 		return;
 	}
-
 	const int32 NextTier = CurrentTier + UpgradeValue;
 	if (!CachedDefinition.Tiers.IsValidIndex(NextTier))
 	{
@@ -523,25 +522,30 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		return;
 	}
 
-	// ASFGameState* const GameState = GetWorld()->GetGameState<ASFGameState>();
-	// if (!IsValid(GameState) ||
-	// 	!GameState->CanAfford(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
-	// {
-	// 	return;
-	// }
-
+	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+	if (!IsValid(SFGS))
+	{
+		SF_LOG(Error, "SFGameState가 없습니다.");
+		return;
+	}
+	// 업그레이드비용 저장
+	const FResources SpendCost = CurrentUpgradeBuildCost;
+	
+	if (!SFGS->CanAfford(SpendCost))
+	{
+		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
+			*GetName(), SpendCost.Mineral, SpendCost.Ether);
+		return;
+	}
+	
+	// 다음티어 있는지확인하고 다음티어정보로 치환 ( 티어정보 교체시점 )
 	if (!PrepareTier(NextTier))
 	{
 		return;
 	}
-
-	// if (!GameState->TrySpendCost(CurrentUpgradeBuildCost.Mineral, CurrentUpgradeBuildCost.Ether))
-	// {
-	// 	PendingTierAssets.Reset();
-	// 	PendingTier = INDEX_NONE;
-	// 	return;
-	// }
-
+	// 이시점에서는 건설비용이 업그레이된티어의 값으로 바뀐상태
+	
+	SFGS->TrySpendCost(SpendCost);
 	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
@@ -818,7 +822,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 		return false;
 	}
 
-	const FBuildingTier* ActivatedTier = GetCurrentTier();
+	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
 	if (!ActivatedTier) return false;
 
 	SetBuildingState(EBuildingState::Completed);

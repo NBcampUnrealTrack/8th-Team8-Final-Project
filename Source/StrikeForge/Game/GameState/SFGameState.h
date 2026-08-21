@@ -135,9 +135,9 @@ public:
     void SetPopulation(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
     
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void AddCurrentPopulation(int32 NewCurrentPopulation);
+    void AddCurrentPopulation(int32 InCurrentPopulation);
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void AddMaxPopulation(int32 NewMaximumPopulation);
+    void AddMaxPopulation(int32 InMaximumPopulation);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
     void AddResourceIncomeRate(EResourceType InResourceType, float InIncomeRate);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
@@ -147,13 +147,17 @@ public:
     /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다. */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Resource")
     bool CanAfford(int32 InMineral, int32 InEther) const;
-
     /** 충분하면 차감하고 true. 실패 시 아무것도 바꾸지 않는다. */
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
     bool TrySpendCost(int32 InMineral, int32 InEther);
-    
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
     void RefundCost(int32 InMineral, int32 InEther); 
+    UFUNCTION(BlueprintPure, Category="SF|Population")
+    bool CanAffordPopulation(int32 InPopulationCost) const;
+    // overload
+    bool CanAfford(const FResources& InResource) const;
+    bool TrySpendCost(const FResources& InResource);
+    void RefundCost(const FResources& InResource);
     // 여기까지
 
     // 26.08.18
@@ -203,10 +207,10 @@ private:
 
     // InGameUI 용 초기값
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    int32 Mineral = 0;
+    int32 Mineral = 200;
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    int32 Ether = 0;
+    int32 Ether = 100;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
     float MineralIncomeRate = 0.0f;

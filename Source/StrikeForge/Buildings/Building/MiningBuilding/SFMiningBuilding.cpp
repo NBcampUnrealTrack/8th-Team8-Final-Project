@@ -94,6 +94,7 @@ void ASFMiningBuilding::OnBuildingDestroyed()
 
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-TryLinkResource::InValid MiningComponent"));
 	return MiningComponent->TryLinkResource(InResourceRef);
 }
 
@@ -112,11 +113,13 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 //getter
 EResourceType ASFMiningBuilding::GetMineResourceType() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMineResourceType::InValid MiningComponent"));
 	return MiningComponent->GetMineResourceType();
 }
 
 int32 ASFMiningBuilding::GetExtractAmount() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetExtractAmount::InValid MiningComponent"));
 	return MiningComponent->GetExtractAmount();
 }
 

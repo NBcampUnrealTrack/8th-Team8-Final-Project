@@ -194,13 +194,11 @@ void ASFGameState::SetPopulation(
 	MaximumPopulation =
 		FMath::Max(0, NewMaximumPopulation);
 
-	CurrentPopulation =
-		FMath::Clamp(
-			NewCurrentPopulation,
-			0,
-			MaximumPopulation
-		);
-
+	// Max 로 Clamp 하지 않는다. 집이 파괴돼 Max 가 줄면 Current > Max 가
+	// 정상 상태이며(예: 15/10), Clamp 하면 그 차이만큼 인구가 조용히 사라진다
+	CurrentPopulation = FMath::Max(0, NewCurrentPopulation);
+	
+	
 	OnPopulationChanged.Broadcast(
 		CurrentPopulation,
 		MaximumPopulation
@@ -209,21 +207,21 @@ void ASFGameState::SetPopulation(
 	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
 }
 
-void ASFGameState::AddCurrentPopulation(int32 NewCurrentPopulation)
+void ASFGameState::AddCurrentPopulation(int32 InCurrentPopulation)
 {	// 현재인구 증가
 	//const int32 IncreasePopValue = FMath::Max(0, NewCurrentPopulation);
 	//if (IncreasePopValue <= 0) return;
-	CurrentPopulation += NewCurrentPopulation;
+	CurrentPopulation += InCurrentPopulation;
 	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
 	
 	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
 }
 
-void ASFGameState::AddMaxPopulation(int32 NewMaximumPopulation)
+void ASFGameState::AddMaxPopulation(int32 InMaximumPopulation)
 {	// 최대인구 증가
 	//const int32 IncreasePopValue = FMath::Max(0, NewMaximumPopulation);
 	//if (IncreasePopValue <= 0) return;
-	MaximumPopulation += NewMaximumPopulation;
+	MaximumPopulation += InMaximumPopulation;
 	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
 	
 	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
@@ -274,13 +272,13 @@ void ASFGameState::AddResource(EResourceType InResourceType, int32 InResourceAmo
 }
 
 bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const
-{
+{	// 자원충분한지 판단만
 	return Mineral >= FMath::Max(0, InMineral)
 		&& Ether   >= FMath::Max(0, InEther);
 }
 
 bool ASFGameState::TrySpendCost(int32 InMineral, int32 InEther)
-{
+{	// 판단 + 소비까지
 	if (!CanAfford(InMineral, InEther)) return false;
 
 	SetMineral(Mineral - FMath::Max(0, InMineral));
@@ -292,6 +290,27 @@ void ASFGameState::RefundCost(int32 InMineral, int32 InEther)
 {
 	SetMineral(Mineral + FMath::Max(0, InMineral));
 	SetEther(Ether + FMath::Max(0, InEther));
+}
+
+bool ASFGameState::CanAffordPopulation(int32 InPopulationCost) const
+{	// 음수도 가능하게 해서 유닛이 죽엇을때 감소되게함
+	if (InPopulationCost <= 0) return true; 
+	return CurrentPopulation + InPopulationCost <= MaximumPopulation;
+}
+
+bool ASFGameState::CanAfford(const FResources& InResource) const
+{
+	return CanAfford(InResource.Mineral, InResource.Ether);
+}
+
+bool ASFGameState::TrySpendCost(const FResources& InResource)
+{
+	return TrySpendCost(InResource.Mineral, InResource.Ether);
+}
+
+void ASFGameState::RefundCost(const FResources& InResource)
+{
+	RefundCost(InResource.Mineral, InResource.Ether);
 }
 
 // 26.08.18

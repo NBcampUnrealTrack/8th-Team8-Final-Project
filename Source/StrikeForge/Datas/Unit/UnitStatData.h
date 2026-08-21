@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "UnitStatData.generated.h"
 
 /** 유닛 역할. 공격 우선순위 분기에 쓰인다 */
@@ -81,4 +82,11 @@ struct FUnitStatData : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawn")
 	TSoftClassPtr<class AUnitBase> UnitClass;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Production")
+	float UnitProductionDuration = 0.f;
+
+	/** 생산 비용. 생산 큐를 거치지 않는 유닛은 기본값(0)으로 둔다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Production")
+	FResources UnitProductionCost;
 };

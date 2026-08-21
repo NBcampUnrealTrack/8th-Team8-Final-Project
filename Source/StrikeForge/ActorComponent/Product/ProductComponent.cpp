@@ -1,9 +1,8 @@
 ﻿#include "ProductComponent.h"
-
-#include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "Buildings/Building/SFBaseBuilding.h"
 #include "Datas/Unit/UnitProductData.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "Game/GameInstance/SFGameInstance.h"
+#include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Units/Unit/SFUnitSpawnLibrary.h"
 
@@ -20,7 +19,7 @@ void UProductComponent::AllClearProductLine()
 	OnProductLineChanged.Broadcast(ProductLine);
 }
 
-void UProductComponent::AddProductInLine(FName InProductName)
+void UProductComponent::AddProductInLine(const FName& InProductName)
 {
 	UE_LOG(LogTemp, Warning, TEXT("UProductComponent::AddProductInLine: Called."));
 	// if resource is enough
@@ -31,22 +30,30 @@ void UProductComponent::AddProductInLine(FName InProductName)
 	}
 	
 #pragma region CheckResources
-	// //TODO: resource check
-	// ASFGameState* SFGameState = Cast<ASFGameState>(GetWorld()->GetGameState());
-	// if (!IsValid(SFGameState)) return;
-	// if (!SFGameState->TrySpendCost(unitcost?.mineral, unitcost?.ether))
-	// 	return;
+	const FUnitStatData* UnitStatsRow = FindUnitRow(InProductName);
+	if (!UnitStatsRow) return;
+	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+	if (!IsValid(SFGS)) return;
+	
+	if (!SFGS->CanAfford(UnitStatsRow->UnitProductionCost))
+	{
+		SF_LOG(Warning, "[Product]자원이 부족해 [%s]을 생산하지못합니다. 현재유닛의 Cost: M: %d, E: %d",
+			*InProductName.ToString(),UnitStatsRow->UnitProductionCost.Mineral, UnitStatsRow->UnitProductionCost.Ether);
+		return;
+	}
+	
+	if (!SFGS->CanAffordPopulation(UnitStatsRow->PopulationCost))
+	{
+		SF_LOG(Warning, "[Product] 수용인구가 부족해 [%s]을 생산하지못합니다. PopCost: %d, NowPop: %d/MaxPop: %d",
+			*InProductName.ToString(),UnitStatsRow->PopulationCost, SFGS->GetCurrentPopulation() ,SFGS->GetMaximumPopulation());
+		return;
+	}
 #pragma endregion 
-	
-	USFDataTableManager* DataManager = GetOwner()->GetGameInstance()->GetSubsystem<USFDataTableManager>();
-	if (!IsValid(DataManager)) return;
-	
-	const FUnitProductData* Row = DataManager->GetDataRow<FUnitProductData>(EDataTableType::Product, InProductName);;
-	if (!Row) return;
-
-	ProductLine.Add({InProductName, Row->UnitProductionDuration});
+	SFGS->TrySpendCost(UnitStatsRow->UnitProductionCost);
+	ProductLine.Add({InProductName, UnitStatsRow->UnitProductionDuration});
 	OnProductLineChanged.Broadcast(ProductLine);
 	UE_LOG(LogTemp, Warning, TEXT("Insert ProductLine: %s / Currentindex: %d"), *InProductName.ToString(), ProductLine.Num() - 1);
+	
 	
 	if (ProductLine.Num() == 1)
 	{
@@ -57,18 +64,31 @@ void UProductComponent::AddProductInLine(FName InProductName)
 void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 {
 	if (!ProductLine.IsValidIndex(InProductLineIndex)) return;
-
-	const bool bWasProducing = (InProductLineIndex == 0);
-
+	
+	const FName RemovedRowName = ProductLine[InProductLineIndex].RowName;
+	const bool bIsFrontProduct = (InProductLineIndex == 0);
+	
+	// 제거 + UI갱신 - 환불 성공 여부와 무관하게 일단 실행
 	ProductLine.RemoveAt(InProductLineIndex); 
 	OnProductLineChanged.Broadcast(ProductLine);
-
-	if (!bWasProducing)
+	
+	// 환불시도
+	if (const FUnitStatData* UnitRow = FindUnitRow(RemovedRowName))
+	{
+		if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
+		{
+			// 환불
+			GS->RefundCost(UnitRow->UnitProductionCost);
+		}
+	}
+	
+	if (!bIsFrontProduct)
 	{
 		return; // index > 0 : index0 timer can not be deleted.
 	}
-
+	// 맨앞열 유닛생산을 지우면 처음부터다시, 그외 유닛생산열을 지우면 첫번째 진행도는 유지
 	// only deleted index == 0
+	UnBindFunctionOnReleasePopulation();
 	GetOwner()->GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 
 	if (ProductLine.Num() > 0)
@@ -91,6 +111,7 @@ void UProductComponent::PauseProductLine()
 
 	if (ProductLine.IsEmpty()) return;
 	
+	if (bWaitingForPopulation) return;
 	// 마지막 갱신부터 Pause 순간까지의 작업량 반영
 	ProcessProductionToNow();
 
@@ -109,6 +130,17 @@ void UProductComponent::ResumeProductLine()
 
 	if (ProductLine.IsEmpty()) return;
 	
+	if (bWaitingForPopulation)
+	{
+		const FName RowName = ProductLine[0].RowName;
+		if (CanAffordPopulation(RowName))
+		{
+			UnBindFunctionOnReleasePopulation();
+			SpawnAndAdvance(RowName);
+		}
+		return;
+	}
+	
 	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
 
 	if (TimerManager.IsTimerPaused(CurrentTimerHandle))
@@ -124,19 +156,19 @@ void UProductComponent::ResumeProductLine()
 
 void UProductComponent::StartProductLine()
 {
-	// TODO: Population Check Logic
-
+	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
-	Tracker.Reset(ProductLine[0].Duration, 1.f);
+	Tracker.Reset(ProductLine[0].RequiredWork, 1.f); // 1씩오름
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 	
 	GetWorld()->GetTimerManager().SetTimer(
-		CurrentTimerHandle,
-		this,
-		&UProductComponent::TickProduction,
-		TickInterval,
-		true);
+	   CurrentTimerHandle,
+	   this,
+	   &UProductComponent::TickProduction,
+	   TickInterval,
+	   true);
+
 	
 	if (bProductionPaused)
 	{
@@ -147,29 +179,20 @@ void UProductComponent::StartProductLine()
 
 void UProductComponent::CompletedProduct(const FName& InCompletedName)
 {
-	// FName Spawn Logic //
-	// 생성 절차(NavMesh 위치 탐색·팀 계승·능력치 주입)는 스포너와 동일하므로
-	// USFUnitSpawnLibrary 로 공통화했다.
-	USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InCompletedName);
-	/////////////////////
-	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InCompletedName.ToString());
-
-	// Pop() 은 마지막 항목을 제거한다.
-	// 대기열은 0번부터 처리되므로 앞에서 빼야 순서가 맞는다.
-	ProductLine.RemoveAt(0);
-	OnProductLineChanged.Broadcast(ProductLine);
-	if (ProductLine.Num() > 0)
+	if (!CanAffordPopulation(InCompletedName))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Product Restart: %d / %d"), ProductLine.Num(), MaxLineCount);
-		StartProductLine();
+		BindFunctionOnMaxPopulation();
+		SF_LOG(Warning, "[Product] 인구가 가득 차 대기 중입니다: %s", *InCompletedName.ToString());
 		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
-	ResetProductProgress();
+
+	SpawnAndAdvance(InCompletedName);
 }
 
 void UProductComponent::ResetProductProgress()
 {
+	UnBindFunctionOnReleasePopulation();
+	
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	Tracker.Reset(0.f, 0.f);
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
@@ -184,12 +207,11 @@ void UProductComponent::ProcessProductionToNow()
 	LastAdvanceTime = Now;
 
 	if (ActualDelta <= KINDA_SMALL_NUMBER) return;
-
 	
 	if (Tracker.Advance(ActualDelta))
 	{
 		GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
-
+		
 		const FName CompletedProductName =	ProductLine[0].RowName;
 
 		CompletedProduct(CompletedProductName);
@@ -208,4 +230,97 @@ void UProductComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UProductComponent::TickProduction()
 {
 	ProcessProductionToNow();
+}
+
+void UProductComponent::HandlePopulationChanged(int32 NewCurrentPopulation, int32 NewMaximumPopulation)
+{
+	// 대기 중이 아니거나 큐가 비었으면 들을 이유가 없다.
+	// 스폰이 유발한 재귀 통지도 여기서 걸러진다.
+	if (!bWaitingForPopulation || ProductLine.IsEmpty())
+	{
+		UnBindFunctionOnReleasePopulation();
+		return;
+	}
+
+	// 업그레이드로 정지된 상태면 재개하지 않는다.
+	// 업그레이드가 끝나면 ResumeProductLine 이 이어받는다.
+	if (bProductionPaused) return;
+
+	const FName RowName = ProductLine[0].RowName;
+	if (!CanAffordPopulation(RowName)) return;   // 아직도 부족하다
+
+	UnBindFunctionOnReleasePopulation();
+	SpawnAndAdvance(RowName);
+}
+
+// 조회함수
+const FUnitStatData* UProductComponent::FindUnitRow(const FName& InRowName) const
+{
+	const USFDataTableManager* DataManager = GetOwner()->GetGameInstance()->GetSubsystem<USFDataTableManager>();
+	return IsValid(DataManager)
+		? DataManager->GetDataRow<FUnitStatData>(EDataTableType::Unit, InRowName)
+		: nullptr;
+}
+
+bool UProductComponent::CanAffordPopulation(const FName& InRowName) const
+{
+	const FUnitStatData* Row = FindUnitRow(InRowName);
+	const ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>();
+
+	// 데이터나 GameState 가 없으면 인구로 막지 않는다.
+	if (!Row || !IsValid(GS)) return true;
+
+	return GS->CanAffordPopulation(Row->PopulationCost);
+}
+
+void UProductComponent::SpawnAndAdvance(FName InRowName)
+{
+	// 큐 갱신을 스폰보다 먼저 한다.
+	// SpawnUnitFromRow -> 유닛 BeginPlay -> ApplyPopulationDelta 가
+	// OnPopulationChanged 를 다시 브로드캐스트하는데, 그 시점에 이 슬롯이
+	// 이미 비어 있어야 같은 항목이 두 번 처리되지 않는다.
+	// InRowName 을 값으로 받는 이유도 이것이다 — RemoveAt 이 원본을 파괴한다.
+	ProductLine.RemoveAt(0);
+	OnProductLineChanged.Broadcast(ProductLine);
+
+	// 생성 절차(NavMesh 위치 탐색·팀 계승·능력치 주입)는 스포너와 동일하므로
+	// USFUnitSpawnLibrary 로 공통화했다.
+	USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
+	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());
+
+	if (ProductLine.Num() > 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Product Restart: %d / %d"), ProductLine.Num(), MaxLineCount);
+		StartProductLine();
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
+	ResetProductProgress();
+}
+
+// 바인딩
+void UProductComponent::BindFunctionOnMaxPopulation()
+{
+	bWaitingForPopulation = true;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	if (ASFGameState* GS = World->GetGameState<ASFGameState>())
+	{
+		GS->OnPopulationChanged.AddUniqueDynamic(this, &UProductComponent::HandlePopulationChanged);
+	}
+}
+
+void UProductComponent::UnBindFunctionOnReleasePopulation()
+{
+	bWaitingForPopulation = false;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	if (ASFGameState* GS = World->GetGameState<ASFGameState>())
+	{
+		GS->OnPopulationChanged.RemoveDynamic(this, &UProductComponent::HandlePopulationChanged);
+	}
 }

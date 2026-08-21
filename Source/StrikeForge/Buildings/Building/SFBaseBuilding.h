@@ -141,7 +141,7 @@ protected:
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
 	
-	const FBuildingTier* GetCurrentTier() const;
+	const FBuildingTier* GetCurrentTierInfo() const;
 	// React Delegate Function
 	UFUNCTION()
 	void UpdateHitReaction(float CurveValue);

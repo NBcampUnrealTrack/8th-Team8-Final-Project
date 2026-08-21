@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "ActorComponent/Progress/SFProgressTracker.h"
 #include "ActorComponent/Product/ProductInfo.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "ProductComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
@@ -18,7 +19,7 @@ public:
 	UProductComponent();
 	void AllClearProductLine();
 	
-	void AddProductInLine(FName InProductName);
+	void AddProductInLine(const FName& InProductName);
 	void RemoveProductInLine(int32 InProductLineIndex);
 	void PauseProductLine();
 	void ResumeProductLine();
@@ -45,6 +46,17 @@ private:
 	
 	void ProcessProductionToNow();
 	void TickProduction();
+	
+	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
+	bool CanAffordPopulation(const FName& InRowName) const;
+	void SpawnAndAdvance(FName InRowName);
+	// population function
+	// bind
+	void BindFunctionOnMaxPopulation();
+	void UnBindFunctionOnReleasePopulation();
+	// bind function
+	UFUNCTION()
+	void HandlePopulationChanged(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
 private:
 	TArray<FProductInfo> ProductLine;
 	/** ProgressComponent와 동일한 계산기를 재사용한다 */
@@ -61,6 +73,7 @@ private:
 	int32 MaxLineCount = 5;
 	
 	bool bProductionPaused = false;
+	bool bWaitingForPopulation = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

@@ -203,8 +203,14 @@ void ASFInGamePlayerController::SetupInputComponent()
             SelectAction,
             ETriggerEvent::Started,
             this,
-            &ASFInGamePlayerController::
-            HandleSelectInput
+            &ASFInGamePlayerController::HandleSelectionDragStarted
+        );
+
+        EnhancedInputComponent->BindAction(
+            SelectAction,
+            ETriggerEvent::Completed,
+            this,
+            &ASFInGamePlayerController::HandleSelectionDragCompleted
         );
     }
 
@@ -407,55 +413,79 @@ void ASFInGamePlayerController::RegisterBaseMappingContext()
     );
 }
 
-void ASFInGamePlayerController::
-HandleSelectInput()
+void ASFInGamePlayerController::HandleSelectionDragStarted()
 {
-    SF_LOG(
-        Log,
-        "[SFInGamePlayerController] "
-        "SelectAction triggered."
-    );
-
-    FHitResult Hit;
-
-    const ETraceTypeQuery TraceType =
-        UEngineTypes::ConvertToTraceType(
-            ECC_Visibility
-        );
-
-    AActor* NewSelected = nullptr;
-
-    if (
-        GetHitResultUnderCursorByChannel(
-            TraceType,
-            false,
-            Hit
-        )
-        )
+    if (!GetMousePosition(
+        SelectionPressPosition.X,
+        SelectionPressPosition.Y
+    ))
     {
-        AActor* HitActor = Hit.GetActor();
-
-        if (
-            IsValid(HitActor)
-            && HitActor->GetClass()->ImplementsInterface(
-                USFSelectable::StaticClass()
-            )
-            )
-        {
-            NewSelected = HitActor;
-        }
+        return;
     }
 
-    SetSelectedActor(NewSelected);
+    bSelectionPressActive = true;
+
+    OnSelectionDragStarted.Broadcast(
+        SelectionPressPosition
+    );
 
     SF_LOG(
         Log,
-        "[SFInGamePlayerController] "
-        "Broadcasting OnSelectInput."
+        "[SFInGamePlayerController] Selection drag started | Position: %s",
+        *SelectionPressPosition.ToString()
+    );
+}
+
+void ASFInGamePlayerController::HandleSelectionDragCompleted()
+{
+    if (!bSelectionPressActive)
+    {
+        return;
+    }
+
+    FVector2D EndScreenPosition;
+
+    if (!GetMousePosition(
+        EndScreenPosition.X,
+        EndScreenPosition.Y
+    ))
+    {
+        bSelectionPressActive = false;
+        return;
+    }
+
+    const FVector2D StartScreenPosition =
+        SelectionPressPosition;
+
+    bSelectionPressActive = false;
+
+    const float DragDistance = FVector2D::Distance(
+        StartScreenPosition,
+        EndScreenPosition
     );
 
-    OnSelectInput.Broadcast();
+    OnSelectionDragCompleted.Broadcast(
+        StartScreenPosition,
+        EndScreenPosition
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Selection drag completed | Distance: %.1f",
+        DragDistance
+    );
+
+    if (DragDistance <= SelectionDragThreshold)
+    {
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] Broadcasting click selection."
+        );
+
+        OnSelectInput.Broadcast();
+    }
 }
+
 void ASFInGamePlayerController::HandleMoveInput()
 {
     FHitResult Hit;

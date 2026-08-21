@@ -289,6 +289,7 @@ void ASFBaseBuilding::BeginConstruction()
 	// 업그레이드때문에 건설로직에 들어온다면
 	if (bIsUpgrade)
 	{	// 생산컴포넌트 pause 로직
+		DeactivateActiveTier();
 		OnUpgradeStarted();
 	}
 	//CombatTargetComponent->SetTargetingEnabled(true);
@@ -823,6 +824,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	SetBuildingState(EBuildingState::Completed);
 	ActivatedGameplayTier = CurrentTier;
 	OnTierActivated(*ActivatedTier);
+	bIsDeActivated = false;
 
 	return true;
 }
@@ -830,6 +832,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 void ASFBaseBuilding::DeactivateActiveTier()
 {	// 초기건설에는 능력치를 비활성화하지않습니다
 	if (ActivatedGameplayTier == INDEX_NONE) return;
+	if (bIsDeActivated) return;
 	// 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
 	const int32 TierToDeactivate = ActivatedGameplayTier;
 	// 가상 함수 안에서 Destroy 등이 다시 발생해도
@@ -846,9 +849,12 @@ void ASFBaseBuilding::DeactivateActiveTier()
 		);
 		return;
 	}
+	
 	// 간단하게 현재 티어의 능력치를 반환함
 	OnTierDeactivated(*DeactivatedTier);
+	bIsDeActivated = true;
 }
+
 #pragma region Sound
 void ASFBaseBuilding::PlayConstructionCompleteSound()
 {
@@ -885,7 +891,6 @@ void ASFBaseBuilding::PlayDestroyEffect()
 }
 #pragma endregion
 
-
 bool ASFBaseBuilding::CanReceiveDamage() const
 {	// 건설중, 건설완료 상태일때만 true -> TakeDamaged 인터페이스에서 조건으로 활용
 	return CurrentBuildingState == EBuildingState::UnderConstruction ||
@@ -894,7 +899,7 @@ bool ASFBaseBuilding::CanReceiveDamage() const
 
 void ASFBaseBuilding::SetBoxExtent()
 {
-	FBoxSphereBounds BoundsInParent =	StaticMeshComponent->CalcBounds(
+	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
 	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);

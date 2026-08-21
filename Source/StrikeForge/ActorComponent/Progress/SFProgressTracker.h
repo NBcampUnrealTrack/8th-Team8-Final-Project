@@ -20,16 +20,16 @@ struct STRIKEFORGE_API FSFProgressTracker
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Progress")
 	float RequiredWork = 100.f;
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Progress")
-	float BaseWorkRate = 10.f;
+	float BaseWorkAmount = 10.f;
 	/** 외부 요인(버프, 일꾼 지원, 자원 보너스 등)이 건드리는 단 하나의 값 */
 	UPROPERTY(BlueprintReadWrite, Category = "SF|Progress")
 	float WorkRateMultiplier = 1.f;
 
-	void Reset(float InRequiredWork, float InBaseWorkRate)
+	void Reset(float InRequiredWork, float InBaseWorkAmount)
 	{
 		CurrentWork = 0.f;
 		RequiredWork = InRequiredWork;
-		BaseWorkRate = InBaseWorkRate;
+		BaseWorkAmount = InBaseWorkAmount;
 		//SpeedMultiplier = 1.f;
 	}
 
@@ -38,7 +38,7 @@ struct STRIKEFORGE_API FSFProgressTracker
 	{
 		// 현재 축적치 = 시간당 축적량 * 속도 * deltatime
 		// deltatime이 곧 타이머 interval이기때문에 값이 작아지면 그만큼더 자주 불림
-		CurrentWork += BaseWorkRate * WorkRateMultiplier * DeltaTime;
+		CurrentWork += BaseWorkAmount * WorkRateMultiplier * DeltaTime;
 		return CurrentWork >= RequiredWork ;
 	}
 	
@@ -46,7 +46,7 @@ struct STRIKEFORGE_API FSFProgressTracker
 	{
 		return FMath::Clamp(UKismetMathLibrary::SafeDivide(CurrentWork, RequiredWork ), 0.f, 1.f);
 	}
-	
+
 	FORCEINLINE void ResetWorkRateMultiplier()	{ WorkRateMultiplier = 1.f; }
 };
  

@@ -4,6 +4,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "SFMiningBuilding.generated.h"
 
+class UMiningComponent;
 class AResourceBase;
 enum class EResourceType : uint8;
 
@@ -16,6 +17,8 @@ public:
 	ASFMiningBuilding();
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	
+	void BindDelegateFunction();
+	void UnBindDelegateFunction();
 	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) override;
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
@@ -28,29 +31,24 @@ public:
 	// OnDestroyed2
 	virtual void OnBuildingDestroyed() override;
 	
-	void TryLinkResource(AResourceBase* InResourceRef);
-	
+	bool TryLinkResource(AResourceBase* InResourceRef);
+
 	// getter
-	FORCEINLINE EResourceType GetMineResourceType() const { return CanDigResourceType; }
+	EResourceType GetMineResourceType() const;
+	int32 GetExtractAmount() const;
 protected:
-	// timer start
-	void StartMining();
-	void StopMining();
-	void PauseMining();
-	void UnPauseMining();
-	
-	void Mining();
-	
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
-	// Mining Income Rate
-	float DiggingIncomeRate; // = (생산량 / 타이머 인터벌)
-	
-	int32 DiggingAmount = 5; // 임시하드코딩
-	
-	float DiggingInterval = 5.f; // 임시하드코딩
-	
-	FTimerHandle DiggingProductTimerHandle;
-	
-	EResourceType CanDigResourceType;
-	TWeakObjectPtr<AResourceBase> LinkedResource;
+	void ApplyIncomeRate(float NewRate);
+
+	UFUNCTION()
+	void OnResourceDepletedReceived();
+	UFUNCTION()
+	void OnResourceExtractedReceived(EResourceType InType, int32 InAmount);
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UMiningComponent> MiningComponent;
+private:
+	float CurrentIncomeRatePerSecond = 0.f;
 };

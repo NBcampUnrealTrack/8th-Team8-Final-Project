@@ -1,4 +1,5 @@
 ﻿#include "SFMiningBuilding.h"
+#include "ActorComponent/Mining/MiningComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "Logging/SFLog.h"
@@ -7,6 +8,41 @@ ASFMiningBuilding::ASFMiningBuilding()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	
+	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
+}
+
+void ASFMiningBuilding::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	BindDelegateFunction();
+}
+
+void ASFMiningBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (EndPlayReason != EEndPlayReason::LevelTransition)
+	{
+		ApplyIncomeRate(0.f);
+	}
+	
+	UnBindDelegateFunction();
+	
+	Super::EndPlay(EndPlayReason);
+}
+
+void ASFMiningBuilding::BindDelegateFunction()
+{
+	//need to connect widgetcomponent
+	//MiningComponent->OnExtractProgressRatioChanged
+	
+	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
+	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
+}
+
+void ASFMiningBuilding::UnBindDelegateFunction()
+{
+	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
+	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
 }
 
 FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
@@ -20,105 +56,81 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded(const FBuildingAppearance& De
 {
 	Super::OnBuildingDefinitionLoaded(Definition);
 	
-	CanDigResourceType = Definition.CanDigResourceType;
+	MiningComponent->SetMineResourceType(Definition.CanDigResourceType);
 }
 
 void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 {
 	Super::OnTierActivated(ActivatedTier);
 	
-	StopMining();
-	
-	DiggingIncomeRate = DiggingAmount / DiggingInterval;
-	
-	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-	if (!IsValid(SFGameState)) return;
-	if (!LinkedResource.IsValid()) return;
-	SFGameState->AddResourceIncomeRate(LinkedResource->GetResourceType(), DiggingIncomeRate);
-	StartMining();
+	MiningComponent->InitMineProperties(ActivatedTier.ExtractBaseWorkAmount, ActivatedTier.ExtractAmount);
+	MiningComponent->StartMining();
+
+	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
 }
 
 void ASFMiningBuilding::OnUpgradeStarted()
 {
 	Super::OnUpgradeStarted();
-	
-	// ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-	// if (!IsValid(SFGameState)) return;
-	// SFGameState->AddMineralIncomeRate(MiningIncomeRate * -1);
-	StopMining();
+
+	MiningComponent->StopMining();
 }
 
 void ASFMiningBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
 {
 	Super::OnTierDeactivated(DeactivatedTier);
 	
-	StopMining();
+	MiningComponent->StopMining();
 	
-	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-	if (!IsValid(SFGameState)) return;
-	SFGameState->AddResourceIncomeRate(LinkedResource->GetResourceType(), DiggingIncomeRate * -1);
+	ApplyIncomeRate(0.f);
 }
 
 void ASFMiningBuilding::OnBuildingDestroyed()
 {
 	Super::OnBuildingDestroyed();
 	
-
+	MiningComponent->StopMining();
 }
 
-void ASFMiningBuilding::StartMining()
+bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
-	if (!LinkedResource.IsValid()) return;
-	
-	GetWorldTimerManager().SetTimer(
-		DiggingProductTimerHandle,
-		this,
-		&ThisClass::Mining,
-		DiggingInterval,
-		true);
+	return MiningComponent->TryLinkResource(InResourceRef);
 }
 
-void ASFMiningBuilding::StopMining()
+// update gamestate UI
+void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 {
-	GetWorldTimerManager().ClearTimer(DiggingProductTimerHandle);
+	if (FMath::IsNearlyEqual(CurrentIncomeRatePerSecond, NewRate)) return;
+
+	if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
+	{
+		GS->AddResourceIncomeRate(GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
+	}
+	CurrentIncomeRatePerSecond = NewRate; 
 }
 
-void ASFMiningBuilding::PauseMining()
+//getter
+EResourceType ASFMiningBuilding::GetMineResourceType() const
 {
-
+	return MiningComponent->GetMineResourceType();
 }
 
-void ASFMiningBuilding::UnPauseMining()
+int32 ASFMiningBuilding::GetExtractAmount() const
 {
+	return MiningComponent->GetExtractAmount();
 }
 
-void ASFMiningBuilding::Mining()
+
+// delegates
+void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 InAmount)
 {
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	if (!LinkedResource.IsValid())
-	{
-		StopMining();
-		SF_LOG(Error, "Mine에 LinkedResource가 등록되지않았습니다.");
-		return;
-	}
-	
-	const int32 ExtractedAmount = 
-	LinkedResource.Get()->Extract(DiggingAmount);
-	
-	if (ExtractedAmount <= 0) // 자원고갈
-	{
-		StopMining();
-		SF_LOG(Error, "Mine에 LinkedResource의 자원이 고갈되었습니다.");
-		return;
-	}
-	
-	SFGameState->AddResource(
-		LinkedResource.Get()->GetResourceType(), ExtractedAmount);
+	SFGameState->AddResource(InType, InAmount);
 }
 
-void ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
+void ASFMiningBuilding::OnResourceDepletedReceived()
 {
-	LinkedResource = InResourceRef;
+	ApplyIncomeRate(0.f);
 }

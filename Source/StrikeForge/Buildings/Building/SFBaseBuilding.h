@@ -291,6 +291,8 @@ protected:
 	* 업그레이드 완료 시 새 티어로 교체한다.
 	*/// 거의 한순간 1회용 캐싱용도
 	int32 ActivatedGameplayTier = INDEX_NONE;
+	// upgrade일때 파괴되면 중복차감 방지 bool변수
+	bool bIsDeActivated = true;
 private:
 	
 };

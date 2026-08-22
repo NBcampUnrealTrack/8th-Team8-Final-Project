@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Interfaces/Units/Damagable.h"
 #include "InGame/SFSelectINfo/SFSelectable.h"
+#include "Units/Interfaces/Movable.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "UnitBase.generated.h"
@@ -33,7 +34,7 @@ enum class EUnitCombatState : uint8
  * 체력은 UHealthComponent 가 전담한다.
  */
 UCLASS()
-class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable
+class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable, public IMovable
 {
 	GENERATED_BODY()
 
@@ -41,6 +42,10 @@ public:
 	AUnitBase();
 	
 	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
+
+	/** 데이터테이블 행 이름. "같은 종류" 판정의 기준이 된다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE FName GetUnitRowName() const { return UnitRowName; }
 	
 	// ── ISelectable ─────────────────────────────────────
 
@@ -85,6 +90,19 @@ public:
 	/** 타겟까지 시야가 열려 있는가. 벽 너머 공격을 막는다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	bool HasLineOfSight(const AActor* InTarget) const;
+
+	// ── IMovable ────────────────────────────────────────
+	//
+	// 플레이어의 이동 명령을 받는다.
+	// 명령은 "진격 목표를 교체" 하는 것이지 전투를 멈추는 게 아니다.
+	// 가는 길에 적을 만나면 평소처럼 교전하고, 정리되면 다시 목적지로 향한다.
+
+	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
+	virtual void StopMove_Implementation() override;
+
+	/** 플레이어 명령을 수행 중인가 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE bool HasMoveCommand() const { return bHasCommandedDestination != 0; }
 
 	/** 이 유닛이 차지하는 인구수. 데이터테이블에서 주입된다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -261,6 +279,15 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "10.0"))
 	float MoveAcceptanceRadius = 50.f;
 
+	/**
+	 * 플레이어 명령 목적지에 도착했다고 볼 거리(cm).
+	 *
+	 * MoveAcceptanceRadius 보다 커야 한다.
+	 * 같으면 도착 판정과 이동 정지가 동시에 일어나 명령이 안 풀릴 수 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "50.0"))
+	float CommandArrivalRadius = 200.f;
+
 	/** 타겟 재탐색 주기(초) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.05"))
 	float RetargetInterval = 0.3f;
@@ -357,6 +384,12 @@ private:
 
 	/** 진격 목표 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bAdvanceTargetReported : 1;
+
+	/** 플레이어가 지정한 목적지 */
+	FVector CommandedDestination = FVector::ZeroVector;
+
+	/** 위 목적지가 유효한가 */
+	uint8 bHasCommandedDestination : 1;
 
 	/** "사거리에 도달 불가" 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bRangeUnreachableReported : 1;

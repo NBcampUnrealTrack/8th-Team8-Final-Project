@@ -381,4 +381,10 @@ ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
 
 	return IsValid(Nexus) ? Nexus : nullptr;
 }
+
+const int32 ASFGameState::GetNexusTier(int32 TeamIndex) const
+{
+	return GetNexus(TeamIndex)->GetTeamIndex();
+}
+
 // 여기까지 추가분

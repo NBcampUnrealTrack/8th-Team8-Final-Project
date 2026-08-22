@@ -173,7 +173,8 @@ public:
     // 팀 번호를 이용해 넥서스 조회
     UFUNCTION(BlueprintPure, Category = "SF|Nexus")
     ASFNexusBuilding* GetNexus(int32 TeamIndex) const;
-
+    
+    const int32 GetNexusTier(int32 TeamIndex) const;
 public:
 
     // UI 부분

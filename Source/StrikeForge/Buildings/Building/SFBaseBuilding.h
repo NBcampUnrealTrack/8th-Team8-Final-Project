@@ -118,6 +118,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
+	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
+	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;

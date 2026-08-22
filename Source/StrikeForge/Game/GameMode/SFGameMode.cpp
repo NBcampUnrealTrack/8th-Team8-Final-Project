@@ -233,7 +233,7 @@ ASFNexusBuilding* ASFGameMode::SpawnNexus(FName NexusRowName, const FTransform& 
 
     // BeginPlay 전에 데이터테이블 RowName 설정
     SpawnedNexus->SetRowName(NexusRowName);
-
+	SpawnedNexus->SetSpawnMode(ESFBuildingSpawnMode::ViewPortPlacedMode);
     // BeginPlay 전에 전투 팀 설정
     UCombatTargetComponent* CombatTarget = SpawnedNexus->FindComponentByClass<UCombatTargetComponent>();
 

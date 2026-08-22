@@ -152,8 +152,9 @@ struct STRIKEFORGE_API FBuildingTier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|House")
 	int32 PopulationCapacity = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
-	float MiningIncomeRate = 0.f; // 일단 초당 증가량으로
-
+	float ExtractBaseWorkAmount = 10.f; // 일단 초당 증가량으로
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
+	int32 ExtractAmount = 5;
 };
 
 USTRUCT(BlueprintType)

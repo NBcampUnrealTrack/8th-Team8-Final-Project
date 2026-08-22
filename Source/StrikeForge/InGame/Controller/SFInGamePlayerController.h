@@ -21,10 +21,25 @@ enum class ESFControlMode : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnMoveInput, FVector, Destination);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnMoveInput,
+    FVector,
+    Destination
+);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnSelectionDragStarted,
+    FVector2D,
+    StartScreenPosition
+);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FSFOnSelectionDragCompleted,
+    FVector2D,
+    StartScreenPosition,
+    FVector2D,
+    EndScreenPosition
+);
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
     : public APlayerController
@@ -81,8 +96,9 @@ private:
     void HandleStageResultChanged(
         ESFStageResult NewStageResult
     );
-
-    void HandleSelectInput();
+    //드래그
+    void HandleSelectionDragStarted();
+    void HandleSelectionDragCompleted();
 
     void HandleMoveInput();
 
@@ -206,6 +222,13 @@ protected:
     )
     TObjectPtr<UInputAction> ToggleSettingsAction = nullptr;
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    float SelectionDragThreshold = 8.f;
+
 private:
     UPROPERTY(
         Transient
@@ -216,14 +239,21 @@ private:
     
     UPROPERTY()
     TWeakObjectPtr<AActor> SelectedActor;
+
     UPROPERTY()
     TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef;           // 드래그 중인 고스트
+
     UPROPERTY()
     TObjectPtr<ASFBaseBuilding> PendingSpawnedBuildingRef;  // 확정, 커맨더 대기 중
+
     UPROPERTY()
     TWeakObjectPtr<ASFCommander> MyCommander;
+
     UPROPERTY(Transient)
     TObjectPtr<ASFGameState> SFGameState;
+
+    FVector2D SelectionPressPosition = FVector2D::ZeroVector;
+    bool bSelectionPressActive = false;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(
@@ -249,4 +279,16 @@ public:
         Category = "SF|Input"
     )
     FSFOnCancelBuildInput OnCancelBuildInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSelectionDragStarted OnSelectionDragStarted;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSelectionDragCompleted OnSelectionDragCompleted;
 };

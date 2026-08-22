@@ -11,6 +11,8 @@
 
 class UBoxComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnResourceNodeDepleted, AResourceBase*, Resource);
+
 UCLASS(Abstract)
 class STRIKEFORGE_API AResourceBase 
 	: public AActor
@@ -27,9 +29,12 @@ public:
 	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
 	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
 	FORCEINLINE int32 GetResourceTier() const { return ResourceTier; }
+	FORCEINLINE float GetResourceRequiredWork() const { return ResourceRequiredWork; }
 	
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
+	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
 	
+	FSFOnResourceNodeDepleted OnDepleted;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -47,6 +52,8 @@ protected:
 	int32 ResourceDeposit = 0;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	int32 ResourceTier = 1;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	float ResourceRequiredWork = 50.f;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource|Grid")
 	FIntPoint ResourceGridSize = FIntPoint(2, 2);

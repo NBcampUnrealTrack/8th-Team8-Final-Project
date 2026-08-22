@@ -351,14 +351,7 @@ bool ASFGameState::UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
 
 ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
 {
-	const TObjectPtr<ASFNexusBuilding>* FoundNexus = NexusByTeam.Find(TeamIndex);
-
-	if (FoundNexus == nullptr)
-	{
-		return nullptr;
-	}
-
-	ASFNexusBuilding* Nexus = FoundNexus->Get();
+	ASFNexusBuilding* Nexus = NexusByTeam.FindRef(TeamIndex).Get();
 
 	return IsValid(Nexus) ? Nexus : nullptr;
 }

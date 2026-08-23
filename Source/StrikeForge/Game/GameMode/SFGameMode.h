@@ -18,10 +18,14 @@ class STRIKEFORGE_API ASFGameMode : public AGameModeBase
 	
 public:
 	ASFGameMode();
-
+	
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+	
+	UFUNCTION(BlueprintPure, Category = "SF|Team")
+	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
 protected:
 	virtual void BeginPlay() override;
-
+	
 public:
 	// 스테이지 초기화가 끝난 후 게임 시작
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
@@ -59,4 +63,10 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 PlayerTeamIndex = 0;
+	
+	/** 플레이어 팀의 시작 자원 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	int32 StartingMineral = 200;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	int32 StartingEther = 100;
 };

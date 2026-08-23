@@ -49,6 +49,7 @@ private:
 	
 	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
 	bool CanAffordPopulation(const FName& InRowName) const;
+	int32 GetOwnerTeam() const;
 	void SpawnAndAdvance(FName InRowName);
 	// population function
 	// bind

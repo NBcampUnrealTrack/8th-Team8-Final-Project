@@ -111,6 +111,9 @@ public:
 	
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FORCEINLINE int32 GetCurrentTier() const { return CurrentTier; }
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
@@ -118,12 +121,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
-	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
-	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
+	
+	// setter
+	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
+	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }
 
+	FORCEINLINE void SetMyTeamIndex(const int32 InTeamIndex) { TeamIndex = InTeamIndex; }
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

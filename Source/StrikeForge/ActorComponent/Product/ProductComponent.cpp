@@ -1,9 +1,12 @@
 ﻿#include "ProductComponent.h"
+
+#include "Buildings/SFRootBase.h"
 #include "Datas/Unit/UnitProductData.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "Interfaces/Units/Targetable.h"
 #include "Units/Unit/SFUnitSpawnLibrary.h"
 
 UProductComponent::UProductComponent()
@@ -35,21 +38,22 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGS)) return;
 	
-	if (!SFGS->CanAfford(UnitStatsRow->UnitProductionCost))
+	const int32 OwnerTeam = GetOwnerTeam();
+	if (!SFGS->CanAffordResource(OwnerTeam, UnitStatsRow->UnitProductionCost))
 	{
 		SF_LOG(Warning, "[Product]자원이 부족해 [%s]을 생산하지못합니다. 현재유닛의 Cost: M: %d, E: %d",
-			*InProductName.ToString(),UnitStatsRow->UnitProductionCost.Mineral, UnitStatsRow->UnitProductionCost.Ether);
+			*InProductName.ToString(), UnitStatsRow->UnitProductionCost.Mineral, UnitStatsRow->UnitProductionCost.Ether);
 		return;
 	}
 	
-	if (!SFGS->CanAffordPopulation(UnitStatsRow->PopulationCost))
+	if (!SFGS->CanAffordPopulation(OwnerTeam, UnitStatsRow->PopulationCost))
 	{
 		SF_LOG(Warning, "[Product] 수용인구가 부족해 [%s]을 생산하지못합니다. PopCost: %d, NowPop: %d/MaxPop: %d",
-			*InProductName.ToString(),UnitStatsRow->PopulationCost, SFGS->GetCurrentPopulation() ,SFGS->GetMaximumPopulation());
+			*InProductName.ToString(),UnitStatsRow->PopulationCost, SFGS->GetCurrentPopulation(OwnerTeam) ,SFGS->GetMaximumPopulation(OwnerTeam));
 		return;
 	}
 #pragma endregion 
-	SFGS->TrySpendCost(UnitStatsRow->UnitProductionCost);
+	SFGS->TrySpendCost(OwnerTeam, UnitStatsRow->UnitProductionCost);
 	ProductLine.Add({InProductName, UnitStatsRow->UnitProductionDuration});
 	OnProductLineChanged.Broadcast(ProductLine);
 	UE_LOG(LogTemp, Warning, TEXT("Insert ProductLine: %s / Currentindex: %d"), *InProductName.ToString(), ProductLine.Num() - 1);
@@ -67,6 +71,7 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 	
 	const FName RemovedRowName = ProductLine[InProductLineIndex].RowName;
 	const bool bIsFrontProduct = (InProductLineIndex == 0);
+	const int32 OwnerTeam = GetOwnerTeam();
 	
 	// 제거 + UI갱신 - 환불 성공 여부와 무관하게 일단 실행
 	ProductLine.RemoveAt(InProductLineIndex); 
@@ -78,7 +83,7 @@ void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 		if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
 		{
 			// 환불
-			GS->RefundCost(UnitRow->UnitProductionCost);
+			GS->RefundCost(OwnerTeam, UnitRow->UnitProductionCost);
 		}
 	}
 	
@@ -266,11 +271,18 @@ bool UProductComponent::CanAffordPopulation(const FName& InRowName) const
 {
 	const FUnitStatData* Row = FindUnitRow(InRowName);
 	const ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>();
-
+	const int32 OwnerTeam = GetOwnerTeam();
+	
 	// 데이터나 GameState 가 없으면 인구로 막지 않는다.
 	if (!Row || !IsValid(GS)) return true;
 
-	return GS->CanAffordPopulation(Row->PopulationCost);
+	return GS->CanAffordPopulation(OwnerTeam, Row->PopulationCost);
+}
+
+int32 UProductComponent::GetOwnerTeam() const
+{
+	const ASFRootBase* OwnerBuilding = Cast<ASFRootBase>(GetOwner());
+	return OwnerBuilding ? OwnerBuilding->GetTeamIndex() : Targetable::NeutralTeam;
 }
 
 void UProductComponent::SpawnAndAdvance(FName InRowName)
@@ -308,7 +320,10 @@ void UProductComponent::BindFunctionOnMaxPopulation()
 
 	if (ASFGameState* GS = World->GetGameState<ASFGameState>())
 	{
-		GS->OnPopulationChanged.AddUniqueDynamic(this, &UProductComponent::HandlePopulationChanged);
+		if (USFTeamState* Team = GS->GetTeamState(GetOwnerTeam()))
+		{
+			Team->OnPopulationChanged.AddUniqueDynamic(this, &UProductComponent::HandlePopulationChanged);
+		}
 	}
 }
 
@@ -321,6 +336,9 @@ void UProductComponent::UnBindFunctionOnReleasePopulation()
 
 	if (ASFGameState* GS = World->GetGameState<ASFGameState>())
 	{
-		GS->OnPopulationChanged.RemoveDynamic(this, &UProductComponent::HandlePopulationChanged);
+		if (USFTeamState* Team = GS->GetTeamState(GetOwnerTeam()))
+		{
+			Team->OnPopulationChanged.RemoveDynamic(this, &UProductComponent::HandlePopulationChanged);
+		}
 	}
 }

@@ -17,6 +17,7 @@
 //#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
 #include "SFRTSCameraPawn.h"
+#include "Game/GameMode/SFGameMode.h"
 #include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
@@ -57,7 +58,7 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     
     if (const ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>())
     {
-        if (!SFGS->CanAfford(FirstTier->Construction.ConstructCost))
+        if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
         {
             SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *InRowName.ToString());
             return false;
@@ -93,6 +94,12 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     }
     
     DeferredActor->SetRowName(InRowName);
+    DeferredActor->SetMyTeamIndex(MyTeamIndex);
+    
+    if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())
+    {
+        Combat->SetTeamIndex(MyTeamIndex);
+    }
     // deferred spawn finished
     DeferredActor->FinishSpawning(Trans);
 
@@ -133,7 +140,7 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
         return;
     }
 
-    if (!SFGS->CanAfford(NeedConstructCost))
+    if (!SFGS->CanAffordResource(GetMyTeamIndex(), NeedConstructCost))
     {   // 자원 없을때
         SF_LOG(Warning, "[SFPC] 지휘관이 도착했으나 자원이 부족해 건설이 취소되었습니다: %s", *PendingSpawnedBuildingRef->GetName());
         ClearPendingBuildingRef();
@@ -148,7 +155,7 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
     }
     
     // 모든 조건 통과시 - 차감
-    SFGS->TrySpendCost(NeedConstructCost);
+    SFGS->TrySpendCost(GetMyTeamIndex(), NeedConstructCost);
     PendingSpawnedBuildingRef = nullptr;
 }
 

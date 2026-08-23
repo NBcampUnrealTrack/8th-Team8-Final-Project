@@ -32,7 +32,7 @@ void ASFHouseBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
 	// 증가 로직
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
-	SFGameState->AddMaxPopulation(IncreasePopValue);
+	SFGameState->AddMaxPopulation(GetTeamIndex(), IncreasePopValue);
 }
 
 void ASFHouseBuilding::OnUpgradeStarted()
@@ -54,5 +54,5 @@ void ASFHouseBuilding::OnBuildingDestroyed()
 	// 최대 인구 감소 로직
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
-	SFGameState->AddMaxPopulation(MaxPopulationIncreaseAmount * -1);
+	SFGameState->AddMaxPopulation(GetTeamIndex(), MaxPopulationIncreaseAmount * -1);
 }

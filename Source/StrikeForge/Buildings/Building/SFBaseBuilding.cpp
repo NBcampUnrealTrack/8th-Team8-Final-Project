@@ -1,4 +1,5 @@
 ﻿#include "SFBaseBuilding.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Logging/SFLog.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
@@ -521,17 +522,26 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 			NextTier, CachedDefinition.Tiers.Num());
 		return;
 	}
-
 	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGS))
 	{
 		SF_LOG(Error, "SFGameState가 없습니다.");
 		return;
 	}
+	
+	if (false == IsA<ASFNexusBuilding>())
+	{	// nexus가 아닐때는 업그레이드할때 넥서스티어비교
+		const int32 NexusTier = SFGS->GetNexusTier(GetTeamIndex());
+		if (NextTier > NexusTier)
+		{
+			SF_LOG(Warning, "현재건물의 티어: %d / Nexus의 티어: %d 업글할수있는티어의 최대입니다. 업글불가", CurrentTier, NexusTier);
+			return;
+		}
+	}
 	// 업그레이드비용 저장
 	const FResources SpendCost = CurrentUpgradeBuildCost;
 	
-	if (!SFGS->CanAfford(SpendCost))
+	if (!SFGS->CanAffordResource(GetTeamIndex(), SpendCost))
 	{
 		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
 			*GetName(), SpendCost.Mineral, SpendCost.Ether);
@@ -545,7 +555,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	}
 	// 이시점에서는 건설비용이 업그레이된티어의 값으로 바뀐상태
 	
-	SFGS->TrySpendCost(SpendCost);
+	SFGS->TrySpendCost(GetTeamIndex(), SpendCost);
 	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
@@ -788,6 +798,7 @@ bool ASFBaseBuilding::CanStartPreparedConstruction() const
 		IsValid(StaticMeshComponent);
 }
 
+// tier index ++
 bool ASFBaseBuilding::CommitPreparedTier()
 {// MOVE Current <- Pending
 	

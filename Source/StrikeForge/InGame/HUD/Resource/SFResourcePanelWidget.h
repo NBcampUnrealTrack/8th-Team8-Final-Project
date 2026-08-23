@@ -100,4 +100,6 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<ASFGameState> BoundGameState = nullptr;
+	// MyTeamindex
+	int32 CachedPlayerTeamIndex = 0;
 };

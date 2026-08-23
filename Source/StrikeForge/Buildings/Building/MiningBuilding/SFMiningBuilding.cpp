@@ -105,7 +105,7 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 
 	if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
 	{
-		GS->AddResourceIncomeRate(GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
+		GS->AddResourceIncomeRate(GetTeamIndex(), GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
 	}
 	CurrentIncomeRatePerSecond = NewRate; 
 }
@@ -130,7 +130,7 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	SFGameState->AddResource(InType, InAmount);
+	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

@@ -377,10 +377,7 @@ void AUnitBase::ApplyPopulationDelta(int32 InDelta)
 
 	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
 	if (!IsValid(GameState)) return;
-
-	const int32 NewCurrent = GameState->GetCurrentPopulation() + InDelta;
-
-	GameState->SetPopulation(NewCurrent, GameState->GetMaximumPopulation());
+	GameState->AddPopulation(GetTeamIndex(), InDelta);
 }
 
 void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const

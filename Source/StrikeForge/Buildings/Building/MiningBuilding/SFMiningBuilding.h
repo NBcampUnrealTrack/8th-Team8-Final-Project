@@ -27,6 +27,7 @@ public:
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
 	// when construct destroyed, play effects
+	virtual void OnBuildingDestroyed() override;
 	
 	bool TryLinkResource(AResourceBase* InResourceRef);
 

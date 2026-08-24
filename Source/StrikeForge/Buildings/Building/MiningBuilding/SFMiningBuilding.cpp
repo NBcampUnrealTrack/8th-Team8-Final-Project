@@ -113,6 +113,13 @@ void ASFMiningBuilding::OnTierDeactivated()
 	ApplyIncomeRate(0.f);
 }
 
+void ASFMiningBuilding::OnBuildingDestroyed()
+{
+	Super::OnBuildingDestroyed();
+	
+	Destroy();
+}
+
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
 	ensureMsgf(MiningComponent, TEXT("MineBuilding-TryLinkResource::InValid MiningComponent"));

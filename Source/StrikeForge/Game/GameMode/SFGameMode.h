@@ -24,6 +24,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Team")
 	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
 protected:
+	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴
+	virtual void InitGameState() override;
 	virtual void BeginPlay() override;
 	
 public:

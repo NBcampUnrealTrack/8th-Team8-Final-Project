@@ -2,6 +2,7 @@
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/SFBuildingCatalog.h"
 #include "Interfaces/Units/Targetable.h"
 
 ASFGameState::ASFGameState()
@@ -278,4 +279,40 @@ int32 ASFGameState::GetMaximumPopulation(int32 TeamIndex) const
 {
 	const USFTeamState* Team = GetTeamState(TeamIndex);
 	return Team ? Team->GetMaximumPopulation() : 0;
+}
+
+bool ASFGameState::SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog)
+{
+	if (!IsValid(InBuildingCatalog))
+	{
+		SF_LOG(Error,
+			"[SFGameState] Team %d에 설정할 "
+			"BuildingCatalog가 유효하지 않습니다.",
+			TeamIndex);
+
+		return false;
+	}
+
+	USFTeamState* Team = FindOrAddTeam(TeamIndex);
+
+	if (!IsValid(Team))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameState] TeamState를 준비할 수 없습니다. "
+			"Team=%d",
+			TeamIndex);
+
+		return false;
+	}
+
+	return Team->SetBuildingCatalog(InBuildingCatalog);
+}
+
+USFBuildingCatalog* ASFGameState::GetTeamBuildingCatalog(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+
+	return IsValid(Team)?
+			Team->GetBuildingCatalog(): nullptr;
 }

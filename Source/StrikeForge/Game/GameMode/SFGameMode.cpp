@@ -7,6 +7,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/BuildingAppearance.h"
+#include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 
@@ -27,16 +28,74 @@ void ASFGameMode::PostLogin(APlayerController* NewPlayer)
 	}
 }
 
-void ASFGameMode::BeginPlay()
+void ASFGameMode::InitGameState()
 {
-	Super::BeginPlay();
-
+	Super::InitGameState();
+	
 	SFGameState = GetGameState<ASFGameState>();
 
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"SFGameState를 찾을 수 없습니다.");
 
+		return;
+	}
+
+	USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
+
+	if (!IsValid(SFGameInstance))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"SFGameInstance가 유효하지 않습니다.");
+
+		return;
+	}
+
+	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadPlayerBuildingCatalog();
+
+	if (!IsValid(PlayerCatalog))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"플레이어 건물 카탈로그를 준비할 수 없습니다.");
+
+		return;
+	}
+
+	if (!SFGameState->SetTeamBuildingCatalog(PlayerTeamIndex, PlayerCatalog))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"Team %d에 카탈로그를 설정하지 못했습니다.",
+			PlayerTeamIndex);
+
+		return;
+	}
+
+	SF_LOG(
+		Log,
+		"[SFGameMode] Team %d BuildingCatalog 설정 완료: %s",
+		PlayerTeamIndex,
+		*GetNameSafe(PlayerCatalog));
+}
+
+void ASFGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+	// initgamestate에서 캐싱함.
+	// SFGameState = GetGameState<ASFGameState>();
+	//
+	if (!IsValid(SFGameState))
+	{
+		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
+	
 		return;
 	}
 

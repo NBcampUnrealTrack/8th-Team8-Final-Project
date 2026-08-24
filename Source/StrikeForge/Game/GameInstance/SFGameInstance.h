@@ -10,6 +10,7 @@
 
 // 수정부분
 class UWorld;
+class USFBuildingCatalog;
 
 UENUM(BlueprintType)
 enum class EDataTableType : uint8
@@ -54,6 +55,9 @@ public:
 	// 스테이지 클리어 기록
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
+	
+	// 종족별 카탈로그
+	USFBuildingCatalog* LoadPlayerBuildingCatalog() const;
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Building", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> BuildingDataTable;
@@ -87,4 +91,14 @@ private:
 	// 가장 높은 순서의 클리어 스테이지
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 HighestClearedStageOrder = 0;
+	
+	// 플레이어 종족
+	/**
+	 * 플레이어가 선택한 종족의 건물 카탈로그.
+	 *
+	 * 현재는 BP_SFGameInstance 기본값으로 Human 카탈로그를 사용한다.
+	 * 추후 종족 선택 기능이 생기면 선택 결과로 교체한다.
+	 */
+	UPROPERTY(EditDefaultsOnly,	BlueprintReadOnly, Category = "SF|Race", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<USFBuildingCatalog> PlayerBuildingCatalog;
 };

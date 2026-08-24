@@ -1,6 +1,7 @@
 ﻿#include "SFGameInstance.h"
 
 // 추가한 부분
+#include "Datas/Building/SFBuildingCatalog.h"
 #include "Kismet/GameplayStatics.h"
 #include "Logging/SFLog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
@@ -242,6 +243,34 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
     );
 
     return true;
+}
+
+USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
+{
+    if (PlayerBuildingCatalog.IsNull())
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] PlayerBuildingCatalog이 "
+            "설정되지 않았습니다.");
+
+        return nullptr;
+    }
+
+    USFBuildingCatalog* Catalog = PlayerBuildingCatalog.LoadSynchronous();
+
+    if (!IsValid(Catalog))
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] PlayerBuildingCatalog "
+            "로드에 실패했습니다. Asset=%s",
+            *PlayerBuildingCatalog.ToSoftObjectPath().ToString());
+
+        return nullptr;
+    }
+
+    return Catalog;
 }
 
 bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)

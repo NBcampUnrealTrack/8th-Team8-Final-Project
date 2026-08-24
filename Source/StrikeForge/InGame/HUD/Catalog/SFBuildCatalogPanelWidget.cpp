@@ -106,6 +106,7 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 			BuildingEntryHorizontalBox
 			->AddChildToHorizontalBox(
 				EntryWidget);
+		
 
 		if (IsValid(EntrySlot))
 		{

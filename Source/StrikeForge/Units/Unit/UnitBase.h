@@ -14,6 +14,7 @@ class UCombatTargetComponent;
 class UWidgetComponent;
 class AUnitAIController;
 class UNiagaraSystem;
+class UAnimMontage;
 class ALanePath;
 
 /** 전투 상태 머신 */
@@ -99,6 +100,20 @@ public:
 
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
+
+	/**
+	 * 현재 전투 상태. AnimBP 가 애니메이션을 고르는 기준이 된다.
+	 *
+	 *   Advancing / Chasing  이동  → Walk
+	 *   Attacking            교전  → Attack 몽타주
+	 *   Dead                 사망  → Dying
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE EUnitCombatState GetCombatState() const { return CombatState; }
+
+	/** 수평 이동 속도. Blend Space 의 입력값으로 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	float GetGroundSpeed() const;
 
 	/** 플레이어 명령을 수행 중인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -350,6 +365,19 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UNiagaraSystem> AttackEffect;
+
+	/**
+	 * 공격 시 재생할 몽타주.
+	 *
+	 * AnimBP 의 AnimGraph 에 Slot 노드(기본 'DefaultSlot')가 있어야
+	 * 화면에 나온다. 비워두면 아무것도 재생하지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/** 사망 시 재생할 몽타주. 없으면 AnimBP 의 사망 상태에 맡긴다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> DeathMontage;
 
 	/** 사망 순간 재생할 이펙트. 자기 위치에 스폰된다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))

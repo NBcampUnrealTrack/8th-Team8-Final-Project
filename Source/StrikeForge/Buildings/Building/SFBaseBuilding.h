@@ -141,7 +141,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
-	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) {}
+	virtual void OnBuildingDefinitionLoaded() {}
 	// APPLY BUILDING's ABILITY
 	/**
 	 * CurrentTier가 확정된 뒤 호출된다.

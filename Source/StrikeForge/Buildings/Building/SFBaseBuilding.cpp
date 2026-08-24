@@ -597,7 +597,7 @@ void ASFBaseBuilding::BeginPlay()
 	// try take info at data table
 	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
 	
-	OnBuildingDefinitionLoaded(CachedDefinition);
+	OnBuildingDefinitionLoaded();
 	// if load failed return
 	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode

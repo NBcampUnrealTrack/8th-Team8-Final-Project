@@ -1,5 +1,4 @@
 ﻿#include "SFInGamePlayerController.h"
-
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystemInterface.h"
 #include "EnhancedInputSubsystems.h"
@@ -10,15 +9,14 @@
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
-#include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFInGameHUDWidget.h"
-#include "Kismet/GameplayStatics.h"
 #include "Units/Commander/SFCommander.h"
-//#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
 #include "SFRTSCameraPawn.h"
-#include "Game/GameMode/SFGameMode.h"
 #include "Logging/SFLog.h"
+#include "Datas/Building/SFBuildingCatalog.h"
+#include "Datas/Building/SFBuildingDefinition.h"
+#include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -31,7 +29,7 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
 }
 
-bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
+bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
 {
     // 자원이 충분한가 아닌가 검사 로직. 가능구역2
     if (IsValid(SpawnedBuildingRef))
@@ -40,42 +38,64 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
         return false;
     }
 
-    USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-    if (!IsValid(DataManager)) return false;
-    
-    const FBuildingAppearance* Row = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, InRowName);
-    if (!Row)
+    ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+
+    if (!IsValid(SFGS))
     {
-        UE_LOG(LogTemp, Error, TEXT("No build table for %s"), *InRowName.ToString());
+        SF_LOG(
+            Error,
+            "[SFPC] GameState가 없습니다.");
+
+        return false;
+    }
+
+    USFBuildingCatalog* Catalog = SFGS->GetTeamBuildingCatalog(GetMyTeamIndex());
+
+    if (!IsValid(Catalog))
+    {
+        SF_LOG(
+            Error,
+            "[SFPC] Team %d의 BuildingCatalog가 없습니다.",
+            GetMyTeamIndex());
+
+        return false;
+    }
+
+    USFBuildingDefinition* Definition = Catalog->FindDefinition(InBuildingId);
+
+    if (!IsValid(Definition))
+    {
+        SF_LOG(
+            Error,
+            "[SFPC] BuildingDefinition을 찾지 못했습니다. Id=%s",
+            *InBuildingId.ToString());
+
         return false;
     }
     
 #pragma region CheckResources 
     // FName의 첫번째 티어의 정보 불러오기
     // 나중에 2티어부터 건설할수있게되면 수정이 필요한지점이다
-    const FBuildingTier* FirstTier = Row->FindTier(0);
+    const FSFBuildingTierData* FirstTier = Definition->FindTier(0);
     if (!FirstTier) return false;
     
-    if (const ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>())
+    if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
     {
-        if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
-        {
-            SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *InRowName.ToString());
-            return false;
-        }
+        SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *Definition->BuildingId.ToString());
+        return false;
     }
+
 #pragma endregion 
     
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
-    FRotator Rot(0.f, 90.f, 0.f);
-    Trans.SetRotation(Rot.Quaternion());
+    Trans.SetRotation(FRotator(0.f, 90.f, 0.f).Quaternion());
     
-    UClass* SpawnClass = Row->BuildingClass.LoadSynchronous();     // ★ADD
+    UClass* SpawnClass = Definition->BuildingClass.LoadSynchronous();     // ★ADD
     if (!SpawnClass)
     {
         UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
-            *InRowName.ToString());
+            *Definition->BuildingId.ToString());
         return false;
     }
     
@@ -92,8 +112,17 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
         UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
         return false;
     }
+    /*
+    * BaseBuilding이 아직 DT를 읽고 있으므로 임시 브리지로 유지한다.
+    * BuildingId와 DT_Building의 RowName이 같아야 한다.
+    */
+    if (!DeferredActor->SetBuildingDefinition(Definition))
+    {
+        DeferredActor->Destroy();
+        return false;
+    }
     
-    DeferredActor->SetRowName(InRowName);
+    DeferredActor->SetRowName(Definition->BuildingId);
     DeferredActor->SetMyTeamIndex(MyTeamIndex);
     
     if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())

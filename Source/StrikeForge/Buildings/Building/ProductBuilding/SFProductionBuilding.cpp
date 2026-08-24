@@ -1,5 +1,6 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
@@ -13,21 +14,33 @@ void ASFProductionBuilding::OnTierActivated()
 {
 	Super::OnTierActivated();
 
-	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
+	const USFProductionBuildingDefinition* Definition =	Cast<USFProductionBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("[%s] ProductionBuildingDefinition이 아닙니다. Definition=%s"),
+			*GetName(),
+			*GetNameSafe(GetBuildingDefinition()));
 
+		return;
+	}
+
+	const FSFProductionBuildingTierData* ActivatedTier = Definition->FindProductionTier(GetCurrentTier());
 	if (!ActivatedTier)
 	{
 		UE_LOG(
 			LogTemp,
 			Error,
-			TEXT("[%s] 활성화할 Production Tier가 없습니다."),
-			*GetName());
+			TEXT("[%s] Production Tier가 없습니다. Tier=%d"),
+			*GetName(),
+			GetCurrentTier());
 
 		return;
 	}
 
 	StoredSpawnableUnitDatas = ActivatedTier->SpawnableUnits;
-
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
 
 	ProductComponent->ResumeProductLine();

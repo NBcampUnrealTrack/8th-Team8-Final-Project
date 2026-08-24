@@ -19,7 +19,7 @@ public:
 	
 	void BindDelegateFunction();
 	void UnBindDelegateFunction();
-	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) override;
+	virtual void OnBuildingDefinitionLoaded() override;
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
 

@@ -113,9 +113,9 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
         return false;
     }
     /*
-    * BaseBuilding이 아직 DT를 읽고 있으므로 임시 브리지로 유지한다.
-    * BuildingId와 DT_Building의 RowName이 같아야 한다.
-    */
+     * RowName은 현재 선택 UI 테이블을 조회하기 위한 임시 브리지다.
+     * Selection UI가 DA로 전환되면 제거할 수 있다.
+     */
     if (!DeferredActor->SetBuildingDefinition(Definition))
     {
         DeferredActor->Destroy();

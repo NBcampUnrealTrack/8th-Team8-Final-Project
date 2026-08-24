@@ -94,6 +94,7 @@ void ASFMiningBuilding::OnBuildingDestroyed()
 
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-TryLinkResource::InValid MiningComponent"));
 	return MiningComponent->TryLinkResource(InResourceRef);
 }
 
@@ -104,7 +105,7 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 
 	if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
 	{
-		GS->AddResourceIncomeRate(GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
+		GS->AddResourceIncomeRate(GetTeamIndex(), GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
 	}
 	CurrentIncomeRatePerSecond = NewRate; 
 }
@@ -112,11 +113,13 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 //getter
 EResourceType ASFMiningBuilding::GetMineResourceType() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMineResourceType::InValid MiningComponent"));
 	return MiningComponent->GetMineResourceType();
 }
 
 int32 ASFMiningBuilding::GetExtractAmount() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetExtractAmount::InValid MiningComponent"));
 	return MiningComponent->GetExtractAmount();
 }
 
@@ -127,7 +130,7 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	SFGameState->AddResource(InType, InAmount);
+	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

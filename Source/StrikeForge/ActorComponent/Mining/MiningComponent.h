@@ -20,6 +20,16 @@ class STRIKEFORGE_API UMiningComponent : public UActorComponent
 	GENERATED_BODY()
 public:
 	UMiningComponent();
+	
+	// delegate
+	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
+	FSFOnResourceExtracted OnResourceExtracted;
+	// ui progress
+	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
+	FSFOnExtractProgressRatio OnExtractProgressRatioChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
+	FSFOnResourceDepleted OnResourceDepleted;
+	
 	// RequiredWork
 	// BaseWorkRate
 	void InitMineProperties(float InBaseWorkAmount, int32 InExtractAmount);
@@ -44,18 +54,12 @@ public:
 	void UnlinkResource();
 	UFUNCTION()
 	void HandleResourceDepleted(AResourceBase* Resource);
-	// delegate
-	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
-	FSFOnResourceExtracted OnResourceExtracted;
-	// ui progress
-	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
-	FSFOnExtractProgressRatio OnExtractProgressRatioChanged;
-	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
-	FSFOnResourceDepleted OnResourceDepleted;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void TickMining();
+
 private:
 	/** ProgressComponent와 동일한 계산기를 재사용한다 */
 	UPROPERTY(BlueprintReadOnly, Category = "Mining", meta = (AllowPrivateAccess = true))

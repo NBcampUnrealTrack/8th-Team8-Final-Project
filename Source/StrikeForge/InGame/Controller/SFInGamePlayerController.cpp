@@ -17,6 +17,7 @@
 //#include "NavigationSystem.h"
 #include "Units/Interfaces/Movable.h"
 #include "SFRTSCameraPawn.h"
+#include "Game/GameMode/SFGameMode.h"
 #include "Logging/SFLog.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
@@ -38,6 +39,7 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
         UE_LOG(LogTemp, Error, TEXT("Exist Spawned Building Ref"));
         return false;
     }
+
     USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
     if (!IsValid(DataManager)) return false;
     
@@ -49,13 +51,19 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     }
     
 #pragma region CheckResources 
-    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-    // if (!IsValid(SFGameState)) return false;
-    //
-    // if (!SFGameState->CanAfford(
-    //     Row->GetConstructBuildCost(0)->Mineral,
-    //     Row->GetConstructBuildCost(0)->Ether))
-    //     return false;
+    // FName의 첫번째 티어의 정보 불러오기
+    // 나중에 2티어부터 건설할수있게되면 수정이 필요한지점이다
+    const FBuildingTier* FirstTier = Row->FindTier(0);
+    if (!FirstTier) return false;
+    
+    if (const ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>())
+    {
+        if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
+        {
+            SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *InRowName.ToString());
+            return false;
+        }
+    }
 #pragma endregion 
     
     FTransform Trans;
@@ -86,6 +94,12 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InRowName)
     }
     
     DeferredActor->SetRowName(InRowName);
+    DeferredActor->SetMyTeamIndex(MyTeamIndex);
+    
+    if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())
+    {
+        Combat->SetTeamIndex(MyTeamIndex);
+    }
     // deferred spawn finished
     DeferredActor->FinishSpawning(Trans);
 
@@ -111,21 +125,37 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
     }
 }
 
+// 지휘관 도착시 호출하는 함수
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
     if (!IsValid(PendingSpawnedBuildingRef)) return;
-
-    if (!PendingSpawnedBuildingRef->TryStartConstruction())
-    {
-        SF_LOG(
-            Error,
-            "[SFPC] 건설 시작 실패: %s",
-            *PendingSpawnedBuildingRef->GetName());
-
+    
+    const FResources NeedConstructCost = PendingSpawnedBuildingRef->GetConstructCost();
+    ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+    
+    if (!IsValid(SFGS))
+    {   // SFGS 게임스테이트 없을때
+        SF_LOG(Error, "[SFPC] SFGameState 를 찾을 수 없어 건설할 수 없습니다.");
         ClearPendingBuildingRef();
         return;
     }
 
+    if (!SFGS->CanAffordResource(GetMyTeamIndex(), NeedConstructCost))
+    {   // 자원 없을때
+        SF_LOG(Warning, "[SFPC] 지휘관이 도착했으나 자원이 부족해 건설이 취소되었습니다: %s", *PendingSpawnedBuildingRef->GetName());
+        ClearPendingBuildingRef();
+        return;
+    }
+
+    if (!PendingSpawnedBuildingRef->TryStartConstruction())
+    {   // 다른 외부 조건
+        SF_LOG(Error, "[SFPC] 건설 시작 실패: %s", *PendingSpawnedBuildingRef->GetName());
+        ClearPendingBuildingRef();
+        return;
+    }
+    
+    // 모든 조건 통과시 - 차감
+    SFGS->TrySpendCost(GetMyTeamIndex(), NeedConstructCost);
     PendingSpawnedBuildingRef = nullptr;
 }
 
@@ -137,16 +167,6 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
     }
 
     SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingSpawnedBuildingRef->GetName());
-
-#pragma region CheckCost
-    // ★ADD: 배치 확정 시 차감했으므로 되돌려준다.
-    // if (ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>())
-    // {
-    //     SFGameState->RefundCost(
-    //     PendingConstructionBuilding->GetConstructCost().Mineral,
-    //     PendingConstructionBuilding->GetConstructCost().Ether);
-    // }
-#pragma endregion 
 
     PendingSpawnedBuildingRef->Destroy();
     PendingSpawnedBuildingRef = nullptr;
@@ -506,17 +526,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     {
         return;
     }
-    
-#pragma region CheckCost
-    // ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-    // if (!IsValid(SFGameState)) return;
-    // const FResources NeedCost = SpawnedBuildingRef->GetConstructCost();
-    // if (!SFGameState->TrySpendCost(NeedCost.Mineral, NeedCost.Ether))
-    // {
-    //     SF_LOG(Warning, "[SFPC] 자원이 부족해 배치를 확정할 수 없습니다.");
-    //     return;                                  // 배치 모드 유지 — 취소는 우클릭으로
-    // }
-#pragma endregion 
+
     ASFCommander* Commander = MyCommander.Get();
     if (!IsValid(Commander))
     {

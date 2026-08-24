@@ -419,10 +419,7 @@ void AUnitBase::ApplyPopulationDelta(int32 InDelta)
 
 	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
 	if (!IsValid(GameState)) return;
-
-	// SetPopulation 은 최대 인구까지 함께 덮어쓴다.
-	// 유닛은 현재 인구만 건드려야 하므로 AddCurrentPopulation 을 쓴다.
-	GameState->AddCurrentPopulation(InDelta);
+	GameState->AddPopulation(GetTeamIndex(), InDelta);
 }
 
 void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const

@@ -10,5 +10,5 @@ struct FProductInfo
 	UPROPERTY(BlueprintReadOnly, Category = "Product")
 	FName RowName = NAME_None;
 	UPROPERTY(BlueprintReadOnly, Category = "Product")
-	float Duration = 0.f;
+	float RequiredWork = 0.f;
 };

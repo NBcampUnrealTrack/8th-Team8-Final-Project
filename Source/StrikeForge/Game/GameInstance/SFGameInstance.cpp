@@ -15,14 +15,6 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return UIDataTable;
 		}
-    case EDataTableType::BuildCatalogUI:
-        {
-            return BuildCatalogUIDataTable;
-        }
-	case EDataTableType::Building:
-		{
-			return BuildingDataTable;
-		}
 	case EDataTableType::Unit:
 		{
 			return UnitsDataTable;
@@ -31,14 +23,10 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 		{
 			return StageDataTable;
 		}
-	case EDataTableType::Product:
-		{
-			return ProductDataTable;
-		}
-    case EDataTableType::ProductionUI:
-        {
-            return ProductionUIDataTable;
-        }
+	case EDataTableType::ProductionUI:
+	    {
+	        return ProductionUIDataTable;
+	    }
 		default:
 		{
 			return nullptr;

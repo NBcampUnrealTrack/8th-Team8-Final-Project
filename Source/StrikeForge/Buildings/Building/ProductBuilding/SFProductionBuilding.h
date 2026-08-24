@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Datas/Unit/UnitProductData.h"
 #include "Interfaces/Building/Productable.h"
 #include "SFProductionBuilding.generated.h"
 

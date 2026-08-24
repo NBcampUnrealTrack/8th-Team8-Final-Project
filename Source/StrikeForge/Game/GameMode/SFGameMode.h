@@ -56,8 +56,8 @@ public:
 	// 넥서스 생성을 런타임에 gamemode가 해서 팀인덱스를 등록할지
 	// 뷰포트배치로 nexusbuilding의 beginplay에서 팀인덱스를 등록할지 고민했으나
 	// 여러방면상 nexusbuilding이 생성과 동시에 팀인덱스 등록으로 생각하고있음
-	UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
-	ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
+	// UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
+	// ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
 
 private:
 	UPROPERTY()

@@ -1,11 +1,7 @@
 #include "SFBuildCatalogPanelWidget.h"
-
 #include "SFBuildCatalogEntryWidget.h"
-
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
-
-#include "Game/Subsystem/SFDataTableManager.h"
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Datas/Building/SFBuildingDefinition.h"

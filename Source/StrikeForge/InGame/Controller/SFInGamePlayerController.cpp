@@ -121,8 +121,12 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
         DeferredActor->Destroy();
         return false;
     }
+    const FName SelectionRowName =
+    Definition->SelectionUIRowName.IsNone()
+        ? Definition->BuildingId
+        : Definition->SelectionUIRowName;
     
-    DeferredActor->SetRowName(Definition->BuildingId);
+    DeferredActor->SetRowName(SelectionRowName);
     DeferredActor->SetMyTeamIndex(MyTeamIndex);
     
     if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())

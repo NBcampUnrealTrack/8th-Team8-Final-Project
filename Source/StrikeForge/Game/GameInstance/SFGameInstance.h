@@ -16,12 +16,9 @@ UENUM(BlueprintType)
 enum class EDataTableType : uint8
 {
 	UI,
-	BuildCatalogUI,
-	Building,
 	Unit,
 	Stage,	// 추가부분
-	Product,
-	ProductionUI
+	ProductionUI,
 };
 
 UCLASS()
@@ -59,20 +56,14 @@ public:
 	// 종족별 카탈로그
 	USFBuildingCatalog* LoadPlayerBuildingCatalog() const;
 private:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Building", meta = (AllowPrivateAccess = true))
-	TObjectPtr<UDataTable> BuildingDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
-	TObjectPtr<UDataTable> BuildCatalogUIDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Unit", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UnitsDataTable;
 
 	// 추가 부분
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Game", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> StageDataTable;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Building", meta = (AllowPrivateAccess = true))
-	TObjectPtr<UDataTable> ProductDataTable;
 	UPROPERTY(EditAnywhere,BlueprintReadWrite,Category = "DataTable|UI",meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> ProductionUIDataTable;
 	// 추가한 부분

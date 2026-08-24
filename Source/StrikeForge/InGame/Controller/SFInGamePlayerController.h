@@ -232,6 +232,20 @@ protected:
     )
     float SelectionDragThreshold = 8.f;
 
+    /**
+     * 다중 이동 시 유닛 간 간격(cm).
+     *
+     * 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
+     * 유닛 지름 90cm(Agent Radius 45 x 2) 보다 여유가 있어야 한다.
+     */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Selection",
+        meta = (ClampMin = "50.0")
+    )
+    float FormationSpacing = 120.f;
+
 private:
     UPROPERTY(
         Transient

@@ -150,6 +150,24 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 	}
 }
 
+void USFCombatSubsystem::GetTeamTargets(int32 InTeamIndex, TArray<AActor*>& OutActors) const
+{
+	OutActors.Reset();
+
+	const FSFTargetBucket* Bucket = TeamBuckets.Find(InTeamIndex);
+	if (!Bucket) return;
+
+	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket->Targets)
+	{
+		AActor* Actor = nullptr;
+
+		if (ResolveTarget(Weak, Actor))
+		{
+			OutActors.Add(Actor);
+		}
+	}
+}
+
 int32 USFCombatSubsystem::GetTargetCount(int32 InTeamIndex) const
 {
 	const FSFTargetBucket* Bucket = TeamBuckets.Find(InTeamIndex);

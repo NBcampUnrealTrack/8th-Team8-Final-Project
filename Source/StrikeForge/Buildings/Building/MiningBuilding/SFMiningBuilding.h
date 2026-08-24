@@ -22,14 +22,11 @@ public:
 	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) override;
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
-	//
-	virtual void OnUpgradeStarted() override;
+
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
 	// when construct destroyed, play effects
-	// OnDestroyed2
-	virtual void OnBuildingDestroyed() override;
 	
 	bool TryLinkResource(AResourceBase* InResourceRef);
 

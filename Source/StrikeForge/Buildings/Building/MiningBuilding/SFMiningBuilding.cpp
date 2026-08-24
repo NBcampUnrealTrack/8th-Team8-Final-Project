@@ -84,13 +84,6 @@ void ASFMiningBuilding::OnTierActivated()
 	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
 }
 
-void ASFMiningBuilding::OnUpgradeStarted()
-{
-	Super::OnUpgradeStarted();
-
-	MiningComponent->StopMining();
-}
-
 void ASFMiningBuilding::OnTierDeactivated()
 {
 	Super::OnTierDeactivated();
@@ -98,13 +91,6 @@ void ASFMiningBuilding::OnTierDeactivated()
 	MiningComponent->StopMining();
 	
 	ApplyIncomeRate(0.f);
-}
-
-void ASFMiningBuilding::OnBuildingDestroyed()
-{
-	Super::OnBuildingDestroyed();
-	
-	MiningComponent->StopMining();
 }
 
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)

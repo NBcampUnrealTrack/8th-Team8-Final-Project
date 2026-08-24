@@ -59,11 +59,6 @@ void ASFHouseBuilding::OnTierActivated()
 	SFGameState->AddMaxPopulation(GetTeamIndex(),IncreasePopulation);
 }
 
-void ASFHouseBuilding::OnUpgradeStarted()
-{
-	Super::OnUpgradeStarted();
-}
-
 void ASFHouseBuilding::OnTierDeactivated()
 {
 	Super::OnTierDeactivated();

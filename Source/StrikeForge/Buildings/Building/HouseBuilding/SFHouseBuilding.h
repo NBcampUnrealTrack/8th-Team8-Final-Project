@@ -15,8 +15,7 @@ public:
 	
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
-	//
-	virtual void OnUpgradeStarted() override;
+
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;

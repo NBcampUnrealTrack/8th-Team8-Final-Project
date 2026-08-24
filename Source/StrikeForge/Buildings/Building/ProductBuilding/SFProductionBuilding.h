@@ -28,7 +28,6 @@ public:
 protected:
 	virtual void OnTierActivated() override;
 	virtual void OnUpgradeStarted() override;
-	virtual void OnTierDeactivated() override;
 	virtual void OnBuildingDestroyed() override;
 
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;

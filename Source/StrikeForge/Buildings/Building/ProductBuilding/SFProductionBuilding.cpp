@@ -39,12 +39,6 @@ void ASFProductionBuilding::OnUpgradeStarted()
 	ProductComponent->PauseProductLine();
 }
 
-void ASFProductionBuilding::OnTierDeactivated()
-{
-	Super::OnTierDeactivated();
-	
-}
-
 void ASFProductionBuilding::OnBuildingDestroyed()
 { // deactivated -> destroy
 	Super::OnBuildingDestroyed();

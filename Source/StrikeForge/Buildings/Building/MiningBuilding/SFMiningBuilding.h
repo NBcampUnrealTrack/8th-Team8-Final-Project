@@ -21,12 +21,12 @@ public:
 	void UnBindDelegateFunction();
 	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) override;
 	// APPLY BUILDING's ABILITY
-	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
+	virtual void OnTierActivated() override;
 	//
 	virtual void OnUpgradeStarted() override;
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
-	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) override;
+	virtual void OnTierDeactivated() override;
 	// when construct destroyed, play effects
 	// OnDestroyed2
 	virtual void OnBuildingDestroyed() override;

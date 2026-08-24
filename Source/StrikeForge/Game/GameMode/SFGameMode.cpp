@@ -101,6 +101,23 @@ void ASFGameMode::BeginPlay()
 
 	SF_LOG(Log, "[SFGameMode] Stage initialization started.");
 
+	if (!IsValid(
+		SFGameState->GetTeamBuildingCatalog(
+			PlayerTeamIndex)))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Team %d의 BuildingCatalog가 "
+			"초기화되지 않았습니다.",
+			PlayerTeamIndex);
+
+		return;
+	}
+	
+	SF_LOG(
+		Log,
+		"[SFGameMode] Stage initialization started.");
+	
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 
 	StartStage();

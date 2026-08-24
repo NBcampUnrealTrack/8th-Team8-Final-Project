@@ -17,22 +17,46 @@ FSFSelectableInfo ASFHouseBuilding::GetSelectableInfo_Implementation()
 	return Info;
 }
 
-void ASFHouseBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
+void ASFHouseBuilding::OnTierActivated()
 {
-	Super::OnTierActivated(ActivatedTier);
+	Super::OnTierActivated();
 	// 최대 인구 증가 로직
-	if (ActivatedTier.PopulationCapacity <= 0)
+	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
+
+	if (!ActivatedTier)
 	{
-		SF_LOG(Error, "House Increase Population is less than 0");
+		SF_LOG(
+			Error,
+			"[%s] 활성화할 House Tier가 없습니다.",
+			*GetName());
+
+		return;
 	}
-	// 다음티어의 증가분 - 현재티어 증가분 = 증가할 값
-	 const int32 TempMaxPopulationIncreaseAmount = MaxPopulationIncreaseAmount;
-	MaxPopulationIncreaseAmount = ActivatedTier.PopulationCapacity;
-	 const int32 IncreasePopValue = MaxPopulationIncreaseAmount - TempMaxPopulationIncreaseAmount;
-	// 증가 로직
-	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
-	if (!IsValid(SFGameState)) return;
-	SFGameState->AddMaxPopulation(GetTeamIndex(), IncreasePopValue);
+
+	if (ActivatedTier->PopulationCapacity < 0)
+	{
+		SF_LOG(
+			Error,
+			"House PopulationCapacity가 0 미만입니다.");
+	}
+
+	const int32 PreviousPopulationIncrease =
+		MaxPopulationIncreaseAmount;
+
+	MaxPopulationIncreaseAmount =
+		ActivatedTier->PopulationCapacity;
+
+	const int32 IncreasePopulation =
+		MaxPopulationIncreaseAmount -
+		PreviousPopulationIncrease;
+
+	ASFGameState* SFGameState =	GetWorld()->GetGameState<ASFGameState>();
+	if (!IsValid(SFGameState))
+	{
+		return;
+	}
+
+	SFGameState->AddMaxPopulation(GetTeamIndex(),IncreasePopulation);
 }
 
 void ASFHouseBuilding::OnUpgradeStarted()
@@ -40,11 +64,11 @@ void ASFHouseBuilding::OnUpgradeStarted()
 	Super::OnUpgradeStarted();
 }
 
-void ASFHouseBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
+void ASFHouseBuilding::OnTierDeactivated()
 {
-	Super::OnTierDeactivated(DeactivatedTier);
-	// Deactivate에 감소 로직을 적으면 전체 인구가 감소됬다가 증가됨.
-	// 이경우 최대인구가 감소될때 생산시설의 진행도가 짧은시간이지만 전부 정지될수있음.
+	Super::OnTierDeactivated();
+	// 업그레이드 도중 최대 인구를 일시 차감하지 않는다.
+	// 최종 파괴 시 OnBuildingDestroyed()에서 적용값을 회수한다.
 }
 
 void ASFHouseBuilding::OnBuildingDestroyed()

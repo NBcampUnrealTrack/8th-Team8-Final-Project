@@ -59,11 +59,26 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded(const FBuildingAppearance& De
 	MiningComponent->SetMineResourceType(Definition.CanDigResourceType);
 }
 
-void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
+void ASFMiningBuilding::OnTierActivated()
 {
-	Super::OnTierActivated(ActivatedTier);
+	Super::OnTierActivated();
 	
-	MiningComponent->InitMineProperties(ActivatedTier.ExtractBaseWorkAmount, ActivatedTier.ExtractAmount);
+	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
+
+	if (!ActivatedTier)
+	{
+		SF_LOG(
+			Error,
+			"[%s] 활성화할 Mining Tier가 없습니다.",
+			*GetName());
+
+		return;
+	}
+
+	MiningComponent->InitMineProperties(
+		ActivatedTier->ExtractBaseWorkAmount,
+		ActivatedTier->ExtractAmount);
+
 	MiningComponent->StartMining();
 
 	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
@@ -76,9 +91,9 @@ void ASFMiningBuilding::OnUpgradeStarted()
 	MiningComponent->StopMining();
 }
 
-void ASFMiningBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
+void ASFMiningBuilding::OnTierDeactivated()
 {
-	Super::OnTierDeactivated(DeactivatedTier);
+	Super::OnTierDeactivated();
 	
 	MiningComponent->StopMining();
 	

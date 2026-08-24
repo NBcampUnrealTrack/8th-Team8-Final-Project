@@ -13,6 +13,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
@@ -572,6 +573,22 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
+bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
+{
+	if (!IsValid(InDefinition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] BuildingDefinition을 전달받지 못했습니다. ",
+			*GetName());
+
+		return false;
+	}
+	
+	BuildingDefinition = InDefinition;
+	return true;
+}
+
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
@@ -838,7 +855,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 
 	SetBuildingState(EBuildingState::Completed);
 	ActivatedGameplayTier = CurrentTier;
-	OnTierActivated(*ActivatedTier);
+	OnTierActivated();
 	bIsDeActivated = false;
 
 	return true;
@@ -846,28 +863,46 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 // enterdestorystate call this function
 void ASFBaseBuilding::DeactivateActiveTier()
 {	// 초기건설에는 능력치를 비활성화하지않습니다
-	if (ActivatedGameplayTier == INDEX_NONE) return;
-	if (bIsDeActivated) return;
-	// 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
-	const int32 TierToDeactivate = ActivatedGameplayTier;
-	// 가상 함수 안에서 Destroy 등이 다시 발생해도
-	// 두 번 회수되지 않도록 먼저 초기화한다.
-	ActivatedGameplayTier = INDEX_NONE;
-
-	const FBuildingTier* DeactivatedTier = CachedDefinition.FindTier(TierToDeactivate);
-
-	if (!DeactivatedTier)
+	// if (ActivatedGameplayTier == INDEX_NONE) return;
+	// if (bIsDeActivated) return;
+	// // 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
+	// const int32 TierToDeactivate = ActivatedGameplayTier;
+	// // 가상 함수 안에서 Destroy 등이 다시 발생해도
+	// // 두 번 회수되지 않도록 먼저 초기화한다.
+	// ActivatedGameplayTier = INDEX_NONE;
+	//
+	// const FBuildingTier* DeactivatedTier = CachedDefinition.FindTier(TierToDeactivate);
+	//
+	// if (!DeactivatedTier)
+	// {
+	// 	UE_LOG(	LogTemp,Warning,TEXT("[%s] 비활성화할 티어를 찾을 수 없습니다. Tier=%d"),
+	// 		*GetName(),
+	// 		TierToDeactivate
+	// 	);
+	// 	return;
+	// }
+	//
+	// // 간단하게 현재 티어의 능력치를 반환함
+	// OnTierDeactivated(*DeactivatedTier);
+	// bIsDeActivated = true;
+	if (ActivatedGameplayTier == INDEX_NONE)
 	{
-		UE_LOG(	LogTemp,Warning,TEXT("[%s] 비활성화할 티어를 찾을 수 없습니다. Tier=%d"),
-			*GetName(),
-			TierToDeactivate
-		);
 		return;
 	}
-	
-	// 간단하게 현재 티어의 능력치를 반환함
-	OnTierDeactivated(*DeactivatedTier);
+
+	if (bIsDeActivated)
+	{
+		return;
+	}
+
+	/**
+	 * 파생 훅에서 Destroy 등이 다시 호출되더라도
+	 * 중복 비활성화되지 않도록 상태를 먼저 변경한다.
+	 */
+	ActivatedGameplayTier = INDEX_NONE;
 	bIsDeActivated = true;
+
+	OnTierDeactivated();
 }
 
 #pragma region Sound

@@ -9,12 +9,27 @@ ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectIni
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
 }
 
-void ASFProductionBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
+void ASFProductionBuilding::OnTierActivated()
 {
-	Super::OnTierActivated(ActivatedTier);
+	Super::OnTierActivated();
 
-	StoredSpawnableUnitDatas = ActivatedTier.SpawnableUnits;
+	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
+
+	if (!ActivatedTier)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("[%s] 활성화할 Production Tier가 없습니다."),
+			*GetName());
+
+		return;
+	}
+
+	StoredSpawnableUnitDatas = ActivatedTier->SpawnableUnits;
+
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+
 	ProductComponent->ResumeProductLine();
 }
 
@@ -24,9 +39,9 @@ void ASFProductionBuilding::OnUpgradeStarted()
 	ProductComponent->PauseProductLine();
 }
 
-void ASFProductionBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
+void ASFProductionBuilding::OnTierDeactivated()
 {
-	Super::OnTierDeactivated(DeactivatedTier);
+	Super::OnTierDeactivated();
 	
 }
 

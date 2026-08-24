@@ -705,21 +705,63 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
     OnMoveInput.Broadcast(Destination);
 
-    AActor* Target = SelectedActor.Get();
+    // 명령 대상 수집.
+    // 다중 선택은 HUD 가 관리하므로 거기서 가져오고,
+    // 비어 있으면 기존 단일 선택으로 넘어간다(건물·커맨더 흐름 유지).
+    TArray<AActor*> Commandables;
 
-    if (!IsValid(Target))
+    if (IsValid(InGameHUDWidget))
+    {
+        for (const TObjectPtr<AActor>& Actor : InGameHUDWidget->GetSelectedActors())
+        {
+            if (!IsValid(Actor)) continue;
+            if (!Actor->GetClass()->ImplementsInterface(UMovable::StaticClass())) continue;
+
+            Commandables.AddUnique(Actor.Get());
+        }
+    }
+
+    if (Commandables.Num() == 0)
+    {
+        AActor* Single = SelectedActor.Get();
+
+        if (IsValid(Single)
+            && Single->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+        {
+            Commandables.Add(Single);
+        }
+    }
+
+    if (Commandables.Num() == 0)
     {
         return;
     }
 
-    if (!Target->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+    // 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
+    // MoveAcceptanceRadius 가 50cm 라 도착 판정이 겹치기 때문이다.
+    // 원형으로 흩어 놓아 각자 다른 지점을 목표로 삼게 한다.
+    const int32 Count = Commandables.Num();
+
+    for (int32 Index = 0; Index < Count; ++Index)
     {
-        return;
+        FVector Goal = Destination;
+
+        if (Count > 1)
+        {
+            const float Angle = 2.f * PI * Index / Count;
+
+            // sqrt 를 쓰면 인원이 늘어도 밀도가 일정하다
+            const float Radius =
+                FormationSpacing * FMath::Sqrt(static_cast<float>(Count));
+
+            Goal += FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+        }
+
+        IMovable::Execute_MoveToLocation(Commandables[Index], Goal);
     }
 
-    IMovable::Execute_MoveToLocation(Target, Destination);
-
-    SF_LOG(Log, "[SFInGamePlayerController] Move command | Target: %s | Location: %s", *Target->GetName(), *Destination.ToString());
+    SF_LOG(Log, "[SFInGamePlayerController] Move command | Count: %d | Location: %s",
+        Count, *Destination.ToString());
 }
 
 void ASFInGamePlayerController::HandleToggleSettingsInput()

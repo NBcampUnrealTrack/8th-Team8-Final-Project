@@ -66,6 +66,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	AActor* FindNearestHostileAny(const FVector& InOrigin, int32 InSeekerTeam) const;
 
+	/**
+	 * 특정 팀의 생존 대상 전부.
+	 * 드래그 박스 선택처럼 "우리 편 전체" 를 훑어야 할 때 쓴다.
+	 * GetAllActorsOfClass 보다 훨씬 빠르다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void GetTeamTargets(int32 InTeamIndex, TArray<AActor*>& OutActors) const;
+
 	/** 팀 내 생존 대상 수 — 웨이브 판정·디버그용 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	int32 GetTargetCount(int32 InTeamIndex) const;

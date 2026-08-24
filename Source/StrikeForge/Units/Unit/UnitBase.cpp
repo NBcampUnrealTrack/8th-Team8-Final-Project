@@ -39,6 +39,7 @@ AUnitBase::AUnitBase()
 	, bStatInitialized(false)
 	, bNoTargetReported(false)
 	, bAdvanceTargetReported(false)
+	, bHasCommandedDestination(false)
 	, bRangeUnreachableReported(false)
 	, bPopulationApplied(false)
 {
@@ -223,6 +224,7 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	if (CombatState == EUnitCombatState::Dead) return;
 
 	CurrentTarget = nullptr;
+	bHasCommandedDestination = false;
 	SetCombatState(EUnitCombatState::Dead);
 
 	// 인구 반환. EndPlay 가 아니라 여기서 하는 이유는
@@ -362,6 +364,46 @@ const FHealthData AUnitBase::GetHealthData_Implementation()
 }
 
 // ─────────────────────────────────────────────────────────
+// IMovable — 플레이어 이동 명령
+//
+// 명령은 "진격 목표 교체" 다. 전투를 멈추지 않는다.
+// 가는 길에 적을 만나면 Tick 의 교전 분기가 먼저 걸리고,
+// 정리되면 Advance() 로 돌아와 목적지를 향한다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
+{
+	CommandedDestination = InDestination;
+	bHasCommandedDestination = true;
+
+	// 현재 타겟을 놓아 즉시 새 목적지로 향하게 한다.
+	// 놓지 않으면 사거리 안의 적을 계속 때리느라 명령이 무시된다.
+	CurrentTarget = nullptr;
+
+	if (AUnitAIController* AI = GetUnitAI())
+	{
+		AI->ForceRepath();
+	}
+
+	// 다음 진격 로그가 다시 찍히도록 초기화
+	bAdvanceTargetReported = false;
+	bNoTargetReported = false;
+
+	SF_LOG(Log, "[Unit] %s : 이동 명령 수신 (%s)", *GetName(), *InDestination.ToString());
+}
+
+void AUnitBase::StopMove_Implementation()
+{
+	bHasCommandedDestination = false;
+
+	if (AUnitAIController* AI = GetUnitAI())
+	{
+		AI->ClearMoveRequest();
+	}
+
+	SF_LOG(Log, "[Unit] %s : 이동 명령 해제", *GetName());
+}
+
+// ─────────────────────────────────────────────────────────
 // 인구수
 //
 // 생산 시 +, 사망 시 - 한 번씩만 반영한다.
@@ -378,9 +420,9 @@ void AUnitBase::ApplyPopulationDelta(int32 InDelta)
 	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
 	if (!IsValid(GameState)) return;
 
-	const int32 NewCurrent = GameState->GetCurrentPopulation() + InDelta;
-
-	GameState->SetPopulation(NewCurrent, GameState->GetMaximumPopulation());
+	// SetPopulation 은 최대 인구까지 함께 덮어쓴다.
+	// 유닛은 현재 인구만 건드려야 하므로 AddCurrentPopulation 을 쓴다.
+	GameState->AddCurrentPopulation(InDelta);
 }
 
 void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const
@@ -630,6 +672,26 @@ void AUnitBase::Advance()
 			SF_LOG(Error, "[Unit] %s : AIController 가 없습니다. AutoPossessAI 설정을 확인하세요.", *GetName());
 		}
 		return;
+	}
+
+	// ── 0순위 — 플레이어 명령 ───────────────────────────
+	// 자동 판단보다 우선한다. 도착하면 스스로 해제되어 자동 진격으로 돌아간다.
+	if (bHasCommandedDestination)
+	{
+		const float DistToCommand = FVector::Dist2D(GetActorLocation(), CommandedDestination);
+
+		if (DistToCommand <= CommandArrivalRadius)
+		{
+			bHasCommandedDestination = false;
+
+			SF_LOG(Log, "[Unit] %s : 명령 지점 도착", *GetName());
+		}
+		else
+		{
+			AI->RequestMoveToLocation(CommandedDestination, MoveAcceptanceRadius);
+			bNoTargetReported = false;
+			return;
+		}
 	}
 
 	// 라인이 지정돼 있으면 스플라인을 따라 단계적으로 전진한다.

@@ -51,6 +51,18 @@ public:
 
     bool IsPointerOverSelectionAction() const;
 
+    /**
+     * 현재 다중 선택된 액터 목록.
+     *
+     * 이동 명령을 선택 전체에 나눠주기 위해 PlayerController 에서 조회한다.
+     * 목록이 비어 있으면 단일 선택(SelectedActor)만 있는 상태다.
+     *
+     * UFUNCTION 을 붙이지 않는 이유:
+     * UHT 는 TObjectPtr 을 함수 반환값으로 허용하지 않는다.
+     * C++ 에서만 호출하므로 리플렉션 노출이 필요 없다.
+     */
+    const TArray<TObjectPtr<AActor>>& GetSelectedActors() const { return SelectedActors; }
+
 protected:
     virtual void NativeConstruct() override;
 

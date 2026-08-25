@@ -20,6 +20,14 @@ enum class ESFControlMode : uint8
     BuildPlacement UMETA(DisplayName = "Build Placement")
 };
 
+UENUM(BlueprintType)
+enum class ESFUnitCommandMode : uint8
+{
+    None UMETA(DisplayName = "None"),
+    Attack UMETA(DisplayName = "Attack"),
+    Move UMETA(DisplayName = "Move")
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFOnMoveInput,
@@ -65,14 +73,29 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
+
     bool SpawnBuildingFunction(const FName& InBuildingId);
+
     void ClearSpawnedBuildingRef();
+
     void ClearPendingBuildingRef();
+
     void NotifyBuilderArrived();
     
     void SetSelectedActor(AActor* InActor);
+
     void RegisterCommander(ASFCommander* InCommander);
+
     void IssueMoveCommand(const FVector& Destination);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginAttackCommand();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void StopSelectedUnits();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginMoveCommand();
     // team
     FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
@@ -116,6 +139,24 @@ private:
     void HandleToggleSettingsInput();
 
     void HandleToggleBuildModeInput();
+    
+	// 생산 슬롯 입력 처리
+    void HandleProduceSlot1Input();
+
+    void HandleProduceSlot2Input();
+
+    void HandleProduceSlot3Input();
+
+    void RequestProductionBySlot(int32 SlotIndex);
+
+	// 커맨드 입력 처리
+    void HandleAttackCommandInput();
+
+    void HandleStopCommandInput();
+
+    void HandleMoveCommandModeInput();
+
+    bool ExecutePendingUnitCommandUnderCursor();
     // 변수 영역
 protected:
     
@@ -256,6 +297,24 @@ protected:
     )
     float FormationSpacing = 120.f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot1Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot2Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot3Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> AttackCommandAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> StopCommandAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> MoveCommandModeAction = nullptr;
+
 private:
     UPROPERTY(
         Transient
@@ -281,6 +340,10 @@ private:
 
     FVector2D SelectionPressPosition = FVector2D::ZeroVector;
     bool bSelectionPressActive = false;
+
+    ESFUnitCommandMode PendingUnitCommandMode = ESFUnitCommandMode::None;
+    bool bCommandClickConsumed = false;
+
     // team
     int32 MyTeamIndex = 0;
     // Delegate 변수는 최하단

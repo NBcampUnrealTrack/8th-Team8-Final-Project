@@ -1802,3 +1802,13 @@ void USFInGameHUDWidget::HandleStageIntroDeactivated()
         "[SFInGameHUDWidget] Stage intro finished."
     );
 }
+
+bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
+{
+    if (!IsValid(ProductionBuildingPanel))
+    {
+        return false;
+    }
+
+    return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
+}

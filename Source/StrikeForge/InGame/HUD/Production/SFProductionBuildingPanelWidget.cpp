@@ -63,9 +63,10 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
         InProductionBuilding;
 
     const FProductableData ProductableData =
-        IProductable::Execute_GetProductableData(
-            InProductionBuilding
-        );
+        IProductable::Execute_GetProductableData(InProductionBuilding);
+
+    CurrentProductableUnitRowNames =
+        ProductableData.ProductableUnitFNames;
 
     BindProductComponent(
         ProductableData.ProductComponent.Get()
@@ -103,6 +104,7 @@ void USFProductionBuildingPanelWidget::HideProductionBuilding()
     UnbindProductComponent();
 
     CurrentProductionBuilding.Reset();
+    CurrentProductableUnitRowNames.Reset();
 
     if (IsValid(UnitEntryBox))
     {
@@ -117,9 +119,7 @@ void USFProductionBuildingPanelWidget::HideProductionBuilding()
         ESlateVisibility::Collapsed
     );
 
-    RefreshProductionProgress(
-        0.0f
-    );
+    RefreshProductionProgress(0.0f);
 }
 
 bool USFProductionBuildingPanelWidget::HasProductionBuilding() const
@@ -131,6 +131,30 @@ AActor*
 USFProductionBuildingPanelWidget::GetProductionBuilding() const
 {
     return CurrentProductionBuilding.Get();
+}
+
+bool USFProductionBuildingPanelWidget::RequestProductionBySlot(int32 SlotIndex)
+{
+    if (!CurrentProductionBuilding.IsValid())
+    {
+        return false;
+    }
+
+    if (!CurrentProductableUnitRowNames.IsValidIndex(SlotIndex))
+    {
+        return false;
+    }
+
+    const FName UnitRowName =
+        CurrentProductableUnitRowNames[SlotIndex];
+
+    if (UnitRowName.IsNone())
+    {
+        return false;
+    }
+
+    HandleProductionUnitClicked(UnitRowName);
+    return true;
 }
 
 void USFProductionBuildingPanelWidget::RefreshProductionUnitEntries(

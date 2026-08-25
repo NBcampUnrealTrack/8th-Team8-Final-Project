@@ -1,91 +1,83 @@
 #include "SFBuildCatalogEntryWidget.h"
-
-#include "Engine/GameInstance.h"
-
-#include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Logging/SFLog.h"
+#include "Datas/Building/SFBuildingDefinition.h"
+#include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 
 void USFBuildCatalogEntryWidget::InitializeBuildingEntry(
-	FName InBuildingRowName
-)
+USFBuildingDefinition* InDefinition)
 {
-	BuildingRowName = InBuildingRowName;
+	if (!IsValid(InDefinition))
+	{
+		SF_LOG(
+			Error,
+			"[SFBuildCatalogEntryWidget] "
+			"BuildingDefinition이 유효하지 않습니다.");
+
+		return;
+	}
+
+	BuildingDefinition = InDefinition;
+	BuildingRowName = BuildingDefinition->BuildingId;
 
 	if (BuildingRowName.IsNone())
 	{
 		SF_LOG(
-			Warning,
+			Error,
 			"[SFBuildCatalogEntryWidget] "
-			"BuildingRowName is None."
-		);
+			"BuildingId가 비어 있습니다. Definition=%s",
+			*GetNameSafe(BuildingDefinition));
 
 		return;
 	}
 
-	UGameInstance* GameInstance =
-		GetGameInstance();
+	const FSFBuildingTierData* FirstTier =
+		BuildingDefinition->FindTier(0);
 
-	if (!IsValid(GameInstance))
+	if (!FirstTier)
 	{
 		SF_LOG(
 			Error,
 			"[SFBuildCatalogEntryWidget] "
-			"GameInstance is invalid."
-		);
+			"첫 번째 Tier가 없습니다. Building=%s",
+			*BuildingRowName.ToString());
 
 		return;
 	}
 
-	USFDataTableManager* DataTableManager =
-		GameInstance->GetSubsystem<USFDataTableManager>();
+	/*
+	 * 기존 WBP 이벤트 시그니처를 유지하기 위한 UI ViewData다.
+	 * 값의 원본은 이제 DT가 아니라 Definition이다.
+	 */
+	FSFBuildCatalogUIDataRow CatalogData;
 
-	if (!IsValid(DataTableManager))
-	{
-		SF_LOG(
-			Error,
-			"[SFBuildCatalogEntryWidget] "
-			"DataTableManager is invalid."
-		);
+	CatalogData.DisplayName =
+		BuildingDefinition->DisplayName;
 
-		return;
-	}
+	CatalogData.Icon =
+		BuildingDefinition->Icon;
 
-	const FSFBuildCatalogUIDataRow* CatalogData =
-		DataTableManager
-		->GetDataRow<FSFBuildCatalogUIDataRow>(
-			EDataTableType::BuildCatalogUI,
-			BuildingRowName,
-			TEXT("SFBuildCatalogEntryWidget")
-		);
+	CatalogData.MineralCost =
+		FirstTier->Construction.ConstructCost.Mineral;
 
-	if (CatalogData == nullptr)
-	{
-		SF_LOG(
-			Warning,
-			"[SFBuildCatalogEntryWidget] "
-			"Catalog data was not found. Row: %s",
-			*BuildingRowName.ToString()
-		);
+	CatalogData.EtherCost =
+		FirstTier->Construction.ConstructCost.Ether;
 
-		return;
-	}
+	CatalogData.RequiredTier =
+		BuildingDefinition->RequiredNexusTier;
 
 	OnBuildingEntryInitialized(
 		BuildingRowName,
-		*CatalogData
-	);
+		CatalogData);
 
 	SF_LOG(
 		Log,
 		"[SFBuildCatalogEntryWidget] "
-		"Initialized | Row: %s | "
-		"Mineral: %d | Ether: %d | Tier: %d",
+		"Initialized | Building=%s | Mineral=%d | Ether=%d | Tier=%d",
 		*BuildingRowName.ToString(),
-		CatalogData->MineralCost,
-		CatalogData->EtherCost,
-		CatalogData->RequiredTier
-	);
+		CatalogData.MineralCost,
+		CatalogData.EtherCost,
+		CatalogData.RequiredTier);
 }
 
 FName USFBuildCatalogEntryWidget::GetBuildingRowName() const

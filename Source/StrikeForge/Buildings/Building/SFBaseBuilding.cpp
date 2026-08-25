@@ -5,7 +5,6 @@
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "Game/GameState/SFGameState.h"
-#include "Game/Subsystem/SFDataTableManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
@@ -13,6 +12,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
@@ -45,10 +45,10 @@ void ASFBaseBuilding::RefreshVisual()
 	UStaticMesh* const ResolvedMesh = ResolveMesh();
 	if (!IsValid(ResolvedMesh))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] 적용할 메시가 없습니다. State=%d, Row=%s"),
+		UE_LOG(LogTemp, Warning, TEXT("[%s] 적용할 메시가 없습니다. State=%d, Definition=%s"),
 			*GetName(),
 			static_cast<int32>(CurrentBuildingState),
-			*RowName.ToString());
+			*GetNameSafe(BuildingDefinition));
 		return;
 	}
 
@@ -105,7 +105,7 @@ void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0�
 					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
 		}
 		
-		const FBuildingTier* Tier = GetCurrentTierInfo();
+		const FSFBuildingTierData* Tier = GetCurrentTierInfo();
 		if (!Tier)
 		{
 			SF_LOG(Error, "ASFBaseBuilding::HandleHealthChanged: Tier is INVALID");
@@ -148,7 +148,7 @@ void ASFBaseBuilding::HandleConstructionProgress(float PreviousRatio, float Curr
 	// underconstruct일때만 진행도에 따른 메쉬 적용
 	if (CurrentBuildingState == EBuildingState::UnderConstruction)
 	{
-		const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+		const FSFBuildingTierData* PendingTierData = GetTierInfo(PendingTier);
 		if (!PendingTierData) return;
 
 		// 건설 메시 변경
@@ -182,7 +182,7 @@ void ASFBaseBuilding::ApplySpawnMode()
 	case ESFBuildingSpawnMode::ViewPortPlacedMode:
 		{
 			// 현재티어
-			const FBuildingTier* InitialTier = CachedDefinition.FindTier(PendingTier);
+			const FSFBuildingTierData* InitialTier = GetTierInfo(PendingTier);
 			if (!InitialTier) return;
 			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
 			
@@ -252,7 +252,7 @@ void ASFBaseBuilding::BeginConstruction()
 		return;
 	}
 	
-	const FBuildingTier* PendingTierData = CachedDefinition.FindTier(PendingTier);
+	const FSFBuildingTierData* PendingTierData = GetTierInfo(PendingTier);
 	if (!PendingTierData) return;
 	// 최초 건설은 1/1에서 시작
 	const bool bIsUpgrade =	ActiveTierAssets.TierIndex != INDEX_NONE;
@@ -399,8 +399,8 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 
 UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
 {
-	const FBuildingTier* Tier =
-	CachedDefinition.FindTier(Assets.TierIndex);
+	const FSFBuildingTierData* Tier =
+	GetTierInfo(Assets.TierIndex);
 
 	if (!Tier || !IsValid(HealthComponent))
 	{
@@ -425,9 +425,16 @@ UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets
 	return Assets.CompletedMesh;
 }
 
-const FBuildingTier* ASFBaseBuilding::GetCurrentTierInfo() const
+const FSFBuildingTierData* ASFBaseBuilding::GetCurrentTierInfo() const
 {
-	return CachedDefinition.FindTier(CurrentTier);
+	return GetTierInfo(CurrentTier);
+}
+
+const FSFBuildingTierData* ASFBaseBuilding::GetTierInfo(int32 TierIndex) const
+{
+	return CachedCommonTiers.IsValidIndex(TierIndex)
+	? &CachedCommonTiers[TierIndex]
+	: nullptr;
 }
 
 void ASFBaseBuilding::BindComponentDelegates()
@@ -515,11 +522,11 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		return;
 	}
 	const int32 NextTier = CurrentTier + UpgradeValue;
-	if (!CachedDefinition.Tiers.IsValidIndex(NextTier))
+	if (!GetTierInfo(NextTier))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[%s] 업그레이드 티어가 유효하지 않습니다. Tier=%d, Count=%d"),
 			*GetName(),
-			NextTier, CachedDefinition.Tiers.Num());
+			NextTier, CachedCommonTiers.Num());
 		return;
 	}
 	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
@@ -572,6 +579,22 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
+bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
+{
+	if (!IsValid(InDefinition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] BuildingDefinition을 전달받지 못했습니다. ",
+			*GetName());
+
+		return false;
+	}
+	
+	BuildingDefinition = InDefinition;
+	return true;
+}
+
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
@@ -580,7 +603,7 @@ void ASFBaseBuilding::BeginPlay()
 	// try take info at data table
 	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
 	
-	OnBuildingDefinitionLoaded(CachedDefinition);
+	OnBuildingDefinitionLoaded();
 	// if load failed return
 	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
 	// set viewport mode or controller construct mode
@@ -639,49 +662,69 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool ASFBaseBuilding::LoadBuildingDefinition()
 {
-	const USFDataTableManager* DataManager = GetGameInstance()->GetSubsystem<USFDataTableManager>();
-	if (!IsValid(DataManager)) return false;
-
-	const FBuildingAppearance* Definition = DataManager->GetDataRow<FBuildingAppearance>(
-		EDataTableType::Building,
-		RowName,
-		TEXT("ASFBaseBuilding::LoadBuildingDefinition"));
-	// CHECK data table empty 
-	if (!Definition || Definition->Tiers.IsEmpty())
+	if (!IsValid(BuildingDefinition))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[%s] Tiers가 비어 있습니다. Row=%s"),
-			*GetName(),
-			*RowName.ToString());
+		SF_LOG(
+			Error,
+			"[%s] BuildingDefinition이 설정되지 않았습니다.",
+			*GetName());
+
 		return false;
 	}
-	// CACHED building appearance about all tiers
-	CachedDefinition = *Definition;
-	
-	// FORLOOP building's Tiers / Sort By Ratio
-	for (FBuildingTier& Tier : CachedDefinition.Tiers) 
-	{   
-		Tier.Visual.ConstructionStages.Sort(
-			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{	// 오름차순정리 진행도가 "증가"함에 따라 메쉬가 적용
+
+	const int32 TierCount = BuildingDefinition->GetTierCount();
+	if (TierCount <= 0)
+	{
+		SF_LOG(
+			Error,
+			"[%s] Definition의 Tier가 비어 있습니다. Definition=%s",
+			*GetName(),
+			*GetNameSafe(BuildingDefinition));
+
+		return false;
+	}
+
+	CachedCommonTiers.Reset(TierCount);
+
+	for (int32 TierIndex = 0; TierIndex < TierCount; ++TierIndex)
+	{
+		const FSFBuildingTierData* SourceTier =	BuildingDefinition->FindTier(TierIndex);
+		if (!SourceTier)
+		{
+			SF_LOG(
+				Error,
+				"[%s] Definition Tier를 찾지 못했습니다. Tier=%d",
+				*GetName(),
+				TierIndex);
+
+			CachedCommonTiers.Reset();
+			return false;
+		}
+
+		/*
+		 * 파생 Tier의 공통 부분만 의도적으로 복사한다.
+		 * Population, Mining, Production 데이터는 파생 건물이
+		 * Definition에서 직접 조회한다.
+		 */
+		FSFBuildingTierData& CachedTier = CachedCommonTiers.Add_GetRef(*SourceTier);
+
+		CachedTier.Visual.ConstructionStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
+			{
 				return Left.Threshold < Right.Threshold;
 			});
 
-		Tier.Visual.DamageStages.Sort(
-			[](const FBuildingStage& Left, const FBuildingStage& Right)
-			{	// 내림차순정리 Health가 "감소"함에 따라 메쉬가 적용
+		CachedTier.Visual.DamageStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
+			{
 				return Left.Threshold > Right.Threshold;
 			});
 	}
-	
-	// CACHED once in allgameplay = never changed in runtime
-	DisplayName = CachedDefinition.DisplayName;
-	ConfiguredGridSize = CachedDefinition.GridSize;
-	// CACHED once
-	DestroyedSound = Definition->DestroyedSound.LoadSynchronous();
-	DestroyedEffect = Definition->DestroyedEffect.LoadSynchronous();
-	
-	BuildingPreviewMaterialInstance = CachedDefinition.PreviewMaterial.LoadSynchronous();
-	
+
+	DisplayName = BuildingDefinition->DisplayName;
+	ConfiguredGridSize = BuildingDefinition->GridSize;
+	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
+	DestroyedEffect = BuildingDefinition->DestroyedEffect.LoadSynchronous();
+	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
+
 	return true;
 }
 
@@ -689,13 +732,13 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 {
 	// appear -> tier[0,1,2] -> tier[0] -> construct[0,1,2], dmg[0,1,2]
 	// Getter TierInfo by currentTier
-	const FBuildingTier* const Tier = CachedDefinition.FindTier(TierIndex);
+	const FSFBuildingTierData* const Tier = GetTierInfo(TierIndex);
 	if (!Tier || !IsValid(ProgressComponent))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[%s] 티어를 준비할 수 없습니다. Tier=%d, Count=%d"),
 			*GetName(),
 			TierIndex,
-			CachedDefinition.Tiers.Num());
+			CachedCommonTiers.Num());
 		return false;
 	}
 	
@@ -712,14 +755,14 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	if (Visual.CompletedMesh.IsNull())
 	{
 		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d CompletedMesh가 없습니다."),
-			*RowName.ToString(),
+			*GetNameSafe(BuildingDefinition),
 			TierIndex);
 		return false;
 	}
 	if (Visual.DestroyedMesh.IsNull())
 	{
 		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d DestroyedMesh가 없습니다."),
-			*RowName.ToString(),
+			*GetNameSafe(BuildingDefinition),
 			TierIndex);
 		return false;
 	}
@@ -742,7 +785,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 			{
 				bAllLoaded = false;
 				UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d %s[%d] 로드 실패"),
-					*RowName.ToString(), TierIndex, StageName, Index);
+					*GetNameSafe(BuildingDefinition), TierIndex, StageName, Index);
 			}
 		}
 
@@ -808,7 +851,7 @@ bool ASFBaseBuilding::CommitPreparedTier()
 		return false;
 	}
 
-	const FBuildingTier* const Tier = CachedDefinition.FindTier(PendingTier);
+	const FSFBuildingTierData* const Tier = GetTierInfo(PendingTier);
 	if (!Tier)
 	{
 		return false;
@@ -833,41 +876,31 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 		return false;
 	}
 
-	const FBuildingTier* ActivatedTier = GetCurrentTierInfo();
-	if (!ActivatedTier) return false;
+	if (!GetCurrentTierInfo())
+	{
+		return false;
+	}
 
 	SetBuildingState(EBuildingState::Completed);
-	ActivatedGameplayTier = CurrentTier;
-	OnTierActivated(*ActivatedTier);
-	bIsDeActivated = false;
+
+	// 가상 함수 실행 전에 내부 상태 확정
+	bIsTierActivated = true;
+	OnTierActivated();
 
 	return true;
 }
 // enterdestorystate call this function
 void ASFBaseBuilding::DeactivateActiveTier()
-{	// 초기건설에는 능력치를 비활성화하지않습니다
-	if (ActivatedGameplayTier == INDEX_NONE) return;
-	if (bIsDeActivated) return;
-	// 현재티어만 잠시 받아와 로직을 1회만 사용하기위함
-	const int32 TierToDeactivate = ActivatedGameplayTier;
-	// 가상 함수 안에서 Destroy 등이 다시 발생해도
-	// 두 번 회수되지 않도록 먼저 초기화한다.
-	ActivatedGameplayTier = INDEX_NONE;
+{
 
-	const FBuildingTier* DeactivatedTier = CachedDefinition.FindTier(TierToDeactivate);
-
-	if (!DeactivatedTier)
+	if (!bIsTierActivated)
 	{
-		UE_LOG(	LogTemp,Warning,TEXT("[%s] 비활성화할 티어를 찾을 수 없습니다. Tier=%d"),
-			*GetName(),
-			TierToDeactivate
-		);
 		return;
 	}
-	
-	// 간단하게 현재 티어의 능력치를 반환함
-	OnTierDeactivated(*DeactivatedTier);
-	bIsDeActivated = true;
+
+	// 파생 훅에서 재진입해도 중복 비활성화되지 않도록 먼저 변경
+	bIsTierActivated = false;
+	OnTierDeactivated();
 }
 
 #pragma region Sound

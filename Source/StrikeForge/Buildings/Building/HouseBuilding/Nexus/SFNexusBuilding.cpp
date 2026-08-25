@@ -103,4 +103,6 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 		// 가장 흔한 원인은 스테이지가 Playing 상태가 아닌 것이다.
 		SF_LOG(Warning, "[SFNexusBuilding] 스테이지 종료 요청이 거절됐습니다. 위 로그를 확인하세요.");
 	}
+	
+	Destroy();
 }

@@ -7,6 +7,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/BuildingAppearance.h"
+#include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 
@@ -27,21 +28,96 @@ void ASFGameMode::PostLogin(APlayerController* NewPlayer)
 	}
 }
 
-void ASFGameMode::BeginPlay()
+void ASFGameMode::InitGameState()
 {
-	Super::BeginPlay();
-
+	Super::InitGameState();
+	
 	SFGameState = GetGameState<ASFGameState>();
 
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"SFGameState를 찾을 수 없습니다.");
 
+		return;
+	}
+
+	USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
+
+	if (!IsValid(SFGameInstance))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"SFGameInstance가 유효하지 않습니다.");
+
+		return;
+	}
+
+	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadPlayerBuildingCatalog();
+
+	if (!IsValid(PlayerCatalog))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"플레이어 건물 카탈로그를 준비할 수 없습니다.");
+
+		return;
+	}
+
+	if (!SFGameState->SetTeamBuildingCatalog(PlayerTeamIndex, PlayerCatalog))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] InitGameState: "
+			"Team %d에 카탈로그를 설정하지 못했습니다.",
+			PlayerTeamIndex);
+
+		return;
+	}
+
+	SF_LOG(
+		Log,
+		"[SFGameMode] Team %d BuildingCatalog 설정 완료: %s",
+		PlayerTeamIndex,
+		*GetNameSafe(PlayerCatalog));
+}
+
+void ASFGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+	// initgamestate에서 캐싱함.
+	// SFGameState = GetGameState<ASFGameState>();
+	//
+	if (!IsValid(SFGameState))
+	{
+		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
+	
 		return;
 	}
 
 	SF_LOG(Log, "[SFGameMode] Stage initialization started.");
 
+	if (!IsValid(
+		SFGameState->GetTeamBuildingCatalog(
+			PlayerTeamIndex)))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Team %d의 BuildingCatalog가 "
+			"초기화되지 않았습니다.",
+			PlayerTeamIndex);
+
+		return;
+	}
+	
+	SF_LOG(
+		Log,
+		"[SFGameMode] Stage initialization started.");
+	
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 
 	StartStage();
@@ -168,127 +244,127 @@ ASFGameState* ASFGameMode::GetSFGameState() const
 }
 
 // 26.08.18
-ASFNexusBuilding* ASFGameMode::SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex)
-{
-    if (NexusRowName.IsNone())
-    {
-        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Nexus RowName is None.");
-
-        return nullptr;
-    }
-
-    if (TeamIndex == INDEX_NONE)
-    {
-        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: TeamIndex is invalid.");
-
-        return nullptr;
-    }
-
-    UGameInstance* GameInstance = GetGameInstance();
-
-    if (!IsValid(GameInstance))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: GameInstance is invalid.");
-
-        return nullptr;
-    }
-
-    USFDataTableManager* DataManager = GameInstance->GetSubsystem<USFDataTableManager>();
-
-    if (!IsValid(DataManager))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: DataTableManager is invalid.");
-
-        return nullptr;
-    }
-
-    const FBuildingAppearance* NexusData = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, NexusRowName, TEXT("SpawnNexus"));
-
-    if (NexusData == nullptr)
-    {
-        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Row was not found. Row: %s", *NexusRowName.ToString());
-
-        return nullptr;
-    }
-
-    UClass* NexusClass = NexusData->BuildingClass.LoadSynchronous();
-
-    if (!IsValid(NexusClass))
-    {
-        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is invalid. Row: %s", *NexusRowName.ToString());
-
-        return nullptr;
-    }
-
-    if (!NexusClass->IsChildOf(ASFNexusBuilding::StaticClass()))
-    {
-        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is not an SFNexusBuilding. Class: %s", *GetNameSafe(NexusClass));
-
-        return nullptr;
-    }
-
-    UWorld* World = GetWorld();
-
-    if (!IsValid(World))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: World is invalid.");
-
-        return nullptr;
-    }
-
-    ASFNexusBuilding* SpawnedNexus = World->SpawnActorDeferred<ASFNexusBuilding>(NexusClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
-
-    if (!IsValid(SpawnedNexus))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SpawnActorDeferred failed.");
-
-        return nullptr;
-    }
-
-    // BeginPlay 전에 데이터테이블 RowName 설정
-    SpawnedNexus->SetRowName(NexusRowName);
-	SpawnedNexus->SetSpawnMode(ESFBuildingSpawnMode::ViewPortPlacedMode);
-    // BeginPlay 전에 전투 팀 설정
-    UCombatTargetComponent* CombatTarget = SpawnedNexus->FindComponentByClass<UCombatTargetComponent>();
-
-    if (!IsValid(CombatTarget))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: CombatTargetComponent is invalid.");
-
-        SpawnedNexus->Destroy();
-
-        return nullptr;
-    }
-
-    CombatTarget->SetTeamIndex(TeamIndex);
-
-    // 여기서 BeginPlay가 실행됨
-    SpawnedNexus->FinishSpawning(SpawnTransform);
-
-    if (!IsValid(SFGameState))
-    {
-        SFGameState = GetGameState<ASFGameState>();
-    }
-
-    if (!IsValid(SFGameState))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SFGameState is invalid.");
-
-        SpawnedNexus->Destroy();
-
-        return nullptr;
-    }
-
-    if (!SFGameState->RegisterNexus(TeamIndex, SpawnedNexus))
-    {
-        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: Nexus registration failed.");
-
-        SpawnedNexus->Destroy();
-
-        return nullptr;
-    }
-
-    SF_LOG(Log, "[SFGameMode] Nexus spawned. Team: %d, Row: %s, Nexus: %s", TeamIndex, *NexusRowName.ToString(), *GetNameSafe(SpawnedNexus));
-
-    return SpawnedNexus;
-}
+// ASFNexusBuilding* ASFGameMode::SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex)
+// {
+ //    if (NexusRowName.IsNone())
+ //    {
+ //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Nexus RowName is None.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    if (TeamIndex == INDEX_NONE)
+ //    {
+ //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: TeamIndex is invalid.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    UGameInstance* GameInstance = GetGameInstance();
+ //
+ //    if (!IsValid(GameInstance))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: GameInstance is invalid.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    USFDataTableManager* DataManager = GameInstance->GetSubsystem<USFDataTableManager>();
+ //
+ //    if (!IsValid(DataManager))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: DataTableManager is invalid.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    const FBuildingAppearance* NexusData = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, NexusRowName, TEXT("SpawnNexus"));
+ //
+ //    if (NexusData == nullptr)
+ //    {
+ //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Row was not found. Row: %s", *NexusRowName.ToString());
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    UClass* NexusClass = NexusData->BuildingClass.LoadSynchronous();
+ //
+ //    if (!IsValid(NexusClass))
+ //    {
+ //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is invalid. Row: %s", *NexusRowName.ToString());
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    if (!NexusClass->IsChildOf(ASFNexusBuilding::StaticClass()))
+ //    {
+ //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is not an SFNexusBuilding. Class: %s", *GetNameSafe(NexusClass));
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    UWorld* World = GetWorld();
+ //
+ //    if (!IsValid(World))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: World is invalid.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    ASFNexusBuilding* SpawnedNexus = World->SpawnActorDeferred<ASFNexusBuilding>(NexusClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+ //
+ //    if (!IsValid(SpawnedNexus))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SpawnActorDeferred failed.");
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    // BeginPlay 전에 데이터테이블 RowName 설정
+ //    SpawnedNexus->SetRowName(NexusRowName);
+	// SpawnedNexus->SetSpawnMode(ESFBuildingSpawnMode::ViewPortPlacedMode);
+ //    // BeginPlay 전에 전투 팀 설정
+ //    UCombatTargetComponent* CombatTarget = SpawnedNexus->FindComponentByClass<UCombatTargetComponent>();
+ //
+ //    if (!IsValid(CombatTarget))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: CombatTargetComponent is invalid.");
+ //
+ //        SpawnedNexus->Destroy();
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    CombatTarget->SetTeamIndex(TeamIndex);
+ //
+ //    // 여기서 BeginPlay가 실행됨
+ //    SpawnedNexus->FinishSpawning(SpawnTransform);
+ //
+ //    if (!IsValid(SFGameState))
+ //    {
+ //        SFGameState = GetGameState<ASFGameState>();
+ //    }
+ //
+ //    if (!IsValid(SFGameState))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SFGameState is invalid.");
+ //
+ //        SpawnedNexus->Destroy();
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    if (!SFGameState->RegisterNexus(TeamIndex, SpawnedNexus))
+ //    {
+ //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: Nexus registration failed.");
+ //
+ //        SpawnedNexus->Destroy();
+ //
+ //        return nullptr;
+ //    }
+ //
+ //    SF_LOG(Log, "[SFGameMode] Nexus spawned. Team: %d, Row: %s, Nexus: %s", TeamIndex, *NexusRowName.ToString(), *GetNameSafe(SpawnedNexus));
+ //
+ //    return SpawnedNexus;
+// }

@@ -1,6 +1,7 @@
 ﻿#include "SFTeamState.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/SFBuildingCatalog.h"
 
 void USFTeamState::AddPopulation(int32 InDelta)
 {
@@ -18,6 +19,32 @@ void USFTeamState::AddMaxPopulation(int32 InDelta)
 
 	MaximumPopulation = FMath::Max(0, MaximumPopulation + InDelta);
 	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
+}
+
+bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
+{
+	if (!IsValid(InBuildingCatalog))
+	{
+		SF_LOG(
+			Error,
+			"[SFTeamState] 유효하지 않은 BuildingCatalog입니다.");
+
+		return false;
+	}
+
+	if (IsValid(BuildingCatalog) &&
+		BuildingCatalog != InBuildingCatalog)
+	{
+		SF_LOG(
+			Warning,
+			"[SFTeamState] BuildingCatalog가 교체됩니다. "
+			"Old=%s, New=%s",
+			*GetNameSafe(BuildingCatalog),
+			*GetNameSafe(InBuildingCatalog));
+	}
+
+	BuildingCatalog = InBuildingCatalog;
+	return true;
 }
 
 bool USFTeamState::CanAffordPopulation(int32 InPopulationCost) const
@@ -107,4 +134,11 @@ ASFNexusBuilding* USFTeamState::GetNexus() const
 {
 	ASFNexusBuilding* Found = Nexus.Get();
 	return IsValid(Found) ? Found : nullptr;
+}
+
+USFBuildingCatalog* USFTeamState::GetBuildingCatalog() const
+{
+	return IsValid(BuildingCatalog)
+		? BuildingCatalog
+		: nullptr;
 }

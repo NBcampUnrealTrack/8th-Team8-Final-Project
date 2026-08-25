@@ -108,4 +108,14 @@ private:
 	float OverrideMaxHealth = 0.f;
 
 	uint8 bRegistered : 1;
+
+	/**
+	 * 사망 통지를 이미 받았는가.
+	 *
+	 * IsAlive() 가 HealthComponent 내부 상태에만 의존하면,
+	 * OnHealthIsZero 가 울린 시점과 GetIsDead() 가 true 로 바뀌는 시점이
+	 * 어긋날 때 한두 프레임 동안 시체가 살아있는 것으로 보인다.
+	 * 통지를 받은 사실 자체를 여기에 남겨 그 틈을 없앤다.
+	 */
+	uint8 bDead : 1;
 };

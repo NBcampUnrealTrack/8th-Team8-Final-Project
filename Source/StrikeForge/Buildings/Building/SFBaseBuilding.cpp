@@ -958,11 +958,6 @@ void ASFBaseBuilding::SetBoxExtent()
 	
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
-	// BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
-	// BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
-	// FVector Extent = BoundsInParent.BoxExtent;
-	// Extent.X *= 0.8f;
-	// Extent.Y *= 0.8f;
 }
 
 #pragma region Getter

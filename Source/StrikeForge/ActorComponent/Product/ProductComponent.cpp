@@ -296,6 +296,9 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 
 	// 생성 절차(NavMesh 위치 탐색·팀 계승·능력치 주입)는 스포너와 동일하므로
 	// USFUnitSpawnLibrary 로 공통화했다.
+	//
+	// ========== 건물의 렐리포인트를 유닛에 전달 하는 지점.===========
+	// AssemblePoint == 현재 할당된 집결지 벡터
 	USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());
 

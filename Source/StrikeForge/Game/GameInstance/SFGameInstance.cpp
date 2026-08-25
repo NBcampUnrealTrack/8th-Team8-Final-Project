@@ -233,34 +233,6 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
     return true;
 }
 
-USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
-{
-    if (PlayerBuildingCatalog.IsNull())
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] PlayerBuildingCatalog이 "
-            "설정되지 않았습니다.");
-
-        return nullptr;
-    }
-
-    USFBuildingCatalog* Catalog = PlayerBuildingCatalog.LoadSynchronous();
-
-    if (!IsValid(Catalog))
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] PlayerBuildingCatalog "
-            "로드에 실패했습니다. Asset=%s",
-            *PlayerBuildingCatalog.ToSoftObjectPath().ToString());
-
-        return nullptr;
-    }
-
-    return Catalog;
-}
-
 bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)
 {
 	if (TargetLevel.IsNull())
@@ -284,4 +256,52 @@ bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TargetLevel);
 
 	return true;
+}
+
+bool USFGameInstance::SelectRace(ESFRace InRace)
+{   // 간단한 enum저장 함수
+    const TSoftObjectPtr<USFBuildingCatalog>* Catalog =
+        CatalogsByRace.Find(InRace);
+
+    if (!Catalog || Catalog->IsNull())
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 선택한 종족의 카탈로그가 없습니다. Race=%d",
+            static_cast<int32>(InRace));
+
+        return false;
+    }
+
+    SelectedRace = InRace;
+    return true;
+}
+
+USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
+{
+    // map에서 종족으로 카테고리 가져오기
+    const TSoftObjectPtr<USFBuildingCatalog>* CatalogAsset =
+        CatalogsByRace.Find(SelectedRace);
+    if (!CatalogAsset || CatalogAsset->IsNull())
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 선택 종족의 카탈로그가 설정되지 않았습니다.");
+
+        return nullptr;
+    } // 못가져오면 리턴
+    
+    // 종족 카테고리 로드하고 반환 -> 게임모드가 종족카테고리를 저장할거임
+    USFBuildingCatalog* LoadedCatalog =  CatalogAsset->LoadSynchronous();
+    if (!IsValid(LoadedCatalog))
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 카탈로그 로드에 실패했습니다. Race=%d",
+            static_cast<int32>(SelectedRace));
+
+        return nullptr;
+    }
+
+    return LoadedCatalog;
 }

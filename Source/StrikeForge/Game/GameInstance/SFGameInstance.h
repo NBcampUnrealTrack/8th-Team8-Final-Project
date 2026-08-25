@@ -21,6 +21,13 @@ enum class EDataTableType : uint8
 	ProductionUI,
 };
 
+UENUM(BlueprintType)
+enum class ESFRace : uint8
+{
+	Human,
+	Fox
+};
+
 UCLASS()
 class STRIKEFORGE_API USFGameInstance : public UGameInstance
 {
@@ -53,7 +60,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
 	
-	// 종족별 카탈로그
+	// 종족 선택 함수
+	UFUNCTION(BlueprintCallable, Category = "SF|Race")
+	bool SelectRace(ESFRace InRace);
+	// 플레이어 종족 골랐으면 그종족으로 로딩
 	USFBuildingCatalog* LoadPlayerBuildingCatalog() const;
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
@@ -83,13 +93,11 @@ private:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 HighestClearedStageOrder = 0;
 	
-	// 플레이어 종족
-	/**
-	 * 플레이어가 선택한 종족의 건물 카탈로그.
-	 *
-	 * 현재는 BP_SFGameInstance 기본값으로 Human 카탈로그를 사용한다.
-	 * 추후 종족 선택 기능이 생기면 선택 결과로 교체한다.
-	 */
+	
+	// 모든 종족 리스트
 	UPROPERTY(EditDefaultsOnly,	BlueprintReadOnly, Category = "SF|Race", meta = (AllowPrivateAccess = "true"))
-	TSoftObjectPtr<USFBuildingCatalog> PlayerBuildingCatalog;
+	TMap<ESFRace, TSoftObjectPtr<USFBuildingCatalog>> CatalogsByRace;
+	// 플레이어 종족 : 기본값 = human
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Race",	meta = (AllowPrivateAccess = "true"))
+	ESFRace SelectedRace = ESFRace::Human;
 };

@@ -51,6 +51,9 @@ public:
 
     bool IsPointerOverSelectionAction() const;
 
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
+    void ToggleBuildingMode();
+
     /**
      * 현재 다중 선택된 액터 목록.
      *
@@ -62,6 +65,9 @@ public:
      * C++ 에서만 호출하므로 리플렉션 노출이 필요 없다.
      */
     const TArray<TObjectPtr<AActor>>& GetSelectedActors() const { return SelectedActors; }
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command|Feedback")
+    void ShowMoveDestinationIndicator(const FVector& WorldLocation);
 
 protected:
     virtual void NativeConstruct() override;
@@ -101,7 +107,9 @@ private:
 
     void ClearSelection();
 
-    void UnbindSelectedActorDestroyed();
+    void BindSelectedActorsDestroyed();
+
+    void UnbindSelectedActorsDestroyed();
 
     void HandleBuildingModeDeactivated();
 
@@ -137,6 +145,8 @@ private:
         FVector2D EndScreenPosition
     );
 
+    bool IsOwnedByLocalPlayer(AActor* Actor) const;
+
     void ApplyMultipleSelection(
         const TArray<AActor*>& NewSelectedActors
     );
@@ -144,6 +154,9 @@ private:
     int32 GetSelectionPriority(AActor* Actor) const;
 
     void RefreshMultiSelectionPanel();
+
+    UFUNCTION()
+    void HandlePrimarySelectionRequested(AActor* Actor);
 
     // ==================== Variables ====================
 
@@ -230,6 +243,18 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Feedback")
     TObjectPtr<UMaterialInterface> SelectionIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> MoveDestinationIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    FVector MoveDestinationIndicatorSize = FVector(24.f, 70.f, 70.f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorLifeTime = 0.65f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorFadeDuration = 0.3f;
 
 private:
     UPROPERTY(Transient)

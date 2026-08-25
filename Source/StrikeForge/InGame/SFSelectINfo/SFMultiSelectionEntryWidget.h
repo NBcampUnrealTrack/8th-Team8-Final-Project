@@ -9,6 +9,7 @@ class AActor;
 class UButton;
 class UImage;
 class UProgressBar;
+class UHealthComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFOnMultiSelectionEntryClicked,
@@ -60,4 +61,16 @@ protected:
 private:
     UFUNCTION()
     void HandleEntryClicked();
+    UFUNCTION()
+    void HandleHealthChanged(float BeforeHP, float CurrentHP, float MaxHP);
+
+    void BindHealthDelegate(AActor* Actor);
+    void UnbindHealthDelegate();
+    void RefreshHealthBar(float CurrentHP, float MaxHP);
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<UHealthComponent> BoundHealthComponent;
+
+    bool bShouldShowHealth = false;
+
 };

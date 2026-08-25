@@ -9,6 +9,8 @@
 #include "SFGameState.generated.h"
 
 class ASFNexusBuilding;
+class USFBuildingCatalog;
+
 // 상태 정의 = 진행 상황
 UENUM(BlueprintType)
 enum class ESFStageState : uint8
@@ -85,7 +87,12 @@ public:
     int32 GetCurrentPopulation(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Population")
     int32 GetMaximumPopulation(int32 TeamIndex) const;
-
+    /* 지정한 팀에 종족별 건물 카탈로그를 설정한다. */
+    bool SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog);
+    /* 지정한 팀의 건물 카탈로그를 반환한다. */
+    UFUNCTION(BlueprintPure, Category = "SF|Building")
+    USFBuildingCatalog* GetTeamBuildingCatalog(int32 TeamIndex) const;
+    
     // 자원 값 변경
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
     void AddResource(int32 TeamIndex, EResourceType InResourceType, int32 InAmount);

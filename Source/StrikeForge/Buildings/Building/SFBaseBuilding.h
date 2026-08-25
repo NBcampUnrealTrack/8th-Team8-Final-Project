@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/SFRootBase.h"
-#include "Datas/Building/BuildingAppearance.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
+#include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
@@ -14,6 +14,8 @@ class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
 class UWidgetComponent;
+
+class USFBuildingDefinition;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -125,23 +127,39 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
 	
+	UFUNCTION(BlueprintPure, Category = "SF|Building|Definition")
+	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
+	
 	// setter
 	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
 	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }
 
 	FORCEINLINE void SetMyTeamIndex(const int32 InTeamIndex) { TeamIndex = InTeamIndex; }
+	
+	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
-	virtual void OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition) {}
+	virtual void OnBuildingDefinitionLoaded() {}
 	// APPLY BUILDING's ABILITY
-	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) {}
+	/**
+	 * CurrentTier가 확정된 뒤 호출된다.
+	 *
+	 * 파생 건물은 GetBuildingDefinition()과 GetCurrentTier()를 사용해
+	 * 자신의 전용 Tier 데이터를 조회한다.
+	 */
+	virtual void OnTierActivated() {}
 	// PRODUCT STOP
 	virtual void OnUpgradeStarted() {}
 	// DELETE BUILDING's ABILITY
 	// 건물이 부숴질때 호출
-	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) {}
+	/**
+	 * 현재 적용된 건물 기능을 제거할 때 호출된다.
+	 *
+	 * 파생 건물은 실제로 적용해 둔 런타임 값을 회수해야 한다.
+	 */
+	virtual void OnTierDeactivated() {}
 	// when construct destroyed, play effects
 	// 
 	virtual void OnBuildingDestroyed() {}
@@ -149,7 +167,8 @@ protected:
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
 	
-	const FBuildingTier* GetCurrentTierInfo() const;
+	const FSFBuildingTierData* GetTierInfo(int32 TierIndex) const;
+	const FSFBuildingTierData* GetCurrentTierInfo() const;
 	// React Delegate Function
 	UFUNCTION()
 	void UpdateHitReaction(float CurveValue);
@@ -242,10 +261,15 @@ protected:
 	FResources CurrentConstructBuildCost;
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FResources CurrentUpgradeBuildCost;
-	
-	// 전체 행 cached
-	UPROPERTY(Transient) 
-	FBuildingAppearance CachedDefinition;
+
+	/**
+	 * Definition의 공통 Tier 부분을 복사한 런타임 캐시.
+	 *
+	 * 공유 DA를 변경하지 않고 건설·손상 단계를 정렬하기 위해 사용한다.
+	 * House/Mining/Production 전용 필드는 이곳에 복사하지 않는다.
+	 */
+	UPROPERTY(Transient)
+	TArray<FSFBuildingTierData> CachedCommonTiers;
 	/**
 	 * 건설이 완료되어 현재 건물에 실제 적용 중인 티어 에셋.
 	 * Completed 및 Destroyed 상태에서 사용한다.
@@ -295,12 +319,11 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;
-	/* 업그레이드 중에는 이전 티어를 유지하고,
-	* 업그레이드 완료 시 새 티어로 교체한다.
-	*/// 거의 한순간 1회용 캐싱용도
-	int32 ActivatedGameplayTier = INDEX_NONE;
-	// upgrade일때 파괴되면 중복차감 방지 bool변수
-	bool bIsDeActivated = true;
+
+	// 티어 기능이 현재 적용되어 있는지 나타낸다.
+	bool bIsTierActivated = false;
 private:
-	
+	// 빌딩DA
+	UPROPERTY(EditInstanceOnly,BlueprintReadOnly,Category = "SF|Building|Definition",meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
 };

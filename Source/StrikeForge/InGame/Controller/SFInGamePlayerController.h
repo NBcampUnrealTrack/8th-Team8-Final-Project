@@ -65,7 +65,7 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    bool SpawnBuildingFunction(const FName& InRowName);
+    bool SpawnBuildingFunction(const FName& InBuildingId);
     void ClearSpawnedBuildingRef();
     void ClearPendingBuildingRef();
     void NotifyBuilderArrived();

@@ -6,6 +6,7 @@
 #include "SFTeamState.generated.h"
 
 class ASFNexusBuilding;
+class USFBuildingCatalog;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FSFOnMineralChanged, int32, NewMineral, float, NewIncomeRate);
@@ -35,12 +36,14 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetCurrentPopulation() const { return CurrentPopulation; }
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetMaximumPopulation() const { return MaximumPopulation; }
 	UFUNCTION(BlueprintPure) ASFNexusBuilding* GetNexus() const;
-
+	UFUNCTION(BlueprintPure) USFBuildingCatalog* GetBuildingCatalog() const;
+	
 	// 변경
 	void AddResource(EResourceType InType, int32 InAmount);
 	void AddResourceIncomeRate(EResourceType InType, float InRate);
 	void AddPopulation(int32 InDelta);
 	void AddMaxPopulation(int32 InDelta);
+	bool SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog);
 
 	// 판정 · 소비
 	bool CanAffordResource(const FResources& InCost) const;
@@ -64,4 +67,17 @@ private:
 	UPROPERTY(VisibleAnywhere) int32 CurrentPopulation = 0;
 	UPROPERTY(VisibleAnywhere) int32 MaximumPopulation = 0;
 	UPROPERTY(VisibleAnywhere) TWeakObjectPtr<ASFNexusBuilding> Nexus;
+	/**
+ * 해당 팀이 사용하는 종족별 건물 카탈로그.
+ *
+ * 예:
+ * Human 팀 → DA_HumanBuildingCatalog
+ * Fox 팀   → DA_FoxBuildingCatalog
+ */
+	UPROPERTY(
+		VisibleAnywhere,
+		BlueprintReadOnly,
+		Category = "SF|Building",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USFBuildingCatalog> BuildingCatalog;
 };

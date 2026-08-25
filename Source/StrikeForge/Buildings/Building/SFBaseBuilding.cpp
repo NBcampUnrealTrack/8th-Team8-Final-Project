@@ -950,9 +950,16 @@ void ASFBaseBuilding::SetBoxExtent()
 	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
-	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
-	BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
-	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
+	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.7;
+	float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
+	
+	FVector CustomOrigin = BoundsInParent.Origin;
+	CustomOrigin.Z -= SubBoxExtentZ;
+	
+	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
+	BoxComponent->SetRelativeLocation(CustomOrigin);
+	// BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
+	// BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
 	// FVector Extent = BoundsInParent.BoxExtent;
 	// Extent.X *= 0.8f;
 	// Extent.Y *= 0.8f;
@@ -961,8 +968,8 @@ void ASFBaseBuilding::SetBoxExtent()
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
-	const UStaticMesh* Mesh = StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr;
-	return Mesh ? Mesh->GetBounds() : FBoxSphereBounds(ForceInit);
+	return StaticMeshComponent->CalcBounds(
+		StaticMeshComponent->GetRelativeTransform());
 }
 
 

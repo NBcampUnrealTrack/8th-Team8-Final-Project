@@ -17,6 +17,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnBuildingDestroyed() override;
 
 	/** 파괴 순간. 연출은 BP 에서 구현한다 */

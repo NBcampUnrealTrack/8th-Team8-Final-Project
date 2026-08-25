@@ -16,6 +16,8 @@
 #include "Game/GameState/SFGameState.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 #include "Logging/SFLog.h"
 
 /**
@@ -202,6 +204,12 @@ int32 AUnitBase::GetTeamIndex() const
 	return CombatTarget ? CombatTarget->GetTeamIndex() : Targetable::NeutralTeam;
 }
 
+float AUnitBase::GetGroundSpeed() const
+{
+	// Z 를 빼는 이유: 낙하 중에도 Walk 가 재생되지 않게 한다.
+	return GetVelocity().Size2D();
+}
+
 AUnitAIController* AUnitBase::GetUnitAI() const
 {
 	return Cast<AUnitAIController>(GetController());
@@ -237,6 +245,12 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	}
 
 	SpawnEffectAt(DeathEffect, GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
+
+	// 사망 모션. DeathLifeSpan 안에 끝나야 중간에 사라지지 않는다.
+	if (DeathMontage)
+	{
+		PlayAnimMontage(DeathMontage);
+	}
 
 	// 레지스트리 해제는 CombatTargetComponent 가 이미 처리했다.
 
@@ -379,6 +393,14 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	// 놓지 않으면 사거리 안의 적을 계속 때리느라 명령이 무시된다.
 	CurrentTarget = nullptr;
 
+	// 남아 있는 공격 모션을 끊는다.
+	// 그대로 두면 칼을 휘두르면서 이동하는 그림이 된다.
+	StopAttackMontage();
+
+	// 쿨다운도 함께 초기화한다.
+	// 남겨두면 도착 직후 첫 공격이 지연된다.
+	AttackCooldownRemaining = 0.f;
+
 	if (AUnitAIController* AI = GetUnitAI())
 	{
 		AI->ForceRepath();
@@ -394,6 +416,9 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 void AUnitBase::StopMove_Implementation()
 {
 	bHasCommandedDestination = false;
+
+	// 정지 명령에도 공격 모션이 남아 있으면 어색하다
+	StopAttackMontage();
 
 	if (AUnitAIController* AI = GetUnitAI())
 	{
@@ -419,10 +444,23 @@ void AUnitBase::ApplyPopulationDelta(int32 InDelta)
 
 	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
 	if (!IsValid(GameState)) return;
+	GameState->AddPopulation(GetTeamIndex(), InDelta);
+}
 
-	// SetPopulation 은 최대 인구까지 함께 덮어쓴다.
-	// 유닛은 현재 인구만 건드려야 하므로 AddCurrentPopulation 을 쓴다.
-	GameState->AddCurrentPopulation(InDelta);
+void AUnitBase::StopAttackMontage()
+{
+	if (!AttackMontage) return;
+
+	const USkeletalMeshComponent* MeshComp = GetMesh();
+	UAnimInstance* Anim = MeshComp ? MeshComp->GetAnimInstance() : nullptr;
+	if (!Anim) return;
+
+	// 지금 돌고 있는 게 공격 몽타주일 때만 끊는다.
+	// 조건 없이 StopAllMontages 를 부르면 사망 모션까지 끊긴다.
+	if (Anim->Montage_IsPlaying(AttackMontage))
+	{
+		Anim->Montage_Stop(MontageBlendOutTime, AttackMontage);
+	}
 }
 
 void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const
@@ -652,6 +690,13 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 	// 타겟 위치에 이펙트. 몽타주 노티파이로 옮기면 타이밍이 더 정확해진다.
 	SpawnEffectAt(AttackEffect, InTarget->GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
 
+	// 공격 모션. 쿨다운보다 몽타주가 길면 다음 공격에 잘리므로
+	// DT_Units 의 AttackCooldown 을 몽타주 길이에 맞춰야 자연스럽다.
+	if (AttackMontage)
+	{
+		PlayAnimMontage(AttackMontage);
+	}
+
 	OnAttackPerformed(InTarget);
 }
 
@@ -846,6 +891,26 @@ void AUnitBase::Tick(float DeltaSeconds)
 	if (AttackCooldownRemaining > 0.f)
 	{
 		AttackCooldownRemaining -= DeltaSeconds;
+	}
+
+	// ── 0. 플레이어 명령 우선 ───────────────────────────
+	//
+	// 명령이 살아 있는 동안에는 교전 판정 자체를 하지 않는다.
+	// 아래 타겟 갱신 이후로 내려가면, 사거리 안에 적이 있을 때
+	// 교전 분기가 먼저 걸려 Advance() 에 도달하지 못한다.
+	// (그래서 "전투 중에는 이동 명령이 무시되는" 문제가 있었다)
+	//
+	// 도착하면 bHasCommandedDestination 이 풀리고 다음 틱부터
+	// 평소대로 적을 찾아 싸운다.
+	if (bHasCommandedDestination)
+	{
+		// 명령 수행 중에는 타겟을 들고 있지 않는다.
+		// 남겨두면 도착 직후 낡은 타겟으로 곧장 달려간다.
+		CurrentTarget = nullptr;
+
+		SetCombatState(EUnitCombatState::Advancing);
+		Advance();
+		return;
 	}
 
 	// ── 1. 타겟 갱신 ────────────────────────────────────

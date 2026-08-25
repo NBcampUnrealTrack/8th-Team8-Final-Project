@@ -65,7 +65,7 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    bool SpawnBuildingFunction(const FName& InRowName);
+    bool SpawnBuildingFunction(const FName& InBuildingId);
     void ClearSpawnedBuildingRef();
     void ClearPendingBuildingRef();
     void NotifyBuilderArrived();
@@ -73,6 +73,9 @@ public:
     void SetSelectedActor(AActor* InActor);
     void RegisterCommander(ASFCommander* InCommander);
     void IssueMoveCommand(const FVector& Destination);
+    // team
+    FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
+    FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
 protected:
     virtual void BeginPlay() override;
 
@@ -278,6 +281,8 @@ private:
 
     FVector2D SelectionPressPosition = FVector2D::ZeroVector;
     bool bSelectionPressActive = false;
+    // team
+    int32 MyTeamIndex = 0;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

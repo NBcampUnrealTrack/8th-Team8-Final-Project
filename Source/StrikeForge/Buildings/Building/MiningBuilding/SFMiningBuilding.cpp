@@ -2,6 +2,7 @@
 #include "ActorComponent/Mining/MiningComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
@@ -52,33 +53,60 @@ FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
 	return Info;
 }
 
-void ASFMiningBuilding::OnBuildingDefinitionLoaded(const FBuildingAppearance& Definition)
+void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 {
-	Super::OnBuildingDefinitionLoaded(Definition);
+	Super::OnBuildingDefinitionLoaded();
 	
-	MiningComponent->SetMineResourceType(Definition.CanDigResourceType);
+	const USFMiningBuildingDefinition* Definition =	Cast<USFMiningBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] MiningBuildingDefinition이 아닙니다. Definition=%s",
+			*GetName(),
+			*GetNameSafe(GetBuildingDefinition()));
+
+		return;
+	}
+
+	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
 }
 
-void ASFMiningBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
+void ASFMiningBuilding::OnTierActivated()
 {
-	Super::OnTierActivated(ActivatedTier);
+	Super::OnTierActivated();
 	
-	MiningComponent->InitMineProperties(ActivatedTier.ExtractBaseWorkAmount, ActivatedTier.ExtractAmount);
-	MiningComponent->StartMining();
+	const USFMiningBuildingDefinition* Definition =	Cast<USFMiningBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] MiningBuildingDefinition이 아닙니다.",
+			*GetName());
 
+		return;
+	}
+
+	const FSFMiningBuildingTierData* ActivatedTier = Definition->FindMiningTier(GetCurrentTier());
+	if (!ActivatedTier)
+	{
+		SF_LOG(
+			Error,
+			"[%s] Mining Tier가 없습니다. Tier=%d",
+			*GetName(),
+			GetCurrentTier());
+
+		return;
+	}
+
+	MiningComponent->InitMineProperties(ActivatedTier->ExtractBaseWorkAmount, ActivatedTier->ExtractAmount);
+	MiningComponent->StartMining();
 	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
 }
 
-void ASFMiningBuilding::OnUpgradeStarted()
+void ASFMiningBuilding::OnTierDeactivated()
 {
-	Super::OnUpgradeStarted();
-
-	MiningComponent->StopMining();
-}
-
-void ASFMiningBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
-{
-	Super::OnTierDeactivated(DeactivatedTier);
+	Super::OnTierDeactivated();
 	
 	MiningComponent->StopMining();
 	
@@ -89,11 +117,12 @@ void ASFMiningBuilding::OnBuildingDestroyed()
 {
 	Super::OnBuildingDestroyed();
 	
-	MiningComponent->StopMining();
+	Destroy();
 }
 
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-TryLinkResource::InValid MiningComponent"));
 	return MiningComponent->TryLinkResource(InResourceRef);
 }
 
@@ -104,7 +133,7 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 
 	if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
 	{
-		GS->AddResourceIncomeRate(GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
+		GS->AddResourceIncomeRate(GetTeamIndex(), GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
 	}
 	CurrentIncomeRatePerSecond = NewRate; 
 }
@@ -112,11 +141,13 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 //getter
 EResourceType ASFMiningBuilding::GetMineResourceType() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMineResourceType::InValid MiningComponent"));
 	return MiningComponent->GetMineResourceType();
 }
 
 int32 ASFMiningBuilding::GetExtractAmount() const
 {
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetExtractAmount::InValid MiningComponent"));
 	return MiningComponent->GetExtractAmount();
 }
 
@@ -127,7 +158,7 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	
-	SFGameState->AddResource(InType, InAmount);
+	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

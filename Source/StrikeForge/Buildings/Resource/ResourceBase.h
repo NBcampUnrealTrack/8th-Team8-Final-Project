@@ -23,6 +23,9 @@ class STRIKEFORGE_API AResourceBase
 public:
 	// Sets default values for this actor's properties
 	AResourceBase();
+	
+	FSFOnResourceNodeDepleted OnDepleted;
+	
 	virtual int32 Extract(int32 InDigAmount) override;
 	
 	// Getter
@@ -33,8 +36,7 @@ public:
 	
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
 	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
-	
-	FSFOnResourceNodeDepleted OnDepleted;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

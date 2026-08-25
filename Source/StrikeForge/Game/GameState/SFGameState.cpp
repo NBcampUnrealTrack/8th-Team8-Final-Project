@@ -2,6 +2,8 @@
 #include "SFGameState.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/SFBuildingCatalog.h"
+#include "Interfaces/Units/Targetable.h"
 
 ASFGameState::ASFGameState()
 {
@@ -109,250 +111,208 @@ bool ASFGameState::IsStageFinished() const
 	return StageState == ESFStageState::Finished;
 }
 
-int32 ASFGameState::GetMineral() const
-{
-	return Mineral;
-}
-
-int32 ASFGameState::GetEther() const
-{
-	return Ether;
-}
-
-float ASFGameState::GetMineralIncomeRate() const
-{
-	return MineralIncomeRate;
-}
-
-float ASFGameState::GetEtherIncomeRate() const
-{
-	return EtherIncomeRate;
-}
-
-int32 ASFGameState::GetCurrentPopulation() const
-{
-	return CurrentPopulation;
-}
-
-int32 ASFGameState::GetMaximumPopulation() const
-{
-	return MaximumPopulation;
-}
-
 //기존 Delegate 시그니처를 그대로 활용
-void ASFGameState::SetMineral(int32 NewMineral)
-{
-	Mineral = FMath::Max(0, NewMineral);
 
-	OnMineralChanged.Broadcast(
-		Mineral,
-		MineralIncomeRate
-	);
-}
-
-void ASFGameState::SetEther(int32 NewEther)
-{
-	Ether = FMath::Max(0, NewEther);
-
-	OnEtherChanged.Broadcast(
-		Ether,
-		EtherIncomeRate
-	);
-}
-
-void ASFGameState::SetMineralIncomeRate(
-	float NewMineralIncomeRate
-)
-{
-	MineralIncomeRate =
-		FMath::Max(0.0f, NewMineralIncomeRate);
-
-	OnMineralChanged.Broadcast(
-		Mineral,
-		MineralIncomeRate
-	);
-}
-
-void ASFGameState::SetEtherIncomeRate(
-	float NewEtherIncomeRate
-)
-{
-	EtherIncomeRate =
-		FMath::Max(0.0f, NewEtherIncomeRate);
-
-	OnEtherChanged.Broadcast(
-		Ether,
-		EtherIncomeRate
-	);
-}
-
-void ASFGameState::SetPopulation(
-	int32 NewCurrentPopulation,
-	int32 NewMaximumPopulation
-)
-{
-	MaximumPopulation =
-		FMath::Max(0, NewMaximumPopulation);
-
-	CurrentPopulation =
-		FMath::Clamp(
-			NewCurrentPopulation,
-			0,
-			MaximumPopulation
-		);
-
-	OnPopulationChanged.Broadcast(
-		CurrentPopulation,
-		MaximumPopulation
-	);
-	
-	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
-}
-
-void ASFGameState::AddCurrentPopulation(int32 NewCurrentPopulation)
-{	// 현재인구 증가
-	//const int32 IncreasePopValue = FMath::Max(0, NewCurrentPopulation);
-	//if (IncreasePopValue <= 0) return;
-	CurrentPopulation += NewCurrentPopulation;
-	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
-	
-	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
-}
-
-void ASFGameState::AddMaxPopulation(int32 NewMaximumPopulation)
-{	// 최대인구 증가
-	//const int32 IncreasePopValue = FMath::Max(0, NewMaximumPopulation);
-	//if (IncreasePopValue <= 0) return;
-	MaximumPopulation += NewMaximumPopulation;
-	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
-	
-	SF_LOG(Warning, "Current Population: %d / %d", CurrentPopulation, MaximumPopulation);
-}
-
-void ASFGameState::AddResourceIncomeRate(EResourceType InResourceType, float InIncomeRate)
-{
-	switch (InResourceType)
-	{
-	case EResourceType::Ether:
-		{
-			SetEtherIncomeRate(EtherIncomeRate + InIncomeRate);
-			break;
-		}
-	case EResourceType::Mineral:
-		{
-			SetMineralIncomeRate(MineralIncomeRate + InIncomeRate);
-			break;
-		}
-	default:
-		{
-			SF_LOG(Warning, "Unknown Resource Type");
-			break;
-		}
-	}
-}
-
-void ASFGameState::AddResource(EResourceType InResourceType, int32 InResourceAmount)
-{
-	switch (InResourceType)
-	{
-	case EResourceType::Ether:
-		{
-			SetEther(Ether + InResourceAmount);
-			break;
-		}
-	case EResourceType::Mineral:
-		{
-			SetMineral(Mineral + InResourceAmount);
-			break;
-		}
-	default:
-		{
-			SF_LOG(Warning, "Unknown Resource Type");
-			break;
-		}
-	}
-}
-
-bool ASFGameState::CanAfford(int32 InMineral, int32 InEther) const
-{
-	return Mineral >= FMath::Max(0, InMineral)
-		&& Ether   >= FMath::Max(0, InEther);
-}
-
-bool ASFGameState::TrySpendCost(int32 InMineral, int32 InEther)
-{
-	if (!CanAfford(InMineral, InEther)) return false;
-
-	SetMineral(Mineral - FMath::Max(0, InMineral));
-	SetEther(Ether - FMath::Max(0, InEther));
-	return true;
-}
-
-void ASFGameState::RefundCost(int32 InMineral, int32 InEther)
-{
-	SetMineral(Mineral + FMath::Max(0, InMineral));
-	SetEther(Ether + FMath::Max(0, InEther));
-}
 
 // 26.08.18
 bool ASFGameState::RegisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
 {
-	if (TeamIndex == INDEX_NONE)
-	{
-		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: TeamIndex is invalid.");
-
-		return false;
-	}
-
 	if (!IsValid(Nexus))
 	{
 		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: Nexus is invalid.");
-
 		return false;
 	}
 
-	ASFNexusBuilding* ExistingNexus = GetNexus(TeamIndex);
-
-	if (IsValid(ExistingNexus) && ExistingNexus != Nexus)
+	USFTeamState* Team = FindOrAddTeam(TeamIndex);
+	if (!Team)
 	{
-		SF_LOG(Warning, "[SFGameState] Existing Nexus will be replaced. Team: %d, Old: %s, New: %s", TeamIndex, *GetNameSafe(ExistingNexus), *GetNameSafe(Nexus));
+		SF_LOG(Warning, "[SFGameState] RegisterNexus failed: TeamIndex %d is invalid.", TeamIndex);
+		return false;
 	}
 
-	NexusByTeam.Add(TeamIndex, Nexus);
+	if (ASFNexusBuilding* Existing = Team->GetNexus())
+	{
+		if (Existing != Nexus)
+		{
+			SF_LOG(Warning, "[SFGameState] Team %d 의 넥서스가 교체됩니다. Old: %s, New: %s",
+				TeamIndex, *GetNameSafe(Existing), *GetNameSafe(Nexus));
+		}
+	}
 
-	SF_LOG(Log, "[SFGameState] Nexus registered. Team: %d, Nexus: %s", TeamIndex, *GetNameSafe(Nexus));
-
+	Team->SetNexus(Nexus);
 	return true;
 }
 
 bool ASFGameState::UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
 {
-	ASFNexusBuilding* RegisteredNexus = GetNexus(TeamIndex);
+	USFTeamState* Team = GetTeamState(TeamIndex);
+	if (!Team || !Team->IsNexus(Nexus)) return false;
 
-	if (!IsValid(RegisteredNexus))
-	{
-		return false;
-	}
-
-	// 같은 팀에 새 넥서스가 등록된 경우 잘못 제거하지 않도록 비교
-	if (RegisteredNexus != Nexus)
-	{
-		SF_LOG(Warning, "[SFGameState] UnregisterNexus rejected: Nexus does not match. Team: %d", TeamIndex);
-
-		return false;
-	}
-
-	NexusByTeam.Remove(TeamIndex);
-
-	SF_LOG(Log, "[SFGameState] Nexus unregistered. Team: %d", TeamIndex);
-
+	// 팀 항목 자체는 남긴다 — 자원·인구가 들어있다
+	Team->SetNexus(nullptr);
 	return true;
 }
 
 ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
 {
-	ASFNexusBuilding* Nexus = NexusByTeam.FindRef(TeamIndex).Get();
-
-	return IsValid(Nexus) ? Nexus : nullptr;
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetNexus() : nullptr;
 }
+
+USFTeamState* ASFGameState::GetTeamState(int32 TeamIndex) const
+{
+	const TObjectPtr<USFTeamState>* Found = TeamStates.Find(TeamIndex);
+	return Found ? Found->Get() : nullptr;
+}
+
+int32 ASFGameState::GetNexusTier(int32 TeamIndex) const
+{
+	const ASFNexusBuilding* Nexus = GetNexus(TeamIndex);
+	if (!Nexus)
+	{
+		SF_LOG(Error, "[SFGameState] Team %d 에 넥서스가 등록되어 있지 않습니다. "
+			"GameMode 의 PlayerTeamIndex 와 레벨 넥서스의 팀이 일치하는지 확인하세요.", TeamIndex);
+		return INDEX_NONE;
+	}
+	return Nexus->GetCurrentTier();
+}
+
+USFTeamState* ASFGameState::FindOrAddTeam(int32 TeamIndex)
+{
+	if (TeamIndex == Targetable::NeutralTeam) return nullptr;
+
+	if (TObjectPtr<USFTeamState>* Found = TeamStates.Find(TeamIndex))
+	{
+		return *Found;
+	}
+
+	USFTeamState* NewTeam = NewObject<USFTeamState>(this);
+	TeamStates.Add(TeamIndex, NewTeam);
+	return NewTeam;
+}
+
 // 여기까지 추가분
+
+// 판단로직
+
+bool ASFGameState::CanAffordResource(int32 TeamIndex, const FResources& InResource) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->CanAffordResource(InResource) : false;
+}
+
+bool ASFGameState::CanAffordPopulation(int32 TeamIndex, int32 InPopulationCost) const
+{	// 음수도 가능하게 해서 유닛이 죽엇을때 감소되게함
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->CanAffordPopulation(InPopulationCost) : false;
+}
+
+// add
+
+void ASFGameState::AddResource(int32 TeamIndex, EResourceType InResourceType, int32 InResourceAmount)
+{
+	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
+		Team->AddResource(InResourceType, InResourceAmount);
+}
+void ASFGameState::AddResourceIncomeRate(int32 TeamIndex, EResourceType InResourceType, float InIncomeRate)
+{
+	if (USFTeamState* Team = FindOrAddTeam(TeamIndex)) Team->AddResourceIncomeRate(InResourceType, InIncomeRate);
+}
+void ASFGameState::AddPopulation(int32 TeamIndex, int32 InMaximumPopulation)
+{
+if (USFTeamState* Team = FindOrAddTeam(TeamIndex)) Team->AddPopulation(InMaximumPopulation);
+}
+
+void ASFGameState::AddMaxPopulation(int32 TeamIndex, int32 InMaximumPopulation)
+{	// 최대인구 증가
+	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
+		Team->AddMaxPopulation(InMaximumPopulation);
+}
+
+// Minus
+
+bool ASFGameState::TrySpendCost(int32 TeamIndex, const FResources& InResources)
+{	// 판단 + 소비까지
+	USFTeamState* Team = FindOrAddTeam(TeamIndex);
+	return Team ? Team->TrySpendCost(InResources) : false;
+}
+
+void ASFGameState::RefundCost(int32 TeamIndex, const FResources& InResources)
+{
+	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
+		Team->RefundCost(InResources);
+}
+
+// getter setter
+
+int32 ASFGameState::GetMineral(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetMineral() : 0;
+}
+
+int32 ASFGameState::GetEther(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetEther() : 0;
+}
+
+float ASFGameState::GetMineralIncomeRate(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetMineralIncomeRate() : 0.f;
+}
+
+float ASFGameState::GetEtherIncomeRate(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetEtherIncomeRate() : 0.f;
+}
+
+int32 ASFGameState::GetCurrentPopulation(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetCurrentPopulation() : 0;
+}
+
+int32 ASFGameState::GetMaximumPopulation(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetMaximumPopulation() : 0;
+}
+
+bool ASFGameState::SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog)
+{
+	if (!IsValid(InBuildingCatalog))
+	{
+		SF_LOG(Error,
+			"[SFGameState] Team %d에 설정할 "
+			"BuildingCatalog가 유효하지 않습니다.",
+			TeamIndex);
+
+		return false;
+	}
+
+	USFTeamState* Team = FindOrAddTeam(TeamIndex);
+
+	if (!IsValid(Team))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameState] TeamState를 준비할 수 없습니다. "
+			"Team=%d",
+			TeamIndex);
+
+		return false;
+	}
+
+	return Team->SetBuildingCatalog(InBuildingCatalog);
+}
+
+USFBuildingCatalog* ASFGameState::GetTeamBuildingCatalog(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+
+	return IsValid(Team)?
+			Team->GetBuildingCatalog(): nullptr;
+}

@@ -34,6 +34,26 @@ void ASFNexusBuilding::BeginPlay()
 			"전투 유닛이 이 건물을 진격 목표로 인식하지 못합니다.",
 			*GetName());
 	}
+	
+	//if (GetTeamIndex() == 1) return;
+	
+	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+	if (!IsValid(SFGS)) return;
+	
+	if (!SFGS->RegisterNexus(GetTeamIndex(), this))
+	{
+		SF_LOG(Error, "[SFNexusBuilding] %s 등록 실패. TeamIndex=%d", *GetName(), GetTeamIndex());
+	}
+	
+}
+
+void ASFNexusBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>())
+	{
+		SFGS->UnregisterNexus(GetTeamIndex(), this);
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -83,4 +103,6 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 		// 가장 흔한 원인은 스테이지가 Playing 상태가 아닌 것이다.
 		SF_LOG(Warning, "[SFNexusBuilding] 스테이지 종료 요청이 거절됐습니다. 위 로그를 확인하세요.");
 	}
+	
+	Destroy();
 }

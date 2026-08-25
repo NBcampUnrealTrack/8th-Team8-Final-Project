@@ -5,7 +5,11 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Game/GameState/SFTeamState.h"
 #include "SFGameState.generated.h"
+
+class ASFNexusBuilding;
+class USFBuildingCatalog;
 
 // 상태 정의 = 진행 상황
 UENUM(BlueprintType)
@@ -38,35 +42,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     ESFStageResult,
     NewStageResult
 );
-
-// 광물 초기값 및 광물 자동생산량 변경
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
-    FSFOnMineralChanged,
-    int32,
-    NewMineral,
-    float,
-    NewMineralIncomeRate
-);
-
-// 에테르 초기값 및 에테르 자동 생산량 변경
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
-    FSFOnEtherChanged,
-    int32,
-    NewEther,
-    float,
-    NewEtherIncomeRate
-);
-
-// 현재 및 최대 인구수 변경
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
-    FSFOnPopulationChanged,
-    int32,
-    NewCurrentPopulation,
-    int32,
-    NewMaximumPopulation
-);
-
-class ASFNexusBuilding;
 
 UCLASS()
 class STRIKEFORGE_API ASFGameState : public AGameStateBase
@@ -101,59 +76,44 @@ public:
 
     // InGameUI에서 사용될 광물, 에테르, 인구수
     UFUNCTION(BlueprintPure, Category = "SF|Resource")
-    int32 GetMineral() const;
-
+    int32 GetMineral(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Resource")
-    int32 GetEther() const;
-
+    int32 GetEther(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Resource")
-    float GetMineralIncomeRate() const;
-
+    float GetMineralIncomeRate(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Resource")
-    float GetEtherIncomeRate() const;
-
+    float GetEtherIncomeRate(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Population")
-    int32 GetCurrentPopulation() const;
-
+    int32 GetCurrentPopulation(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Population")
-    int32 GetMaximumPopulation() const;
-
+    int32 GetMaximumPopulation(int32 TeamIndex) const;
+    /* 지정한 팀에 종족별 건물 카탈로그를 설정한다. */
+    bool SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog);
+    /* 지정한 팀의 건물 카탈로그를 반환한다. */
+    UFUNCTION(BlueprintPure, Category = "SF|Building")
+    USFBuildingCatalog* GetTeamBuildingCatalog(int32 TeamIndex) const;
+    
     // 자원 값 변경
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void SetMineral(int32 NewMineral);
-
+    void AddResource(int32 TeamIndex, EResourceType InResourceType, int32 InAmount);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void SetEther(int32 NewEther);
-
-    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void SetMineralIncomeRate(float NewMineralIncomeRate);
-
-    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void SetEtherIncomeRate(float NewEtherIncomeRate);
-
+    void AddResourceIncomeRate(int32 TeamIndex, EResourceType InResourceType, float InIncomeRate);
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void SetPopulation(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
-    
+    void AddPopulation(int32 TeamIndex, int32 InDelta);
     UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void AddCurrentPopulation(int32 NewCurrentPopulation);
-    UFUNCTION(BlueprintCallable, Category = "SF|Population")
-    void AddMaxPopulation(int32 NewMaximumPopulation);
-    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void AddResourceIncomeRate(EResourceType InResourceType, float InIncomeRate);
-    UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void AddResource(EResourceType InResourceType, int32 InResourceAmount);
+    void AddMaxPopulation(int32 TeamIndex, int32 InDelta);
     
-    
-    /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다. */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Resource")
-    bool CanAfford(int32 InMineral, int32 InEther) const;
-
-    /** 충분하면 차감하고 true. 실패 시 아무것도 바꾸지 않는다. */
+    // ── 판정 · 소비 ──
+    /** 자원이 충분한지만 확인한다. 아무것도 바꾸지 않는다 */
+    UFUNCTION(BlueprintPure, Category = "SF|Resource")
+    bool CanAffordResource(int32 TeamIndex, const FResources& InCost) const;
+    /** 충분하면 차감하고 true. 실패 시 아무것도 바꾸지 않는다 */
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    bool TrySpendCost(int32 InMineral, int32 InEther);
-    
+    bool TrySpendCost(int32 TeamIndex, const FResources& InCost);
     UFUNCTION(BlueprintCallable, Category = "SF|Resource")
-    void RefundCost(int32 InMineral, int32 InEther); 
+    void RefundCost(int32 TeamIndex, const FResources& InResources);
+    UFUNCTION(BlueprintPure, Category = "SF|Population")
+    bool CanAffordPopulation(int32 TeamIndex, int32 InPopulationCost) const;
     // 여기까지
 
     // 26.08.18
@@ -170,6 +130,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "SF|Nexus")
     ASFNexusBuilding* GetNexus(int32 TeamIndex) const;
 
+    UFUNCTION(BlueprintPure, Category = "SF|Team")
+    USFTeamState* GetTeamState(int32 TeamIndex) const;
+    USFTeamState* FindOrAddTeam(int32 TeamIndex);
+    
+    int32 GetNexusTier(int32 TeamIndex) const;
+
 public:
 
     // UI 부분
@@ -181,16 +147,6 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
     FSFOnStageResultChanged OnStageResultChanged;
 
-    // InGameUI 바인딩 용 Delegate
-    UPROPERTY(BlueprintAssignable, Category = "SF|Resource")
-    FSFOnMineralChanged OnMineralChanged;
-
-    UPROPERTY(BlueprintAssignable, Category = "SF|Resource")
-    FSFOnEtherChanged OnEtherChanged;
-
-    UPROPERTY(BlueprintAssignable, Category = "SF|Population")
-    FSFOnPopulationChanged OnPopulationChanged;
-
 private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageState StageState;
@@ -201,28 +157,9 @@ private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     FName CurrentStageRowName = NAME_None;
 
-    // InGameUI 용 초기값
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    int32 Mineral = 0;
-    
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    int32 Ether = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    float MineralIncomeRate = 0.0f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Resource", meta = (AllowPrivateAccess = "true"))
-    float EtherIncomeRate = 0.0f;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Population", meta = (AllowPrivateAccess = "true"))
-    int32 CurrentPopulation = 0;
-
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Population", meta = (AllowPrivateAccess = "true"))
-    int32 MaximumPopulation = 0;
-
     // 26.08.18
     // TeamIndex를 기준으로 각 팀의 넥서스를 저장
-    UPROPERTY()
-    TMap<int32, TObjectPtr<ASFNexusBuilding>> NexusByTeam;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Team", meta = (AllowPrivateAccess = "true"))
+    TMap<int32, TObjectPtr<USFTeamState>> TeamStates;
 	
 };

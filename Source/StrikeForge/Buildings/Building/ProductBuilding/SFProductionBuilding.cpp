@@ -1,5 +1,6 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
@@ -9,12 +10,39 @@ ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectIni
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
 }
 
-void ASFProductionBuilding::OnTierActivated(const FBuildingTier& ActivatedTier)
+void ASFProductionBuilding::OnTierActivated()
 {
-	Super::OnTierActivated(ActivatedTier);
+	Super::OnTierActivated();
 
-	StoredSpawnableUnitDatas = ActivatedTier.SpawnableUnits;
+	const USFProductionBuildingDefinition* Definition =	Cast<USFProductionBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("[%s] ProductionBuildingDefinition이 아닙니다. Definition=%s"),
+			*GetName(),
+			*GetNameSafe(GetBuildingDefinition()));
+
+		return;
+	}
+
+	const FSFProductionBuildingTierData* ActivatedTier = Definition->FindProductionTier(GetCurrentTier());
+	if (!ActivatedTier)
+	{
+		UE_LOG(
+			LogTemp,
+			Error,
+			TEXT("[%s] Production Tier가 없습니다. Tier=%d"),
+			*GetName(),
+			GetCurrentTier());
+
+		return;
+	}
+
+	StoredSpawnableUnitDatas = ActivatedTier->SpawnableUnits;
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
+
 	ProductComponent->ResumeProductLine();
 }
 
@@ -24,16 +52,15 @@ void ASFProductionBuilding::OnUpgradeStarted()
 	ProductComponent->PauseProductLine();
 }
 
-void ASFProductionBuilding::OnTierDeactivated(const FBuildingTier& DeactivatedTier)
-{
-	Super::OnTierDeactivated(DeactivatedTier);
-	
-}
-
 void ASFProductionBuilding::OnBuildingDestroyed()
 { // deactivated -> destroy
 	Super::OnBuildingDestroyed();
+	// 생산열에 있는 모든 product을 지우기만 한다
+	// 환불이 필요하면 로직을 여기 작성해야하나
+	// 환불이 되지않는것이 자연스럽다
 	ProductComponent->AllClearProductLine();
+	
+	Destroy();
 }
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {

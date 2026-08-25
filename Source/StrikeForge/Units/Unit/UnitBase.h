@@ -14,6 +14,7 @@ class UCombatTargetComponent;
 class UWidgetComponent;
 class AUnitAIController;
 class UNiagaraSystem;
+class UAnimMontage;
 class ALanePath;
 
 /** 전투 상태 머신 */
@@ -100,6 +101,20 @@ public:
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
 
+	/**
+	 * 현재 전투 상태. AnimBP 가 애니메이션을 고르는 기준이 된다.
+	 *
+	 *   Advancing / Chasing  이동  → Walk
+	 *   Attacking            교전  → Attack 몽타주
+	 *   Dead                 사망  → Dying
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE EUnitCombatState GetCombatState() const { return CombatState; }
+
+	/** 수평 이동 속도. Blend Space 의 입력값으로 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	float GetGroundSpeed() const;
+
 	/** 플레이어 명령을 수행 중인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE bool HasMoveCommand() const { return bHasCommandedDestination != 0; }
@@ -168,6 +183,14 @@ protected:
 	 * ASFGameState 가 없으면 조용히 넘어간다(테스트 레벨 대응).
 	 */
 	void ApplyPopulationDelta(int32 InDelta);
+
+	/**
+	 * 재생 중인 공격 몽타주를 끊는다.
+	 *
+	 * 이동 명령이 들어왔는데 공격 모션이 남아 있으면
+	 * 유닛이 칼을 휘두르며 이동하는 그림이 된다.
+	 */
+	void StopAttackMontage();
 
 	/** 이펙트를 지정 위치에 스폰한다. 시스템이 비어 있으면 아무것도 안 한다 */
 	void SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const;
@@ -350,6 +373,28 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UNiagaraSystem> AttackEffect;
+
+	/**
+	 * 공격 시 재생할 몽타주.
+	 *
+	 * AnimBP 의 AnimGraph 에 Slot 노드(기본 'DefaultSlot')가 있어야
+	 * 화면에 나온다. 비워두면 아무것도 재생하지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/**
+	 * 공격 몽타주를 끊을 때의 블렌드 아웃 시간(초).
+	 *
+	 * 0 이면 즉시 끊겨 동작이 툭 끊긴 느낌이 난다.
+	 * 0.15 정도면 자연스럽게 이동 자세로 넘어간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float MontageBlendOutTime = 0.15f;
+
+	/** 사망 시 재생할 몽타주. 없으면 AnimBP 의 사망 상태에 맡긴다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> DeathMontage;
 
 	/** 사망 순간 재생할 이펙트. 자기 위치에 스폰된다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))

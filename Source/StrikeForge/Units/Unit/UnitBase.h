@@ -184,6 +184,14 @@ protected:
 	 */
 	void ApplyPopulationDelta(int32 InDelta);
 
+	/**
+	 * 재생 중인 공격 몽타주를 끊는다.
+	 *
+	 * 이동 명령이 들어왔는데 공격 모션이 남아 있으면
+	 * 유닛이 칼을 휘두르며 이동하는 그림이 된다.
+	 */
+	void StopAttackMontage();
+
 	/** 이펙트를 지정 위치에 스폰한다. 시스템이 비어 있으면 아무것도 안 한다 */
 	void SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const;
 
@@ -374,6 +382,15 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/**
+	 * 공격 몽타주를 끊을 때의 블렌드 아웃 시간(초).
+	 *
+	 * 0 이면 즉시 끊겨 동작이 툭 끊긴 느낌이 난다.
+	 * 0.15 정도면 자연스럽게 이동 자세로 넘어간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float MontageBlendOutTime = 0.15f;
 
 	/** 사망 시 재생할 몽타주. 없으면 AnimBP 의 사망 상태에 맡긴다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))

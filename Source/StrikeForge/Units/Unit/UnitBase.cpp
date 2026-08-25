@@ -17,6 +17,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 #include "Logging/SFLog.h"
 
 /**
@@ -392,6 +393,14 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	// 놓지 않으면 사거리 안의 적을 계속 때리느라 명령이 무시된다.
 	CurrentTarget = nullptr;
 
+	// 남아 있는 공격 모션을 끊는다.
+	// 그대로 두면 칼을 휘두르면서 이동하는 그림이 된다.
+	StopAttackMontage();
+
+	// 쿨다운도 함께 초기화한다.
+	// 남겨두면 도착 직후 첫 공격이 지연된다.
+	AttackCooldownRemaining = 0.f;
+
 	if (AUnitAIController* AI = GetUnitAI())
 	{
 		AI->ForceRepath();
@@ -407,6 +416,9 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 void AUnitBase::StopMove_Implementation()
 {
 	bHasCommandedDestination = false;
+
+	// 정지 명령에도 공격 모션이 남아 있으면 어색하다
+	StopAttackMontage();
 
 	if (AUnitAIController* AI = GetUnitAI())
 	{
@@ -433,6 +445,22 @@ void AUnitBase::ApplyPopulationDelta(int32 InDelta)
 	// 테스트 레벨처럼 GameState 가 없는 경우도 있으므로 조용히 넘어간다
 	if (!IsValid(GameState)) return;
 	GameState->AddPopulation(GetTeamIndex(), InDelta);
+}
+
+void AUnitBase::StopAttackMontage()
+{
+	if (!AttackMontage) return;
+
+	const USkeletalMeshComponent* MeshComp = GetMesh();
+	UAnimInstance* Anim = MeshComp ? MeshComp->GetAnimInstance() : nullptr;
+	if (!Anim) return;
+
+	// 지금 돌고 있는 게 공격 몽타주일 때만 끊는다.
+	// 조건 없이 StopAllMontages 를 부르면 사망 모션까지 끊긴다.
+	if (Anim->Montage_IsPlaying(AttackMontage))
+	{
+		Anim->Montage_Stop(MontageBlendOutTime, AttackMontage);
+	}
 }
 
 void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const

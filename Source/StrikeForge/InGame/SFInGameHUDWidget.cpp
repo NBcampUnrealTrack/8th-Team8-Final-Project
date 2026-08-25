@@ -2,6 +2,7 @@
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
+#include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
@@ -27,12 +28,19 @@
 
 #include "Engine/EngineTypes.h"
 #include "EngineUtils.h"
+#include "Engine/DataTable.h"
+
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
+#include "Game/GameInstance/SFGameInstance.h"
+#include "Game/GameState/SFGameState.h"
+
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 #include "Kismet/GameplayStatics.h"
+
+#include "TimerManager.h"
 
 #include "Logging/SFLog.h"
 
@@ -121,6 +129,16 @@ void USFInGameHUDWidget::NativeConstruct()
 
         SF_LOG(Log, "[SFInGameHUDWidget] Multi selection delegate binding completed.");
     }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimerForNextTick(
+            FTimerDelegate::CreateUObject(
+                this,
+                &USFInGameHUDWidget::TryStartStageIntro
+            )
+        );
+    }
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -180,6 +198,13 @@ void USFInGameHUDWidget::NativeDestruct()
             this,
             &USFInGameHUDWidget::HandlePrimarySelectionRequested
         );
+    }
+
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+        ActiveStageIntroWidget = nullptr;
     }
 
     Super::NativeDestruct();
@@ -1604,5 +1629,176 @@ void USFInGameHUDWidget::ShowMoveDestinationIndicator(
         "[SFInGameHUDWidget] "
         "Move destination indicator shown | Location: %s",
         *WorldLocation.ToString()
+    );
+}
+
+FName USFInGameHUDWidget::ResolveStageIntroRowName() const
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (ASFGameState* GameState = World->GetGameState<ASFGameState>())
+        {
+            const FName StageRowName = GameState->GetCurrentStageRowName();
+
+            if (!StageRowName.IsNone())
+            {
+                return StageRowName;
+            }
+        }
+    }
+
+    if (const USFGameInstance* GameInstance = Cast<USFGameInstance>(GetGameInstance()))
+    {
+        const FName StageRowName = GameInstance->GetSelectedStageRowName();
+
+        if (!StageRowName.IsNone())
+        {
+            return StageRowName;
+        }
+    }
+
+    return StageIntroFallbackRowName;
+}
+
+void USFInGameHUDWidget::TryStartStageIntro()
+{
+    SF_LOG(Log, "[SFInGameHUDWidget] TryStartStageIntro called.");
+
+    if (!StageIntroWidgetClass)
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntroWidgetClass is invalid.");
+        return;
+    }
+
+    if (!IsValid(StageIntroDataTable))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntroDataTable is invalid.");
+        return;
+    }
+
+    FName IntroRowName = StageIntroFallbackRowName;
+
+    if (IntroRowName.IsNone())
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntro row name is None.");
+        return;
+    }
+
+    if (!StageIntroDataTable->GetRowNames().Contains(IntroRowName))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] StageIntro row was not found: %s",
+            *IntroRowName.ToString()
+        );
+        return;
+    }
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (!IsValid(PlayerController))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] OwningPlayer is invalid.");
+        return;
+    }
+
+    ActiveStageIntroWidget = CreateWidget<USFStageIntroWidget>(
+        PlayerController,
+        StageIntroWidgetClass
+    );
+
+    if (!IsValid(ActiveStageIntroWidget))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] Failed to create StageIntroWidget.");
+        return;
+    }
+
+    ActiveStageIntroWidget->OnDeactivated().AddUObject(
+        this,
+        &USFInGameHUDWidget::HandleStageIntroDeactivated
+    );
+
+    ActiveStageIntroWidget->AddToViewport(500);
+    ActiveStageIntroWidget->ActivateWidget();
+
+    if (!ActiveStageIntroWidget->StartStageIntro(
+        StageIntroDataTable,
+        IntroRowName
+    ))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StartStageIntro failed.");
+
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+        ActiveStageIntroWidget = nullptr;
+        return;
+    }
+
+    VisibilityBeforeStageIntro = GetVisibility();
+    bWasGamePausedBeforeStageIntro =
+        UGameplayStatics::IsGamePaused(this);
+
+    SetVisibility(ESlateVisibility::Collapsed);
+
+    if (!bWasGamePausedBeforeStageIntro)
+    {
+        UGameplayStatics::SetGamePaused(this, true);
+    }
+
+    FInputModeGameAndUI InputMode;
+    InputMode.SetWidgetToFocus(
+        ActiveStageIntroWidget->TakeWidget()
+    );
+    InputMode.SetHideCursorDuringCapture(false);
+    InputMode.SetLockMouseToViewportBehavior(
+        EMouseLockMode::LockAlways
+    );
+
+    PlayerController->SetInputMode(InputMode);
+    PlayerController->bShowMouseCursor = true;
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] StageIntro started | Row: %s",
+        *IntroRowName.ToString()
+    );
+}
+
+void USFInGameHUDWidget::HandleStageIntroDeactivated()
+{
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+    }
+
+    ActiveStageIntroWidget = nullptr;
+
+    SetVisibility(VisibilityBeforeStageIntro);
+
+    if (!bWasGamePausedBeforeStageIntro)
+    {
+        UGameplayStatics::SetGamePaused(this, false);
+    }
+
+    bWasGamePausedBeforeStageIntro = false;
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (IsValid(PlayerController))
+    {
+        FInputModeGameAndUI InputMode;
+        InputMode.SetHideCursorDuringCapture(false);
+        InputMode.SetLockMouseToViewportBehavior(
+            EMouseLockMode::LockAlways
+        );
+
+        PlayerController->SetInputMode(InputMode);
+        PlayerController->bShowMouseCursor = true;
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Stage intro finished."
     );
 }

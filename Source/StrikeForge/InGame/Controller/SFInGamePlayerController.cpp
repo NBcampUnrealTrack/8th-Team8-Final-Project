@@ -320,6 +320,15 @@ void ASFInGamePlayerController::SetupInputComponent()
             HandleToggleSettingsInput);
     }
     
+    if (IsValid(ToggleBuildModeAction))
+    {
+        EnhancedInputComponent->BindAction(
+            ToggleBuildModeAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleToggleBuildModeInput
+        );
+    }
 }
 
 void ASFInGamePlayerController::SetSFControlMode(
@@ -541,6 +550,11 @@ void ASFInGamePlayerController::HandleSelectionDragCompleted()
 
 void ASFInGamePlayerController::HandleMoveInput()
 {
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->CloseBuildingMode();
+    }
+
     FHitResult Hit;
 
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
@@ -592,6 +606,11 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
 void ASFInGamePlayerController::HandleCancelBuildInput()
 {
     OnCancelBuildInput.Broadcast();
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->CloseBuildingMode();
+    }
 
     // ★ADD: 배치 중이던 고스트 정리 + 컨트롤 모드 복귀
     //        IA_SFCancelBuild 는 IMC_SFBuildPlacement 에만 있으므로
@@ -705,6 +724,11 @@ void ASFInGamePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason
 
 void ASFInGamePlayerController::HandleFocusCommanderInput()
 {
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->CloseBuildingMode();
+    }
+
     ASFCommander* Commander =
         MyCommander.Get();
 
@@ -792,15 +816,28 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         if (Count > 1)
         {
             const float Angle = 2.f * PI * Index / Count;
-
-            // sqrt 를 쓰면 인원이 늘어도 밀도가 일정하다
             const float Radius =
-                FormationSpacing * FMath::Sqrt(static_cast<float>(Count));
+                FormationSpacing *
+                FMath::Sqrt(static_cast<float>(Count));
 
-            Goal += FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+            Goal += FVector(
+                FMath::Cos(Angle),
+                FMath::Sin(Angle),
+                0.f
+            ) * Radius;
         }
 
-        IMovable::Execute_MoveToLocation(Commandables[Index], Goal);
+        IMovable::Execute_MoveToLocation(
+            Commandables[Index],
+            Goal
+        );
+    }
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->ShowMoveDestinationIndicator(
+            Destination
+        );
     }
 
     SF_LOG(Log, "[SFInGamePlayerController] Move command | Count: %d | Location: %s",
@@ -814,5 +851,18 @@ void ASFInGamePlayerController::HandleToggleSettingsInput()
         return;
     }
 
+    InGameHUDWidget->CloseBuildingMode();
     InGameHUDWidget->ToggleSettings();
+}
+
+void ASFInGamePlayerController::HandleToggleBuildModeInput()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->ToggleBuildingMode();
+
+    SF_LOG(Log, "[SFInGamePlayerController] Build mode toggled.");
 }

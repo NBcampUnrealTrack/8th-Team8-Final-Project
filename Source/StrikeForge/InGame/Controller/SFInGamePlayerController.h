@@ -114,6 +114,8 @@ private:
     void CreateInGameHUD();
     
     void HandleToggleSettingsInput();
+
+    void HandleToggleBuildModeInput();
     // 변수 영역
 protected:
     
@@ -224,6 +226,14 @@ protected:
         Category = "SF|Input"
     )
     TObjectPtr<UInputAction> ToggleSettingsAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly, 
+        BlueprintReadOnly, 
+        Category = "SF|Input", 
+        meta = (AllowPrivateAccess = "true")
+    )
+    TObjectPtr<UInputAction> ToggleBuildModeAction = nullptr;
 
     UPROPERTY(
         EditDefaultsOnly,

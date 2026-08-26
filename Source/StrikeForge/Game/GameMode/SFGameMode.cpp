@@ -75,7 +75,7 @@ void ASFGameMode::InitGameState()
 		return;
 	}
 
-	if (!SFGameState->SetTeamBuildingCatalog(PlayerTeamIndex, PlayerCatalog))
+	if (!SFGameState->RegisterTeam(PlayerTeamIndex, PlayerRace, PlayerCatalog))
 	{
 		SF_LOG(
 			Error,
@@ -152,7 +152,7 @@ void ASFGameMode::InitGameState()
 			return;
 		}
 
-		if (!SFGameState->SetTeamBuildingCatalog(ComputerTeam.TeamIndex, ComputerCatalog))
+		if (!SFGameState->RegisterTeam(ComputerTeam.TeamIndex, ComputerTeam.Race, ComputerCatalog))
 		{
 			SF_LOG(
 				Error,

@@ -89,7 +89,26 @@ bool USFGameInstance::SelectStage(FName StageRowName)
 
         return false;
     }
+    
+    // stage테이블의 default플레이어 종족값 캐싱
+    if (StageData->PlayerRace == ESFRace::None)
+    {
+        // elseif 때문에 7스테이지만 
+        // 이전 스테이지의 종족값 제거
+        SelectedRace = ESFRace::None;
+    }
+    else if (!SelectRace(StageData->PlayerRace))
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 플레이어 종족 설정 실패. "
+            "Stage=%s, Race=%s",
+            *StageRowName.ToString(),
+            *UEnum::GetValueAsString(
+                StageData->PlayerRace));
 
+        return false;
+    }
     SelectedStageRowName = StageRowName;
 
     SF_LOG(Log, "[SFGameInstance] Stage selected: %s, DisplayName: %s", *SelectedStageRowName.ToString(), *StageData->DisplayName.ToString());
@@ -129,6 +148,15 @@ bool USFGameInstance::MoveToStage()
         return false;
     }
 
+    if (SelectedRace == ESFRace::None)
+    {
+        SF_LOG(
+            Warning,
+            "[SFGameInstance] 종족을 선택해야 스테이지로 이동할 수 있습니다.");
+
+        return false;
+    }
+    
     return TravelToLevel(StageData->StageLevel);
 }
 

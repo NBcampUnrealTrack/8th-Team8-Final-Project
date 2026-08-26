@@ -56,15 +56,22 @@ void ASFGameMode::InitGameState()
 		return;
 	}
 
-	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadBuildingCatalog(SFGameInstance->GetSelectedRace());
-
+	// 1. 플레이어는 GameInstance가 보관한 선택 종족 사용
+	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
+	//
+	if (PlayerRace == ESFRace::None)
+	{
+		SF_LOG(Error, "[SFGameMode] 플레이어 종족이 선택되지 않았습니다.");
+		return;
+	}
+	
+	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadBuildingCatalog(PlayerRace);
 	if (!IsValid(PlayerCatalog))
 	{
 		SF_LOG(
 			Error,
-			"[SFGameMode] InitGameState: "
-			"플레이어 건물 카탈로그를 준비할 수 없습니다.");
-
+			"[SFGameMode] 플레이어 Catalog 로드 실패. Race=%s",
+			*UEnum::GetValueAsString(PlayerRace));
 		return;
 	}
 
@@ -72,13 +79,99 @@ void ASFGameMode::InitGameState()
 	{
 		SF_LOG(
 			Error,
-			"[SFGameMode] InitGameState: "
-			"Team %d에 카탈로그를 설정하지 못했습니다.",
+			"[SFGameMode] 플레이어 팀 등록 실패. Team=%d",
 			PlayerTeamIndex);
-
+		return;
+	}
+	
+	// 2. 선택된 스테이지 데이터 조회
+	const FName StageRowName = SFGameInstance->GetSelectedStageRowName();
+	if (StageRowName.IsNone())
+	{
+		SF_LOG(Error, "[SFGameMode] 선택된 Stage가 없습니다.");
 		return;
 	}
 
+	USFDataTableManager* DataManager = SFGameInstance->GetSubsystem<USFDataTableManager>();
+	if (!IsValid(DataManager))
+	{
+		return;
+	}
+
+	const FSFStageData* StageData =
+		DataManager->GetDataRow<FSFStageData>(
+			EDataTableType::Stage,
+			StageRowName,
+			TEXT("ASFGameMode::InitGameState"));
+
+	if (!StageData)
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] StageData 조회 실패. Stage=%s",
+			*StageRowName.ToString());
+		return;
+	}
+	
+	// 3. AI 팀 등록
+	TSet<int32> RegisteredComputerTeams;
+
+	for (const FSFStageTeamSetup& ComputerTeam : StageData->TeamSetups)
+	{
+		if (ComputerTeam.TeamIndex == PlayerTeamIndex)
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI가 플레이어 TeamIndex를 사용합니다: %d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+
+		if (RegisteredComputerTeams.Contains(ComputerTeam.TeamIndex))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI TeamIndex가 중복됐습니다: %d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+
+		RegisteredComputerTeams.Add(ComputerTeam.TeamIndex);
+
+		USFBuildingCatalog* ComputerCatalog =
+			SFGameInstance->LoadBuildingCatalog(
+				ComputerTeam.Race);
+
+		if (!IsValid(ComputerCatalog))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI Catalog 로드 실패. Team=%d, Race=%s",
+				ComputerTeam.TeamIndex,
+				*UEnum::GetValueAsString(ComputerTeam.Race));
+			return;
+		}
+
+		if (!SFGameState->SetTeamBuildingCatalog(ComputerTeam.TeamIndex, ComputerCatalog))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI 팀 등록 실패. Team=%d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+	}
+	
+	if (!SFGameState->InitializeStage(StageRowName))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Stage 초기화 실패. Stage=%s",
+			*StageRowName.ToString());
+
+		return;
+	}
+	
 	SF_LOG(
 		Log,
 		"[SFGameMode] Team %d BuildingCatalog 설정 완료: %s",
@@ -114,9 +207,14 @@ void ASFGameMode::BeginPlay()
 		return;
 	}
 	
-	SF_LOG(
-		Log,
-		"[SFGameMode] Stage initialization started.");
+	if (SFGameState->GetCurrentStageRowName().IsNone())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 팀 또는 스테이지 초기화가 완료되지 않았습니다.");
+
+		return;
+	}
 	
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 

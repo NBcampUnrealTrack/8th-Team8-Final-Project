@@ -579,6 +579,12 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
+void ASFBaseBuilding::SetMyTeamIndex(const int32 InTeamIndex)
+{
+	TeamIndex = InTeamIndex;
+	CombatTargetComponent->SetTeamIndex(TeamIndex);
+}
+
 bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
 {
 	if (!IsValid(InDefinition))

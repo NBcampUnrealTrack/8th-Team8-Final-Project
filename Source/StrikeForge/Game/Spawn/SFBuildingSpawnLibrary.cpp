@@ -48,8 +48,7 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
             InSpawnTransform,
             nullptr,
             nullptr,
-            ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn,
-            ESpawnActorScaleMethod::MultiplyWithRoot);
+            ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
     
 
     if (!IsValid(SpawnedBuilding))
@@ -71,8 +70,7 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
     SpawnedBuilding->FindComponentByClass<UStaticMeshComponent>();
     SpawnedMeshComponent->SetRelativeScale3D(DefaultMeshScale);
     
-    if (!SpawnedBuilding->SetBuildingDefinition(
-            InDefinition))
+    if (!SpawnedBuilding->SetBuildingDefinition(InDefinition))
     {
         SpawnedBuilding->Destroy();
         return nullptr;
@@ -91,11 +89,7 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
 
     SpawnedBuilding->SetRowName(SelectionRowName);
 
-    SpawnedBuilding->FinishSpawning(
-        InSpawnTransform,
-        false,
-        nullptr,
-        ESpawnActorScaleMethod::MultiplyWithRoot);
+    SpawnedBuilding->FinishSpawning(InSpawnTransform);
 
     // 그리드등록에 실패하면 destroy됨
     if (!IsValid(SpawnedBuilding) || SpawnedBuilding->IsActorBeingDestroyed())

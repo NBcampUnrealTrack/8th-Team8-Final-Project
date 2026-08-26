@@ -55,7 +55,7 @@ public:
 	// UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
 	// ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
 protected:
-	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴
+	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
 	virtual void BeginPlay() override;
 	

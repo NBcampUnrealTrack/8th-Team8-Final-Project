@@ -134,7 +134,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
 	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }
 
-	FORCEINLINE void SetMyTeamIndex(const int32 InTeamIndex);
+	void SetMyTeamIndex(const int32 InTeamIndex);
 	
 	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
 protected:

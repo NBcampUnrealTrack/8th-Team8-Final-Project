@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "SFBuildingType.h"
 #include "Engine/DataAsset.h"
 #include "SFBuildingDefinition.generated.h"
 
@@ -37,6 +38,10 @@ public:
     // * UI에 표시되는 건물 이름.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
     FText DisplayName;
+    
+    // 모든 종족의 건물 카테고리 분류
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+    ESFBuildingType BuildingType;
     
     // * 건설 UI 등에 표시되는 건물 아이콘.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")

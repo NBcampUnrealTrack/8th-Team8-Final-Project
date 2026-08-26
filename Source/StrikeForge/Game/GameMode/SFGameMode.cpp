@@ -1,15 +1,16 @@
 ﻿// SFGameMode.cpp
-
-
 #include "SFGameMode.h"
 #include "Logging/SFLog.h"
 #include "Game/GameInstance/SFGameInstance.h"
-#include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
-#include "Datas/Building/BuildingAppearance.h"
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "EngineUtils.h"
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
+#include "Game/Spawn/SFBuildingSpawnAnchor.h"
+#include "Game/Spawn/SFBuildingSpawnLibrary.h"
 
 ASFGameMode::ASFGameMode()
 {
@@ -216,9 +217,192 @@ void ASFGameMode::BeginPlay()
 		return;
 	}
 	
+	if (!SpawnStageBuildingsFromAnchors())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 스테이지 시작 건물 생성에 실패했습니다.");
+
+		return;
+	}
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 
 	StartStage();
+}
+
+bool ASFGameMode::SpawnStageBuildingsFromAnchors()
+{
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World) ||
+		!IsValid(SFGameState))
+	{
+		return false;
+	}
+	
+	TArray<ASFBuildingSpawnAnchor*> Anchors;
+
+	for (TActorIterator<ASFBuildingSpawnAnchor> It(World); It; ++It)
+	{
+		ASFBuildingSpawnAnchor* Anchor = *It;
+
+		if (IsValid(Anchor))
+		{
+			Anchors.Add(Anchor);
+		}
+	}
+
+	if (Anchors.IsEmpty())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 레벨에 BuildingSpawnAnchor가 없습니다.");
+
+		return false;
+	}
+
+	// 생성 전에 데이터 오류를 먼저 확인한다.
+	TSet<int32> NexusTeams;
+
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() ==
+			ESFBuildingType::None)
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] BuildingType이 None인 Anchor가 있습니다. "
+				"Anchor=%s",
+				*GetNameSafe(Anchor));
+
+			return false;
+		}
+
+		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
+		{
+			const int32 TeamIndex =	Anchor->GetTeamIndex();
+
+			if (NexusTeams.Contains(TeamIndex))
+			{
+				SF_LOG(
+					Error,
+					"[SFGameMode] Team %d의 Nexus Anchor가 중복됐습니다.",
+					TeamIndex);
+
+				return false;
+			}
+
+			NexusTeams.Add(TeamIndex);
+		}
+	}
+
+	// Nexus를 우선 생성한다.
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() != ESFBuildingType::Nexus)
+		{
+			continue;
+		}
+
+		if (!SpawnBuildingAtAnchor(Anchor))
+		{
+			return false;
+		}
+	}
+
+	// House, Mine, Production 등을 생성한다.
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
+		{
+			continue;
+		}
+
+		if (!SpawnBuildingAtAnchor(Anchor))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
+{
+	if (!IsValid(InAnchor) || !IsValid(SFGameState)) return false;
+
+	const int32 TeamIndex = InAnchor->GetTeamIndex();
+	const ESFBuildingType BuildingType = InAnchor->GetBuildingType();
+	
+	if (BuildingType == ESFBuildingType::None)
+	{
+		SF_LOG(Error, "[SFGameMode] SpawnAnchor의 BuildingType이 None입니다. " "Anchor=%s",*GetNameSafe(InAnchor));
+		return false;
+	}
+	
+	USFBuildingCatalog* Catalog = SFGameState->GetTeamBuildingCatalog(TeamIndex);
+	if (!IsValid(Catalog))
+	{
+		SF_LOG(Error,"[SFGameMode] Team %d의 BuildingCatalog가 없습니다. "	"Anchor=%s",TeamIndex,*GetNameSafe(InAnchor));
+		return false;
+	}
+	
+	USFBuildingDefinition* Definition =	Catalog->FindDefinitionByBuildingType(BuildingType);
+	if (!IsValid(Definition))
+	{
+		SF_LOG(Error,"[SFGameMode] BuildingType에 맞는 Definition이 없습니다. "
+			"Team=%d, Type=%s, Catalog=%s",
+			TeamIndex,
+			*UEnum::GetValueAsString(BuildingType),
+			*GetNameSafe(Catalog));
+
+		return false;
+	}
+	
+	FTransform SpawnTransform = InAnchor->GetActorTransform();
+	/*
+	 * Anchor Scale이 GridSize와 실제 메시 크기를 어긋나게 하지 않도록
+	 * 런타임 건물은 항상 원래 Scale로 생성한다.
+	 */
+	SpawnTransform.SetScale3D(FVector::OneVector);
+	
+	ASFBaseBuilding* SpawnedBuilding =
+		USFBuildingSpawnLibrary::
+			SpawnBuildingFromDefinition(
+				this,
+				Definition,
+				TeamIndex,
+				SpawnTransform,
+				ESFBuildingSpawnMode::ViewPortPlacedMode);
+	if (!IsValid(SpawnedBuilding) ||
+		SpawnedBuilding->IsActorBeingDestroyed())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Anchor 건물 생성 실패. "
+			"Anchor=%s, Team=%d, Type=%s",
+			*GetNameSafe(InAnchor),
+			TeamIndex,
+			*UEnum::GetValueAsString(BuildingType));
+
+		return false;
+	}
+	if (BuildingType == ESFBuildingType::Nexus &&
+	!IsValid(SFGameState->GetNexus(TeamIndex)))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 생성된 Nexus가 GameState에 등록되지 않았습니다. "
+			"Team=%d, Definition=%s",
+			TeamIndex,
+			*GetNameSafe(Definition));
+
+		SpawnedBuilding->Destroy();
+		return false;
+	}
+	
+	
+	return true;
 }
 
 bool ASFGameMode::StartStage()

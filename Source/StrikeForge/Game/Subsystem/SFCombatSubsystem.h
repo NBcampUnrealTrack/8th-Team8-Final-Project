@@ -92,6 +92,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void GetHostilesInRadius(const FVector& InOrigin, int32 InSeekerTeam, float InRadius, TArray<AActor*>& OutActors) const;
 
+	/**
+	 * 반경 내 같은 팀 전투 유닛 전부(자기 자신 제외) — 근접 조향의 분리력 계산용.
+	 *
+	 * 건물은 뺀다. 크고 고정된 대상이라 분리 대상에 넣으면 그 근처에서
+	 * 밀려나 버려, 오히려 건물에 못 붙는 원인이 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void GetNearbyAlliesForSeparation(const AActor* InSelf, int32 InTeamIndex, float InRadius, TArray<AActor*>& OutActors) const;
+
 	/** 분류 무관, 거리 제한 없이 가장 가까운 적 — 진격 목표 탐색용 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	AActor* FindNearestHostileAny(const FVector& InOrigin, int32 InSeekerTeam) const;
@@ -170,13 +179,8 @@ private:
 	/** 대상별 공격 슬롯 링. 약참조만 담으므로 리플렉션에 올리지 않는다 */
 	TMap<TWeakObjectPtr<AActor>, FSFAttackSlotRing> SlotRings;
 
-	/**
-	 * 슬롯 사이 최소 간격(cm).
-	 *
-	 * 유닛 지름(캡슐 반지름 45 x 2)과 같게 둔다.
-	 * 이보다 촘촘하면 이웃한 두 슬롯의 점유자가 물리적으로 겹친다.
-	 */
-	float SlotSpacing = 90.f;
+	// 슬롯 사이 최소 간격은 콘솔 변수 sf.SlotSpacing 이 갖는다(cpp 상단).
+	// PIE 에서 밀집도를 바로 바꿔볼 수 있어야 해서 멤버로 두지 않는다.
 
 	/** 대상 하나에 붙일 수 있는 최대 슬롯 수. 거대 건물에서 링이 폭주하는 것을 막는다 */
 	int32 MaxSlotsPerTarget = 32;

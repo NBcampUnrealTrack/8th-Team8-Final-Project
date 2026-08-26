@@ -46,6 +46,7 @@ AUnitBase::AUnitBase()
 	, bCommandIsAttackMove(false)
 	, bHoldGround(false)
 	, bRangeUnreachableReported(false)
+	, bCommandRejectedReported(false)
 	, bPopulationApplied(false)
 	, bAdvanceModeInjected(false)
 	, bBlockOtherUnits(false)
@@ -314,7 +315,6 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	ReleaseAttackSlot();
-	SlotUnusableTarget = nullptr;
 	SetCombatState(EUnitCombatState::Dead);
 
 	// 인구 반환. EndPlay 가 아니라 여기서 하는 이유는
@@ -474,8 +474,28 @@ const FHealthData AUnitBase::GetHealthData_Implementation()
 // ─────────────────────────────────────────────────────────
 void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 {
+	// 여기가 플레이어 이동 명령의 진짜 진입점이다.
+	//
+	// 컨트롤러는 IMovable 인터페이스로 이 함수를 직접 부른다. CommandMoveTo 를
+	// 거치지 않으므로, 그쪽에만 검사를 걸어두면 상대 유닛이 그대로 명령을 받는다.
+	if (!IsCommandableByPlayer())
+	{
+		if (!bCommandRejectedReported)
+		{
+			bCommandRejectedReported = true;
+
+			SF_LOG(Log,
+				"[Unit] %s (Team %d) : 플레이어 명령을 받지 않는 유닛입니다. 이동 명령을 무시합니다. "
+				"의도와 다르면 AutoAdvanceTeams 목록과 SetAdvanceMode 주입을 확인하세요.",
+				*GetName(), GetTeamIndex());
+		}
+
+		return;
+	}
+
 	CommandedDestination = InDestination;
 	bHasCommandedDestination = true;
+	CommandStallTimer = 0.f;
 
 	// 이 함수는 강제 이동이다. 공격 이동은 CommandAttackMove 가
 	// 이 함수를 부른 뒤 플래그를 다시 켠다.
@@ -515,6 +535,9 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 
 void AUnitBase::StopMove_Implementation()
 {
+	// 이동 명령과 같은 경로로 들어온다. 같은 기준으로 막는다.
+	if (!IsCommandableByPlayer()) return;
+
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	bHoldGround = false;
@@ -543,8 +566,23 @@ void AUnitBase::StopMove_Implementation()
 // 쿨다운·사거리·시야 판정을 전부 건너뛰고 즉시 피해가 들어간다.
 // 입력은 반드시 아래 세 함수를 거친다.
 // ─────────────────────────────────────────────────────────
+bool AUnitBase::IsCommandableByPlayer() const
+{
+	// 자동 진격 팀(AutoAdvanceTeams)은 스스로 움직인다.
+	// 드래그 선택에 상대 유닛까지 같이 담겨 명령이 넘어와도 여기서 막는다.
+	if (AutoAdvanceTeams.Contains(GetTeamIndex())) return false;
+
+	// 스포너가 SetAdvanceMode 로 진격을 직접 주입한 유닛도 마찬가지다.
+	// 팀 목록에 없더라도 스스로 진격하는 쪽이면 플레이어 명령 대상이 아니다.
+	if (bAdvanceModeInjected && AdvanceMode == EUnitAdvanceMode::PushToCore) return false;
+
+	return true;
+}
+
 void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocation, AActor* InTarget)
 {
+	if (!IsCommandableByPlayer()) return;
+
 	switch (InCommand)
 	{
 	case ESFUnitCommand::Move:
@@ -587,6 +625,8 @@ void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocati
 
 void AUnitBase::CommandMoveTo(const FVector& InDestination)
 {
+	if (!IsCommandableByPlayer()) return;
+
 	// IMovable 인터페이스와 같은 동작이다.
 	// 컨트롤러가 모든 명령을 Command 계열 이름으로 통일해 부를 수 있게 둔다.
 	MoveToLocation_Implementation(InDestination);
@@ -594,6 +634,8 @@ void AUnitBase::CommandMoveTo(const FVector& InDestination)
 
 void AUnitBase::CommandAttackMove(const FVector& InDestination)
 {
+	if (!IsCommandableByPlayer()) return;
+
 	// 목적지 설정·몽타주 중단·경로 재계산은 강제 이동과 완전히 같다.
 	// 다른 점은 Tick 에서 교전 판정을 건너뛰지 않는다는 것뿐이다.
 	MoveToLocation_Implementation(InDestination);
@@ -606,6 +648,8 @@ void AUnitBase::CommandAttackMove(const FVector& InDestination)
 
 void AUnitBase::CommandAttackTarget(AActor* InTarget)
 {
+	if (!IsCommandableByPlayer()) return;
+
 	// 조용히 빠져나가면 "공격키를 눌렀는데 아무 일도 없다" 가 된다.
 	if (!IsValid(InTarget))
 	{
@@ -646,6 +690,8 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 
 void AUnitBase::CommandStop()
 {
+	if (!IsCommandableByPlayer()) return;
+
 	// StopMove 가 ForcedTarget·공격 이동·제자리 고수를 함께 정리한다.
 	StopMove_Implementation();
 
@@ -656,6 +702,8 @@ void AUnitBase::CommandStop()
 
 void AUnitBase::CommandHoldGround()
 {
+	if (!IsCommandableByPlayer()) return;
+
 	// 이동에 관한 모든 것을 놓는다. 대상은 놓지 않는다 —
 	// 사거리 안에서 이미 때리는 중이라면 그대로 이어서 때려야 한다.
 	bHasCommandedDestination = false;
@@ -807,18 +855,12 @@ void AUnitBase::UpdateAttackSlot()
 
 		SlotTarget = nullptr;
 		AttackSlotIndex = INDEX_NONE;
-	}
 
-	// 대상이 바뀌었으면 "슬롯 포기" 판정도 함께 푼다.
-	if (SlotUnusableTarget && SlotUnusableTarget != CurrentTarget)
-	{
-		SlotUnusableTarget = nullptr;
+		// 새 대상으로 바뀌었으니 이전 대상 기준으로 쌓인 정체 시간도 버린다.
+		CloseQuartersStuckTimer = 0.f;
 	}
 
 	if (!CurrentTarget) return;
-
-	// 이 대상에는 슬롯이 맞지 않는다고 이미 판정했다. 직접 붙는다.
-	if (CurrentTarget == SlotUnusableTarget) return;
 
 	// 이미 이 대상에 자리를 갖고 있으면 그대로 쓴다.
 	// 매 틱 다시 잡으면 대상이 조금 움직일 때마다 자리가 바뀌어
@@ -831,6 +873,157 @@ void AUnitBase::UpdateAttackSlot()
 	// 자리를 못 받았으면 SlotTarget 을 비워둔다.
 	// 다음 틱에 다시 시도하고, 그동안은 예전처럼 대상에게 직접 접근한다.
 	SlotTarget = (AttackSlotIndex != INDEX_NONE) ? CurrentTarget : nullptr;
+}
+
+// ─────────────────────────────────────────────────────────
+// 근접 조향 — NavMesh 대신 직접 계산
+//
+// SlotActivationRange 안에서는 AIController 에게 MoveTo 를 넘기지 않는다.
+// 슬롯(또는 접근 지점)으로 당기는 힘과 근처 아군에게서 밀려나는 힘을
+// 매 틱 더해 CharacterMovement 에 직접 넣는다.
+//
+// 슬롯 링(각도 배분·정원 제한)은 그대로 쓴다. 여기서 바뀐 것은 "그 자리까지
+// 어떻게 가는가" 뿐이다 — 정확히 슬롯에 닿을 필요도 없다. 사거리 판정은
+// 대상 표면까지의 거리로 따로 하므로(GetDistanceToTargetEdge), 슬롯이 살짝
+// 어긋난 채로 접근하다가도 사거리에 들어오는 순간 위쪽 교전 분기가 멈춰
+// 세운다. 그래서 "슬롯에 도달하지 못해 정체" 라는 상태 자체가 없어진다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::SteerTowardSlot(float DeltaSeconds)
+{
+	if (!CurrentTarget) return;
+
+	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!Combat) return;
+
+	// 1. 추격력 — 슬롯이 있으면 슬롯 위치로, 없으면 대상에서 접근 거리만큼
+	//    떨어진 채 지금 서 있는 방향으로 향한다. 슬롯이 아직 없어도 이 방향이
+	//    대상 쪽을 가리키므로, 분리력에 밀려도 결국 대상 주변으로 모인다.
+	FVector DesiredLocation;
+	bool bHaveDesired = false;
+
+	if (AttackSlotIndex != INDEX_NONE)
+	{
+		bHaveDesired = Combat->GetAttackSlotLocation(
+			CurrentTarget, AttackSlotIndex, GetApproachDistance(CurrentTarget), DesiredLocation);
+	}
+
+	if (!bHaveDesired)
+	{
+		// 자리를 못 받았다. 지금 서 있는 방향 그대로 파고든다.
+		//
+		// 거리는 반드시 대상 "표면" 기준으로 잡아야 한다. 예전에는 중심에서
+		// 접근 거리만큼 떨어진 점을 썼는데, 슬롯은 표면 + 접근 거리에 놓이므로
+		// 그 점은 앞줄이 서 있는 원보다 대상 반경만큼 안쪽이었다. 자리를 못 받은
+		// 유닛이 앞줄 한복판을 목표로 삼고 계속 파고들며 갈리는 원인이었다.
+		FVector ToTarget = CurrentTarget->GetActorLocation() - GetActorLocation();
+		ToTarget.Z = 0.f;
+
+		const FVector InwardDir = ToTarget.IsNearlyZero()
+			? GetActorForwardVector()
+			: ToTarget.GetSafeNormal();
+
+		// 표면까지 남은 거리에서 접근 거리를 빼면 "앞으로 더 가야 할 만큼" 이 나온다.
+		// 이미 너무 붙었으면 음수가 되어 물러나는 방향이 된다.
+		const float StepIn = GetDistanceToTargetEdge(CurrentTarget) - GetApproachDistance(CurrentTarget);
+
+		DesiredLocation = GetActorLocation() + InwardDir * StepIn;
+	}
+
+	FVector Seek = DesiredLocation - GetActorLocation();
+	Seek.Z = 0.f;
+	Seek = Seek.GetSafeNormal();
+
+	// 2. 분리력 — 근처 아군(전투 유닛만, 건물 제외)에게서 밀려난다.
+	//    슬롯이 각도를 나눠줘도, 그 자리로 가는 도중에는 여러 유닛이 잠깐
+	//    겹칠 수 있다. 그 순간을 이 힘이 풀어준다.
+	//
+	//    정반대로만 밀면 추격력과 일직선으로 맞부딪힌다 — 앞을 막은 아군을
+	//    정면으로 밀고 들어가려는 상황이라 합력이 0에 수렴해 멈춰 선다.
+	//    이건 세기(Weight)를 아무리 조절해도 "방향이 정반대"라는 사실 자체는
+	//    바뀌지 않아서 해결되지 않는다. 그래서 밀어내는 방향을 항상 같은
+	//    쪽으로 SeparationDeflectionAngle 만큼 틀어서 적용한다 — 마주 선 두
+	//    유닛이 서로 반대쪽으로 감아 돌며 지나가는 흐름이 생긴다.
+	FVector Separation = FVector::ZeroVector;
+
+	TArray<AActor*> Neighbors;
+	Combat->GetNearbyAlliesForSeparation(this, GetTeamIndex(), SeparationRadius, Neighbors);
+
+	for (const AActor* Other : Neighbors)
+	{
+		FVector AwayFromOther = GetActorLocation() - Other->GetActorLocation();
+		AwayFromOther.Z = 0.f;
+
+		const float Dist = AwayFromOther.Size();
+		if (Dist < KINDA_SMALL_NUMBER) continue;
+
+		const FVector Deflected = AwayFromOther.RotateAngleAxis(SeparationDeflectionAngle, FVector::UpVector);
+
+		// 가까울수록 세게 민다. SeparationRadius 경계에서 0으로 줄어든다.
+		Separation += Deflected.GetSafeNormal() * (SeparationRadius - Dist) / SeparationRadius;
+	}
+
+	if (!Separation.IsNearlyZero())
+	{
+		Separation = Separation.GetSafeNormal();
+	}
+
+	// 3. 정체 탈출력 — 회전 바이어스로도 못 뚫을 만큼 사방이 막히면(실제
+	//    속도가 한동안 거의 0이면) 추격 방향에 수직으로 미는 힘을 더한다.
+	//    유닛마다 고정된 쪽(짝/홀)으로 갈라서, 탈출하는 유닛끼리 또
+	//    마주치지 않게 한다. 평소에는 0이라 개입하지 않는다.
+	FVector StuckEscape = FVector::ZeroVector;
+
+	if (GetVelocity().SizeSquared2D() < FMath::Square(CloseQuartersStuckSpeed))
+	{
+		CloseQuartersStuckTimer += DeltaSeconds;
+	}
+	else
+	{
+		CloseQuartersStuckTimer = 0.f;
+	}
+
+	if (CloseQuartersStuckTimer >= CloseQuartersStuckDuration && !Seek.IsNearlyZero())
+	{
+		const FVector PerpAxis = (Seek ^ FVector::UpVector).GetSafeNormal();
+		const bool bDeflectRight = (GetUniqueID() % 2) == 0;
+
+		StuckEscape = (bDeflectRight ? PerpAxis : -PerpAxis) * StuckEscapeWeight;
+	}
+
+	// 4. 합성 — 방향이 프레임마다 튀지 않게 살짝 보간한다.
+	// 분리력만 있고 추격력이 없는 경우(대상을 잃기 직전 등)는 없다 —
+	// 이 함수는 CurrentTarget 이 있을 때만 불린다.
+	const FVector RawDirection = (Seek * SeekWeight + Separation * SeparationWeight + StuckEscape).GetSafeNormal();
+
+	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, RawDirection, DeltaSeconds, SteerInterpSpeed);
+
+	if (!SmoothedSteerDirection.IsNearlyZero())
+	{
+		AddMovementInput(SmoothedSteerDirection, 1.f);
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// 명령 지점 마지막 접근 — NavMesh 대신 직접 계산
+//
+// 분리력을 넣지 않는 것이 근접 전투 조향과 다른 점이다. 여기서는 반드시
+// 지정한 한 점에 닿아야 하는데, 아군이 밀어내면 도착 반경 안으로 못 들어와
+// 명령이 영영 안 풀린다. 대신 못 닿는 경우는 Advance 의 정체 타이머가 받는다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::SteerTowardCommandPoint(float DeltaSeconds)
+{
+	FVector ToDestination = CommandedDestination - GetActorLocation();
+	ToDestination.Z = 0.f;
+
+	const FVector Desired = ToDestination.GetSafeNormal();
+	if (Desired.IsNearlyZero()) return;
+
+	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, Desired, DeltaSeconds, SteerInterpSpeed);
+
+	if (!SmoothedSteerDirection.IsNearlyZero())
+	{
+		AddMovementInput(SmoothedSteerDirection, 1.f);
+	}
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1107,7 +1300,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 // ─────────────────────────────────────────────────────────
 // 전진 — 교전 대상이 없을 때
 // ─────────────────────────────────────────────────────────
-void AUnitBase::Advance()
+void AUnitBase::Advance(float DeltaSeconds)
 {
 	AUnitAIController* AI = GetUnitAI();
 
@@ -1143,6 +1336,7 @@ void AUnitBase::Advance()
 		{
 			bHasCommandedDestination = false;
 			bCommandIsAttackMove = false;
+			CommandStallTimer = 0.f;
 
 			// 명령 지점이 새 대기 자리가 된다.
 			// 갱신하지 않으면 도착한 순간 원래 자리로 되돌아가 버린다.
@@ -1151,10 +1345,62 @@ void AUnitBase::Advance()
 			bReturningToHold = false;
 			bHoldReported = false;
 
+			// 남은 이동 요청을 확실히 놓는다. 안 놓으면 도착 판정 뒤에도
+			// NavMesh 가 계속 밀어 유닛이 지점을 지나쳐 간다.
+			AI->ClearMoveRequest();
+
 			SF_LOG(Log, "[Unit] %s : 명령 지점 도착", *GetName());
+		}
+		else if (DistToCommand <= CommandFinalApproachRange)
+		{
+			// ── 마지막 구간 — NavMesh 를 놓고 직접 몬다 ──────
+			//
+			// RequestMoveToLocation 은 도달 반경에 캡슐 반지름을 더한 자리에서
+			// 멈춘다 — 기본값이면 클릭 지점 95cm(50 + 45) 앞이다. 이 때문에
+			// CommandArrivalRadius 를 95 밑으로 내릴 수가 없었고(내리면 도착
+			// 판정이 영영 나지 않는다), 결국 "찍은 데 전에 멈추는" 그림이 됐다.
+			//
+			// 근접 전투에서 쓰는 방식 그대로, 이 구간만 직접 조향하면
+			// 그 하한이 사라진다.
+			AI->ClearMoveRequest();
+			SteerTowardCommandPoint(DeltaSeconds);
+
+			// 지형이나 다른 유닛에 막혀 끝내 못 닿는 경우의 안전장치.
+			// 이게 없으면 명령 플래그가 안 풀려 그 유닛은 다시 싸우지 않는다.
+			if (GetVelocity().SizeSquared2D() < FMath::Square(CloseQuartersStuckSpeed))
+			{
+				CommandStallTimer += DeltaSeconds;
+
+				if (CommandStallTimer >= CommandStallDuration)
+				{
+					CommandStallTimer = 0.f;
+
+					bHasCommandedDestination = false;
+					bCommandIsAttackMove = false;
+
+					// 선 자리가 새 대기 지점이다. 명령 지점을 넣으면
+					// 못 간 곳으로 계속 되돌아가려 한다.
+					HoldLocation = GetActorLocation();
+					bHoldLocationSet = true;
+					bReturningToHold = false;
+					bHoldReported = false;
+
+					SF_LOG(Log, "[Unit] %s : 명령 지점 %.0fcm 앞에서 막혀 정지합니다.",
+						*GetName(), DistToCommand);
+				}
+			}
+			else
+			{
+				CommandStallTimer = 0.f;
+			}
+
+			bNoTargetReported = false;
+			return;
 		}
 		else
 		{
+			CommandStallTimer = 0.f;
+
 			AI->RequestMoveToLocation(CommandedDestination, MoveAcceptanceRadius);
 			bNoTargetReported = false;
 			return;
@@ -1187,7 +1433,7 @@ void AUnitBase::Advance()
 				? FVector::Dist2D(GetActorLocation(), HoldLocation)
 				: 0.f;
 
-			if (bHoldLocationSet && ToHold > CommandArrivalRadius)
+			if (bHoldLocationSet && ToHold > HoldReturnAcceptRadius)
 			{
 				// 교전에 끌려 나갔다. 원래 자리로 돌아간다.
 				AI->RequestMoveToLocation(HoldLocation, MoveAcceptanceRadius);
@@ -1474,7 +1720,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 		CurrentTarget = nullptr;
 
 		SetCombatState(EUnitCombatState::Advancing);
-		Advance();
+		Advance(DeltaSeconds);
 		return;
 	}
 
@@ -1552,7 +1798,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 			ReleaseAttackSlot();
 
 			SetCombatState(EUnitCombatState::Advancing);
-			Advance();
+			Advance(DeltaSeconds);
 			return;
 		}
 	}
@@ -1566,7 +1812,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	if (!CurrentTarget)
 	{
 		SetCombatState(EUnitCombatState::Advancing);
-		Advance();
+		Advance(DeltaSeconds);
 		return;
 	}
 
@@ -1624,6 +1870,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 		// ── 교전 ────────────────────────────────────────
 		SetCombatState(EUnitCombatState::Attacking);
 		StuckTimer = 0.f;
+		CloseQuartersStuckTimer = 0.f;
 		bRangeUnreachableReported = false;
 
 		if (AUnitAIController* AI = GetUnitAI())
@@ -1660,102 +1907,59 @@ void AUnitBase::Tick(float DeltaSeconds)
 		// ── 추격 ────────────────────────────────────────
 		SetCombatState(EUnitCombatState::Chasing);
 
-		if (AUnitAIController* AI = GetUnitAI())
+		// 사거리 + SlotActivationRange 안쪽인가.
+		//
+		// 이 구간에서는 NavMesh/DetourCrowd 에 이동을 맡기지 않는다. 여러 유닛이
+		// 한 대상에 몰릴 때 회피가 정체되는 문제가 반복돼서, 붙는 마지막 구간만
+		// SteerTowardSlot 의 직접 조향(추격력 + 분리력)으로 바꿨다.
+		//
+		// 멀리서는 그대로 액터 추적에 맡긴다 — 문제가 있었던 적이 없는 구간이고,
+		// 목표가 계속 움직이는 장거리 추격에서는 경로 추종이 알아서 따라가는
+		// 쪽이 낫다.
+		const bool bCloseQuarters = (Distance <= EffectiveRange + SlotActivationRange);
+
+		if (bCloseQuarters)
 		{
-			// 배정받은 슬롯으로 간다.
-			//
-			// 예전처럼 대상 액터를 그대로 목표로 삼으면 전원이 같은 한 점으로
-			// 몰려 서로 밀치기만 하고 아무도 사거리에 들어가지 못한다.
-			// 각자 다른 각도에서 접근하면 포위 대형이 저절로 생긴다.
-			//
-			// 도달 반경에 사거리를 넘기지 않는다.
-			// 언리얼은 넘긴 값에 목표 반지름을 더해 도달을 판정하므로,
-			// 사거리를 넘기면 벽을 돌기도 전에 "도착했다"고 판단해 멈춘다.
-			// 슬롯은 가까이 붙었을 때만 쓴다.
-			//
-			// 멀리서 쫓는 동안 지점 이동을 쓰면 목표가 움직일 때마다 새 MoveTo 를
-			// 내야 하고, 그때마다 DetourCrowd 가 리셋되어 추격이 굼떠진다.
-			// 액터 추적은 경로 추종이 알아서 목표를 따라가므로 훨씬 빠르다.
-			//
-			// 자리는 미리 잡아둔다(각도 예약). 다만 실제로 그쪽으로 도는 것은
-			// 사거리 근처에 와서다. 포위 모양은 어차피 붙어서 싸울 때 보인다.
-			const bool bNearEnoughForSlot = (Distance <= EffectiveRange + SlotActivationRange);
-
-			bool bMovedToSlot = false;
-
-			if (bNearEnoughForSlot && AttackSlotIndex != INDEX_NONE)
+			// NavMesh 이동 요청과 우리 스티어링이 동시에 캐릭터무브먼트에 입력을
+			// 넣으면 서로 간섭한다. 확실히 꺼둔다 — Attacking 분기가 이미 매 틱
+			// ClearMoveRequest 를 부르는 것과 같은 방식이다.
+			if (AUnitAIController* AI = GetUnitAI())
 			{
-				if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
-				{
-					FVector SlotLocation;
-
-					if (Combat->GetAttackSlotLocation(
-							CurrentTarget, AttackSlotIndex,
-							GetApproachDistance(CurrentTarget), SlotLocation))
-					{
-						// 슬롯은 대상을 따라 조금씩 계속 움직인다.
-						// 억제를 켜지 않으면 DetourCrowd 가 매번 리셋된다.
-						// 도달 반경을 작게 준다.
-						// 크게 주면 사거리에 들기도 전에 "도착" 으로 멈춘다.
-						// 멈추는 판단은 위쪽 교전 분기에 맡긴다.
-						AI->RequestMoveToLocation(SlotLocation, SlotAcceptanceRadius, true);
-						bMovedToSlot = true;
-					}
-				}
+				AI->ClearMoveRequest();
 			}
 
-			if (!bMovedToSlot)
+			// 이 구간은 정체를 시간으로 추론할 필요가 없다 — 매 틱 직접 계산해서
+			// 움직이므로 "멈췄다" 라는 중간 상태 자체가 없다.
+			StuckTimer = 0.f;
+			bRangeUnreachableReported = false;
+
+			SteerTowardSlot(DeltaSeconds);
+		}
+		else
+		{
+			if (AUnitAIController* AI = GetUnitAI())
 			{
-				// 아직 멀거나, 자리를 못 받았거나, 링이 없다. 대상에게 직접 간다.
 				AI->RequestMoveToActor(CurrentTarget, MoveAcceptanceRadius);
 			}
 
 			// 사거리 밖인데 더 접근할 수도 없는 상태.
 			// NavMesh 가 파여 물리적으로 도달 불가능한 경우이므로
 			// 사거리나 BuildingRangeBonus 를 조정해야 한다.
-			if (!bRangeUnreachableReported
-				&& GetVelocity().SizeSquared2D() < FMath::Square(20.f)
-				&& StuckTimer > StuckThreshold)
-			{
-				bRangeUnreachableReported = true;
-
-				SF_LOG(Warning,
-					"[Unit] %s : %s 에 접근할 수 없습니다. 현재 거리 %.0f / 필요 %.0f. "
-					"BuildingRangeBonus 또는 AttackRange 를 늘리세요.",
-					*GetName(), *CurrentTarget->GetName(), Distance, EffectiveRange);
-			}
-
-			// 끼임 감지 — 이동 명령은 살아 있는데 실제로 안 움직이는 경우.
-			// 경로 캐시만 버리고 다음 틱에 새로 계산하게 한다.
-			// StopMovement 를 쓰면 아군에 잠깐 막힌 것뿐인데도 멈춰 서서
-			// 난전에서 전열이 통째로 굳는다.
-			if (GetVelocity().SizeSquared2D() < FMath::Square(20.f))
+			//
+			// 이 구간은 아직 SlotActivationRange 밖이라 슬롯을 쓰지 않으므로,
+			// 여기서 정체가 잡혀도 슬롯을 놓을 필요가 없다 — 그냥 알리기만 한다.
+			if (!bRangeUnreachableReported && GetVelocity().SizeSquared2D() < FMath::Square(20.f))
 			{
 				StuckTimer += DeltaSeconds;
 
 				if (StuckTimer >= StuckThreshold)
 				{
-					StuckTimer = 0.f;
+					bRangeUnreachableReported = true;
 
-					// 슬롯을 향해 가다 멈춘 채 사거리에도 못 들었다.
-					// 그 자리가 이 대상에 맞지 않는 경우다 — 놓고 직접 붙는다.
-					//
-					// 도착 여부로 판정하면 안 된다. 도달 판정 여유
-					// (MoveAcceptanceRadius) 안에서 멈추는 것이 정상이라
-					// 멀쩡한 유닛까지 자리를 버리고 다시 걷게 된다.
-					// "멈춘 채 시간이 지났다" 를 기준으로 삼는다.
-					if (bMovedToSlot)
-					{
-						SF_LOG(Warning,
-							"[Unit] %s : 슬롯 %d 로 가다 멈췄고 %s 은(는) 사거리 밖입니다 (%.0f / %.0f). "
-							"자리를 포기하고 직접 접근합니다.",
-							*GetName(), AttackSlotIndex, *CurrentTarget->GetName(), Distance, EffectiveRange);
-
-						SlotUnusableTarget = CurrentTarget;
-						ReleaseAttackSlot();
-					}
-
-					AI->ForceRepath();
+					SF_LOG(Warning,
+						"[Unit] %s : %s 에 접근할 수 없습니다. 현재 거리 %.0f / 필요 %.0f. "
+						"BuildingRangeBonus 또는 AttackRange 를 늘리세요.",
+						*GetName(), *CurrentTarget->GetName(), Distance, EffectiveRange);
 				}
 			}
 			else

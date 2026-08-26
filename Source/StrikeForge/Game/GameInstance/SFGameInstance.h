@@ -5,9 +5,9 @@
 
 // 추가부분 26.08.10
 #include "Datas/Stage/SFStageData.h"
+#include "Datas/Race/SFRaceType.h"
 
 #include "SFGameInstance.generated.h"
-
 // 수정부분
 class UWorld;
 class USFBuildingCatalog;
@@ -19,13 +19,6 @@ enum class EDataTableType : uint8
 	Unit,
 	Stage,	// 추가부분
 	ProductionUI,
-};
-
-UENUM(BlueprintType)
-enum class ESFRace : uint8
-{
-	Human,
-	Fox
 };
 
 UCLASS()
@@ -60,11 +53,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
 	
-	// 종족 선택 함수
+	// Race
+	// 종족 선택 함수 
+	// 종족Enum만 선택해놓으면 GM이 시작할때 Load함수를 부르고 종족에 맞는 Catalog를 가져간다
 	UFUNCTION(BlueprintCallable, Category = "SF|Race")
 	bool SelectRace(ESFRace InRace);
-	// 플레이어 종족 골랐으면 그종족으로 로딩
-	USFBuildingCatalog* LoadPlayerBuildingCatalog() const;
+	// TMap에서 종족에 맞는 카탈로그 반환
+	USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	
+	// 플레이어 종족 getter
+	UFUNCTION(BlueprintPure, Category = "SF|Race")
+	FORCEINLINE ESFRace GetSelectedRace() const { return SelectedRace; }
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;

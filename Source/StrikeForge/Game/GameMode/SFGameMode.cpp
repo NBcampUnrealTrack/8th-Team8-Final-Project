@@ -56,7 +56,7 @@ void ASFGameMode::InitGameState()
 		return;
 	}
 
-	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadPlayerBuildingCatalog();
+	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadBuildingCatalog(SFGameInstance->GetSelectedRace());
 
 	if (!IsValid(PlayerCatalog))
 	{

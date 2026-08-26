@@ -277,17 +277,17 @@ bool USFGameInstance::SelectRace(ESFRace InRace)
     return true;
 }
 
-USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
+USFBuildingCatalog* USFGameInstance::LoadBuildingCatalog(ESFRace InRace) const
 {
     // map에서 종족으로 카테고리 가져오기
     const TSoftObjectPtr<USFBuildingCatalog>* CatalogAsset =
-        CatalogsByRace.Find(SelectedRace);
+        CatalogsByRace.Find(InRace);
     if (!CatalogAsset || CatalogAsset->IsNull())
     {
         SF_LOG(
             Error,
-            "[SFGameInstance] 선택 종족의 카탈로그가 설정되지 않았습니다.");
-
+            "[SFGameInstance] 종족에 해당하는 카탈로그가 없습니다. Race=%s",
+            *UEnum::GetValueAsString(InRace));
         return nullptr;
     } // 못가져오면 리턴
     
@@ -298,7 +298,7 @@ USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
         SF_LOG(
             Error,
             "[SFGameInstance] 카탈로그 로드에 실패했습니다. Race=%d",
-            static_cast<int32>(SelectedRace));
+            static_cast<int32>(InRace));
 
         return nullptr;
     }

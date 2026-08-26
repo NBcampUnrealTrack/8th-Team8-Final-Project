@@ -17,6 +17,8 @@ class UHealthComponent;
 class UDecalComponent;
 class UMaterialInterface;
 class USFMultiSelectionPanelWidget;
+class UDataTable;
+class USFStageIntroWidget;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -158,6 +160,12 @@ private:
     UFUNCTION()
     void HandlePrimarySelectionRequested(AActor* Actor);
 
+    void TryStartStageIntro();
+
+    void HandleStageIntroDeactivated();
+    
+    FName ResolveStageIntroRowName() const;
+
     // ==================== Variables ====================
 
 protected:
@@ -256,6 +264,15 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     float MoveDestinationIndicatorFadeDuration = 0.3f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TSubclassOf<USFStageIntroWidget> StageIntroWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TObjectPtr<UDataTable> StageIntroDataTable = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    FName StageIntroFallbackRowName = NAME_None;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -271,4 +288,10 @@ private:
 
     FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
     bool bIsSelectionDragging = false;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFStageIntroWidget> ActiveStageIntroWidget = nullptr;
+
+    ESlateVisibility VisibilityBeforeStageIntro = ESlateVisibility::SelfHitTestInvisible;
+    bool bWasGamePausedBeforeStageIntro = false;
 };

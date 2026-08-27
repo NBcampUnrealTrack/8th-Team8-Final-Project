@@ -4,6 +4,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Buildings/SFRootBase.h"
 #include "Datas/Unit/UnitStatData.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Logging/SFLog.h"
 
@@ -28,6 +29,22 @@ int32 USFUnitSpawnLibrary::ResolveTeamIndex(const AActor* InActor)
 
 	SF_LOG(Warning, "[UnitSpawn] %s : 팀 번호를 찾지 못해 0 으로 생성합니다.", *InActor->GetName());
 	return 0;
+}
+
+bool USFUnitSpawnLibrary::IsBuildableLocation(
+	const UObject* InWorldContext,
+	const FVector& InLocation,
+	float InFootprintRadius)
+{
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(InWorldContext);
+
+	// 서브시스템이 없거나(에디터 초기 세팅 중) 라인이 배치되지 않았으면
+	// 제한하지 않는다. 코리도를 모르는 채로 막으면 어디에도 못 짓는다.
+	if (!IsValid(Combat) || !Combat->HasAnyLane()) return true;
+
+	// 코리도 밖으로 풋프린트만큼 완전히 벗어나야 허용한다.
+	// 여유 거리는 따로 두지 않는다 — 길만 비어 있으면 바로 옆까지 지을 수 있다.
+	return Combat->GetDistanceOutsideLane(InLocation) > FMath::Max(0.f, InFootprintRadius);
 }
 
 bool USFUnitSpawnLibrary::FindSpawnLocation(

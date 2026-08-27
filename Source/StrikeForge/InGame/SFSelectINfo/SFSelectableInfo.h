@@ -130,4 +130,10 @@ public:
     )
     bool bShowMoveSpeed = true;
 
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    bool bShowSkillIcons = false;
 };

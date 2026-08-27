@@ -181,15 +181,53 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
 
     if (!bCanShowHealth)
     {
-        HealthBar->SetPercent(0.f);
+        HealthBar->SetPercent(0.0f);
         return;
     }
 
-    HealthBar->SetPercent(
+    const float HealthPercent =
         FMath::Clamp(
             CurrentHP / MaxHP,
-            0.f,
-            1.f
-        )
+            0.0f,
+            1.0f
+        );
+
+    HealthBar->SetPercent(HealthPercent);
+
+    FLinearColor HealthColor;
+
+    if (HealthPercent >= 0.6f)
+    {
+        // 정상: 청록색
+        HealthColor = FLinearColor(
+            0.02f,
+            0.72f,
+            0.85f,
+            1.0f
+        );
+    }
+    else if (HealthPercent >= 0.3f)
+    {
+        // 주의: 주황색
+        HealthColor = FLinearColor(
+            0.95f,
+            0.52f,
+            0.06f,
+            1.0f
+        );
+    }
+    else
+    {
+        // 위험: 빨간색
+        HealthColor = FLinearColor(
+            0.98f,
+            0.06f,
+            0.04f,
+            1.0f
+        );
+    }
+
+    HealthBar->SetFillColorAndOpacity(
+        HealthColor
     );
 }

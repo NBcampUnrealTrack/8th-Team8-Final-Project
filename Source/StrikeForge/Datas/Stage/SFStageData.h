@@ -38,6 +38,54 @@ class UWorld;
 class UTexture2D;
 
 USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FSFMinimapSettings
+{
+    GENERATED_BODY()
+
+public:
+    // NavMeshBoundsVolume에서 범위를 자동으로 구한다.
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap"
+    )
+    bool bAutoDetectBounds = true;
+
+    // 자동 탐색 실패 또는 특수맵에서 사용할 범위
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap"
+    )
+    FVector2D WorldMin =
+        FVector2D(-5000.0f, -5000.0f);
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap"
+    )
+    FVector2D WorldMax =
+        FVector2D(5000.0f, 5000.0f);
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap",
+        meta = (ClampMin = "1000.0")
+    )
+    float CaptureHeight = 10000.0f;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap",
+        meta = (ClampMin = "0.0")
+    )
+    float BoundsPadding = 200.0f;
+};
+
+USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFStageData : public FTableRowBase
 {
     GENERATED_BODY()
@@ -53,6 +101,14 @@ public:
     // 스테이지 시작 시 이동할 레벨
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage")
     TSoftObjectPtr<UWorld> StageLevel;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Minimap"
+    )
+    FSFMinimapSettings Minimap;
+
     
     /* 스테이지 진입 시 플레이어에게 기본 적용할 종족. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")

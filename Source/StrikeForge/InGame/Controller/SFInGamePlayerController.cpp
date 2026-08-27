@@ -329,6 +329,66 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::HandleToggleBuildModeInput
         );
     }
+
+    if (IsValid(ProduceSlot1Action))
+    {
+        EnhancedInputComponent->BindAction(
+            ProduceSlot1Action,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleProduceSlot1Input
+        );
+    }
+
+    if (IsValid(ProduceSlot2Action))
+    {
+        EnhancedInputComponent->BindAction(
+            ProduceSlot2Action,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleProduceSlot2Input
+        );
+    }
+
+    if (IsValid(ProduceSlot3Action))
+    {
+        EnhancedInputComponent->BindAction(
+            ProduceSlot3Action,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleProduceSlot3Input
+        );
+    }
+
+    if (IsValid(AttackCommandAction))
+    {
+        EnhancedInputComponent->BindAction(
+            AttackCommandAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleAttackCommandInput
+        );
+    }
+
+    if (IsValid(StopCommandAction))
+    {
+        EnhancedInputComponent->BindAction(
+            StopCommandAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleStopCommandInput
+        );
+    }
+
+    if (IsValid(MoveCommandModeAction))
+    {
+        EnhancedInputComponent->BindAction(
+            MoveCommandModeAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleMoveCommandModeInput
+        );
+    }
 }
 
 void ASFInGamePlayerController::SetSFControlMode(
@@ -477,6 +537,14 @@ void ASFInGamePlayerController::RegisterBaseMappingContext()
 
 void ASFInGamePlayerController::HandleSelectionDragStarted()
 {
+    bCommandClickConsumed = ExecutePendingUnitCommandUnderCursor();
+
+    if (bCommandClickConsumed)
+    {
+        bSelectionPressActive = false;
+        return;
+    }
+
     if (!GetMousePosition(
         SelectionPressPosition.X,
         SelectionPressPosition.Y
@@ -500,6 +568,13 @@ void ASFInGamePlayerController::HandleSelectionDragStarted()
 
 void ASFInGamePlayerController::HandleSelectionDragCompleted()
 {
+    if (bCommandClickConsumed)
+    {
+        bCommandClickConsumed = false;
+        bSelectionPressActive = false;
+        return;
+    }
+
     if (!bSelectionPressActive)
     {
         return;
@@ -550,6 +625,9 @@ void ASFInGamePlayerController::HandleSelectionDragCompleted()
 
 void ASFInGamePlayerController::HandleMoveInput()
 {
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+    bCommandClickConsumed = false;
+
     if (IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->CloseBuildingMode();
@@ -844,6 +922,51 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         Count, *Destination.ToString());
 }
 
+void ASFInGamePlayerController::BeginAttackCommand()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    PendingUnitCommandMode = ESFUnitCommandMode::Attack;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Attack command mode started."
+    );
+}
+
+void ASFInGamePlayerController::StopSelectedUnits()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Stop command requested."
+    );
+}
+
+void ASFInGamePlayerController::BeginMoveCommand()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    PendingUnitCommandMode = ESFUnitCommandMode::Move;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] Move command mode started."
+    );
+}
+
 void ASFInGamePlayerController::HandleToggleSettingsInput()
 {
     if (!IsValid(InGameHUDWidget))
@@ -865,4 +988,87 @@ void ASFInGamePlayerController::HandleToggleBuildModeInput()
     InGameHUDWidget->ToggleBuildingMode();
 
     SF_LOG(Log, "[SFInGamePlayerController] Build mode toggled.");
+}
+
+void ASFInGamePlayerController::HandleProduceSlot1Input()
+{
+    RequestProductionBySlot(0);
+}
+
+void ASFInGamePlayerController::HandleProduceSlot2Input()
+{
+    RequestProductionBySlot(1);
+}
+
+void ASFInGamePlayerController::HandleProduceSlot3Input()
+{
+    RequestProductionBySlot(2);
+}
+
+void ASFInGamePlayerController::HandleAttackCommandInput()
+{
+    BeginAttackCommand();
+}
+
+void ASFInGamePlayerController::HandleStopCommandInput()
+{
+    StopSelectedUnits();
+}
+
+void ASFInGamePlayerController::HandleMoveCommandModeInput()
+{
+    BeginMoveCommand();
+}
+
+void ASFInGamePlayerController::RequestProductionBySlot(int32 SlotIndex)
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->RequestProductionBySlot(SlotIndex);
+}
+
+bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
+{
+    if (PendingUnitCommandMode == ESFUnitCommandMode::None)
+    {
+        return false;
+    }
+
+    FHitResult Hit;
+
+    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+    {
+        return true;
+    }
+
+    const ESFUnitCommandMode CommandMode = PendingUnitCommandMode;
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+
+    if (CommandMode == ESFUnitCommandMode::Move)
+    {
+        IssueMoveCommand(Hit.Location);
+        return true;
+    }
+
+    if (CommandMode == ESFUnitCommandMode::Attack)
+    {
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Attack destination received: %s",
+            *Hit.Location.ToString()
+        );
+
+        return true;
+    }
+
+    return true;
 }

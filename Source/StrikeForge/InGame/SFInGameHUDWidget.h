@@ -71,6 +71,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Command|Feedback")
     void ShowMoveDestinationIndicator(const FVector& WorldLocation);
 
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Production")
+    bool RequestProductionBySlot(int32 SlotIndex);
+
 protected:
     virtual void NativeConstruct() override;
 

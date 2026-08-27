@@ -89,6 +89,9 @@ public:
         float ProductRatio
     );
 
+    UFUNCTION(BlueprintCallable, Category = "SF|Production")
+    bool RequestProductionBySlot(int32 SlotIndex);
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -148,4 +151,7 @@ private:
     TObjectPtr<UProductComponent> CurrentProductComponent = nullptr;
 
     TArray<TObjectPtr<UImage>> QueueSlots;
+
+    UPROPERTY(Transient)
+    TArray<FName> CurrentProductableUnitRowNames;
 };

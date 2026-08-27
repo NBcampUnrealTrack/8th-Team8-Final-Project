@@ -21,6 +21,9 @@ public class StrikeForge : ModuleRules
 
 			// effect
 			"Niagara",
+			
+			// gc
+			"GeometryCollectionEngine",
         });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });

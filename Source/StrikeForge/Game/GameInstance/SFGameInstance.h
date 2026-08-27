@@ -92,7 +92,6 @@ private:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 HighestClearedStageOrder = 0;
 	
-	
 	// 모든 종족 리스트
 	UPROPERTY(EditDefaultsOnly,	BlueprintReadOnly, Category = "SF|Race", meta = (AllowPrivateAccess = "true"))
 	TMap<ESFRace, TSoftObjectPtr<USFBuildingCatalog>> CatalogsByRace;

@@ -1,6 +1,7 @@
 ﻿#include "SFCombatSubsystem.h"
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Units/Lane/LanePath.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
 
@@ -18,22 +19,50 @@
  *   sf.SlotEncircleWeight 1.5   가까운 자리를 우선한다
  */
 /**
- * 대상 하나에 붙을 수 있는 공격자 수 상한.
+ * 대상 하나에 붙을 수 있는 공격자 수 상한. 0 이면 슬롯 개수(=기하학적 한계)만 본다.
  *
- * 링의 슬롯 개수와 별개다. 사거리 150 기준으로 링에는 9칸이 생기지만,
- * 뒤에서 오는 유닛은 앞줄 캡슐을 통과할 수 없어 실제로 붙는 것은 그보다 적다.
+ * 예전 기본값은 5였다. NavMesh/DetourCrowd 로 붙던 시절에는 링에 자리가
+ * 남아 있어도 뒤에서 오는 유닛이 앞줄 캡슐을 통과하지 못해 실제로 도달하는
+ * 것이 4기 남짓이었고, 시스템이 현실보다 자리가 많다고 믿으면 갈 수 없는
+ * 곳으로 향하는 유닛이 계속 생겼기 때문이다.
  *
- * 시스템이 현실보다 자리가 많다고 믿으면, 갈 수 없는 곳으로 향하는 유닛이
- * 계속 생긴다. 그게 "3~4마리 이후로 길을 못 찾는" 증상의 정체다.
- * 상한을 실측값에 맞춰두면 남는 유닛은 줄 서지 않고 다른 적을 찾아간다.
+ * 그 전제가 지금은 사라졌다.
+ *   - 유닛끼리 기본적으로 통과한다(ApplyUnitCollisionMode 의 ECR_Ignore)
+ *   - 근접 구간은 NavMesh 가 아니라 SteerTowardSlot 의 직접 조향이 몬다
+ *     (분리력 회전 바이어스 + 정체 탈출로 앞줄에 막혀도 감아 돌아간다)
  *
- *   sf.MaxAttackersPerTarget 5   실측 4기였다면 5
- *   sf.MaxAttackersPerTarget 0   상한 없음 (슬롯 개수만 본다)
+ * 그래서 상한을 끈다. 링 반지름이 정하는 칸 수가 곧 정원이다 — 사거리 270
+ * 기준으로 유닛 대상에 15칸쯤 나오고, 이웃 슬롯 간격은 94cm 로 캡슐이 거의
+ * 맞닿는다. 스타크래프트처럼 들어갈 수 있는 만큼 들어간다.
+ *
+ *   sf.MaxAttackersPerTarget 0   상한 없음 (기본. 슬롯 개수만 본다)
+ *   sf.MaxAttackersPerTarget 5   예전 동작으로 되돌리기
  */
 static TAutoConsoleVariable<int32> CVarMaxAttackersPerTarget(
 	TEXT("sf.MaxAttackersPerTarget"),
-	5,
+	0,
 	TEXT("대상 하나에 붙을 수 있는 공격자 수 상한. 0 이하면 슬롯 개수만 본다."),
+	ECVF_Cheat);
+
+/**
+ * 슬롯 사이 최소 간격(cm). 한 대상에 몇 기가 붙을 수 있는지를 정하는 값이다.
+ *
+ * 유닛 지름(캡슐 반지름 45 x 2 = 90)이 기본이다. 이보다 촘촘하게 잡으면
+ * 이웃한 두 슬롯의 점유자가 물리적으로 겹치기 시작한다 — 유닛끼리 통과하도록
+ * 둔 상태(sf.UnitsBlockEachOther 0)에서는 그래도 그림이 깨지지 않으므로,
+ * 더 빽빽하게 붙이고 싶으면 낮춰도 된다.
+ *
+ * 이미 만들어진 링에는 적용되지 않는다. 칸 수가 바뀌면 각도(2πk/칸수)가 전부
+ * 달라져서, 붙어 싸우던 유닛이 한꺼번에 링 위를 돌게 되기 때문이다.
+ * 다음에 새로 만들어지는 링부터 반영된다.
+ *
+ *   sf.SlotSpacing 90   기본 (캡슐 지름)
+ *   sf.SlotSpacing 70   더 빽빽하게 — 한 대상에 더 많이 붙는다
+ */
+static TAutoConsoleVariable<float> CVarSlotSpacing(
+	TEXT("sf.SlotSpacing"),
+	90.f,
+	TEXT("공격 슬롯 사이 최소 간격(cm). 낮출수록 한 대상에 많이 붙는다. 새 링부터 적용."),
 	ECVF_Cheat);
 
 static TAutoConsoleVariable<float> CVarSlotEncircleWeight(
@@ -106,6 +135,113 @@ void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
 }
 
 // ─────────────────────────────────────────────────────────
+// 진격로 코리도
+//
+// 라인은 레벨에 놓인 정적 액터다. 개수가 한 자릿수라 선형 탐색으로 충분하다.
+//
+// 판정의 기본값은 전부 "제한 없음" 쪽이다. 라인을 아직 배치하지 않은 레벨에서
+// 유닛이 전부 굳거나 건물을 어디에도 못 짓는 사태가 나면, 원인이 코리도라는
+// 것을 알아채기까지 한참 걸린다. 없으면 없는 대로 예전처럼 동작해야 한다.
+// ─────────────────────────────────────────────────────────
+void USFCombatSubsystem::RegisterLane(ALanePath* InLane)
+{
+	if (!IsValid(InLane)) return;
+
+	Lanes.AddUnique(TWeakObjectPtr<ALanePath>(InLane));
+
+	// 라인이 생겼으니 "없다" 경고를 다시 낼 수 있게 되돌린다.
+	bNoLaneReported = false;
+
+	SF_LOG(Log, "[Lane] %s 등록 (팀 %d, 반폭 %.0f)",
+		*InLane->GetName(), InLane->GetTeamIndex(), InLane->GetLaneHalfWidth());
+}
+
+void USFCombatSubsystem::UnregisterLane(ALanePath* InLane)
+{
+	if (!InLane) return;
+
+	// 무효화된 약참조도 이 기회에 같이 걷어낸다.
+	Lanes.RemoveAllSwap([InLane](const TWeakObjectPtr<ALanePath>& InWeak)
+	{
+		return !InWeak.IsValid() || InWeak.Get() == InLane;
+	});
+}
+
+bool USFCombatSubsystem::HasAnyLane() const
+{
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		if (Weak.IsValid()) return true;
+	}
+
+	// 조용히 false 를 돌려주면 "유닛이 안 움직인다" 나 "건물이 안 지어진다" 의
+	// 원인을 추적할 수가 없다. 한 번은 반드시 알린다.
+	if (!bNoLaneReported)
+	{
+		bNoLaneReported = true;
+
+		SF_LOG(Warning,
+			"[Lane] 배치된 ALanePath 가 없어 코리도 제한(길 밖 추격 금지 / 건물 배치 제한)이 "
+			"꺼진 상태로 동작합니다. 흙길 위에 LanePath 를 배치하고 LaneHalfWidth 를 맞추세요.");
+	}
+
+	return false;
+}
+
+float USFCombatSubsystem::GetDistanceOutsideLane(const FVector& InLocation) const
+{
+	float Best = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		const ALanePath* Lane = Weak.Get();
+		if (!IsValid(Lane)) continue;
+
+		// 갈래길에서는 어느 한 라인 안이기만 하면 안으로 친다.
+		// 0 이 나온 시점에 더 볼 이유가 없다.
+		const float Outside = Lane->GetDistanceOutsideLane(InLocation);
+
+		if (Outside <= 0.f) return 0.f;
+
+		Best = FMath::Min(Best, Outside);
+	}
+
+	// 라인이 하나도 없다 = 제한 없음 = 어디에 있든 "안"
+	return (Best == TNumericLimits<float>::Max()) ? 0.f : Best;
+}
+
+bool USFCombatSubsystem::IsInsideAnyLane(const FVector& InLocation) const
+{
+	return GetDistanceOutsideLane(InLocation) <= 0.f;
+}
+
+ALanePath* USFCombatSubsystem::FindNearestLane(const FVector& InLocation, int32 InTeamIndex) const
+{
+	ALanePath* Best = nullptr;
+	float BestDist = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		ALanePath* Lane = Weak.Get();
+		if (!IsValid(Lane)) continue;
+
+		if (!Lane->IsUsableByTeam(InTeamIndex)) continue;
+
+		// 코리도 중심선까지의 수평 거리로 고른다. 이미 어느 라인 안에 서 있으면
+		// 그 라인이 0 으로 나와 자연스럽게 선택된다.
+		const float Dist = FVector::Dist2D(InLocation, Lane->GetClosestLanePoint(InLocation));
+
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best = Lane;
+		}
+	}
+
+	return Best;
+}
+
+// ─────────────────────────────────────────────────────────
 // 공격 슬롯
 //
 // 링은 각도만 배분한다.
@@ -139,7 +275,9 @@ int32 USFCombatSubsystem::ComputeSlotCount(float InRingRadius) const
 	//   N = floor( π / asin(S / 2R) )
 	// 둘레를 간격으로 나누는 근사(2πR/S)는 값을 조금 크게 잡아서
 	// 이웃한 슬롯이 미세하게 겹친다. 정확한 식을 쓴다.
-	const float Ratio = FMath::Max(1.f, SlotSpacing) / (2.f * FMath::Max(1.f, InRingRadius));
+	const float Spacing = CVarSlotSpacing.GetValueOnGameThread();
+
+	const float Ratio = FMath::Max(1.f, Spacing) / (2.f * FMath::Max(1.f, InRingRadius));
 
 	// 링이 간격보다 작으면 원 위에 두 점도 못 놓는다
 	if (Ratio >= 1.f) return MinSlotsPerTarget;
@@ -517,6 +655,36 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 			{
 				OutActors.Add(Candidate);
 			}
+		}
+	}
+}
+
+void USFCombatSubsystem::GetNearbyAlliesForSeparation(const AActor* InSelf, int32 InTeamIndex, float InRadius, TArray<AActor*>& OutActors) const
+{
+	OutActors.Reset();
+
+	if (!IsValid(InSelf) || InRadius <= 0.f) return;
+
+	const FSFTargetBucket* Bucket = TeamBuckets.Find(InTeamIndex);
+	if (!Bucket) return;
+
+	const FVector Origin = InSelf->GetActorLocation();
+	const float RadiusSq = InRadius * InRadius;
+
+	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket->Targets)
+	{
+		AActor* Candidate = nullptr;
+		if (!ResolveTarget(Weak, Candidate)) continue;
+
+		if (Candidate == InSelf) continue;
+
+		// 건물은 뺀다. 크고 고정된 대상이라 분리 대상에 넣으면 오히려
+		// 그 근처에서 밀려나 대상에게 못 붙는 원인이 된다.
+		if (Weak->GetTargetType() != ETargetType::CombatUnit) continue;
+
+		if (FVector::DistSquared2D(Origin, Candidate->GetActorLocation()) <= RadiusSq)
+		{
+			OutActors.Add(Candidate);
 		}
 	}
 }

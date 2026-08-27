@@ -329,6 +329,22 @@ protected:
 	bool IsTargetUsable(const AActor* InTarget) const;
 
 	/**
+	 * 이 유닛이 플레이어 명령을 받아들이는가.
+	 *
+	 * 컨트롤러가 드래그 선택에 상대 유닛까지 같이 담아 명령을 넘기더라도,
+	 * 스스로 진격하는 유닛이면 명령을 무시한다.
+	 *
+	 * 반드시 IMovable 진입점(MoveToLocation_Implementation·StopMove_Implementation)
+	 * 에서 검사해야 한다. 컨트롤러는 인터페이스로 직접 부르므로, Command 계열
+	 * 함수에만 걸어두면 그대로 통과한다.
+	 *
+	 * 팀 번호를 직접 비교하지 않고 기존 AutoAdvanceTeams 목록 조회와
+	 * AdvanceMode 주입 여부만 본다 — "적이면" 이 아니라 "스스로 진격하는
+	 * 유닛이 아니면" 으로 판정하므로 진영 분기가 아니다.
+	 */
+	bool IsCommandableByPlayer() const;
+
+	/**
 	 * 교전이 성립하는 거리(대상 표면 기준).
 	 *
 	 * 건물은 자기 주변 NavMesh 를 넓게 파먹어서 유닛이 아무리 붙어도
@@ -349,11 +365,68 @@ protected:
 	/** 잡고 있는 슬롯을 반납한다. 사망·소멸 시 반드시 부른다 */
 	void ReleaseAttackSlot();
 
+	/**
+	 * 근접 구간(사거리 + SlotActivationRange 안) 전용 이동.
+	 *
+	 * NavMesh/DetourCrowd 에 맡기지 않고 매 틱 직접 계산한다 — 슬롯(있으면)
+	 * 또는 대상 접근 지점으로 당기는 힘에, 근처 아군에게서 밀려나는 힘을
+	 * 더해 AddMovementInput 으로 넣는다. 정확히 슬롯에 닿을 필요는 없다.
+	 * 사거리 판정은 대상 표면까지의 거리로 따로 하므로, 접근하다 사거리에
+	 * 들어오는 순간 위쪽 교전 분기가 멈춰 세운다.
+	 */
+	void SteerTowardSlot(float DeltaSeconds);
+
+	/**
+	 * 명령 목적지의 마지막 구간(CommandFinalApproachRange 안) 전용 이동.
+	 *
+	 * NavMesh 이동은 도달 반경에 캡슐 반지름을 더한 자리에서 멈춘다 —
+	 * 기본값으로 클릭 지점 95cm 앞이다. 이 구간만 직접 조향해서 그 여유를
+	 * 없앤다. 근접 전투(SteerTowardSlot)와 같은 방식이지만, 반드시 지정한
+	 * 한 점에 닿아야 하므로 분리력은 넣지 않는다.
+	 */
+	void SteerTowardCommandPoint(float DeltaSeconds);
+
 	/** bBlockOtherUnits 값을 캡슐 콜리전에 반영한다 */
 	void ApplyUnitCollisionMode();
 
 	/** 교전 대상이 없을 때의 행동 — 라인 전진 또는 적 핵심 방향으로 */
-	void Advance();
+	void Advance(float DeltaSeconds);
+
+	// ── 진격로 코리도 ───────────────────────────────────
+
+	/**
+	 * 코리도 제한이 지금 이 유닛에 걸리는가.
+	 *
+	 * BP 스위치(bRestrictAutoChaseToLane) + 콘솔(sf.LaneRestrict) + 레벨에
+	 * 라인이 배치돼 있는지를 모두 본다. 셋 중 하나라도 아니면 제한이 없다.
+	 */
+	bool IsLaneRestrictionActive() const;
+
+	/**
+	 * 이 대상을 자동으로 쫓는 것이 코리도 제한에 걸리는가.
+	 *
+	 * 걸리는 조건은 "코리도 밖 + 사거리 밖 + 건물 아님" 셋이 모두 참일 때뿐이다.
+	 * 사거리 안이면 이동 없이 때리기만 하면 되므로 막을 이유가 없다.
+	 */
+	bool IsChaseBlockedByLane(const AActor* InTarget) const;
+
+	/**
+	 * 이 유닛이 탈 라인. AssignedLane 이 비어 있으면 가장 가까운 것을 찾아 넣는다.
+	 *
+	 * 스포너가 SetAssignedLane 을 부르지 않아도 동작하게 하기 위한 경로다.
+	 * 한 번 정해지면 계속 그 라인을 쓴다.
+	 */
+	ALanePath* ResolveLane();
+
+	/**
+	 * 코리도를 따라 한 걸음 전진하거나, 벗어나 있으면 코리도로 돌아간다.
+	 *
+	 * @param InGoalLocation 진격 목표(적 핵심 건물 등)의 위치. 라인을 어느 쪽으로
+	 *                       탈지 이것으로 정한다.
+	 * @return 이동 요청을 냈으면 true. false 면 목표가 이미 코앞이거나 라인을 쓸
+	 *         수 없다는 뜻이고, 호출부(Advance)는 목표로 직접 향한다.
+	 */
+	bool AdvanceAlongLane(ALanePath* InLane, AUnitAIController* InAI, const FVector& InGoalLocation);
 
 	void SetCombatState(EUnitCombatState InNewState);
 
@@ -489,17 +562,47 @@ private:
 	/**
 	 * 플레이어 명령 목적지에 도착했다고 볼 거리(cm).
 	 *
-	 * MoveAcceptanceRadius 보다 커야 한다.
-	 * 같으면 도착 판정과 이동 정지가 동시에 일어나 명령이 안 풀릴 수 있다.
+	 * 예전에는 이 값의 하한이 95(MoveAcceptanceRadius 50 + 캡슐 반지름 45)였다.
+	 * NavMesh 이동이 딱 그 자리에서 멈추기 때문에, 더 작게 잡으면 도착 판정이
+	 * 영영 나지 않고 명령 플래그가 안 풀려 그 유닛은 다시 싸우지 않았다.
+	 * 그래서 클릭 지점에서 1m 가까이 떨어져 서는 것이 구조적으로 불가피했다.
 	 *
-	 * 하한은 MoveAcceptanceRadius + 캡슐 반지름 = 50 + 45 = 95 다.
-	 * 이보다 작으면 이동이 멈춘 자리에서 도착 판정이 나지 않아
-	 * 명령 플래그가 영영 풀리지 않고, 그 유닛은 다시 싸우지 않는다.
+	 * 이제 마지막 구간(CommandFinalApproachRange 안)은 NavMesh 가 아니라
+	 * SteerTowardCommandPoint 가 직접 몰고 가므로 그 하한이 사라졌다.
 	 *
-	 * 200 은 클릭 지점에서 2m 앞에 서는 값이라 "찍은 데까지 안 간다" 로 보였다.
+	 * 캡슐 반지름(45)보다 작게 두면 유닛 몸이 클릭 지점을 덮는다 —
+	 * 눈으로는 "찍은 자리에 정확히 섰다" 로 보인다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "10.0"))
+	float CommandArrivalRadius = 40.f;
+
+	/**
+	 * 명령 목적지까지 남은 거리가 이 값 안이면 NavMesh 를 놓고 직접 조향한다.
+	 *
+	 * 근접 전투에서 SlotActivationRange 가 하는 일과 같다. 먼 구간은 경로
+	 * 추종이 낫고, 마지막에 정확히 붙는 일만 직접 계산이 낫다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float CommandFinalApproachRange = 250.f;
+
+	/**
+	 * 마지막 구간에서 이만큼(초) 제자리면 그 자리를 도착으로 친다.
+	 *
+	 * 지형이나 다른 유닛에 막혀 끝내 클릭 지점에 못 닿는 경우의 안전장치다.
+	 * 이게 없으면 명령 플래그가 영영 풀리지 않아 그 유닛은 다시 싸우지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.05"))
+	float CommandStallDuration = 0.5f;
+
+	/**
+	 * 대기 지점으로 복귀할 때의 도착 반경(cm).
+	 *
+	 * 이쪽은 여전히 NavMesh 이동이라 위의 95 하한이 그대로 적용된다.
+	 * CommandArrivalRadius 와 같은 값을 쓰면 복귀가 끝나지 않아 대기 지점에서
+	 * 계속 들썩인다. 그래서 별도로 둔다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "100.0"))
-	float CommandArrivalRadius = 120.f;
+	float HoldReturnAcceptRadius = 120.f;
 
 	/** 타겟 재탐색 주기(초) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.05"))
@@ -611,16 +714,79 @@ private:
 	float SlotAcceptanceRadius = 15.f;
 
 	/**
-	 * 슬롯을 쓰기 시작하는 거리. 교전 사거리에 이만큼 더한 안쪽에서만 자리를 잡는다.
+	 * 슬롯을 쓰고, NavMesh 대신 직접 조향(SteerTowardSlot)하기 시작하는 거리.
+	 * 교전 사거리에 이만큼 더한 안쪽에서만 적용된다.
 	 *
-	 * 멀리서 쫓는 동안 지점 이동을 쓰면 목표가 움직일 때마다 새 MoveTo 를 내야 하고,
-	 * 그때마다 DetourCrowd 가 리셋되어 추격이 눈에 띄게 굼떠진다.
-	 * 액터 추적은 경로 추종이 알아서 따라가므로 훨씬 빠르다.
+	 * 이 구간에서는 AIController 에게 MoveTo 를 넘기지 않는다. 여러 유닛이
+	 * 한 대상에 몰릴 때 DetourCrowd 회피가 정체되는 문제가 반복돼서,
+	 * 붙는 마지막 구간만 직접 계산으로 바꿨다.
 	 *
-	 * 포위 모양은 붙어서 싸울 때 보이는 것이라, 먼 거리는 직접 쫓아도 된다.
+	 * 멀리서는 그대로 액터 추적(RequestMoveToActor)에 맡긴다. 목표가 계속
+	 * 움직이는 장거리 추격에서는 경로 추종이 알아서 따라가는 쪽이 낫고,
+	 * 포위 모양은 어차피 붙어서 싸울 때 보이는 것이라 먼 거리는 상관없다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float SlotActivationRange = 600.f;
+
+	/** 근접 조향에서 슬롯(또는 접근 지점)으로 당기는 힘의 가중치 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float SeekWeight = 1.f;
+
+	/**
+	 * 근접 조향에서 근처 아군에게 밀려나는 힘의 가중치.
+	 *
+	 * 추격력보다 세게 주면(1.0 초과) 자리를 못 잡아도 서로 밀어내며
+	 * 자연스럽게 벌어진다. 너무 세면 대상에 붙지 못하고 겉돈다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float SeparationWeight = 1.5f;
+
+	/**
+	 * 분리력이 미치는 반경(cm). 캡슐 지름(45 × 2 = 90)과 같게 잡는 게 기본이다.
+	 * 이보다 넓히면 아직 안 붙었는데도 서로 밀어내 대형이 헐거워진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "1.0"))
+	float SeparationRadius = 90.f;
+
+	/**
+	 * 근접 조향 방향이 안정되는 속도.
+	 *
+	 * 추격력·분리력의 합이 매 틱 조금씩 흔들려도, 이 보간 때문에 실제
+	 * 이동 방향은 부드럽게 따라간다. 낮추면 더 매끄럽지만 반응이 늦어진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.1"))
+	float SteerInterpSpeed = 8.f;
+
+	/**
+	 * 근접 조향의 분리력에 주는 회전 각도(도).
+	 *
+	 * 분리력을 추격력과 정반대 방향으로만 밀면, 앞을 막은 아군과 정면으로
+	 * 힘겨루기를 하다가 합력이 0에 가까워져 멈춰 선다 — 이 경우 값을 아무리
+	 * 조절해도 "방향이 정반대"라는 사실 자체는 바뀌지 않으니 해결되지 않는다.
+	 *
+	 * 분리력을 이 각도만큼 항상 같은 방향으로 틀어서 적용하면, 정면으로
+	 * 마주친 두 유닛이 서로 반대쪽으로 감아 돌며 지나가는 흐름이 생긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0", ClampMax = "89.0"))
+	float SeparationDeflectionAngle = 35.f;
+
+	/** 근접 조향 중 "정체" 로 판단하는 속도(cm/s) 상한 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float CloseQuartersStuckSpeed = 30.f;
+
+	/** 위 속도 이하가 이만큼(초) 이어지면 옆으로 미끄러지는 탈출력을 더한다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.05"))
+	float CloseQuartersStuckDuration = 0.6f;
+
+	/**
+	 * 정체 탈출력의 가중치. 추격력·분리력과 같은 저울에 더해진다.
+	 *
+	 * 회전 바이어스만으로는 못 뚫는 극단적인 밀집(사방이 아군으로 막힌 경우)을
+	 * 위한 마지막 안전장치다 — 평소에는 0으로 유지되다가 정체가 감지될 때만
+	 * 붙는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float StuckEscapeWeight = 1.5f;
 
 	/**
 	 * 슬롯이 가득 찬 대상의 거리 점수 배율.
@@ -634,6 +800,71 @@ private:
 	/** 한 번의 탐색에서 시야 검사를 수행할 최대 후보 수 (성능 상한) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "1"))
 	int32 MaxLineOfSightChecks = 6;
+
+#pragma endregion
+
+#pragma region Lane Corridor
+
+	// 전투를 길(ALanePath 의 코리도) 위에 붙들어 두기 위한 값들이다.
+	//
+	// 최단경로만 보면 유닛은 길을 벗어나 잔디를 가로지른다. 지형이 그렇게
+	// 생겼으니 당연한 결과이고, NavMesh 비용을 만져도 근본이 바뀌지 않는다 —
+	// 길 밖에 적이 서 있으면 결국 그리로 간다.
+	//
+	// 그래서 힘이 아니라 목적지를 막는다. 코리도 밖 적을 자동 탐색 후보에서
+	// 빼고, 진격은 스플라인을 따라가게 한다. 조향(SteerTowardSlot)에는 손대지
+	// 않는다 — 거기에 "길 안으로 미는 힘" 을 더하면 경계에서 추격력과 정확히
+	// 반대가 되어 합력이 0 이 된다. 분리력에서 이미 겪은 그 문제다.
+
+	/**
+	 * 코리도 밖 적을 자동으로 쫓지 않는다. 기본은 켬.
+	 *
+	 * "이동" 만 막고 "공격" 은 막지 않는다. 사거리 안에 들어온 적은 길 밖에
+	 * 있어도 평소대로 때린다 — 길 가장자리 교전이 한쪽만 일방적으로 맞는
+	 * 그림이 되지 않게 하기 위해서다. 제자리 고수(H)와 같은 규칙이다.
+	 *
+	 * 건물은 이 제한에서 빠진다. 적 핵심 건물이 길 밖에 있으면 진격 자체가
+	 * 멈춰버리기 때문이다.
+	 *
+	 * 플레이어 명령(이동·공격 이동·대상 지정)은 전부 이 제한을 통과한다.
+	 * 길 밖에서 싸우고 싶으면 직접 찍으면 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true))
+	uint8 bRestrictAutoChaseToLane : 1;
+
+	/**
+	 * 자동 진격 시 코리도를 따라갈 것인가. 기본은 켬.
+	 *
+	 * 끄면 예전처럼 적 핵심 건물을 향해 NavMesh 최단경로로 간다.
+	 * 그 경로가 잔디를 가로지르는 것이 원래 문제였다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true))
+	uint8 bFollowLaneWhileAdvancing : 1;
+
+	/**
+	 * 코리도를 벗어났다고 볼 여유 거리(cm).
+	 *
+	 * 이탈 판정과 복귀 완료 판정을 다른 값으로 둔다 — 벗어남은 반폭 + 이 값을
+	 * 넘을 때, 복귀 완료는 반폭 안으로 들어왔을 때다.
+	 *
+	 * 같은 값 하나로 판정하면 경계에서 "이탈 → 복귀 → 진격 → 이탈" 을 반복하며
+	 * 그 자리에서 덜컥거린다. 교전 사거리에 RangeHysteresis 를 둔 것과 같은 이유다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float LaneExitTolerance = 120.f;
+
+	/**
+	 * 코리도를 따라갈 때 몇 cm 앞을 보고 갈 것인가.
+	 *
+	 * 스플라인 위 "내 위치의 조금 앞" 을 매번 다시 계산해 목표로 삼는다.
+	 * 웨이포인트를 하나씩 소비하는 방식과 달리 진행도가 어긋날 일이 없고,
+	 * 한 지점에 못 닿아 굳는 상태도 생기지 않는다.
+	 *
+	 * 짧게 잡으면 길을 정확히 따라가지만 코너에서 자주 방향을 바꿔 어색하고,
+	 * 길게 잡으면 부드러운 대신 코너를 가로질러 잔디를 밟는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true, ClampMin = "100.0"))
+	float LaneLookAhead = 600.f;
 
 #pragma endregion
 
@@ -810,6 +1041,9 @@ private:
 	/** "사거리에 도달 불가" 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bRangeUnreachableReported : 1;
 
+	/** "명령을 받지 않는 유닛" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bCommandRejectedReported : 1;
+
 	/** "사거리 안인데 시야가 막힘" 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bSightBlockedReported : 1;
 
@@ -823,16 +1057,6 @@ private:
 	/** 슬롯을 잡아둔 대상. CurrentTarget 과 어긋나면 반납하고 다시 잡는다 */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> SlotTarget;
-
-	/**
-	 * 슬롯이 맞지 않는다고 판정된 대상.
-	 *
-	 * 자리에 도착했는데도 사거리 안에 못 들어가는 경우가 있다.
-	 * 그대로 두면 슬롯을 다시 잡고 다시 도착하고 다시 못 때리기를 반복하며
-	 * 영원히 공격하지 않는다. 이 대상에 한해 슬롯을 포기하고 직접 붙는다.
-	 */
-	UPROPERTY(Transient)
-	TObjectPtr<AActor> SlotUnusableTarget;
 
 	float AttackCooldownRemaining = 0.f;
 
@@ -850,4 +1074,37 @@ private:
 
 	float RetargetTimer = 0.f;
 	float StuckTimer = 0.f;
+
+	/**
+	 * 근접 조향(SteerTowardSlot) 전용 정체 타이머.
+	 * 실제 속도가 CloseQuartersStuckSpeed 이하로 이어진 시간을 잰다.
+	 * 대상이 바뀌거나 교전(Attacking) 상태에 들어가면 0으로 되돌린다.
+	 */
+	float CloseQuartersStuckTimer = 0.f;
+
+	/** 명령 목적지 마지막 구간에서 제자리인 시간(초). 도착 안전장치용 */
+	float CommandStallTimer = 0.f;
+
+	/** 근접 조향의 현재 방향. 매 틱 목표 방향으로 보간해서 흔들림을 줄인다 */
+	FVector SmoothedSteerDirection = FVector::ZeroVector;
+
+	/**
+	 * 코리도를 벗어난 상태인가.
+	 *
+	 * LaneExitTolerance 를 넘어야 켜지고, 코리도 안(반폭 이내)으로 들어와야 꺼진다.
+	 * 경계에서의 덜컥거림을 막는 히스테리시스다.
+	 */
+	uint8 bOffLane : 1;
+
+	/**
+	 * 코리도를 따라가는 방향. +1 이면 알파 증가(스플라인 끝 쪽), -1 이면 감소.
+	 *
+	 * 진격 목표(적 핵심 건물)가 스플라인의 어느 끝에 가까운지로 정한다.
+	 * 팀 번호를 보지 않으므로 진영 분기가 아니다 — 같은 라인을 양쪽 팀이
+	 * 서로 반대 방향으로 타고 올라온다.
+	 */
+	int32 LaneAdvanceDirection = 1;
+
+	/** "코리도로 복귀한다" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bOffLaneReported : 1;
 };

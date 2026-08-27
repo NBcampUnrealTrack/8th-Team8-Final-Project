@@ -85,7 +85,7 @@ private:
 	TSoftObjectPtr<UWorld> LobbyLevel;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	FName SelectedStageRowName = NAME_None;
+	FName SelectedStageRowName = "Stage01";
 
 	// 추가 부분 26.08.10
 	// 가장 높은 순서의 클리어 스테이지

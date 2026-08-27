@@ -17,6 +17,8 @@ class UHealthComponent;
 class UDecalComponent;
 class UMaterialInterface;
 class USFMultiSelectionPanelWidget;
+class UDataTable;
+class USFStageIntroWidget;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -51,6 +53,9 @@ public:
 
     bool IsPointerOverSelectionAction() const;
 
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
+    void ToggleBuildingMode();
+
     /**
      * 현재 다중 선택된 액터 목록.
      *
@@ -62,6 +67,12 @@ public:
      * C++ 에서만 호출하므로 리플렉션 노출이 필요 없다.
      */
     const TArray<TObjectPtr<AActor>>& GetSelectedActors() const { return SelectedActors; }
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command|Feedback")
+    void ShowMoveDestinationIndicator(const FVector& WorldLocation);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Production")
+    bool RequestProductionBySlot(int32 SlotIndex);
 
 protected:
     virtual void NativeConstruct() override;
@@ -101,7 +112,9 @@ private:
 
     void ClearSelection();
 
-    void UnbindSelectedActorDestroyed();
+    void BindSelectedActorsDestroyed();
+
+    void UnbindSelectedActorsDestroyed();
 
     void HandleBuildingModeDeactivated();
 
@@ -137,6 +150,8 @@ private:
         FVector2D EndScreenPosition
     );
 
+    bool IsOwnedByLocalPlayer(AActor* Actor) const;
+
     void ApplyMultipleSelection(
         const TArray<AActor*>& NewSelectedActors
     );
@@ -144,6 +159,15 @@ private:
     int32 GetSelectionPriority(AActor* Actor) const;
 
     void RefreshMultiSelectionPanel();
+
+    UFUNCTION()
+    void HandlePrimarySelectionRequested(AActor* Actor);
+
+    void TryStartStageIntro();
+
+    void HandleStageIntroDeactivated();
+    
+    FName ResolveStageIntroRowName() const;
 
     // ==================== Variables ====================
 
@@ -231,6 +255,27 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Feedback")
     TObjectPtr<UMaterialInterface> SelectionIndicatorMaterial = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> MoveDestinationIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    FVector MoveDestinationIndicatorSize = FVector(24.f, 70.f, 70.f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorLifeTime = 0.65f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorFadeDuration = 0.3f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TSubclassOf<USFStageIntroWidget> StageIntroWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TObjectPtr<UDataTable> StageIntroDataTable = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    FName StageIntroFallbackRowName = NAME_None;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -246,4 +291,10 @@ private:
 
     FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
     bool bIsSelectionDragging = false;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFStageIntroWidget> ActiveStageIntroWidget = nullptr;
+
+    ESlateVisibility VisibilityBeforeStageIntro = ESlateVisibility::SelfHitTestInvisible;
+    bool bWasGamePausedBeforeStageIntro = false;
 };

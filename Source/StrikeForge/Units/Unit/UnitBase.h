@@ -14,6 +14,7 @@ class UCombatTargetComponent;
 class UWidgetComponent;
 class AUnitAIController;
 class UNiagaraSystem;
+class UAnimMontage;
 class ALanePath;
 
 /** 전투 상태 머신 */
@@ -24,6 +25,58 @@ enum class EUnitCombatState : uint8
 	Chasing		UMETA(DisplayName = "추격"),		// 타겟 있음, 사거리 밖
 	Attacking	UMETA(DisplayName = "교전"),		// 타겟 있음, 사거리 안 + 시야 열림
 	Dead		UMETA(DisplayName = "사망")
+};
+
+/**
+ * 플레이어 입력이 유닛에 내리는 명령.
+ *
+ * 컨트롤러는 눌린 키에 해당하는 값을 들고 있다가, 클릭 시점에
+ * AUnitBase::ExecuteCommand 한 곳으로 넘기면 된다.
+ * 명령이 늘어나도 컨트롤러 쪽 분기는 그대로다.
+ */
+UENUM(BlueprintType)
+enum class ESFUnitCommand : uint8
+{
+	/** 이동(우클릭). 가는 동안 반격하지 않는다 */
+	Move			UMETA(DisplayName = "이동"),
+
+	/** 공격 이동(A + 클릭). 가는 길에 적을 만나면 교전한다 */
+	AttackMove		UMETA(DisplayName = "공격 이동"),
+
+	/** 대상 공격. 대상을 못 찍었으면 그 지점으로 공격 이동한다 */
+	Attack			UMETA(DisplayName = "대상 공격"),
+
+	/** 정지(S). 명령을 모두 놓는다. 목줄 안에서는 여전히 적을 쫓는다 */
+	Stop			UMETA(DisplayName = "정지"),
+
+	/** 제자리 고수(H). 사거리 안의 적만 치고 한 발짝도 움직이지 않는다 */
+	HoldGround		UMETA(DisplayName = "제자리 고수")
+};
+
+/**
+ * 명령이 없을 때 유닛이 스스로 무엇을 할지.
+ *
+ * 진영으로 갈리는 값이 아니다. 아군·적군이 같은 클래스와 같은 BP 를 공유하므로
+ * 코드에는 팀 분기를 두지 않고, 스폰하는 쪽이 SetAdvanceMode 로 주입한다.
+ * TeamIndex 를 스폰 시점에 넣어주는 것과 같은 방식이다.
+ */
+UENUM(BlueprintType)
+enum class EUnitAdvanceMode : uint8
+{
+	/**
+	 * 제자리 유지. 스스로 진격하지 않는다.
+	 *
+	 * 교전 반경 안의 적과는 싸우지만, 자리에서 너무 멀어지면 놓고 돌아온다.
+	 * 플레이어가 조작하는 유닛에 쓴다 — 뽑아둔 유닛이 알아서 적진으로
+	 * 걸어가 버리면 조작할 수가 없다.
+	 */
+	HoldPosition	UMETA(DisplayName = "제자리 유지"),
+
+	/**
+	 * 적 핵심 건물을 향해 스스로 진격한다. 라인이 지정돼 있으면 라인을 따른다.
+	 * AI 가 굴리는 웨이브 유닛에 쓴다.
+	 */
+	PushToCore		UMETA(DisplayName = "핵심 건물로 진격")
 };
 
 /**
@@ -80,6 +133,40 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
 	void SetAssignedLane(ALanePath* InLane);
 
+	// ── 자동 진격 여부 ──────────────────────────────────
+	//
+	// 팀으로 갈리는 값이 아니다. 스폰하는 쪽이 넣어준다.
+	//   플레이어 생산 유닛 → HoldPosition (기본값이라 아무것도 안 해도 된다)
+	//   AI 웨이브 유닛     → PushToCore   (스포너나 생산 BP 에서 주입)
+
+	/**
+	 * 명령이 없을 때의 행동을 직접 주입한다. 스폰 직후 호출한다.
+	 *
+	 * 한 번 호출하면 아래 팀 기준 자동 판정을 덮어쓴다.
+	 * 특정 유닛만 예외로 두고 싶을 때 쓴다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
+	void SetAdvanceMode(EUnitAdvanceMode InMode);
+
+	/**
+	 * 자기 팀 번호를 AutoAdvanceTeams 와 대조해 진격 여부를 정한다.
+	 *
+	 * BeginPlay 에서 자동으로 호출된다.
+	 * 스폰 이후에 SetTeamIndex 로 팀을 바꿨다면 직접 다시 불러야 한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
+	void ResolveAdvanceModeFromTeam();
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE EUnitAdvanceMode GetAdvanceMode() const { return AdvanceMode; }
+
+	/**
+	 * 지금 위치를 새 대기 지점으로 삼는다.
+	 * 이동 명령을 완수하거나 정지 명령을 받으면 자동으로 호출된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Unit")
+	void SetHoldLocationToCurrent();
+
 	/** 역할별 공격 우선순위에 따라 대상 탐색 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	AActor* FindBestTarget();
@@ -99,6 +186,94 @@ public:
 
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
+
+	// ── 전투 명령 ───────────────────────────────────────
+	//
+	// IMovable 의 MoveToLocation 은 스타크래프트의 강제 이동(M)이다.
+	// 가는 도중 적을 만나도 반격하지 않는다.
+	// 아래 둘은 그 위에 얹는 전투 명령으로, Input Action 은 이쪽에 붙인다.
+
+	/**
+	 * 명령을 한 곳에서 받는 창구.
+	 *
+	 * 컨트롤러는 대기 중인 명령 종류와 클릭 결과(지점·액터)만 넘기면 된다.
+	 * 명령별 분기는 여기서 처리하므로 입력 쪽 코드가 단순해진다.
+	 *
+	 * @param InLocation 클릭한 지면 좌표. 지점이 필요 없는 명령에서는 무시된다
+	 * @param InTarget   클릭한 액터. 없으면 nullptr
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocation, AActor* InTarget);
+
+	/**
+	 * 이동(우클릭). IMovable::MoveToLocation 과 같은 동작이다.
+	 * 컨트롤러가 세 명령을 같은 방식으로 부를 수 있도록 이름을 맞춰뒀다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void CommandMoveTo(const FVector& InDestination);
+
+	/**
+	 * 공격 이동(A). 목적지로 향하되 도중에 적을 만나면 교전한다.
+	 * 적을 정리하면 스스로 목적지로 다시 향한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void CommandAttackMove(const FVector& InDestination);
+
+	/**
+	 * 지정 대상 강제 공격. 그 대상이 쓰러질 때까지 다른 적으로 갈아타지 않는다.
+	 *
+	 * TObjectPtr 은 UFUNCTION 인자로 쓸 수 없으므로 원시 포인터를 받는다.
+	 * 현재는 적대 진영만 지정할 수 있다 — 중립(TeamIndex -1) 강제 공격은
+	 * IsHostileTeam 우회가 필요하며 기획 확정 후 붙인다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void CommandAttackTarget(AActor* InTarget);
+
+	/** 모든 명령 해제(S). 선 자리를 대기 지점으로 삼고 평소대로 싸운다 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void CommandStop();
+
+	/**
+	 * 제자리 고수(H).
+	 *
+	 * 정지(S)와 다르다. 정지는 목줄 안에서는 적을 쫓지만,
+	 * 고수는 사거리 안에 들어온 적만 치고 한 발짝도 움직이지 않는다.
+	 * 진격 모드(AdvanceMode)보다 우선한다.
+	 *
+	 * 이동·공격 명령을 받으면 자동으로 풀린다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Command")
+	void CommandHoldGround();
+
+	/** 제자리 고수 중인가. HUD 아이콘 표시 등에 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Command")
+	FORCEINLINE bool IsHoldingGround() const { return bHoldGround != 0; }
+
+	/**
+	 * 유닛끼리 캡슐로 서로를 막을지 전환한다.
+	 *
+	 * 런타임에 바꿀 수 있다. 콘솔 명령 sf.UnitsBlockEachOther 가 이 함수를 쓴다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void SetBlockOtherUnits(bool bInBlock);
+
+	/** 현재 명령이 공격 이동인가. HUD 커서 표시 등에 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Command")
+	FORCEINLINE bool IsAttackMoving() const { return bHasCommandedDestination && bCommandIsAttackMove; }
+
+	/**
+	 * 현재 전투 상태. AnimBP 가 애니메이션을 고르는 기준이 된다.
+	 *
+	 *   Advancing / Chasing  이동  → Walk
+	 *   Attacking            교전  → Attack 몽타주
+	 *   Dead                 사망  → Dying
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	FORCEINLINE EUnitCombatState GetCombatState() const { return CombatState; }
+
+	/** 수평 이동 속도. Blend Space 의 입력값으로 쓴다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	float GetGroundSpeed() const;
 
 	/** 플레이어 명령을 수행 중인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -153,6 +328,30 @@ protected:
 
 	bool IsTargetUsable(const AActor* InTarget) const;
 
+	/**
+	 * 교전이 성립하는 거리(대상 표면 기준).
+	 *
+	 * 건물은 자기 주변 NavMesh 를 넓게 파먹어서 유닛이 아무리 붙어도
+	 * 원래 사거리 안으로 들어가지 못한다. 그래서 비율 대신 여유를 더한다.
+	 * AttackRange 자체를 늘리면 유닛 간 교전 사거리까지 함께 늘어난다.
+	 */
+	float GetBaseRange(const AActor* InTarget) const;
+
+	/** 공격 슬롯에서 대상 표면으로부터 떨어져 설 거리 */
+	float GetApproachDistance(const AActor* InTarget) const;
+
+	/**
+	 * CurrentTarget 에 맞춰 공격 슬롯을 갱신한다.
+	 * 대상이 바뀌었으면 이전 자리를 먼저 반납한다.
+	 */
+	void UpdateAttackSlot();
+
+	/** 잡고 있는 슬롯을 반납한다. 사망·소멸 시 반드시 부른다 */
+	void ReleaseAttackSlot();
+
+	/** bBlockOtherUnits 값을 캡슐 콜리전에 반영한다 */
+	void ApplyUnitCollisionMode();
+
 	/** 교전 대상이 없을 때의 행동 — 라인 전진 또는 적 핵심 방향으로 */
 	void Advance();
 
@@ -168,6 +367,14 @@ protected:
 	 * ASFGameState 가 없으면 조용히 넘어간다(테스트 레벨 대응).
 	 */
 	void ApplyPopulationDelta(int32 InDelta);
+
+	/**
+	 * 재생 중인 공격 몽타주를 끊는다.
+	 *
+	 * 이동 명령이 들어왔는데 공격 모션이 남아 있으면
+	 * 유닛이 칼을 휘두르며 이동하는 그림이 된다.
+	 */
+	void StopAttackMontage();
 
 	/** 이펙트를 지정 위치에 스폰한다. 시스템이 비어 있으면 아무것도 안 한다 */
 	void SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocation) const;
@@ -284,9 +491,15 @@ private:
 	 *
 	 * MoveAcceptanceRadius 보다 커야 한다.
 	 * 같으면 도착 판정과 이동 정지가 동시에 일어나 명령이 안 풀릴 수 있다.
+	 *
+	 * 하한은 MoveAcceptanceRadius + 캡슐 반지름 = 50 + 45 = 95 다.
+	 * 이보다 작으면 이동이 멈춘 자리에서 도착 판정이 나지 않아
+	 * 명령 플래그가 영영 풀리지 않고, 그 유닛은 다시 싸우지 않는다.
+	 *
+	 * 200 은 클릭 지점에서 2m 앞에 서는 값이라 "찍은 데까지 안 간다" 로 보였다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "50.0"))
-	float CommandArrivalRadius = 200.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "100.0"))
+	float CommandArrivalRadius = 120.f;
 
 	/** 타겟 재탐색 주기(초) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.05"))
@@ -296,9 +509,43 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.1"))
 	float StuckThreshold = 0.6f;
 
+	/**
+	 * 유닛끼리 캡슐로 서로를 막을 것인가. 기본은 끔(= 서로 통과).
+	 *
+	 * 켜면 ACharacter 기본값 그대로 Pawn 채널을 Block 한다.
+	 * 그러면 대상에 붙은 앞줄 3~4기가 물리적인 벽이 되어, 뒤에서 오는 유닛은
+	 * 자리가 남아 있어도 그리로 갈 수가 없다. 병목의 실체가 이것이다.
+	 *
+	 * 끄면 유닛이 서로를 통과한다. 겹치지 않게 벌리는 일은
+	 * DetourCrowd 분리력(AUnitAIController::CrowdSeparationWeight)과
+	 * 공격 슬롯이 맡는다. 슬롯이 각자 다른 각도를 주므로 최종 위치가 갈린다.
+	 *
+	 * Overlap 이 아니라 Ignore 를 쓴다. 겹침 이벤트를 쓰지 않는데
+	 * Overlap 으로 두면 유닛 수의 제곱만큼 이벤트가 발생한다.
+	 *
+	 * 주의: 적 유닛도 통과한다. 콜리전 채널은 팀을 구분하지 못한다.
+	 * 다만 사거리에 들어오는 순간 멈추므로 상대를 뚫고 지나가지는 않는다.
+	 * 건물과 지형은 WorldStatic 이라 영향이 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	uint8 bBlockOtherUnits : 1;
+
 	/** 공격에 시야가 필요한가. 끄면 벽 너머로도 때린다 (곡사 유닛) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
 	uint8 bRequireLineOfSight : 1;
+
+	/**
+	 * 건물 대상에도 시야를 요구할 것인가. 기본은 끔.
+	 *
+	 * 건물은 크고 고정된 대상이고, 사거리 판정이 이미 바운딩 박스 표면 기준이다.
+	 * 사거리 안에 들었다는 것은 사실상 건물에 붙었다는 뜻이라 시야를 따질 이유가 없다.
+	 *
+	 * 반대로 요구하면, 광물 위에 세운 채집 건물처럼 대상 바로 옆에 다른
+	 * WorldStatic 액터가 붙어 있는 경우 구체 스윕이 그것에 걸려 시야가 영구히
+	 * 막힌 것으로 나온다. 유닛은 붙어서 바라보기만 하고 피해는 안 들어간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	uint8 bRequireLineOfSightForBuildings : 1;
 
 	/**
 	 * 시야 검사에 쓰는 구체 반지름(cm).
@@ -336,6 +583,54 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
 	TMap<ETargetType, float> TargetTypeWeights;
 
+	/**
+	 * 슬롯을 사거리 경계에서 얼마나 더 안쪽에 둘지(cm).
+	 *
+	 * 접근 거리 = 사거리 − 이 값. 작게 잡아야 한다.
+	 *
+	 * 슬롯은 "도착해야 하는 자리" 가 아니라 "그 방향으로 파고들라" 는 지시다.
+	 * 유닛은 자리에 닿기 전에 사거리에 들어오고, 그 순간 교전 분기가 걸려 멈춘다.
+	 * 그러니 자리를 사거리 경계 바로 안쪽에 두면 된다.
+	 *
+	 * 반대로 크게 잡으면 링이 대상 캡슐에 달라붙는다.
+	 * 사거리 105 기준으로 이 값이 60 이면 링 반지름이 90 —
+	 * 두 캡슐이 정확히 맞닿는 거리다. DetourCrowd 분리력이 밀어내는 자리와
+	 * 겹쳐서, 유닛은 자리에 닿지 못하고 그 바깥에서 굳는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float SlotRangeMargin = 10.f;
+
+	/**
+	 * 슬롯으로 이동할 때 쓰는 도달 반경(cm). MoveAcceptanceRadius 와 별개다.
+	 *
+	 * 작게 잡는다. 슬롯은 도착이 목적이 아니라 방향 지시라서,
+	 * 도달 판정이 크면 사거리에 들기도 전에 "도착했다" 며 멈춰버린다.
+	 * 유닛을 실제로 멈추는 것은 교전 판정이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "5.0"))
+	float SlotAcceptanceRadius = 15.f;
+
+	/**
+	 * 슬롯을 쓰기 시작하는 거리. 교전 사거리에 이만큼 더한 안쪽에서만 자리를 잡는다.
+	 *
+	 * 멀리서 쫓는 동안 지점 이동을 쓰면 목표가 움직일 때마다 새 MoveTo 를 내야 하고,
+	 * 그때마다 DetourCrowd 가 리셋되어 추격이 눈에 띄게 굼떠진다.
+	 * 액터 추적은 경로 추종이 알아서 따라가므로 훨씬 빠르다.
+	 *
+	 * 포위 모양은 붙어서 싸울 때 보이는 것이라, 먼 거리는 직접 쫓아도 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float SlotActivationRange = 600.f;
+
+	/**
+	 * 슬롯이 가득 찬 대상의 거리 점수 배율.
+	 *
+	 * 이게 없으면 여덟 기가 한 마리에게 전부 몰려, 자리를 못 잡은 뒤쪽 유닛은
+	 * 공격은 못 하고 걷기만 한다. 클수록 다른 적으로 흩어진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "1.0"))
+	float OvercrowdedTargetPenalty = 2.f;
+
 	/** 한 번의 탐색에서 시야 검사를 수행할 최대 후보 수 (성능 상한) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "1"))
 	int32 MaxLineOfSightChecks = 6;
@@ -350,6 +645,28 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UNiagaraSystem> AttackEffect;
+
+	/**
+	 * 공격 시 재생할 몽타주.
+	 *
+	 * AnimBP 의 AnimGraph 에 Slot 노드(기본 'DefaultSlot')가 있어야
+	 * 화면에 나온다. 비워두면 아무것도 재생하지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/**
+	 * 공격 몽타주를 끊을 때의 블렌드 아웃 시간(초).
+	 *
+	 * 0 이면 즉시 끊겨 동작이 툭 끊긴 느낌이 난다.
+	 * 0.15 정도면 자연스럽게 이동 자세로 넘어간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float MontageBlendOutTime = 0.15f;
+
+	/** 사망 시 재생할 몽타주. 없으면 AnimBP 의 사망 상태에 맡긴다 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
+	TObjectPtr<UAnimMontage> DeathMontage;
 
 	/** 사망 순간 재생할 이펙트. 자기 위치에 스폰된다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
@@ -385,16 +702,152 @@ private:
 	/** 진격 목표 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bAdvanceTargetReported : 1;
 
+	/**
+	 * 명령이 없을 때의 행동. 런타임 값이다.
+	 *
+	 * 디테일 패널에서 직접 고치지 말 것 — BeginPlay 의
+	 * ResolveAdvanceModeFromTeam 이 팀 기준으로 덮어쓴다.
+	 * 바꾸려면 아래 AutoAdvanceTeams 를 고치거나 SetAdvanceMode 를 부른다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	EUnitAdvanceMode AdvanceMode = EUnitAdvanceMode::HoldPosition;
+
+	/**
+	 * 스스로 진격하는 팀 번호 목록. 기본값은 { 1 }.
+	 *
+	 * 코드에 "아군이면" 같은 분기를 두지 않기 위한 장치다.
+	 * 유닛은 자기 팀이 이 목록에 있는지만 본다. 아군·적군이 같은 클래스와
+	 * 같은 BP 를 공유해도, 각자 자기 TeamIndex 로 갈린다.
+	 *
+	 *   0번 팀(플레이어) → 목록에 없음 → 제자리 유지, 직접 조작
+	 *   1번 팀(AI)      → 목록에 있음 → 핵심 건물로 자동 진격
+	 *
+	 * 3인 이상 대전이나 진영 교체가 생기면 이 목록만 고치면 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	TSet<int32> AutoAdvanceTeams;
+
+	/** SetAdvanceMode 로 직접 주입받았는가. 켜져 있으면 팀 기준 판정을 하지 않는다 */
+	uint8 bAdvanceModeInjected : 1;
+
+	/**
+	 * 전투가 끝나면 원래 자리로 돌아갈 것인가. 기본은 끔.
+	 *
+	 * 끄면(기본) 유닛은 싸움이 끝난 그 자리에 그대로 선다.
+	 * 이동 명령을 내린 지점은 "그때 가라고 한 곳" 일 뿐이고,
+	 * 전투로 자리를 옮긴 뒤에는 그곳이 새 대기 지점이 된다.
+	 *
+	 * 켜면 아래 LeashRadius 를 벗어났을 때 명령 지점으로 복귀한다.
+	 * 수비 위치를 엄격히 지켜야 하는 유닛에 쓴다.
+	 *
+	 * 절충안은 없다. 복귀를 켜지 않으면 추격 거리를 제한할 방법도 없다 —
+	 * 목줄만 걸고 복귀를 안 시키면, 유닛이 경계에서 대상을 놓았다 물었다
+	 * 반복하며 그 자리에서 덜컥거린다. 그래서 둘을 한 스위치로 묶었다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	uint8 bReturnToHoldLocation : 1;
+
+	/**
+	 * 대기 지점에서 벗어날 수 있는 최대 거리(cm).
+	 * bReturnToHoldLocation 이 켜져 있을 때만 의미가 있다.
+	 *
+	 * 이 거리를 넘으면 쫓던 대상을 놓고 대기 지점으로 돌아간다.
+	 * 없으면 적을 물고 늘어지다 다음 적을 또 물면서 결국 적진까지 끌려간다.
+	 *
+	 * AggroRadius(1050) 보다 작게 두면 반경 끝의 적은 아예 쫓지 않는 셈이 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float LeashRadius = 800.f;
+
+	/** 제자리 유지 모드에서 돌아갈 자리 */
+	FVector HoldLocation = FVector::ZeroVector;
+
+	/** 위 자리가 정해졌는가 */
+	uint8 bHoldLocationSet : 1;
+
+	/**
+	 * 목줄을 벗어나 복귀하는 중인가.
+	 *
+	 * 복귀 중에는 새 적을 물지 않는다. 경계선에서 놓았다 물었다를 반복하면
+	 * 유닛이 그 자리에서 왔다 갔다 한다.
+	 */
+	uint8 bReturningToHold : 1;
+
+	/** "제자리 유지" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bHoldReported : 1;
+
 	/** 플레이어가 지정한 목적지 */
 	FVector CommandedDestination = FVector::ZeroVector;
 
 	/** 위 목적지가 유효한가 */
 	uint8 bHasCommandedDestination : 1;
 
+	/**
+	 * 위 이동 명령이 공격 이동인가.
+	 *
+	 * 꺼져 있으면 강제 이동 — Tick 이 교전 판정 자체를 건너뛴다.
+	 * 켜져 있으면 평소대로 적을 찾고, 적이 없을 때만 목적지로 향한다.
+	 */
+	uint8 bCommandIsAttackMove : 1;
+
+	/**
+	 * 제자리 고수 중인가.
+	 *
+	 * 켜져 있으면 어떤 이유로도 스스로 움직이지 않는다.
+	 * 진격 모드와 추격 모두 건너뛴다. 사거리 안의 적만 친다.
+	 */
+	uint8 bHoldGround : 1;
+
+	/**
+	 * 플레이어가 지정한 강제 공격 대상.
+	 *
+	 * 유효한 동안 타겟 재탐색을 건너뛴다. 타겟 고정력(TargetStickiness)이
+	 * 점수 배율인 것과 달리 이쪽은 완전 고정이다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> ForcedTarget;
+
 	/** "사거리에 도달 불가" 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bRangeUnreachableReported : 1;
 
+	/** "사거리 안인데 시야가 막힘" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bSightBlockedReported : 1;
+
+	/**
+	 * 대상 주위에서 배정받은 슬롯 각도 인덱스. INDEX_NONE 이면 미배정.
+	 *
+	 * 미배정 상태에서는 예전처럼 대상에게 직접 접근한다.
+	 */
+	int32 AttackSlotIndex = INDEX_NONE;
+
+	/** 슬롯을 잡아둔 대상. CurrentTarget 과 어긋나면 반납하고 다시 잡는다 */
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> SlotTarget;
+
+	/**
+	 * 슬롯이 맞지 않는다고 판정된 대상.
+	 *
+	 * 자리에 도착했는데도 사거리 안에 못 들어가는 경우가 있다.
+	 * 그대로 두면 슬롯을 다시 잡고 다시 도착하고 다시 못 때리기를 반복하며
+	 * 영원히 공격하지 않는다. 이 대상에 한해 슬롯을 포기하고 직접 붙는다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> SlotUnusableTarget;
+
 	float AttackCooldownRemaining = 0.f;
+
+	/**
+	 * 공격 모션을 끊지 않고 보장할 남은 시간(초).
+	 *
+	 * 대상이 쓰러지는 순간 모션을 바로 끊으면, 정작 그 대상을 죽인 스윙이
+	 * 한 프레임 만에 잘려 때리지도 않고 죽은 것처럼 보인다.
+	 * 반대로 그냥 두면 쿨다운보다 긴 몽타주가 허공에서 계속 재생된다.
+	 *
+	 * 그래서 min(몽타주 길이, AttackCooldown) 만큼만 보장하고,
+	 * 만료된 뒤에는 교전 상태가 아닌 한 잘라낸다.
+	 */
+	float AttackAnimHoldRemaining = 0.f;
+
 	float RetargetTimer = 0.f;
 	float StuckTimer = 0.f;
 };

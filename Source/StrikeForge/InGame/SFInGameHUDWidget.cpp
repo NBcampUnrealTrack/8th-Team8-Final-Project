@@ -1,6 +1,8 @@
 #include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "Interfaces/Units/Targetable.h"
+#include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
@@ -13,6 +15,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 
 #include "CommonActivatableWidget.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
@@ -25,9 +28,19 @@
 
 #include "Engine/EngineTypes.h"
 #include "EngineUtils.h"
+#include "Engine/DataTable.h"
+
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
+#include "Game/GameInstance/SFGameInstance.h"
+#include "Game/GameState/SFGameState.h"
+
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+
+#include "Kismet/GameplayStatics.h"
+
+#include "TimerManager.h"
 
 #include "Logging/SFLog.h"
 
@@ -102,7 +115,29 @@ void USFInGameHUDWidget::NativeConstruct()
 
     if (IsValid(MultiSelectionPanel))
     {
+        MultiSelectionPanel->OnPrimarySelectionRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandlePrimarySelectionRequested
+        );
+
+        MultiSelectionPanel->OnPrimarySelectionRequested.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandlePrimarySelectionRequested
+        );
+
         MultiSelectionPanel->ClearSelections();
+
+        SF_LOG(Log, "[SFInGameHUDWidget] Multi selection delegate binding completed.");
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimerForNextTick(
+            FTimerDelegate::CreateUObject(
+                this,
+                &USFInGameHUDWidget::TryStartStageIntro
+            )
+        );
     }
 }
 
@@ -117,7 +152,8 @@ void USFInGameHUDWidget::NativeDestruct()
             .RemoveAll(this);
     }
 
-    UnbindSelectedActorDestroyed();
+    UnbindSelectedActorsDestroyed();
+
     UnbindSelectedHealthDelegate();
 
     ASFInGamePlayerController* PlayerController =
@@ -156,52 +192,86 @@ void USFInGameHUDWidget::NativeDestruct()
         ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
     }
 
+    if (IsValid(MultiSelectionPanel))
+    {
+        MultiSelectionPanel->OnPrimarySelectionRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandlePrimarySelectionRequested
+        );
+    }
+
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+        ActiveStageIntroWidget = nullptr;
+    }
+
     Super::NativeDestruct();
 }
 
 void USFInGameHUDWidget::HandleSelectInput()
 {
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Select input received."
-    );
+    SF_LOG(Log, "[SFInGameHUDWidget] Select input received.");
 
+    CloseBuildingMode();
     PerformSelectionTrace();
 }
 
-void USFInGameHUDWidget::HandleSelectedActorDestroyed(
-    AActor* DestroyedActor
-)
+void USFInGameHUDWidget::HandleSelectedActorDestroyed(AActor* DestroyedActor)
 {
-    HideSelectionIndicator(DestroyedActor);
-
-    if (DestroyedActor != SelectedActor.Get())
+    if (DestroyedActor == nullptr)
     {
         return;
     }
 
-    UnbindSelectedHealthDelegate();
+    const bool bWasPrimary =
+        DestroyedActor == SelectedActor.Get();
 
-    SelectedActor = nullptr;
-    SelectedInfo = FSFSelectableInfo();
+    HideSelectionIndicator(DestroyedActor);
 
-    if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    SelectedActors.RemoveAll(
+        [DestroyedActor](const TObjectPtr<AActor>& ActorPtr)
+        {
+            return
+                ActorPtr.Get() == DestroyedActor ||
+                !IsValid(ActorPtr.Get());
+        }
+    );
+
+    if (SelectedActors.IsEmpty())
     {
-        PlayerController->SetSelectedActor(nullptr);
+        ClearSelection();
+        return;
     }
 
-    RefreshBuildModeOpenButtonVisibility();
-
-    if (IsValid(SelectionPanel))
+    if (bWasPrimary)
     {
-        SelectionPanel->ClearSelection();
+        UnbindSelectedHealthDelegate();
+
+        SelectedActor = nullptr;
+        SelectedInfo = FSFSelectableInfo();
+
+        AActor* NewPrimaryActor =
+            SelectedActors[0].Get();
+
+        if (IsValid(NewPrimaryActor))
+        {
+            HandlePrimarySelectionRequested(
+                NewPrimaryActor
+            );
+        }
+
+        return;
     }
 
-    if (IsValid(ProductionBuildingPanel))
-    {
-        ProductionBuildingPanel->HideProductionBuilding();
-    }
+    RefreshMultiSelectionPanel();
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Destroyed actor removed from selection | Remaining: %d",
+        SelectedActors.Num()
+    );
 }
 
 void USFInGameHUDWidget::PerformSelectionTrace()
@@ -269,32 +339,26 @@ void USFInGameHUDWidget::ApplySelection(
     }
 
     const bool bIsBuilding =
-        NewSelectedInfo.SelectableType ==
-        ESFSelectableType::MainBuilding ||
-        NewSelectedInfo.SelectableType ==
-        ESFSelectableType::ProductionBuilding ||
-        NewSelectedInfo.SelectableType ==
-        ESFSelectableType::ResourceBuilding;
+        NewSelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
 
     if (bIsBuilding)
     {
         CloseBuildingMode();
     }
 
-    if (SelectedActor != NewSelectedActor)
-    {
-        UnbindSelectedActorDestroyed();
-        UnbindSelectedHealthDelegate();
+    UnbindSelectedActorsDestroyed();
+    UnbindSelectedHealthDelegate();
+    HideAllSelectionIndicators();
 
-        HideAllSelectionIndicators();
+    SelectedActor = NewSelectedActor;
 
-        SelectedActor = NewSelectedActor;
-
-        SelectedActor->OnDestroyed.AddUniqueDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSelectedActorDestroyed
-        );
-    }
+    SelectedActor->OnDestroyed.AddUniqueDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
 
 	ShowSelectionIndicator(NewSelectedActor); 
 
@@ -376,9 +440,7 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 {
     if (IsValid(SelectionPanel))
     {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
+        SelectionPanel->ShowSelection(SelectedInfo);
     }
 
     if (!IsValid(ProductionBuildingPanel))
@@ -386,14 +448,19 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         return;
     }
 
-    if (
-        SelectedInfo.SelectableType ==
-        ESFSelectableType::ProductionBuilding
-        )
+    const bool bIsBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    if (bIsBuildingModeActive)
     {
-        ProductionBuildingPanel->ShowProductionBuilding(
-            SelectedActor.Get()
-        );
+        ProductionBuildingPanel->HideProductionBuilding();
+        return;
+    }
+
+    if (SelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding)
+    {
+        ProductionBuildingPanel->ShowProductionBuilding(SelectedActor.Get());
         return;
     }
 
@@ -405,7 +472,7 @@ void USFInGameHUDWidget::ClearSelection()
 
     HideAllSelectionIndicators();
 
-    UnbindSelectedActorDestroyed();
+    UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
 
     SelectedActor = nullptr;
@@ -435,17 +502,63 @@ void USFInGameHUDWidget::ClearSelection()
     }
 }
 
-void USFInGameHUDWidget::UnbindSelectedActorDestroyed()
+void USFInGameHUDWidget::BindSelectedActorsDestroyed()
 {
-    if (!IsValid(SelectedActor))
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
     {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        Actor->OnDestroyed.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedActorDestroyed
+        );
+    }
+}
+
+void USFInGameHUDWidget::UnbindSelectedActorsDestroyed()
+{
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        Actor->OnDestroyed.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedActorDestroyed
+        );
+    }
+
+    if (IsValid(SelectedActor))
+    {
+        SelectedActor->OnDestroyed.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedActorDestroyed
+        );
+    }
+}
+
+void USFInGameHUDWidget::ToggleBuildingMode()
+{
+    const bool bIsActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    if (bIsActive)
+    {
+        CloseBuildingMode();
         return;
     }
 
-    SelectedActor->OnDestroyed.RemoveDynamic(
-        this,
-        &USFInGameHUDWidget::HandleSelectedActorDestroyed
-    );
+    OpenBuildingMode();
 }
 
 void USFInGameHUDWidget::OpenBuildingMode()
@@ -484,6 +597,8 @@ void USFInGameHUDWidget::OpenBuildingMode()
     );
 
     RefreshBuildModeOpenButtonVisibility();
+    RefreshSelectionPanels();
+    RefreshMultiSelectionPanel();
 }
 
 void USFInGameHUDWidget::CloseBuildingMode()
@@ -506,6 +621,8 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
     ActiveBuildingModeWidget = nullptr;
 
     RefreshBuildModeOpenButtonVisibility();
+    RefreshSelectionPanels();
+    RefreshMultiSelectionPanel();
 
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
@@ -775,7 +892,12 @@ void USFInGameHUDWidget::ToggleSettings()
     }
 
     ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
-    ActiveSettingsWidget->OnDeactivated().AddUObject(this, &USFInGameHUDWidget::HandleSettingsDeactivated);
+    ActiveSettingsWidget->OnDeactivated().AddUObject(
+        this,
+        &USFInGameHUDWidget::HandleSettingsDeactivated
+    );
+
+    UGameplayStatics::SetGamePaused(this, true);
 
     APlayerController* PlayerController = GetOwningPlayer();
 
@@ -802,19 +924,26 @@ void USFInGameHUDWidget::HandleSettingsDeactivated()
 
     ActiveSettingsWidget = nullptr;
 
-    APlayerController* PlayerController = GetOwningPlayer();
+    UGameplayStatics::SetGamePaused(this, false);
 
+    APlayerController* PlayerController = GetOwningPlayer();
     if (IsValid(PlayerController))
     {
         FInputModeGameAndUI InputMode;
         InputMode.SetHideCursorDuringCapture(false);
-        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+        InputMode.SetLockMouseToViewportBehavior(
+            EMouseLockMode::LockAlways
+        );
 
         PlayerController->SetInputMode(InputMode);
         PlayerController->bShowMouseCursor = true;
     }
 
-    SF_LOG(Log, "[SFInGameHUDWidget] Settings closed.");
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Settings closed. Game resumed."
+    );
 }
 
 void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
@@ -966,6 +1095,8 @@ void USFInGameHUDWidget::HandleSelectionDragCompleted(
         return;
     }
 
+    CloseBuildingMode();
+
     PerformDragSelection(
         StartScreenPosition,
         EndScreenPosition
@@ -1103,14 +1234,14 @@ void USFInGameHUDWidget::PerformDragSelection(
             continue;
         }
 
+        if (!IsOwnedByLocalPlayer(Actor))
+        {
+            continue;
+        }
+
         FVector BoundsOrigin;
         FVector BoundsExtent;
-
-        Actor->GetActorBounds(
-            false,
-            BoundsOrigin,
-            BoundsExtent
-        );
+        Actor->GetActorBounds(false, BoundsOrigin, BoundsExtent);
 
         FVector2D ActorScreenPosition;
 
@@ -1126,16 +1257,14 @@ void USFInGameHUDWidget::PerformDragSelection(
             continue;
         }
 
-        if (!SelectionRectangle.IsInsideOrOn(
-            ActorScreenPosition
-        ))
+        if (!SelectionRectangle.IsInsideOrOn(ActorScreenPosition))
         {
             continue;
         }
 
         FoundActors.Add(Actor);
     }
-
+    
     FoundActors.Sort(
         [this](const AActor& Left, const AActor& Right)
         {
@@ -1191,6 +1320,7 @@ int32 USFInGameHUDWidget::GetSelectionPriority(
         return 0;
 
     case ESFSelectableType::MainBuilding:
+    case ESFSelectableType::NormalBuilding:
     case ESFSelectableType::ProductionBuilding:
     case ESFSelectableType::ResourceBuilding:
         return 1;
@@ -1240,6 +1370,7 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         ShowSelectionIndicator(Actor);
     }
 
+    BindSelectedActorsDestroyed();
     RefreshMultiSelectionPanel();
 
     SF_LOG(
@@ -1254,6 +1385,16 @@ void USFInGameHUDWidget::RefreshMultiSelectionPanel()
 {
     if (!IsValid(MultiSelectionPanel))
     {
+        return;
+    }
+
+    const bool bIsBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    if (bIsBuildingModeActive)
+    {
+        MultiSelectionPanel->ClearSelections();
         return;
     }
 
@@ -1309,4 +1450,365 @@ void USFInGameHUDWidget::RefreshMultiSelectionPanel()
         SelectedActors,
         SelectableInfos
     );
+}
+
+void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    const int32 RequestedIndex = SelectedActors.IndexOfByPredicate(
+        [Actor](const TObjectPtr<AActor>& ActorPtr)
+        {
+            return ActorPtr.Get() == Actor;
+        }
+    );
+
+    if (RequestedIndex == INDEX_NONE)
+    {
+        SF_LOG(Warning, "[SFInGameHUDWidget] Requested actor is not in SelectedActors.");
+        return;
+    }
+
+    if (RequestedIndex > 0)
+    {
+        TObjectPtr<AActor> PromotedActor = SelectedActors[RequestedIndex];
+        SelectedActors.RemoveAt(RequestedIndex);
+        SelectedActors.Insert(PromotedActor, 0);
+    }
+
+    UnbindSelectedHealthDelegate();
+
+    SelectedActor = Actor;
+
+    FSFSelectableInfo NewSelectedInfo =
+        ISFSelectable::Execute_GetSelectableInfo(Actor);
+
+    const bool bIsBuilding =
+        NewSelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+        NewSelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+
+    if (bIsBuilding)
+    {
+        const FHealthData HealthData =
+            ISFSelectable::Execute_GetHealthData(Actor);
+
+        NewSelectedInfo.Tier = HealthData.CurrentTier + 1;
+    }
+
+    ApplySelectionUIData(NewSelectedInfo);
+    SelectedInfo = NewSelectedInfo;
+
+    SelectedActor->OnDestroyed.AddUniqueDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+
+    if (ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    {
+        PlayerController->SetSelectedActor(SelectedActor.Get());
+    }
+
+    BindSelectedHealthDelegate(SelectedActor.Get());
+    RefreshBuildModeOpenButtonVisibility();
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(SelectedInfo);
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->HideProductionBuilding();
+    }
+
+    RefreshMultiSelectionPanel();
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Primary selection changed | Actor: %s",
+        *Actor->GetName()
+    );
+}
+
+bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
+{
+    if (!IsValid(Actor))
+    {
+        return false;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        Actor->FindComponentByClass<UCombatTargetComponent>();
+
+    if (!IsValid(CombatTarget))
+    {
+        return false;
+    }
+
+    return CombatTarget->GetTeamIndex() == Targetable::PlayerTeam;
+}
+
+void USFInGameHUDWidget::ShowMoveDestinationIndicator(
+    const FVector& WorldLocation
+)
+{
+    if (!IsValid(MoveDestinationIndicatorMaterial))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "MoveDestinationIndicatorMaterial is invalid."
+        );
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    UMaterialInstanceDynamic* DynamicMaterial =
+        UMaterialInstanceDynamic::Create(
+            MoveDestinationIndicatorMaterial,
+            this
+        );
+
+    if (!IsValid(DynamicMaterial))
+    {
+        return;
+    }
+
+    DynamicMaterial->SetScalarParameterValue(
+        TEXT("StartTime"),
+        World->GetTimeSeconds()
+    );
+
+    DynamicMaterial->SetScalarParameterValue(
+        TEXT("AnimDuration"),
+        MoveDestinationIndicatorLifeTime
+    );
+
+    UDecalComponent* Indicator =
+        UGameplayStatics::SpawnDecalAtLocation(
+            this,
+            DynamicMaterial,
+            MoveDestinationIndicatorSize,
+            WorldLocation + FVector(0.f, 0.f, 8.f),
+            FRotator(-90.f, 0.f, 0.f),
+            MoveDestinationIndicatorLifeTime
+        );
+
+    if (!IsValid(Indicator))
+    {
+        return;
+    }
+
+    Indicator->SetSortOrder(20);
+
+    const float FadeStartDelay = FMath::Max(
+        0.f,
+        MoveDestinationIndicatorLifeTime -
+        MoveDestinationIndicatorFadeDuration
+    );
+
+    Indicator->SetFadeOut(
+        FadeStartDelay,
+        MoveDestinationIndicatorFadeDuration,
+        false
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Move destination indicator shown | Location: %s",
+        *WorldLocation.ToString()
+    );
+}
+
+FName USFInGameHUDWidget::ResolveStageIntroRowName() const
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (ASFGameState* GameState = World->GetGameState<ASFGameState>())
+        {
+            const FName StageRowName = GameState->GetCurrentStageRowName();
+
+            if (!StageRowName.IsNone())
+            {
+                return StageRowName;
+            }
+        }
+    }
+
+    if (const USFGameInstance* GameInstance = Cast<USFGameInstance>(GetGameInstance()))
+    {
+        const FName StageRowName = GameInstance->GetSelectedStageRowName();
+
+        if (!StageRowName.IsNone())
+        {
+            return StageRowName;
+        }
+    }
+
+    return StageIntroFallbackRowName;
+}
+
+void USFInGameHUDWidget::TryStartStageIntro()
+{
+    SF_LOG(Log, "[SFInGameHUDWidget] TryStartStageIntro called.");
+
+    if (!StageIntroWidgetClass)
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntroWidgetClass is invalid.");
+        return;
+    }
+
+    if (!IsValid(StageIntroDataTable))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntroDataTable is invalid.");
+        return;
+    }
+
+    FName IntroRowName = StageIntroFallbackRowName;
+
+    if (IntroRowName.IsNone())
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StageIntro row name is None.");
+        return;
+    }
+
+    if (!StageIntroDataTable->GetRowNames().Contains(IntroRowName))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] StageIntro row was not found: %s",
+            *IntroRowName.ToString()
+        );
+        return;
+    }
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (!IsValid(PlayerController))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] OwningPlayer is invalid.");
+        return;
+    }
+
+    ActiveStageIntroWidget = CreateWidget<USFStageIntroWidget>(
+        PlayerController,
+        StageIntroWidgetClass
+    );
+
+    if (!IsValid(ActiveStageIntroWidget))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] Failed to create StageIntroWidget.");
+        return;
+    }
+
+    ActiveStageIntroWidget->OnDeactivated().AddUObject(
+        this,
+        &USFInGameHUDWidget::HandleStageIntroDeactivated
+    );
+
+    ActiveStageIntroWidget->AddToViewport(500);
+    ActiveStageIntroWidget->ActivateWidget();
+
+    if (!ActiveStageIntroWidget->StartStageIntro(
+        StageIntroDataTable,
+        IntroRowName
+    ))
+    {
+        SF_LOG(Error, "[SFInGameHUDWidget] StartStageIntro failed.");
+
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+        ActiveStageIntroWidget = nullptr;
+        return;
+    }
+
+    VisibilityBeforeStageIntro = GetVisibility();
+    bWasGamePausedBeforeStageIntro =
+        UGameplayStatics::IsGamePaused(this);
+
+    SetVisibility(ESlateVisibility::Collapsed);
+
+    if (!bWasGamePausedBeforeStageIntro)
+    {
+        UGameplayStatics::SetGamePaused(this, true);
+    }
+
+    FInputModeGameAndUI InputMode;
+    InputMode.SetWidgetToFocus(
+        ActiveStageIntroWidget->TakeWidget()
+    );
+    InputMode.SetHideCursorDuringCapture(false);
+    InputMode.SetLockMouseToViewportBehavior(
+        EMouseLockMode::LockAlways
+    );
+
+    PlayerController->SetInputMode(InputMode);
+    PlayerController->bShowMouseCursor = true;
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] StageIntro started | Row: %s",
+        *IntroRowName.ToString()
+    );
+}
+
+void USFInGameHUDWidget::HandleStageIntroDeactivated()
+{
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
+        ActiveStageIntroWidget->RemoveFromParent();
+    }
+
+    ActiveStageIntroWidget = nullptr;
+
+    SetVisibility(VisibilityBeforeStageIntro);
+
+    if (!bWasGamePausedBeforeStageIntro)
+    {
+        UGameplayStatics::SetGamePaused(this, false);
+    }
+
+    bWasGamePausedBeforeStageIntro = false;
+
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (IsValid(PlayerController))
+    {
+        FInputModeGameAndUI InputMode;
+        InputMode.SetHideCursorDuringCapture(false);
+        InputMode.SetLockMouseToViewportBehavior(
+            EMouseLockMode::LockAlways
+        );
+
+        PlayerController->SetInputMode(InputMode);
+        PlayerController->bShowMouseCursor = true;
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Stage intro finished."
+    );
+}
+
+bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
+{
+    if (!IsValid(ProductionBuildingPanel))
+    {
+        return false;
+    }
+
+    return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
 }

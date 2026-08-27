@@ -186,7 +186,7 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 	}
 }
 
-void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float InAcceptanceRadius)
+void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float InAcceptanceRadius, bool bInThrottle)
 {
 	if (!GetPawn()) return;
 
@@ -197,6 +197,15 @@ void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float I
 
 	const float Now = GetWorld()->GetTimeSeconds();
 	if (bSameSpot && (Now - LastRequestTime) < MinRequestInterval) return;
+
+	// 목표가 조금씩 계속 움직이는 경로(공격 슬롯 추적)는 위치가 달라졌다는
+	// 이유만으로 매번 재요청이 나간다. 그러면 DetourCrowd 에이전트가 그때마다
+	// 리셋되어 유닛이 가속을 못 하고 제자리에서 비비게 된다.
+	// 이 경로만 시간으로도 억제한다.
+	//
+	// ForceRepath / ClearMoveRequest 가 LastRequestTime 을 되감으므로
+	// 플레이어 명령은 이 억제에 걸리지 않는다.
+	if (bInThrottle && (Now - LastRequestTime) < SlotRequestInterval) return;
 
 	LastGoalLocation = InLocation;
 	LastGoalActor = nullptr;

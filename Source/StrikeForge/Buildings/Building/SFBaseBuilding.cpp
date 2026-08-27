@@ -1079,6 +1079,10 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
 		return false;
 	}
+	
+	const FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
+	SetActorLocation(WorldCenterVector);
+	
 	return true;
 }
 #pragma endregion 

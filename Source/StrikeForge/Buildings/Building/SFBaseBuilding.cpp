@@ -202,7 +202,6 @@ void ASFBaseBuilding::ApplySpawnMode()
 					Error,
 					"[%s] 초기 티어 활성화 실패",
 					*GetName());
-				
 				Destroy();
 				return;
 			}

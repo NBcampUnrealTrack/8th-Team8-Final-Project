@@ -323,7 +323,12 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 			return false;
 		}
 	}
-
+	
+	// 완료하면 destory한다
+	for (ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		Anchor->Destroy();
+	}
 	return true;
 }
 

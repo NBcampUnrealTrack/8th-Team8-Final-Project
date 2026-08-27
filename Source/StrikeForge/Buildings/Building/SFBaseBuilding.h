@@ -130,6 +130,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Building|Definition")
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
+	FORCEINLINE bool IsTierActivated() const { return bIsTierActivated; }
+	
 	// setter
 	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")
 	FORCEINLINE void SetSpawnMode(ESFBuildingSpawnMode InSpawnType) { SpawnMode = InSpawnType; }

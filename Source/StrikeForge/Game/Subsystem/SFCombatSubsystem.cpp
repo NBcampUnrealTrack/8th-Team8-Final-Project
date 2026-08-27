@@ -1,6 +1,7 @@
 ﻿#include "SFCombatSubsystem.h"
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Units/Lane/LanePath.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
 
@@ -131,6 +132,113 @@ void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
 			It.RemoveCurrent();
 		}
 	}
+}
+
+// ─────────────────────────────────────────────────────────
+// 진격로 코리도
+//
+// 라인은 레벨에 놓인 정적 액터다. 개수가 한 자릿수라 선형 탐색으로 충분하다.
+//
+// 판정의 기본값은 전부 "제한 없음" 쪽이다. 라인을 아직 배치하지 않은 레벨에서
+// 유닛이 전부 굳거나 건물을 어디에도 못 짓는 사태가 나면, 원인이 코리도라는
+// 것을 알아채기까지 한참 걸린다. 없으면 없는 대로 예전처럼 동작해야 한다.
+// ─────────────────────────────────────────────────────────
+void USFCombatSubsystem::RegisterLane(ALanePath* InLane)
+{
+	if (!IsValid(InLane)) return;
+
+	Lanes.AddUnique(TWeakObjectPtr<ALanePath>(InLane));
+
+	// 라인이 생겼으니 "없다" 경고를 다시 낼 수 있게 되돌린다.
+	bNoLaneReported = false;
+
+	SF_LOG(Log, "[Lane] %s 등록 (팀 %d, 반폭 %.0f)",
+		*InLane->GetName(), InLane->GetTeamIndex(), InLane->GetLaneHalfWidth());
+}
+
+void USFCombatSubsystem::UnregisterLane(ALanePath* InLane)
+{
+	if (!InLane) return;
+
+	// 무효화된 약참조도 이 기회에 같이 걷어낸다.
+	Lanes.RemoveAllSwap([InLane](const TWeakObjectPtr<ALanePath>& InWeak)
+	{
+		return !InWeak.IsValid() || InWeak.Get() == InLane;
+	});
+}
+
+bool USFCombatSubsystem::HasAnyLane() const
+{
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		if (Weak.IsValid()) return true;
+	}
+
+	// 조용히 false 를 돌려주면 "유닛이 안 움직인다" 나 "건물이 안 지어진다" 의
+	// 원인을 추적할 수가 없다. 한 번은 반드시 알린다.
+	if (!bNoLaneReported)
+	{
+		bNoLaneReported = true;
+
+		SF_LOG(Warning,
+			"[Lane] 배치된 ALanePath 가 없어 코리도 제한(길 밖 추격 금지 / 건물 배치 제한)이 "
+			"꺼진 상태로 동작합니다. 흙길 위에 LanePath 를 배치하고 LaneHalfWidth 를 맞추세요.");
+	}
+
+	return false;
+}
+
+float USFCombatSubsystem::GetDistanceOutsideLane(const FVector& InLocation) const
+{
+	float Best = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		const ALanePath* Lane = Weak.Get();
+		if (!IsValid(Lane)) continue;
+
+		// 갈래길에서는 어느 한 라인 안이기만 하면 안으로 친다.
+		// 0 이 나온 시점에 더 볼 이유가 없다.
+		const float Outside = Lane->GetDistanceOutsideLane(InLocation);
+
+		if (Outside <= 0.f) return 0.f;
+
+		Best = FMath::Min(Best, Outside);
+	}
+
+	// 라인이 하나도 없다 = 제한 없음 = 어디에 있든 "안"
+	return (Best == TNumericLimits<float>::Max()) ? 0.f : Best;
+}
+
+bool USFCombatSubsystem::IsInsideAnyLane(const FVector& InLocation) const
+{
+	return GetDistanceOutsideLane(InLocation) <= 0.f;
+}
+
+ALanePath* USFCombatSubsystem::FindNearestLane(const FVector& InLocation, int32 InTeamIndex) const
+{
+	ALanePath* Best = nullptr;
+	float BestDist = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<ALanePath>& Weak : Lanes)
+	{
+		ALanePath* Lane = Weak.Get();
+		if (!IsValid(Lane)) continue;
+
+		if (!Lane->IsUsableByTeam(InTeamIndex)) continue;
+
+		// 코리도 중심선까지의 수평 거리로 고른다. 이미 어느 라인 안에 서 있으면
+		// 그 라인이 0 으로 나와 자연스럽게 선택된다.
+		const float Dist = FVector::Dist2D(InLocation, Lane->GetClosestLanePoint(InLocation));
+
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best = Lane;
+		}
+	}
+
+	return Best;
 }
 
 // ─────────────────────────────────────────────────────────

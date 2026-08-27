@@ -392,6 +392,42 @@ protected:
 	/** 교전 대상이 없을 때의 행동 — 라인 전진 또는 적 핵심 방향으로 */
 	void Advance(float DeltaSeconds);
 
+	// ── 진격로 코리도 ───────────────────────────────────
+
+	/**
+	 * 코리도 제한이 지금 이 유닛에 걸리는가.
+	 *
+	 * BP 스위치(bRestrictAutoChaseToLane) + 콘솔(sf.LaneRestrict) + 레벨에
+	 * 라인이 배치돼 있는지를 모두 본다. 셋 중 하나라도 아니면 제한이 없다.
+	 */
+	bool IsLaneRestrictionActive() const;
+
+	/**
+	 * 이 대상을 자동으로 쫓는 것이 코리도 제한에 걸리는가.
+	 *
+	 * 걸리는 조건은 "코리도 밖 + 사거리 밖 + 건물 아님" 셋이 모두 참일 때뿐이다.
+	 * 사거리 안이면 이동 없이 때리기만 하면 되므로 막을 이유가 없다.
+	 */
+	bool IsChaseBlockedByLane(const AActor* InTarget) const;
+
+	/**
+	 * 이 유닛이 탈 라인. AssignedLane 이 비어 있으면 가장 가까운 것을 찾아 넣는다.
+	 *
+	 * 스포너가 SetAssignedLane 을 부르지 않아도 동작하게 하기 위한 경로다.
+	 * 한 번 정해지면 계속 그 라인을 쓴다.
+	 */
+	ALanePath* ResolveLane();
+
+	/**
+	 * 코리도를 따라 한 걸음 전진하거나, 벗어나 있으면 코리도로 돌아간다.
+	 *
+	 * @param InGoalLocation 진격 목표(적 핵심 건물 등)의 위치. 라인을 어느 쪽으로
+	 *                       탈지 이것으로 정한다.
+	 * @return 이동 요청을 냈으면 true. false 면 목표가 이미 코앞이거나 라인을 쓸
+	 *         수 없다는 뜻이고, 호출부(Advance)는 목표로 직접 향한다.
+	 */
+	bool AdvanceAlongLane(ALanePath* InLane, AUnitAIController* InAI, const FVector& InGoalLocation);
+
 	void SetCombatState(EUnitCombatState InNewState);
 
 	void FaceTarget(float DeltaSeconds);
@@ -767,6 +803,71 @@ private:
 
 #pragma endregion
 
+#pragma region Lane Corridor
+
+	// 전투를 길(ALanePath 의 코리도) 위에 붙들어 두기 위한 값들이다.
+	//
+	// 최단경로만 보면 유닛은 길을 벗어나 잔디를 가로지른다. 지형이 그렇게
+	// 생겼으니 당연한 결과이고, NavMesh 비용을 만져도 근본이 바뀌지 않는다 —
+	// 길 밖에 적이 서 있으면 결국 그리로 간다.
+	//
+	// 그래서 힘이 아니라 목적지를 막는다. 코리도 밖 적을 자동 탐색 후보에서
+	// 빼고, 진격은 스플라인을 따라가게 한다. 조향(SteerTowardSlot)에는 손대지
+	// 않는다 — 거기에 "길 안으로 미는 힘" 을 더하면 경계에서 추격력과 정확히
+	// 반대가 되어 합력이 0 이 된다. 분리력에서 이미 겪은 그 문제다.
+
+	/**
+	 * 코리도 밖 적을 자동으로 쫓지 않는다. 기본은 켬.
+	 *
+	 * "이동" 만 막고 "공격" 은 막지 않는다. 사거리 안에 들어온 적은 길 밖에
+	 * 있어도 평소대로 때린다 — 길 가장자리 교전이 한쪽만 일방적으로 맞는
+	 * 그림이 되지 않게 하기 위해서다. 제자리 고수(H)와 같은 규칙이다.
+	 *
+	 * 건물은 이 제한에서 빠진다. 적 핵심 건물이 길 밖에 있으면 진격 자체가
+	 * 멈춰버리기 때문이다.
+	 *
+	 * 플레이어 명령(이동·공격 이동·대상 지정)은 전부 이 제한을 통과한다.
+	 * 길 밖에서 싸우고 싶으면 직접 찍으면 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true))
+	uint8 bRestrictAutoChaseToLane : 1;
+
+	/**
+	 * 자동 진격 시 코리도를 따라갈 것인가. 기본은 켬.
+	 *
+	 * 끄면 예전처럼 적 핵심 건물을 향해 NavMesh 최단경로로 간다.
+	 * 그 경로가 잔디를 가로지르는 것이 원래 문제였다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true))
+	uint8 bFollowLaneWhileAdvancing : 1;
+
+	/**
+	 * 코리도를 벗어났다고 볼 여유 거리(cm).
+	 *
+	 * 이탈 판정과 복귀 완료 판정을 다른 값으로 둔다 — 벗어남은 반폭 + 이 값을
+	 * 넘을 때, 복귀 완료는 반폭 안으로 들어왔을 때다.
+	 *
+	 * 같은 값 하나로 판정하면 경계에서 "이탈 → 복귀 → 진격 → 이탈" 을 반복하며
+	 * 그 자리에서 덜컥거린다. 교전 사거리에 RangeHysteresis 를 둔 것과 같은 이유다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float LaneExitTolerance = 120.f;
+
+	/**
+	 * 코리도를 따라갈 때 몇 cm 앞을 보고 갈 것인가.
+	 *
+	 * 스플라인 위 "내 위치의 조금 앞" 을 매번 다시 계산해 목표로 삼는다.
+	 * 웨이포인트를 하나씩 소비하는 방식과 달리 진행도가 어긋날 일이 없고,
+	 * 한 지점에 못 닿아 굳는 상태도 생기지 않는다.
+	 *
+	 * 짧게 잡으면 길을 정확히 따라가지만 코너에서 자주 방향을 바꿔 어색하고,
+	 * 길게 잡으면 부드러운 대신 코너를 가로질러 잔디를 밟는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lane", meta = (AllowPrivateAccess = true, ClampMin = "100.0"))
+	float LaneLookAhead = 600.f;
+
+#pragma endregion
+
 #pragma region State
 
 	/**
@@ -986,4 +1087,24 @@ private:
 
 	/** 근접 조향의 현재 방향. 매 틱 목표 방향으로 보간해서 흔들림을 줄인다 */
 	FVector SmoothedSteerDirection = FVector::ZeroVector;
+
+	/**
+	 * 코리도를 벗어난 상태인가.
+	 *
+	 * LaneExitTolerance 를 넘어야 켜지고, 코리도 안(반폭 이내)으로 들어와야 꺼진다.
+	 * 경계에서의 덜컥거림을 막는 히스테리시스다.
+	 */
+	uint8 bOffLane : 1;
+
+	/**
+	 * 코리도를 따라가는 방향. +1 이면 알파 증가(스플라인 끝 쪽), -1 이면 감소.
+	 *
+	 * 진격 목표(적 핵심 건물)가 스플라인의 어느 끝에 가까운지로 정한다.
+	 * 팀 번호를 보지 않으므로 진영 분기가 아니다 — 같은 라인을 양쪽 팀이
+	 * 서로 반대 방향으로 타고 올라온다.
+	 */
+	int32 LaneAdvanceDirection = 1;
+
+	/** "코리도로 복귀한다" 로그를 한 번만 찍기 위한 플래그 */
+	uint8 bOffLaneReported : 1;
 };

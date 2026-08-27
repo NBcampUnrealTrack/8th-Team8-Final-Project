@@ -6,6 +6,7 @@
 #include "SFCombatSubsystem.generated.h"
 
 class UCombatTargetComponent;
+class ALanePath;
 
 /**
  * 대상 하나를 둘러싸는 공격 슬롯 링.
@@ -79,6 +80,45 @@ public:
 	// ── 등록 ────────────────────────────────────────────
 	void RegisterTarget(UCombatTargetComponent* InTarget);
 	void UnregisterTarget(UCombatTargetComponent* InTarget);
+
+	// ── 진격로 코리도 ───────────────────────────────────
+	//
+	// ALanePath 가 BeginPlay 에서 스스로 등록한다. 전투 대상과 같은 방식이다.
+	//
+	// 코리도는 "전투가 벌어져야 하는 길" 을 정의하고, 두 곳에서 쓰인다.
+	//   AUnitBase                             자동 전투가 길 밖으로 흘러나가지 않게
+	//   USFUnitSpawnLibrary::IsBuildableLocation  길 위에 건물을 못 세우게
+	//
+	// 등록된 라인이 하나도 없으면 두 제한 모두 꺼진다. 호출부는 HasAnyLane 으로
+	// 먼저 확인한다 — 코리도를 모르는 채로 유닛을 묶으면 전부 그 자리에 굳고,
+	// 건물은 어디에도 못 짓게 된다.
+
+	void RegisterLane(ALanePath* InLane);
+	void UnregisterLane(ALanePath* InLane);
+
+	/** 레벨에 진격로가 하나라도 배치돼 있는가. 코리도 제한의 on/off 스위치다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	bool HasAnyLane() const;
+
+	/**
+	 * 이 지점이 어느 코리도 밖으로 얼마나 벗어났는가(cm). 안이면 0.
+	 *
+	 * 라인이 여럿이면 "가장 가까운 라인" 기준이다. 갈래길에서는 어느 한
+	 * 라인 안이기만 하면 안으로 친다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	float GetDistanceOutsideLane(const FVector& InLocation) const;
+
+	/** 라인이 없으면 true(제한 없음)를 돌려준다. 호출부가 따로 분기하지 않아도 되게 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	bool IsInsideAnyLane(const FVector& InLocation) const;
+
+	/**
+	 * 이 팀이 쓸 수 있는 라인 중 가장 가까운 것.
+	 * 스포너가 SetAssignedLane 을 부르지 않았을 때 유닛이 스스로 찾는 경로다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	ALanePath* FindNearestLane(const FVector& InLocation, int32 InTeamIndex) const;
 
 	// ── 질의 ────────────────────────────────────────────
 	/**
@@ -170,6 +210,17 @@ private:
 	/** 팀 인덱스별 버킷. 약참조라 파괴된 컴포넌트는 자동으로 무효화된다 */
 	UPROPERTY(Transient)
 	TMap<int32, FSFTargetBucket> TeamBuckets;
+
+	/**
+	 * 배치된 진격로. 약참조만 담으므로 리플렉션에 올리지 않는다.
+	 *
+	 * 레벨에 놓인 정적 액터라 개수가 한 자릿수다. 매번 훑어도 부담이 없어
+	 * 공간 분할 없이 선형 탐색으로 둔다.
+	 */
+	TArray<TWeakObjectPtr<ALanePath>> Lanes;
+
+	/** "라인이 없어 코리도 제한이 꺼졌다" 를 한 번만 알리기 위한 플래그 */
+	mutable bool bNoLaneReported = false;
 
 	/** 유효 + 생존 + 소유 액터 유효 여부를 한 번에 판정 */
 	static bool ResolveTarget(const TWeakObjectPtr<UCombatTargetComponent>& InWeak, AActor*& OutActor);

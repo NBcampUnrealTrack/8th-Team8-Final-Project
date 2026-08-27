@@ -36,6 +36,25 @@ static TAutoConsoleVariable<int32> CVarDrawCombatDebug(
 	TEXT("전투 AI 디버그 표시 (0=off, 1=on). 유닛별 설정과 OR 로 동작한다."),
 	ECVF_Cheat);
 
+/**
+ * 진격로 코리도 제한 전역 스위치.
+ *
+ * 켜져 있으면 유닛은 스스로 길 밖으로 나가지 않는다 — 코리도 밖 적을 쫓지 않고,
+ * 진격은 스플라인을 따라간다. 플레이어 명령은 언제나 이 제한을 통과한다.
+ *
+ * 끄고 켜며 A/B 를 봐야 "길에서 싸우는가" 를 판정할 수 있으므로 콘솔로 뺀다.
+ * BP 의 bRestrictAutoChaseToLane 과 AND 로 동작한다 — 여기서 끄면 전부 꺼지고,
+ * 켜도 BP 에서 끈 유닛은 그대로 자유롭다.
+ *
+ *   sf.LaneRestrict 1   길 밖으로 안 나간다 (기본)
+ *   sf.LaneRestrict 0   예전 동작 — 최단경로로 잔디를 가로지른다
+ */
+static TAutoConsoleVariable<int32> CVarLaneRestrict(
+	TEXT("sf.LaneRestrict"),
+	1,
+	TEXT("진격로 코리도 제한 (0=off, 1=on). BP 의 bRestrictAutoChaseToLane 과 AND."),
+	ECVF_Cheat);
+
 AUnitBase::AUnitBase()
 	: bRequireLineOfSight(true)
 	, bDrawCombatDebug(false)
@@ -56,6 +75,10 @@ AUnitBase::AUnitBase()
 	, bHoldLocationSet(false)
 	, bReturningToHold(false)
 	, bHoldReported(false)
+	, bRestrictAutoChaseToLane(true)
+	, bFollowLaneWhileAdvancing(true)
+	, bOffLane(false)
+	, bOffLaneReported(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -1179,10 +1202,27 @@ AActor* AUnitBase::FindBestTarget()
 	float BestScore = TNumericLimits<float>::Max();
 	int32 LosChecksLeft = MaxLineOfSightChecks;
 
+	// 코리도 제한 여부는 루프 밖에서 한 번만 확인한다.
+	// 후보마다 서브시스템을 뒤지고 콘솔 변수를 읽을 이유가 없다.
+	const bool bLaneGate = IsLaneRestrictionActive();
+
 	for (AActor* Candidate : Candidates)
 	{
 		const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(Candidate);
 		if (!IsValid(Comp)) continue;
+
+		// 코리도 밖 적은 후보에서 뺀다 — 쫓아 나가지 않기 위해서다.
+		//
+		// 점수를 불리는 방식(BlockedTargetPenalty 처럼)이 아니라 아예 제외한다.
+		// 페널티는 "다른 후보가 있을 때만" 효과가 있어서, 길 밖에 적이 하나만
+		// 서 있으면 결국 그리로 나간다. 그게 막으려던 상황 그 자체다.
+		//
+		// 사거리 안이거나 건물이거나 플레이어가 개입한 경우는 통과한다.
+		// 판단은 전부 IsChaseBlockedByLane 안에 있다.
+		if (bLaneGate && IsChaseBlockedByLane(Candidate))
+		{
+			continue;
+		}
 
 		float Score = FVector::Dist2D(Origin, Candidate->GetActorLocation());
 
@@ -1300,6 +1340,165 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 // ─────────────────────────────────────────────────────────
 // 전진 — 교전 대상이 없을 때
 // ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// 진격로 코리도
+//
+// 유닛이 스스로 길 밖으로 나가지 않게 한다. 막는 지점은 "목적지" 다.
+//
+// 조향(SteerTowardSlot)에 "길 안으로 미는 힘" 을 더하는 방법도 있지만, 그건
+// 코리도 경계에서 추격력과 정확히 반대 방향이 되어 합력이 0 이 된다 — 분리력을
+// 정반대로 밀었을 때 겪은 정체와 같은 구조다. 그래서 힘은 손대지 않고,
+// 애초에 길 밖을 목적지로 삼지 않게 한다.
+// ─────────────────────────────────────────────────────────
+bool AUnitBase::IsLaneRestrictionActive() const
+{
+	if (!bRestrictAutoChaseToLane) return false;
+
+	if (CVarLaneRestrict.GetValueOnGameThread() == 0) return false;
+
+	// 라인이 배치되지 않은 레벨에서는 제한이 없다.
+	// 코리도를 모르는 채로 묶으면 유닛이 전부 그 자리에 굳는다.
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+
+	return IsValid(Combat) && Combat->HasAnyLane();
+}
+
+bool AUnitBase::IsChaseBlockedByLane(const AActor* InTarget) const
+{
+	// 제한이 켜져 있는지는 호출부가 미리 확인한다.
+	// 후보를 훑는 루프 안에서 매번 서브시스템을 뒤지지 않기 위해서다.
+	if (!IsValid(InTarget)) return false;
+
+	// 플레이어가 개입한 경우는 전부 통과시킨다.
+	// 길 밖에서 싸우고 싶으면 직접 찍으면 된다는 것이 이 제한의 탈출구다.
+	if (bHasCommandedDestination || ForcedTarget) return false;
+
+	// 건물은 예외. 적 핵심 건물이 길 밖에 서 있으면 진격 자체가 멈춘다.
+	if (IsBuildingTarget(InTarget)) return false;
+
+	// 사거리 안이면 막지 않는다.
+	//
+	// 이 제한은 "이동" 을 막는 것이지 "공격" 을 막는 것이 아니다. 길 가장자리에서
+	// 반 발짝 벗어난 적을 못 때리게 하면, 상대는 때리는데 이쪽은 가만히 서서
+	// 맞기만 하는 그림이 된다. 제자리 고수(H)와 같은 규칙이다.
+	//
+	// 교전 유지 문턱과 같은 값을 쓴다. 여기만 좁게 잡으면 붙어 싸우던 대상이
+	// 사거리 경계에서 후보에서 빠졌다 들어왔다 하며 타겟이 깜빡인다.
+	if (GetDistanceToTargetEdge(InTarget) <= GetBaseRange(InTarget) + RangeHysteresis) return false;
+
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!IsValid(Combat)) return false;
+
+	return !Combat->IsInsideAnyLane(InTarget->GetActorLocation());
+}
+
+ALanePath* AUnitBase::ResolveLane()
+{
+	if (IsValid(AssignedLane)) return AssignedLane;
+
+	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!IsValid(Combat)) return nullptr;
+
+	// 스포너가 SetAssignedLane 을 부르지 않아도 동작하게 한다.
+	// 한 번 정해지면 계속 그 라인을 쓴다 — 매번 최근접을 다시 고르면
+	// 갈래길 근처에서 두 라인을 오가며 진행 방향이 뒤집힌다.
+	if (ALanePath* Nearest = Combat->FindNearestLane(GetActorLocation(), GetTeamIndex()))
+	{
+		SetAssignedLane(Nearest);
+
+		SF_LOG(Log, "[Unit] %s : 진격로 %s 를 자동으로 배정받았습니다.",
+			*GetName(), *Nearest->GetName());
+	}
+
+	return AssignedLane;
+}
+
+bool AUnitBase::AdvanceAlongLane(ALanePath* InLane, AUnitAIController* InAI, const FVector& InGoalLocation)
+{
+	if (!IsValid(InLane) || !InAI) return false;
+
+	const float Length = InLane->GetSplineLength();
+	if (Length <= KINDA_SMALL_NUMBER) return false;
+
+	const FVector MyLocation = GetActorLocation();
+
+	// ── 이탈 판정 ───────────────────────────────────────
+	//
+	// 벗어남과 복귀 완료를 다른 문턱으로 잰다. 하나로 두면 경계에서
+	// "이탈 → 복귀 → 진격 → 이탈" 을 반복하며 그 자리에서 덜컥거린다.
+	const float Outside = InLane->GetDistanceOutsideLane(MyLocation);
+
+	if (Outside > LaneExitTolerance)
+	{
+		bOffLane = true;
+	}
+	else if (Outside <= 0.f)
+	{
+		bOffLane = false;
+	}
+
+	if (bOffLane)
+	{
+		// 코리도 가장자리가 아니라 중심선으로 보낸다.
+		// 가장자리로 보내면 도착하자마자 다시 경계에 서게 된다.
+		if (!bOffLaneReported)
+		{
+			bOffLaneReported = true;
+
+			SF_LOG(Log, "[Unit] %s : 진격로에서 %.0fcm 벗어나 코리도로 복귀합니다.",
+				*GetName(), Outside);
+		}
+
+		InAI->RequestMoveToLocation(InLane->GetClosestLanePoint(MyLocation), MoveAcceptanceRadius);
+		return true;
+	}
+
+	bOffLaneReported = false;
+
+	// ── 진행 방향 ───────────────────────────────────────
+	//
+	// 목표가 스플라인의 어느 쪽에 있는지로 정한다. 팀 번호를 보지 않으므로
+	// 진영 분기가 아니다 — 같은 라인을 양쪽 팀이 서로 반대로 타고 올라온다.
+	LaneAlpha = InLane->GetAlphaAtLocation(MyLocation);
+
+	const float GoalAlpha = InLane->GetAlphaAtLocation(InGoalLocation);
+
+	LaneAdvanceDirection = (GoalAlpha >= LaneAlpha) ? 1 : -1;
+
+	// 목표가 이미 코앞이면 라인을 더 따라갈 이유가 없다.
+	// false 를 돌려 호출부가 목표로 직접 향하게 한다 — 넥서스가 라인 끝에서
+	// 조금 비켜 서 있는 경우가 여기 해당하고, 이 탈출구가 없으면 유닛이
+	// 라인 끝에 도착한 채 목표를 코앞에 두고 굳는다.
+	if (FMath::Abs(GoalAlpha - LaneAlpha) * Length <= LaneLookAhead)
+	{
+		return false;
+	}
+
+	// ── 전방 한 걸음 ────────────────────────────────────
+	//
+	// 진행도를 누적하지 않고 매번 현재 위치에서 다시 계산한다. 웨이포인트를
+	// 하나씩 소비하는 방식은 유닛이 그 지점에 못 닿으면 그대로 멈추지만,
+	// 이 방식에는 "도달해야 하는 지점" 이 없어서 굳을 상태 자체가 없다.
+	//
+	// 다만 목표를 매 틱 "내 앞 LaneLookAhead" 로 잡으면 목표가 유닛과 같이
+	// 움직여서 MoveTo 재요청이 끝없이 나간다. DetourCrowd 는 요청마다 에이전트를
+	// 리셋하므로 그대로 두면 긴 직선 구간에서 계속 덜컥거린다.
+	//
+	// 그래서 목표 알파를 격자에 맞춰 끊는다. 유닛이 한 칸을 건너는 동안 목표가
+	// 한자리에 고정돼 있다가 다음 칸으로 한 번에 넘어간다 — 재요청이 칸당 한 번
+	// 으로 줄고, 위치에서 다시 계산한다는 성질은 그대로다.
+	const float Step = LaneLookAhead / Length;
+
+	const float Grid = (LaneAdvanceDirection > 0)
+		? FMath::CeilToFloat(LaneAlpha / Step + 0.5f) * Step
+		: FMath::FloorToFloat(LaneAlpha / Step - 0.5f) * Step;
+
+	const float TargetAlpha = FMath::Clamp(Grid, 0.f, 1.f);
+
+	InAI->RequestMoveToLocation(InLane->GetPointAtAlpha(TargetAlpha), MoveAcceptanceRadius);
+	return true;
+}
+
 void AUnitBase::Advance(float DeltaSeconds)
 {
 	AUnitAIController* AI = GetUnitAI();
@@ -1461,57 +1660,73 @@ void AUnitBase::Advance(float DeltaSeconds)
 		return;
 	}
 
-	// 라인이 지정돼 있으면 스플라인을 따라 단계적으로 전진한다.
-	// 라인은 "대략적인 진격로"일 뿐이고, 벽 회피는 NavMesh 가 맡는다.
-	if (AssignedLane)
-	{
-		const FVector Waypoint = AssignedLane->GetPointAtAlpha(LaneAlpha);
-
-		if (FVector::Dist2D(GetActorLocation(), Waypoint) < AssignedLane->GetLaneHalfWidth())
-		{
-			LaneAlpha = FMath::Min(1.f, LaneAlpha + 0.1f);
-		}
-
-		AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
-		return;
-	}
-
+	// ── 진격 목표를 먼저 정한다 ─────────────────────────
+	//
+	// 예전에는 라인 추종이 이 위에 따로 있었지만, 라인을 어느 쪽으로 탈지는
+	// 목표가 어디 있느냐로 정해진다. 순서를 뒤집어 목표를 먼저 찾고, 그 목표를
+	// 향해 라인을 타는 구조로 바꿨다. 진행도를 0 에서 1 로 무조건 올리던
+	// 예전 방식은 같은 라인을 반대 방향으로 타야 하는 팀에서 동작하지 않는다.
+	//
 	// 주의: 여기서 멈춰 세우면(ClearMoveRequest) 유닛이 영구히 굳는다.
 	// 반드시 갈 곳을 찾아내야 한다.
+	AActor* Goal = nullptr;
+
 	if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
 	{
 		const FVector Origin = GetActorLocation();
 		const int32 MyTeam = GetTeamIndex();
 
 		// 1순위 — 적 핵심 건물 (거리 제한 없음)
-		if (AActor* Core = Combat->FindNearestHostile(Origin, MyTeam, ETargetType::CoreBuilding, 0.f))
+		Goal = Combat->FindNearestHostile(Origin, MyTeam, ETargetType::CoreBuilding, 0.f);
+
+		if (Goal)
 		{
 			if (!bAdvanceTargetReported)
 			{
 				bAdvanceTargetReported = true;
 				SF_LOG(Warning, "[Unit] %s : 진격 목표 = %s (거리 %.0f)",
-					*GetName(), *Core->GetName(), FVector::Dist2D(Origin, Core->GetActorLocation()));
+					*GetName(), *Goal->GetName(), FVector::Dist2D(Origin, Goal->GetActorLocation()));
 			}
-
-			AI->RequestMoveToActor(Core, MoveAcceptanceRadius);
-			bNoTargetReported = false;
-			return;
 		}
-
-		// 2순위 — 핵심 건물이 없는 맵(테스트 레벨 등)에서는
-		//         교전 반경 밖이라도 가장 가까운 적을 향해 전진한다.
-		if (AActor* Nearest = Combat->FindNearestHostileAny(Origin, MyTeam))
+		else
 		{
-			if (!bAdvanceTargetReported)
+			// 2순위 — 핵심 건물이 없는 맵(테스트 레벨 등)에서는
+			//         교전 반경 밖이라도 가장 가까운 적을 향해 전진한다.
+			Goal = Combat->FindNearestHostileAny(Origin, MyTeam);
+
+			if (Goal && !bAdvanceTargetReported)
 			{
 				bAdvanceTargetReported = true;
-				SF_LOG(Warning, "[Unit] %s : 핵심 건물 없음. 대체 목표 = %s", *GetName(), *Nearest->GetName());
+				SF_LOG(Warning, "[Unit] %s : 핵심 건물 없음. 대체 목표 = %s", *GetName(), *Goal->GetName());
 			}
-
-			AI->RequestMoveToActor(Nearest, MoveAcceptanceRadius);
-			bNoTargetReported = false;
-			return;
 		}
+	}
+
+	if (Goal)
+	{
+		// ── 코리도를 따라 간다 ──────────────────────────
+		//
+		// 목표로 곧장 향하면 NavMesh 가 최단경로를 낸다. 흙길이 굽어 있으면
+		// 그 최단경로는 잔디를 가로지르고, 전투가 길 밖에서 벌어진다.
+		// 라인을 타면 목표까지 조금 돌아가는 대신 길 위에 머문다.
+		//
+		// 라인 끝에 닿았거나 목표가 이미 코앞이면 false 가 돌아온다.
+		// 그때는 아래로 내려가 목표로 직접 향한다.
+		if (bFollowLaneWhileAdvancing && IsLaneRestrictionActive())
+		{
+			if (ALanePath* Lane = ResolveLane())
+			{
+				if (AdvanceAlongLane(Lane, AI, Goal->GetActorLocation()))
+				{
+					bNoTargetReported = false;
+					return;
+				}
+			}
+		}
+
+		AI->RequestMoveToActor(Goal, MoveAcceptanceRadius);
+		bNoTargetReported = false;
+		return;
 	}
 
 	// 여기까지 왔다면 맵에 살아있는 적대 대상이 하나도 없다.
@@ -1610,14 +1825,34 @@ void AUnitBase::DrawCombatDebug() const
 		}
 	}
 
+	// 코리도 안팎을 함께 표시한다.
+	//
+	// "왜 저 적을 안 쫓지" 의 답이 대부분 여기 있다. 밖으로 나온 상태에서
+	// 안 움직이면 복귀 중인 것이고, 안에 있는데 적을 무시하면 그 적이 밖이다.
+	// 라인을 배치하지 않았으면 '-' 로 나와 제한이 꺼져 있음을 알린다.
+	FString LaneText = TEXT("-");
+
+	if (const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
+	{
+		if (Combat->HasAnyLane())
+		{
+			const float Outside = Combat->GetDistanceOutsideLane(GetActorLocation());
+
+			LaneText = (Outside <= 0.f)
+				? FString(TEXT("안"))
+				: FString::Printf(TEXT("밖(%.0f)"), Outside);
+		}
+	}
+
 	const FString Info = FString::Printf(
-		TEXT("Team%d | %s | %s | 대상:%s | 거리:%.0f | 슬롯:%d | 속도:%.0f | HP:%.0f"),
+		TEXT("Team%d | %s | %s | 대상:%s | 거리:%.0f | 슬롯:%d | 레인:%s | 속도:%.0f | HP:%.0f"),
 		GetTeamIndex(),
 		StateText,
 		*RowText,
 		CurrentTarget ? *CurrentTarget->GetName() : (bNoTargetReported ? TEXT("적 전멸") : TEXT("없음")),
 		CurrentTarget ? GetDistanceToTargetEdge(CurrentTarget) : -1.f,
 		AttackSlotIndex,
+		*LaneText,
 		GetVelocity().Size2D(),
 		HealthComponent ? HealthComponent->GetCurrentHealth() : 0.f);
 

@@ -10,6 +10,7 @@
 #include "SFGameMode.generated.h"
 
 class ASFNexusBuilding;
+class ASFBuildingSpawnAnchor;
 
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
@@ -21,14 +22,6 @@ public:
 	
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	
-	UFUNCTION(BlueprintPure, Category = "SF|Team")
-	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
-protected:
-	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴
-	virtual void InitGameState() override;
-	virtual void BeginPlay() override;
-	
-public:
 	// 스테이지 초기화가 끝난 후 게임 시작
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool StartStage();
@@ -47,9 +40,12 @@ public:
 
 	// 전달받은 결과를 기준으로 스테이지 종료
 	bool FinishStage(ESFStageResult NewStageResult);
-
+	
+	// getter
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ASFGameState* GetSFGameState() const;
+	UFUNCTION(BlueprintPure, Category = "SF|Team")
+	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
 
 	// 26.08.18
 	// 데이터테이블 정보를 이용해 지정된 위치에 넥서스를 생성
@@ -58,7 +54,17 @@ public:
 	// 여러방면상 nexusbuilding이 생성과 동시에 팀인덱스 등록으로 생각하고있음
 	// UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
 	// ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
+protected:
+	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
+	virtual void InitGameState() override;
+	virtual void BeginPlay() override;
+	
+private:
+	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
+	bool SpawnStageBuildingsFromAnchors();
 
+	/** 하나의 Anchor를 실제 건물로 변환한다. */
+	bool SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor);
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;

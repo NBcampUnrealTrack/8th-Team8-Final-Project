@@ -1,4 +1,4 @@
-#include "SFInGameHUDWidget.h"
+﻿#include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
@@ -12,6 +12,10 @@
 
 #include "HUD/Production/SFProductionBuildingPanelWidget.h"
 #include "UI/ResultWidget.h"
+
+#include "HUD/Portrait/SFUnitPortraitActor.h"
+#include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -63,6 +67,24 @@ void USFInGameHUDWidget::NativeConstruct()
             "SFInGamePlayerController is invalid."
         );
         return;
+    }
+
+    // 추가분
+    UnitPortraitActor =
+        Cast<ASFUnitPortraitActor>(
+            UGameplayStatics::GetActorOfClass(
+                GetWorld(),
+                ASFUnitPortraitActor::StaticClass()
+            )
+        );
+
+    if (!IsValid(UnitPortraitActor))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "UnitPortraitActor was not found."
+        );
     }
 
     PlayerController->OnSelectInput.AddUniqueDynamic(
@@ -406,6 +428,7 @@ void USFInGameHUDWidget::ApplySelection(
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
+    RefreshSelectedPortrait();
 }
 
 void USFInGameHUDWidget::ApplySelectionUIData(
@@ -524,10 +547,65 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     ProductionBuildingPanel->HideProductionBuilding();
 }
 
+void USFInGameHUDWidget::RefreshSelectedPortrait()
+{
+    if (!IsValid(UnitPortraitActor))
+    {
+        return;
+    }
+
+    const bool bUses3DPortrait =
+        SelectedInfo.SelectableType == ESFSelectableType::Commander ||
+        SelectedInfo.SelectableType == ESFSelectableType::Unit;
+
+    if (!bUses3DPortrait)
+    {
+        UnitPortraitActor->ClearPortrait();
+        return;
+    }
+
+    ACharacter* SelectedCharacter =
+        Cast<ACharacter>(SelectedActor.Get());
+
+    if (!IsValid(SelectedCharacter))
+    {
+        UnitPortraitActor->ClearPortrait();
+        return;
+    }
+
+    USkeletalMeshComponent* SelectedMeshComponent =
+        SelectedCharacter->GetMesh();
+
+    if (!IsValid(SelectedMeshComponent))
+    {
+        UnitPortraitActor->ClearPortrait();
+        return;
+    }
+
+    USkeletalMesh* SelectedSkeletalMesh =
+        SelectedMeshComponent->GetSkeletalMeshAsset();
+
+    if (!IsValid(SelectedSkeletalMesh))
+    {
+        UnitPortraitActor->ClearPortrait();
+        return;
+    }
+
+    UnitPortraitActor->ApplyPortrait(
+        SelectedSkeletalMesh,
+        nullptr
+    );
+}
+
 void USFInGameHUDWidget::ClearSelection()
 {
 
     HideAllSelectionIndicators();
+
+    if (IsValid(UnitPortraitActor))
+    {
+        UnitPortraitActor->ClearPortrait();
+    }
 
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
@@ -1584,6 +1662,7 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
         ProductionBuildingPanel->HideProductionBuilding();
     }
 
+    RefreshSelectedPortrait();
     RefreshMultiSelectionPanel();
 
     SF_LOG(

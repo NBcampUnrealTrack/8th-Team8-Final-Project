@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "SFBuildingType.h"
 #include "Engine/DataAsset.h"
 #include "SFBuildingCatalog.generated.h"
 
@@ -20,7 +21,8 @@ public:
 	 * 현재는 동기 로딩을 사용한다.
 	 */
 	USFBuildingDefinition* FindDefinition(FName InBuildingId) const;
-
+	
+	USFBuildingDefinition* FindDefinitionByBuildingType(ESFBuildingType InBuildingType) const;
 	/** 맵에 배치되는 해당 종족의 넥서스 Definition. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Catalog|Nexus")
 	TSoftObjectPtr<USFBuildingDefinition> NexusDefinition;

@@ -281,7 +281,7 @@ int32 ASFGameState::GetMaximumPopulation(int32 TeamIndex) const
 	return Team ? Team->GetMaximumPopulation() : 0;
 }
 
-bool ASFGameState::SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog)
+bool ASFGameState::RegisterTeam(int32 TeamIndex, ESFRace InRace, USFBuildingCatalog* InBuildingCatalog)
 {
 	if (!IsValid(InBuildingCatalog))
 	{
@@ -306,7 +306,7 @@ bool ASFGameState::SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* I
 		return false;
 	}
 
-	return Team->SetBuildingCatalog(InBuildingCatalog);
+	return Team->InitializeTeamData(InRace, InBuildingCatalog);
 }
 
 USFBuildingCatalog* ASFGameState::GetTeamBuildingCatalog(int32 TeamIndex) const

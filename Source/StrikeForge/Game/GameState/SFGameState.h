@@ -87,8 +87,8 @@ public:
     int32 GetCurrentPopulation(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Population")
     int32 GetMaximumPopulation(int32 TeamIndex) const;
-    /* 지정한 팀에 종족별 건물 카탈로그를 설정한다. */
-    bool SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog);
+    /** TeamIndex에 Race와 BuildingCatalog를 등록한다. */
+    bool RegisterTeam(int32 TeamIndex, ESFRace InRace, USFBuildingCatalog* InBuildingCatalog);
     /* 지정한 팀의 건물 카탈로그를 반환한다. */
     UFUNCTION(BlueprintPure, Category = "SF|Building")
     USFBuildingCatalog* GetTeamBuildingCatalog(int32 TeamIndex) const;

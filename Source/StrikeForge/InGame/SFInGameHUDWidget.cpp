@@ -3,6 +3,7 @@
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
+#include "Units/Commander/SFCommander.h"
 
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
@@ -119,14 +120,14 @@ void USFInGameHUDWidget::NativeConstruct()
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->OnTierUpgradeRequested.RemoveDynamic(
-                this,
-                &USFInGameHUDWidget::HandleTierUpgradeRequested
-            );
+            this,
+            &USFInGameHUDWidget::HandleTierUpgradeRequested
+        );
 
         SelectionPanel->OnTierUpgradeRequested.AddUniqueDynamic(
-                this,
-                &USFInGameHUDWidget::HandleTierUpgradeRequested
-            );
+            this,
+            &USFInGameHUDWidget::HandleTierUpgradeRequested
+        );
 
         SF_LOG(
             Log,
@@ -204,9 +205,9 @@ void USFInGameHUDWidget::NativeDestruct()
     if (IsValid(SelectionPanel))
     {
         SelectionPanel->OnTierUpgradeRequested.RemoveDynamic(
-                this,
-                &USFInGameHUDWidget::HandleTierUpgradeRequested
-            );
+            this,
+            &USFInGameHUDWidget::HandleTierUpgradeRequested
+        );
     }
 
     if (IsValid(ActiveSettingsWidget))
@@ -382,7 +383,7 @@ void USFInGameHUDWidget::ApplySelection(
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
     );
 
-	ShowSelectionIndicator(NewSelectedActor); 
+    ShowSelectionIndicator(NewSelectedActor);
 
     SelectedActors.Reset();
     SelectedActors.Add(NewSelectedActor);
@@ -1369,7 +1370,7 @@ void USFInGameHUDWidget::PerformDragSelection(
 
         FoundActors.Add(Actor);
     }
-    
+
     FoundActors.Sort(
         [this](const AActor& Left, const AActor& Right)
         {
@@ -1647,6 +1648,16 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
     if (!IsValid(Actor))
     {
         return false;
+    }
+
+
+    const ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (IsValid(PlayerController) &&
+        Actor == PlayerController->GetMyCommander())
+    {
+        return true;
     }
 
     const UCombatTargetComponent* CombatTarget =

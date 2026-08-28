@@ -17,7 +17,7 @@ public class StrikeForge : ModuleRules
 			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore", "CommonUI",
+			"UMG", "Slate", "SlateCore", "CommonUI", "GameplayTags",
 
 			// effect
 			"Niagara",

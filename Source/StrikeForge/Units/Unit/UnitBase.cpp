@@ -6,6 +6,7 @@
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Units/Lane/LanePath.h"
 
 #include "AIController.h"
@@ -49,6 +50,59 @@ static TAutoConsoleVariable<int32> CVarDrawCombatDebug(
  *   sf.LaneRestrict 1   길 밖으로 안 나간다 (기본)
  *   sf.LaneRestrict 0   예전 동작 — 최단경로로 잔디를 가로지른다
  */
+/**
+ * 근접 조향 튜닝 오버라이드.
+ *
+ * 전부 기본값 -1 이고, -1 이면 BP 값을 그대로 쓴다.
+ * 즉 콘솔로 건드리지 않는 한 동작이 바뀌지 않는다.
+ *
+ * 조향 값이 유닛 BP 마다 흩어져 있어서, 느낌을 맞추려면 BP 를 열고 컴파일하고
+ * 다시 플레이해야 했다. 이 값들은 게임 중에 바꿔가며 즉시 확인할 수 있다.
+ * 값이 정해지면 BP 기본값에 옮겨 적고 콘솔은 다시 -1 로 둔다.
+ *
+ *   sf.Steer.SeekWeight        추격력 세기
+ *   sf.Steer.SeparationWeight  분리력 세기
+ *   sf.Steer.SeparationRadius  분리력이 미치는 거리(cm)
+ *   sf.Steer.DeflectionAngle   분리 방향을 틀어주는 각도(도)
+ *   sf.Steer.InterpSpeed       방향 보간 속도
+ *   sf.Steer.ActivationRange   조향을 쓰기 시작하는 거리(cm)
+ *   sf.Steer.WallProbe         지형 감지 거리(cm). 0 이면 지형 회피 없음
+ */
+static TAutoConsoleVariable<float> CVarSteerSeekWeight(
+	TEXT("sf.Steer.SeekWeight"), -1.f,
+	TEXT("근접 조향 추격력 세기. -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerSeparationWeight(
+	TEXT("sf.Steer.SeparationWeight"), -1.f,
+	TEXT("근접 조향 분리력 세기. -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerSeparationRadius(
+	TEXT("sf.Steer.SeparationRadius"), -1.f,
+	TEXT("분리력이 미치는 거리(cm). -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerDeflectionAngle(
+	TEXT("sf.Steer.DeflectionAngle"), -1.f,
+	TEXT("분리 방향을 틀어주는 각도(도). -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerInterpSpeed(
+	TEXT("sf.Steer.InterpSpeed"), -1.f,
+	TEXT("조향 방향 보간 속도. -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerActivationRange(
+	TEXT("sf.Steer.ActivationRange"), -1.f,
+	TEXT("근접 조향을 쓰기 시작하는 거리(cm). -1 이면 BP 값."), ECVF_Cheat);
+
+static TAutoConsoleVariable<float> CVarSteerWallProbe(
+	TEXT("sf.Steer.WallProbe"), -1.f,
+	TEXT("지형 감지 거리(cm). 0 이면 지형 회피 없음. -1 이면 BP 값."), ECVF_Cheat);
+
+/** 콘솔 오버라이드가 있으면 그 값을, 없으면(-1) BP 값을 돌려준다 */
+static float ResolveSteerTuning(const TAutoConsoleVariable<float>& InCVar, float InBlueprintValue)
+{
+	const float Override = InCVar.GetValueOnGameThread();
+	return (Override >= 0.f) ? Override : InBlueprintValue;
+}
+
 static TAutoConsoleVariable<int32> CVarLaneRestrict(
 	TEXT("sf.LaneRestrict"),
 	1,
@@ -69,6 +123,7 @@ AUnitBase::AUnitBase()
 	, bPopulationApplied(false)
 	, bAdvanceModeInjected(false)
 	, bBlockOtherUnits(false)
+	, bRetaliateWhenDamaged(true)
 	, bRequireLineOfSightForBuildings(false)
 	, bSightBlockedReported(false)
 	, bReturnToHoldLocation(false)
@@ -142,6 +197,10 @@ void AUnitBase::BeginPlay()
 	if (CombatTarget)
 	{
 		CombatTarget->OnTargetDestroyed.AddDynamic(this, &AUnitBase::HandleDeath);
+
+		// 피격 통지를 받아 반격한다.
+		// 이 구독이 없으면 사거리 밖 원거리 유닛에게 일방적으로 맞는다.
+		CombatTarget->OnCombatDamaged.AddDynamic(this, &AUnitBase::HandleDamaged);
 	}
 
 	// 생산 시점이 아니라 BeginPlay 에서 올린다.
@@ -338,6 +397,7 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	ReleaseAttackSlot();
+	RetaliateHoldRemaining = 0.f;
 	SetCombatState(EUnitCombatState::Dead);
 
 	// 인구 반환. EndPlay 가 아니라 여기서 하는 이유는
@@ -403,6 +463,89 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	{
 		Destroy();
 	}
+}
+
+// ─────────────────────────────────────────────────────────
+// 반격
+//
+// UCombatTargetComponent::OnCombatDamaged 에 연결된다.
+//
+// 예전에는 교전 반경(AggroRadius) 탐색만으로 대상을 정했다. 그래서 반경 밖에서
+// 쏘는 원거리 유닛에게는 일방적으로 맞고, 제자리 고수 중인 유닛은 아예
+// 무저항이었다. 맞은 사실 자체를 대상 선정의 입력으로 쓴다.
+//
+// 조건을 여러 겹 두는 이유는, 조건 없이 갈아타면 광역 피해나 난전에서
+// 매 타격마다 대상이 뒤바뀌어 아무것도 못 때리게 되기 때문이다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::HandleDamaged(UCombatTargetComponent* InTarget, float InDamage, AActor* InInstigator)
+{
+	if (!bRetaliateWhenDamaged) return;
+	if (CombatState == EUnitCombatState::Dead) return;
+
+	// 플레이어가 직접 찍은 대상은 무슨 일이 있어도 바꾸지 않는다.
+	if (ForcedTarget) return;
+
+	// 강제 이동 중에는 반격하지 않는다. 스타크래프트의 Move 와 같은 규칙이다.
+	// 공격 이동(A)은 여기를 통과해 반격한다.
+	if (bHasCommandedDestination && !bCommandIsAttackMove) return;
+
+	if (!IsValid(InInstigator) || InInstigator == this) return;
+
+	// 적대 진영이고 살아 있어야 한다.
+	// 중립이나 아군의 광역 피해에 반격하지 않게 하는 판정이기도 하다.
+	if (!IsTargetUsable(InInstigator)) return;
+
+	// 코리도 제한이 켜져 있으면 길 밖으로 끌려나가지 않는다.
+	// 사거리 안이거나 건물이면 IsChaseBlockedByLane 이 통과시킨다.
+	if (IsLaneRestrictionActive() && IsChaseBlockedByLane(InInstigator)) return;
+
+	// 이미 그 대상을 때리는 중이다. 유지 시간만 갱신한다.
+	if (CurrentTarget == InInstigator)
+	{
+		RetaliateHoldRemaining = RetaliateStickyDuration;
+		return;
+	}
+
+	// 대상이 없으면 무조건 받는다. 이게 가장 크게 비어 있던 부분이다.
+	bool bAccept = (CurrentTarget == nullptr);
+
+	if (!bAccept)
+	{
+		// 싸우는 중이면 가해자가 뚜렷하게 가까울 때만 갈아탄다.
+		const float ToCurrent = GetDistanceToTargetEdge(CurrentTarget);
+		const float ToAttacker = GetDistanceToTargetEdge(InInstigator);
+
+		bAccept = (ToAttacker < ToCurrent * RetaliateSwitchRatio);
+	}
+
+	if (!bAccept) return;
+
+	CurrentTarget = InInstigator;
+	RetaliateHoldRemaining = RetaliateStickyDuration;
+
+	// 다음 틱의 주기 재탐색이 이 결정을 덮지 않게 주기를 되감는다.
+	RetargetTimer = RetargetInterval;
+
+	// 새 대상이니 진단 플래그를 되돌린다.
+	bSightBlockedReported = false;
+	bRangeUnreachableReported = false;
+
+	if (AUnitAIController* AI = GetUnitAI())
+	{
+		AI->ForceRepath();
+	}
+
+#if ENABLE_DRAW_DEBUG
+	// 반격은 프레임 단위로 지나가는 사건이라 상태 문자열로는 안 보인다.
+	// 잠깐 남는 선으로 그려 확인할 수 있게 한다.
+	if (ShouldDrawDebug() && IsValid(GetWorld()))
+	{
+		DrawDebugLine(GetWorld(), GetActorLocation(), InInstigator->GetActorLocation(),
+			FColor::Red, false, 0.6f, 0, 5.f);
+	}
+#endif
+
+	SF_LOG(Verbose, "[Unit] %s : %s 에게 피격 — 반격 대상으로 전환", *GetName(), *InInstigator->GetName());
 }
 
 // ─────────────────────────────────────────────────────────
@@ -525,8 +668,9 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	bCommandIsAttackMove = false;
 	ForcedTarget = nullptr;
 
-	// 플레이어 명령은 목줄과 제자리 고수보다 우선한다.
+	// 플레이어 명령은 목줄·제자리 고수·반격 유지보다 우선한다.
 	bHoldGround = false;
+	RetaliateHoldRemaining = 0.f;
 	bReturningToHold = false;
 	bHoldReported = false;
 
@@ -552,6 +696,17 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	// 다음 진격 로그가 다시 찍히도록 초기화
 	bAdvanceTargetReported = false;
 	bNoTargetReported = false;
+
+	// 튜토리얼: "유닛을 움직여보세요" 를 여기서 만족시킨다.
+	//
+	// 여기가 맞는 자리인 이유는 위의 IsCommandableByPlayer 검사 때문이다.
+	// 이 지점에 도달했다는 건 플레이어가 실제로 명령을 내렸고 유닛이 그걸
+	// 받아들였다는 뜻이다. AI 의 Advance() 는 이 함수를 거치지 않는다.
+	//
+	// 행동형이라 false 를 넘긴다 — 앞 단계에서 이미 움직여 본 플레이어에게
+	// 이 단계가 건너뛰어지면 안 된다.
+	USFTutorialSubsystem::NotifyObjective(this, TAG_SF_Tutorial_Command_Move, false);
+
 
 	SF_LOG(Log, "[Unit] %s : 이동 명령 수신 (%s)", *GetName(), *InDestination.ToString());
 }
@@ -591,15 +746,24 @@ void AUnitBase::StopMove_Implementation()
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsCommandableByPlayer() const
 {
-	// 자동 진격 팀(AutoAdvanceTeams)은 스스로 움직인다.
-	// 드래그 선택에 상대 유닛까지 같이 담겨 명령이 넘어와도 여기서 막는다.
-	if (AutoAdvanceTeams.Contains(GetTeamIndex())) return false;
+	// 소유권만 본다.
+	//
+	// 예전에는 AutoAdvanceTeams 와 AdvanceMode 로 판정했다. 하지만 그건
+	// "스스로 진격하는가" 라는 다른 축이다. 두 개념을 한 플래그로 묶으면
+	// 플레이어 소속이면서 자동 진격하는 유닛을 만들 수 없고, AI 유닛을
+	// 일시적으로 조종할 수도 없고, 3인전이나 관전 모드에서 곧바로 막힌다.
+	//
+	// 명령할 수 있는가 = 내 팀인가. 그것뿐이다.
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!Combat) return false;
 
-	// 스포너가 SetAdvanceMode 로 진격을 직접 주입한 유닛도 마찬가지다.
-	// 팀 목록에 없더라도 스스로 진격하는 쪽이면 플레이어 명령 대상이 아니다.
-	if (bAdvanceModeInjected && AdvanceMode == EUnitAdvanceMode::PushToCore) return false;
+	const int32 LocalTeam = Combat->GetLocalPlayerTeam();
 
-	return true;
+	// 로컬 팀을 모르면 아무것도 조작하지 못하게 한다.
+	// 열어두면 관전 중에 양쪽 유닛이 다 조작되는 쪽으로 틀린다.
+	if (LocalTeam == Targetable::NeutralTeam) return false;
+
+	return GetTeamIndex() == LocalTeam;
 }
 
 void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocation, AActor* InTarget)
@@ -689,10 +853,12 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 		return;
 	}
 
-	// 강제 공격은 이동 명령과 제자리 고수를 덮어쓴다. 대상에게 붙는 것이 목적이다.
+	// 강제 공격은 이동 명령·제자리 고수·반격 유지를 덮어쓴다.
+	// 대상에게 붙는 것이 목적이다.
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	bHoldGround = false;
+	RetaliateHoldRemaining = 0.f;
 
 	ForcedTarget = InTarget;
 	CurrentTarget = InTarget;
@@ -878,6 +1044,7 @@ void AUnitBase::UpdateAttackSlot()
 
 		SlotTarget = nullptr;
 		AttackSlotIndex = INDEX_NONE;
+		SlotGeneration = 0;
 
 		// 새 대상으로 바뀌었으니 이전 대상 기준으로 쌓인 정체 시간도 버린다.
 		CloseQuartersStuckTimer = 0.f;
@@ -888,7 +1055,16 @@ void AUnitBase::UpdateAttackSlot()
 	// 이미 이 대상에 자리를 갖고 있으면 그대로 쓴다.
 	// 매 틱 다시 잡으면 대상이 조금 움직일 때마다 자리가 바뀌어
 	// 유닛이 링 위를 빙빙 돌기만 한다.
-	if (SlotTarget == CurrentTarget && AttackSlotIndex != INDEX_NONE) return;
+	//
+	// 단, 링 세대가 같을 때만이다. 대상의 팀이 바뀌면 UnregisterTarget 이
+	// 링을 통째로 버리는데, 그때 이 유닛은 유효한 인덱스를 그대로 쥐고 있다.
+	// 세대를 보지 않으면 여기서 영원히 빠져나가 그 대상에 대한 포위가 죽는다.
+	if (SlotTarget == CurrentTarget
+		&& AttackSlotIndex != INDEX_NONE
+		&& SlotGeneration == Combat->GetRingGeneration(CurrentTarget))
+	{
+		return;
+	}
 
 	AttackSlotIndex = Combat->ClaimAttackSlot(
 		CurrentTarget, this, GetApproachDistance(CurrentTarget));
@@ -896,6 +1072,7 @@ void AUnitBase::UpdateAttackSlot()
 	// 자리를 못 받았으면 SlotTarget 을 비워둔다.
 	// 다음 틱에 다시 시도하고, 그동안은 예전처럼 대상에게 직접 접근한다.
 	SlotTarget = (AttackSlotIndex != INDEX_NONE) ? CurrentTarget : nullptr;
+	SlotGeneration = (AttackSlotIndex != INDEX_NONE) ? Combat->GetRingGeneration(CurrentTarget) : 0;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -917,6 +1094,13 @@ void AUnitBase::SteerTowardSlot(float DeltaSeconds)
 
 	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
 	if (!Combat) return;
+
+	// 콘솔 오버라이드를 먼저 해석한다. 건드리지 않았으면 BP 값 그대로다.
+	const float UseSeekWeight       = ResolveSteerTuning(CVarSteerSeekWeight, SeekWeight);
+	const float UseSeparationWeight = ResolveSteerTuning(CVarSteerSeparationWeight, SeparationWeight);
+	const float UseSeparationRadius = ResolveSteerTuning(CVarSteerSeparationRadius, SeparationRadius);
+	const float UseDeflectionAngle  = ResolveSteerTuning(CVarSteerDeflectionAngle, SeparationDeflectionAngle);
+	const float UseInterpSpeed      = ResolveSteerTuning(CVarSteerInterpSpeed, SteerInterpSpeed);
 
 	// 1. 추격력 — 슬롯이 있으면 슬롯 위치로, 없으면 대상에서 접근 거리만큼
 	//    떨어진 채 지금 서 있는 방향으로 향한다. 슬롯이 아직 없어도 이 방향이
@@ -968,10 +1152,11 @@ void AUnitBase::SteerTowardSlot(float DeltaSeconds)
 	//    유닛이 서로 반대쪽으로 감아 돌며 지나가는 흐름이 생긴다.
 	FVector Separation = FVector::ZeroVector;
 
-	TArray<AActor*> Neighbors;
-	Combat->GetNearbyAlliesForSeparation(this, GetTeamIndex(), SeparationRadius, Neighbors);
+	// 지역 배열 대신 멤버 버퍼를 쓴다. 유닛당 매 틱 할당하면 그 자체가 비용이다.
+	Combat->GetNearbyAlliesForSeparation(
+		this, GetTeamIndex(), UseSeparationRadius, SteerNeighborScratch);
 
-	for (const AActor* Other : Neighbors)
+	for (const AActor* Other : SteerNeighborScratch)
 	{
 		FVector AwayFromOther = GetActorLocation() - Other->GetActorLocation();
 		AwayFromOther.Z = 0.f;
@@ -979,10 +1164,10 @@ void AUnitBase::SteerTowardSlot(float DeltaSeconds)
 		const float Dist = AwayFromOther.Size();
 		if (Dist < KINDA_SMALL_NUMBER) continue;
 
-		const FVector Deflected = AwayFromOther.RotateAngleAxis(SeparationDeflectionAngle, FVector::UpVector);
+		const FVector Deflected = AwayFromOther.RotateAngleAxis(UseDeflectionAngle, FVector::UpVector);
 
 		// 가까울수록 세게 민다. SeparationRadius 경계에서 0으로 줄어든다.
-		Separation += Deflected.GetSafeNormal() * (SeparationRadius - Dist) / SeparationRadius;
+		Separation += Deflected.GetSafeNormal() * (UseSeparationRadius - Dist) / UseSeparationRadius;
 	}
 
 	if (!Separation.IsNearlyZero())
@@ -1016,14 +1201,87 @@ void AUnitBase::SteerTowardSlot(float DeltaSeconds)
 	// 4. 합성 — 방향이 프레임마다 튀지 않게 살짝 보간한다.
 	// 분리력만 있고 추격력이 없는 경우(대상을 잃기 직전 등)는 없다 —
 	// 이 함수는 CurrentTarget 이 있을 때만 불린다.
-	const FVector RawDirection = (Seek * SeekWeight + Separation * SeparationWeight + StuckEscape).GetSafeNormal();
+	FVector RawDirection = (Seek * UseSeekWeight + Separation * UseSeparationWeight + StuckEscape).GetSafeNormal();
 
-	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, RawDirection, DeltaSeconds, SteerInterpSpeed);
+	// 5. 지형 회피 — 이 구간에는 NavMesh 가 없다.
+	//
+	// 이 함수는 경로 탐색 없이 AddMovementInput 만 한다. 평지에서는 문제가
+	// 없지만 벽·바위·건물이 파먹은 NavMesh 구멍 앞에서는 지형을 밀며 갈린다.
+	// 위쪽 정체 탈출력은 "아군에게 막힌 경우" 의 해법이라 지형에는 듣지 않는다.
+	//
+	// 앞을 한 번 훑어서 막혔으면 법선 성분을 빼고 벽면을 따라 흐르게 한다.
+	ApplyWallAvoidance(RawDirection);
+
+	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, RawDirection, DeltaSeconds, UseInterpSpeed);
 
 	if (!SmoothedSteerDirection.IsNearlyZero())
 	{
 		AddMovementInput(SmoothedSteerDirection, 1.f);
 	}
+}
+
+// ─────────────────────────────────────────────────────────
+// 지형 회피 — 근접 조향 전용
+//
+// 근접 구간에서는 NavMesh 이동을 끄고 직접 조향한다. 그래서 이 구간에는
+// 경로 탐색이 없고, 지형을 피하는 책임이 전부 여기에 있다.
+//
+// 시야 판정과 같은 ECC_WorldStatic 을 쓴다. 다른 유닛은 분리력이 맡으므로
+// 여기서는 지형만 본다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::ApplyWallAvoidance(FVector& InOutDirection) const
+{
+	const float UseProbeDistance = ResolveSteerTuning(CVarSteerWallProbe, WallProbeDistance);
+
+	if (UseProbeDistance <= 0.f || InOutDirection.IsNearlyZero()) return;
+
+	const UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	const float Radius = IsValid(Capsule) ? Capsule->GetScaledCapsuleRadius() : 45.f;
+
+	const FVector ProbeStart = GetActorLocation();
+	const FVector ProbeEnd = ProbeStart + InOutDirection * UseProbeDistance;
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SFSteerWallProbe), false, this);
+
+	FHitResult Hit;
+	const bool bBlocked = World->SweepSingleByChannel(
+		Hit, ProbeStart, ProbeEnd, FQuat::Identity, ECC_WorldStatic,
+		FCollisionShape::MakeSphere(Radius), Params);
+
+#if ENABLE_DRAW_DEBUG
+	if (ShouldDrawDebug())
+	{
+		DrawDebugLine(World, ProbeStart, ProbeEnd,
+			bBlocked ? FColor::Magenta : FColor::Silver, false, -1.f, 0, 1.5f);
+	}
+#endif
+
+	if (!bBlocked) return;
+
+	// 법선 성분을 제거하면 벽을 따라 흐르는 방향만 남는다.
+	FVector Slide = FVector::VectorPlaneProject(InOutDirection, Hit.ImpactNormal);
+	Slide.Z = 0.f;
+	Slide = Slide.GetSafeNormal();
+
+	if (!Slide.IsNearlyZero())
+	{
+		InOutDirection = Slide;
+		return;
+	}
+
+	// 벽을 정면으로 마주 봤다. 미끄러질 성분이 없으므로 한쪽을 골라 돈다.
+	// 정체 탈출과 같은 규칙(짝/홀)을 써서, 나란히 막힌 유닛들이 같은 방향으로
+	// 몰리지 않게 한다.
+	FVector Along = Hit.ImpactNormal ^ FVector::UpVector;
+	Along.Z = 0.f;
+	Along = Along.GetSafeNormal();
+
+	if (Along.IsNearlyZero()) return;
+
+	InOutDirection = ((GetUniqueID() % 2) == 0) ? Along : -Along;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1041,7 +1299,8 @@ void AUnitBase::SteerTowardCommandPoint(float DeltaSeconds)
 	const FVector Desired = ToDestination.GetSafeNormal();
 	if (Desired.IsNearlyZero()) return;
 
-	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, Desired, DeltaSeconds, SteerInterpSpeed);
+	SmoothedSteerDirection = FMath::VInterpTo(SmoothedSteerDirection, Desired, DeltaSeconds,
+		ResolveSteerTuning(CVarSteerInterpSpeed, SteerInterpSpeed));
 
 	if (!SmoothedSteerDirection.IsNearlyZero())
 	{
@@ -1089,6 +1348,7 @@ void AUnitBase::ReleaseAttackSlot()
 
 	SlotTarget = nullptr;
 	AttackSlotIndex = INDEX_NONE;
+	SlotGeneration = 0;
 }
 
 float AUnitBase::GetDistanceToTargetEdge(const AActor* InTarget) const
@@ -1920,6 +2180,11 @@ void AUnitBase::Tick(float DeltaSeconds)
 		AttackCooldownRemaining -= DeltaSeconds;
 	}
 
+	if (RetaliateHoldRemaining > 0.f)
+	{
+		RetaliateHoldRemaining -= DeltaSeconds;
+	}
+
 	// 공격 모션 보장 시간.
 	//
 	// 만료됐는데 이미 교전 상태가 아니라면, 대상이 쓰러진 뒤에도 남아 도는
@@ -1981,7 +2246,15 @@ void AUnitBase::Tick(float DeltaSeconds)
 		}
 	}
 
-	if (!ForcedTarget && (!IsTargetUsable(CurrentTarget) || RetargetTimer <= 0.f))
+	// 반격으로 잡은 대상은 유지 시간 동안 주기 재탐색이 덮지 않게 한다.
+	// 없으면 0.3초 뒤 최근접 판정이 다시 돌아 원래 대상으로 돌아가 버린다.
+	//
+	// 대상이 죽거나 사라진 경우(bTargetGone)는 유지와 무관하게 즉시 다시 찾는다.
+	// 그러지 않으면 시체를 최대 2초간 붙들고 서 있게 된다.
+	const bool bTargetGone = !IsTargetUsable(CurrentTarget);
+	const bool bPeriodicDue = (RetargetTimer <= 0.f) && (RetaliateHoldRemaining <= 0.f);
+
+	if (!ForcedTarget && (bTargetGone || bPeriodicDue))
 	{
 		RetargetTimer = RetargetInterval;
 
@@ -2151,7 +2424,8 @@ void AUnitBase::Tick(float DeltaSeconds)
 		// 멀리서는 그대로 액터 추적에 맡긴다 — 문제가 있었던 적이 없는 구간이고,
 		// 목표가 계속 움직이는 장거리 추격에서는 경로 추종이 알아서 따라가는
 		// 쪽이 낫다.
-		const bool bCloseQuarters = (Distance <= EffectiveRange + SlotActivationRange);
+		const bool bCloseQuarters = (Distance <= EffectiveRange
+			+ ResolveSteerTuning(CVarSteerActivationRange, SlotActivationRange));
 
 		if (bCloseQuarters)
 		{

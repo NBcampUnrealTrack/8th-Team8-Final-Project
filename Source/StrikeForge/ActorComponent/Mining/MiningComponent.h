@@ -42,6 +42,7 @@ public:
 	
 	
 	bool TryLinkResource(AResourceBase* InResource);
+	bool HasUsableLinkedResource() const; // 등록을 마치고 자원검사( 자원이 사라졋는지, 매말랐는지 )
 	// ui?
 	float GetIncomeRatePerSeconds() const;
 	// setter
@@ -49,7 +50,8 @@ public:
 	// getter
 	FORCEINLINE EResourceType GetMineResourceType() const { return MineResourceType; }
 	FORCEINLINE int32 GetExtractAmount() const { return ExtractAmount; }
-	
+	// 자원이 연결되있는지 확인
+	bool IsLinkedResource(const AResourceBase* InResource) const;
 	
 	void UnlinkResource();
 	UFUNCTION()

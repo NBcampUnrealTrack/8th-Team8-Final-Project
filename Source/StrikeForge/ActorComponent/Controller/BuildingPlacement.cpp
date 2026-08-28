@@ -1,10 +1,9 @@
 ﻿#include "BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Buildings/Resource/ResourceBase.h"
 #include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
-#include "Logging/SFLog.h"
+#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
 
 UBuildingPlacement::UBuildingPlacement()
 {
@@ -88,13 +87,12 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
 		
-		//SF_LOG(Error, "bCanPlaceOnGrid : %d", bCanPlaceOnGrid);
-		
-		const bool bIsMiningBuilding =
-			TargetBuilding->IsA<ASFMiningBuilding>();
+		const bool bUsesResourceGrid =
+			Cast<ISFGridResourceConsumer>(
+		TargetBuilding.Get()) != nullptr;
 
 		const bool bCanPlaceOnNavigation =
-			bIsMiningBuilding ||
+			bUsesResourceGrid ||
 			CanPlaceOnNavMeshXY(BuildingLocation);
 
 		bCanPlaceCurrentLocation =
@@ -121,34 +119,17 @@ void UBuildingPlacement::UpdatePlacementMode()
 bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
 {
 	ASFBaseBuilding* Building = TargetBuilding.Get();
-	
-	if (!IsValid(Building) || !IsValid(CachedGridSubsystem) || !TargetBuildingGridInfo.IsValid())
-		return false;
-	
-	if (Building->IsA<ASFMiningBuilding>())
+
+	if (!IsValid(Building) ||
+		!IsValid(CachedGridSubsystem) ||
+		!TargetBuildingGridInfo.IsValid())
 	{
-		const bool bBuildingGridEmpty = 
-			CachedGridSubsystem->CanPlaceBuildingGrid
-				(Building, TargetBuildingGridInfo);
-		
-		AResourceBase* Resource = 
-			CachedGridSubsystem->FindResourceInGrid
-				(Building, TargetBuildingGridInfo);
-		
-		bool IsResourceTypeMatch = false;
-		
-		if (IsValid(Resource))
-		{
-			IsResourceTypeMatch = 
-				Cast<ASFMiningBuilding>(Building)->GetMineResourceType() 
-					== Resource->GetResourceType();
-		}
-		
-		return bBuildingGridEmpty && IsValid(Resource) && IsResourceTypeMatch;
+		return false;
 	}
-	
-	return CachedGridSubsystem->CanPlaceNormalBuildingGrid
-		(Building, TargetBuildingGridInfo);
+
+	return CachedGridSubsystem->CanPlacePlayerBuildingGrid(
+		Building,
+		TargetBuildingGridInfo);
 }
 
 void UBuildingPlacement::EndPlacementSession()
@@ -174,7 +155,7 @@ void UBuildingPlacement::TickComponent(float DeltaTime, ELevelTick TickType,
 bool UBuildingPlacement::TryConfirmPlacementMode()
 {
 	ASFBaseBuilding* Building =
-	TargetBuilding.Get();
+		TargetBuilding.Get();
 
 	if (!IsValid(Building) ||
 		!IsValid(CachedGridSubsystem) ||
@@ -182,15 +163,14 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	{
 		return false;
 	}
-	// MineBuilding 이라면
-	ASFMiningBuilding* MiningBuilding =
-		Cast<ASFMiningBuilding>(Building);
-	
-	// NavMesh 범위 판단
+
+	const bool bUsesResourceGrid =
+		Cast<ISFGridResourceConsumer>(Building) != nullptr;
 
 	const bool bCanPlaceOnNavigation =
-		IsValid(MiningBuilding) ||
-		CanPlaceOnNavMeshXY(Building->GetActorLocation());
+		bUsesResourceGrid ||
+		CanPlaceOnNavMeshXY(
+			Building->GetActorLocation());
 
 	if (!CanPlaceOnCurrentGrid() ||
 		!bCanPlaceOnNavigation)
@@ -199,45 +179,16 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
-	// 광산이라면 자원조회
-	
-	AResourceBase* ResourceToLink = nullptr;
-	if (IsValid(MiningBuilding))
-	{
-		ResourceToLink = CachedGridSubsystem->FindResourceInGrid
-			(Building, TargetBuildingGridInfo);
-		// 발견되는 자원없을때
-		if (!IsValid(ResourceToLink))
-		{
-			bCanPlaceCurrentLocation = false;
-			Building->ApplyPreviewMaterial(false);
-			return false;
-		} // 자원 있을때 + 일치하지않을때
-		if (MiningBuilding->GetMineResourceType() != ResourceToLink->GetResourceType())
-		{
-			bCanPlaceCurrentLocation = false;
-			Building->ApplyPreviewMaterial(false);
-			return false;
-		}
 
-	}
-	// building안에서 grid subsystem을 부르고 등록가능한지 판단
-	// 가능하면 set TargetBuildingGridInfo
-	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))
+	// 등록과 자원 연결 모두 GridSubsystem이 처리한다.
+	if (!Building->TryRegisterGrid(
+		TargetBuildingGridInfo))
 	{
 		bCanPlaceCurrentLocation = false;
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
-	
-	// grid 등록 성공시
-	
-	// 광산건물일때
-	if (IsValid(MiningBuilding))
-	{
-		MiningBuilding->TryLinkResource(ResourceToLink);
-	}
-	// tick off
+
 	EndPlacementSession();
 	return true;
 }

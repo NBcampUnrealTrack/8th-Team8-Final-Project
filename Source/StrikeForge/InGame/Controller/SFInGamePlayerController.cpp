@@ -5,7 +5,6 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
@@ -17,6 +16,7 @@
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
+#include "Game/Spawn/SFBuildingSpawnLibrary.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -91,59 +91,33 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
     Trans.SetLocation(GetPawn()->GetActorLocation());
     Trans.SetRotation(FRotator(0.f, 90.f, 0.f).Quaternion());
     
-    UClass* SpawnClass = Definition->BuildingClass.LoadSynchronous();     // ★ADD
-    if (!SpawnClass)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
-            *Definition->BuildingId.ToString());
-        return false;
-    }
+    ASFBaseBuilding* NewBuilding =
+        USFBuildingSpawnLibrary::
+            SpawnBuildingFromDefinition(
+                this,
+                Definition,
+                GetMyTeamIndex(),
+                Trans,
+                ESFBuildingSpawnMode::PlayerPlacedMode);
     
-    ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
-        SpawnClass,
-        Trans,
-        nullptr,
-        nullptr,
-        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
-        );
-    
-    if (!IsValid(DeferredActor))                                   // ★ADD
+    if (!IsValid(NewBuilding))
     {
-        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
-        return false;
-    }
-    /*
-     * RowName은 현재 선택 UI 테이블을 조회하기 위한 임시 브리지다.
-     * Selection UI가 DA로 전환되면 제거할 수 있다.
-     */
-    if (!DeferredActor->SetBuildingDefinition(Definition))
-    {
-        DeferredActor->Destroy();
-        return false;
-    }
-    const FName SelectionRowName =
-    Definition->SelectionUIRowName.IsNone()
-        ? Definition->BuildingId
-        : Definition->SelectionUIRowName;
-    
-    DeferredActor->SetRowName(SelectionRowName);
-    DeferredActor->SetMyTeamIndex(MyTeamIndex);
-    
-    if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())
-    {
-        Combat->SetTeamIndex(MyTeamIndex);
-    }
-    // deferred spawn finished
-    DeferredActor->FinishSpawning(Trans);
+        SF_LOG(
+            Error,
+            "[SFPC] 건물 생성 실패. BuildingId=%s",
+            *InBuildingId.ToString());
 
+        return false;
+    }
+    
     // gird init
     // 배치가능여부 return
-    if (!PlacementComponent->StartPlacementMode(DeferredActor))
+    if (!PlacementComponent->StartPlacementMode(NewBuilding))
     {   // 배치불가한데 배치하려하면 destroy
-        DeferredActor->Destroy();
+        NewBuilding->Destroy();
         return false;
     }
-    SpawnedBuildingRef = DeferredActor;
+    SpawnedBuildingRef = NewBuilding;
     return true;
 }
 

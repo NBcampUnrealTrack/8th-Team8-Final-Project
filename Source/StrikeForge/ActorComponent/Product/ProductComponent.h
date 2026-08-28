@@ -4,22 +4,11 @@
 #include "Components/ActorComponent.h"
 #include "ActorComponent/Progress/SFProgressTracker.h"
 #include "ActorComponent/Product/ProductInfo.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "ProductComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductRatioChanged, float, OutProductRatio);
-
-// USTRUCT(BlueprintType)
-// struct FRecordTimeInfo
-// {
-// 	GENERATED_BODY()
-// 	float StartTime;
-// 	float CurrentTime;
-// 	float Duration;
-// 	float Ratio;
-// };
-
-
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
@@ -30,15 +19,16 @@ public:
 	UProductComponent();
 	void AllClearProductLine();
 	
-	void AddProductInLine(FName InProductName);
+	void AddProductInLine(const FName& InProductName);
 	void RemoveProductInLine(int32 InProductLineIndex);
-	
+	void PauseProductLine();
+	void ResumeProductLine();
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
-	bool IsProducing() const { return !ProductLine.IsEmpty(); }
+	bool bIsHasProducts() const { return !ProductLine.IsEmpty(); }
 
 	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void SetSpeedMultiplier(float InMultiplier) { Tracker.SpeedMultiplier = InMultiplier; }
+	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
@@ -48,13 +38,26 @@ public:
 	// current product value
 	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void StartProductLine();
 	void CompletedProduct(const FName& InCompletedName);
-	void StopProductLine();
+	void ResetProductProgress();
+	
+	void ProcessProductionToNow();
 	void TickProduction();
+	
+	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
+	bool CanAffordPopulation(const FName& InRowName) const;
+	int32 GetOwnerTeam() const;
+	void SpawnAndAdvance(FName InRowName);
+	// population function
+	// bind
+	void BindFunctionOnMaxPopulation();
+	void UnBindFunctionOnReleasePopulation();
+	// bind function
+	UFUNCTION()
+	void HandlePopulationChanged(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
 private:
 	TArray<FProductInfo> ProductLine;
 	/** ProgressComponent와 동일한 계산기를 재사용한다 */
@@ -63,13 +66,15 @@ private:
 
 	/** 진행률 재계산 주기(초) */
 	UPROPERTY(EditDefaultsOnly, Category = "Product", meta = (AllowPrivateAccess = true))
-	float TickInterval = 1.f;
+	float TickInterval = 0.1f;
 	
 	FTimerHandle CurrentTimerHandle;
 	float LastAdvanceTime = 0.f;
 	
 	int32 MaxLineCount = 5;
 	
+	bool bProductionPaused = false;
+	bool bWaitingForPopulation = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

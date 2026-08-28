@@ -65,4 +65,11 @@ public:
         Category = "SF|Selection|UI|Visibility"
     )
     bool bShowMoveSpeed = true;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Selection|UI|Visibility"
+    )
+    bool bShowSkillIcons = false;
 };

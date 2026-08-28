@@ -1,13 +1,29 @@
 #include "SFMinimapPanelWidget.h"
 
+#include "Datas/Stage/SFStageData.h"
+#include "Game/GameInstance/SFGameInstance.h"
+#include "Game/GameState/SFGameState.h"
+#include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/Controller/SFRTSCameraPawn.h"
+
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/Widget.h"
+#include "Engine/SceneCapture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
+#include "NavMesh/NavMeshBoundsVolume.h"
+
+#include "Logging/SFLog.h"
 
 bool USFMinimapPanelWidget::HasValidMapBounds() const
 {
@@ -91,14 +107,694 @@ void USFMinimapPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    InitializeMinimapCapture();
     CreateMinimapMarkers();
+    CreateMinimapBoundsMasks();
 }
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    ClearMinimapBoundsMasks();
+    DestroyRuntimeMinimapCapture();
     ClearMinimapMarkers();
 
     Super::NativeDestruct();
+}
+
+void USFMinimapPanelWidget::InitializeMinimapCapture()
+{
+    FSFMinimapSettings Settings;
+
+    LoadCurrentMinimapSettings(Settings);
+
+    bool bBoundsResolved = false;
+
+    if (Settings.bAutoDetectBounds)
+    {
+        bBoundsResolved =
+            TryResolveMapBoundsFromNavMesh(
+                Settings.BoundsPadding
+            );
+    }
+
+    if (!bBoundsResolved)
+    {
+        PlayableWorldMin = FVector2D(
+            FMath::Min(
+                Settings.WorldMin.X,
+                Settings.WorldMax.X
+            ),
+            FMath::Min(
+                Settings.WorldMin.Y,
+                Settings.WorldMax.Y
+            )
+        );
+
+        PlayableWorldMax = FVector2D(
+            FMath::Max(
+                Settings.WorldMin.X,
+                Settings.WorldMax.X
+            ),
+            FMath::Max(
+                Settings.WorldMin.Y,
+                Settings.WorldMax.Y
+            )
+        );
+
+        ApplySquareMapBounds(
+            PlayableWorldMin,
+            PlayableWorldMax
+        );
+    }
+
+    if (!HasValidMapBounds())
+    {
+        SF_LOG(
+            Error,
+            "[SFMinimapPanelWidget] "
+            "Minimap bounds are invalid."
+        );
+
+        return;
+    }
+
+    CreateRuntimeMinimapCapture(
+        Settings.CaptureHeight
+    );
+}
+
+bool USFMinimapPanelWidget::LoadCurrentMinimapSettings(
+    FSFMinimapSettings& OutSettings
+) const
+{
+    USFGameInstance* GameInstance =
+        Cast<USFGameInstance>(
+            GetGameInstance()
+        );
+
+    if (!IsValid(GameInstance))
+    {
+        return false;
+    }
+
+    FName StageRowName = NAME_None;
+
+    if (UWorld* World = GetWorld())
+    {
+        if (ASFGameState* GameState =
+            World->GetGameState<ASFGameState>())
+        {
+            StageRowName =
+                GameState->GetCurrentStageRowName();
+        }
+    }
+
+    if (StageRowName.IsNone())
+    {
+        StageRowName =
+            GameInstance->GetSelectedStageRowName();
+    }
+
+    // 에디터에서 레벨을 직접 실행하면 선택된 스테이지 행이
+    // 없을 수 있다. 이 경우 기본 설정으로 NavMesh를 탐색한다.
+    if (StageRowName.IsNone())
+    {
+        SF_LOG(
+            Warning,
+            "[SFMinimapPanelWidget] "
+            "Stage RowName is None. "
+            "Using default minimap settings."
+        );
+
+        return false;
+    }
+
+    USFDataTableManager* DataTableManager =
+        GameInstance->GetSubsystem<
+        USFDataTableManager
+        >();
+
+    if (!IsValid(DataTableManager))
+    {
+        return false;
+    }
+
+    const FSFStageData* StageData =
+        DataTableManager->GetDataRow<
+        FSFStageData
+        >(
+            EDataTableType::Stage,
+            StageRowName,
+            TEXT("LoadCurrentMinimapSettings")
+        );
+
+    if (!StageData)
+    {
+        return false;
+    }
+
+    OutSettings = StageData->Minimap;
+
+    return true;
+}
+
+bool USFMinimapPanelWidget::TryResolveMapBoundsFromNavMesh(
+    float BoundsPadding
+)
+{
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        return false;
+    }
+
+    FBox CombinedBounds(ForceInit);
+    bool bFoundNavMeshBounds = false;
+
+    for (
+        TActorIterator<ANavMeshBoundsVolume> It(World);
+        It;
+        ++It
+        )
+    {
+        ANavMeshBoundsVolume* BoundsVolume = *It;
+
+        if (!IsValid(BoundsVolume))
+        {
+            continue;
+        }
+
+        const FBox ActorBounds =
+            BoundsVolume->GetComponentsBoundingBox(
+                true
+            );
+
+        if (!ActorBounds.IsValid)
+        {
+            continue;
+        }
+
+        CombinedBounds += ActorBounds;
+        bFoundNavMeshBounds = true;
+    }
+
+    if (!bFoundNavMeshBounds)
+    {
+        SF_LOG(
+            Warning,
+            "[SFMinimapPanelWidget] "
+            "NavMeshBoundsVolume was not found."
+        );
+
+        return false;
+    }
+
+    PlayableWorldMin = FVector2D(
+        CombinedBounds.Min.X,
+        CombinedBounds.Min.Y
+    );
+
+    PlayableWorldMax = FVector2D(
+        CombinedBounds.Max.X,
+        CombinedBounds.Max.Y
+    );
+
+    const float SafePadding = FMath::Max(
+        0.0f,
+        BoundsPadding
+    );
+
+    const FVector2D BoundsMin(
+        PlayableWorldMin.X - SafePadding,
+        PlayableWorldMin.Y - SafePadding
+    );
+
+    const FVector2D BoundsMax(
+        PlayableWorldMax.X + SafePadding,
+        PlayableWorldMax.Y + SafePadding
+    );
+
+    ApplySquareMapBounds(
+        BoundsMin,
+        BoundsMax
+    );
+
+    SF_LOG(
+        Log,
+        "[SFMinimapPanelWidget] "
+        "Map bounds detected from NavMesh | "
+        "Min: %s | Max: %s",
+        *MapWorldMin.ToString(),
+        *MapWorldMax.ToString()
+    );
+
+    return HasValidMapBounds();
+}
+
+void USFMinimapPanelWidget::ApplySquareMapBounds(
+    const FVector2D& InWorldMin,
+    const FVector2D& InWorldMax
+)
+{
+    const FVector2D SafeMin(
+        FMath::Min(InWorldMin.X, InWorldMax.X),
+        FMath::Min(InWorldMin.Y, InWorldMax.Y)
+    );
+
+    const FVector2D SafeMax(
+        FMath::Max(InWorldMin.X, InWorldMax.X),
+        FMath::Max(InWorldMin.Y, InWorldMax.Y)
+    );
+
+    const FVector2D Center =
+        (SafeMin + SafeMax) * 0.5f;
+
+    const float HalfExtent =
+        FMath::Max(
+            SafeMax.X - SafeMin.X,
+            SafeMax.Y - SafeMin.Y
+        ) * 0.5f;
+
+    if (HalfExtent <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const FVector2D SquareExtent(
+        HalfExtent,
+        HalfExtent
+    );
+
+    MapWorldMin = Center - SquareExtent;
+    MapWorldMax = Center + SquareExtent;
+}
+
+void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
+    float CaptureHeight
+)
+{
+    DestroyRuntimeMinimapCapture();
+
+    if (!IsValid(MinimapRenderTarget))
+    {
+        SF_LOG(
+            Error,
+            "[SFMinimapPanelWidget] "
+            "MinimapRenderTarget is not assigned."
+        );
+
+        return;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    const FVector2D MapCenter =
+        (MapWorldMin + MapWorldMax) * 0.5f;
+
+    const float OrthoWidth =
+        MapWorldMax.Y - MapWorldMin.Y;
+
+    FActorSpawnParameters SpawnParameters;
+
+    SpawnParameters.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    SpawnParameters.ObjectFlags |= RF_Transient;
+
+    RuntimeMinimapCaptureActor =
+        World->SpawnActor<ASceneCapture2D>(
+            ASceneCapture2D::StaticClass(),
+            FVector(
+                MapCenter.X,
+                MapCenter.Y,
+                FMath::Max(1000.0f, CaptureHeight)
+            ),
+            FRotator(
+                -87.0f,
+                0.0f,
+                0.0f
+            ),
+            SpawnParameters
+        );
+
+    if (!IsValid(RuntimeMinimapCaptureActor))
+    {
+        SF_LOG(
+            Error,
+            "[SFMinimapPanelWidget] "
+            "Failed to spawn SceneCapture2D."
+        );
+
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComponent =
+        RuntimeMinimapCaptureActor
+        ->GetCaptureComponent2D();
+
+    if (!IsValid(CaptureComponent))
+    {
+        DestroyRuntimeMinimapCapture();
+        return;
+    }
+
+    CaptureComponent->ProjectionType =
+        ECameraProjectionMode::Orthographic;
+
+    CaptureComponent->OrthoWidth =
+        OrthoWidth;
+
+    CaptureComponent->TextureTarget =
+        MinimapRenderTarget;
+
+    CaptureComponent->CaptureSource =
+        ESceneCaptureSource::SCS_FinalColorLDR;
+
+    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
+    // 기존 미니맵 마커로 표시한다.
+    CaptureComponent->bCaptureEveryFrame = false;
+    CaptureComponent->bCaptureOnMovement = false;
+
+    CaptureComponent->CaptureScene();
+
+    SF_LOG(
+        Log,
+        "[SFMinimapPanelWidget] "
+        "Runtime minimap capture created | "
+        "Center: %s | OrthoWidth: %.1f",
+        *MapCenter.ToString(),
+        OrthoWidth
+    );
+}
+
+void USFMinimapPanelWidget::DestroyRuntimeMinimapCapture()
+{
+    if (IsValid(RuntimeMinimapCaptureActor))
+    {
+        RuntimeMinimapCaptureActor->Destroy();
+    }
+
+    RuntimeMinimapCaptureActor = nullptr;
+}
+
+void USFMinimapPanelWidget::CreateMinimapBoundsMasks()
+{
+    ClearMinimapBoundsMasks();
+
+    if (
+        !IsValid(MinimapMarkerLayer) ||
+        !IsValid(WidgetTree)
+        )
+    {
+        return;
+    }
+
+    auto CreateMask = [this]() -> UBorder*
+        {
+            UBorder* NewMask =
+                WidgetTree->ConstructWidget<UBorder>(
+                    UBorder::StaticClass()
+                );
+
+            if (!IsValid(NewMask))
+            {
+                return nullptr;
+            }
+
+            NewMask->SetBrushColor(
+                FLinearColor::Black
+            );
+
+            NewMask->SetVisibility(
+                ESlateVisibility::HitTestInvisible
+            );
+
+            UCanvasPanelSlot* MaskSlot =
+                MinimapMarkerLayer->AddChildToCanvas(
+                    NewMask
+                );
+
+            if (!IsValid(MaskSlot))
+            {
+                NewMask->RemoveFromParent();
+                return nullptr;
+            }
+
+            MaskSlot->SetAnchors(
+                FAnchors(0.0f, 0.0f)
+            );
+
+            MaskSlot->SetAlignment(
+                FVector2D::ZeroVector
+            );
+
+            MaskSlot->SetAutoSize(false);
+            MaskSlot->SetZOrder(100);
+
+            return NewMask;
+        };
+
+    LeftBoundsMask = CreateMask();
+    RightBoundsMask = CreateMask();
+    TopBoundsMask = CreateMask();
+    BottomBoundsMask = CreateMask();
+
+    UpdateMinimapBoundsMasks();
+}
+
+void USFMinimapPanelWidget::ClearMinimapBoundsMasks()
+{
+    const TArray<UBorder*> BoundsMasks =
+    {
+        LeftBoundsMask.Get(),
+        RightBoundsMask.Get(),
+        TopBoundsMask.Get(),
+        BottomBoundsMask.Get()
+    };
+
+    for (UBorder* BoundsMask : BoundsMasks)
+    {
+        if (IsValid(BoundsMask))
+        {
+            BoundsMask->RemoveFromParent();
+        }
+    }
+
+    LeftBoundsMask = nullptr;
+    RightBoundsMask = nullptr;
+    TopBoundsMask = nullptr;
+    BottomBoundsMask = nullptr;
+    CachedMinimapMaskSize = FVector2D::ZeroVector;
+}
+
+void USFMinimapPanelWidget::UpdateMinimapBoundsMasks()
+{
+    if (
+        !IsValid(LeftBoundsMask.Get()) ||
+        !IsValid(RightBoundsMask.Get()) ||
+        !IsValid(TopBoundsMask.Get()) ||
+        !IsValid(BottomBoundsMask.Get()) ||
+        !IsValid(MinimapMarkerLayer)
+        )
+    {
+        return;
+    }
+
+    const FVector2D MinimapSize =
+        MinimapMarkerLayer
+        ->GetCachedGeometry()
+        .GetLocalSize();
+
+    FVector2D PlayableMinimapMin;
+    FVector2D PlayableMinimapMax;
+
+    if (
+        MinimapSize.X <= 0.0f ||
+        MinimapSize.Y <= 0.0f ||
+        !GetPlayableMinimapBounds(
+            PlayableMinimapMin,
+            PlayableMinimapMax
+        )
+        )
+    {
+        return;
+    }
+
+    if (MinimapSize.Equals(CachedMinimapMaskSize, 0.1f))
+    {
+        return;
+    }
+
+    CachedMinimapMaskSize = MinimapSize;
+
+    auto SetMaskRect = [](
+        UBorder* BoundsMask,
+        const FVector2D& Position,
+        const FVector2D& Size
+        )
+        {
+            if (!IsValid(BoundsMask))
+            {
+                return;
+            }
+
+            UCanvasPanelSlot* MaskSlot =
+                Cast<UCanvasPanelSlot>(
+                    BoundsMask->Slot
+                );
+
+            if (!IsValid(MaskSlot))
+            {
+                return;
+            }
+
+            const FVector2D SafeSize(
+                FMath::Max(0.0f, Size.X),
+                FMath::Max(0.0f, Size.Y)
+            );
+
+            MaskSlot->SetPosition(Position);
+            MaskSlot->SetSize(SafeSize);
+
+            BoundsMask->SetVisibility(
+                SafeSize.X > KINDA_SMALL_NUMBER &&
+                SafeSize.Y > KINDA_SMALL_NUMBER
+                ? ESlateVisibility::HitTestInvisible
+                : ESlateVisibility::Collapsed
+            );
+        };
+
+    SetMaskRect(
+        LeftBoundsMask.Get(),
+        FVector2D::ZeroVector,
+        FVector2D(
+            PlayableMinimapMin.X,
+            MinimapSize.Y
+        )
+    );
+
+    SetMaskRect(
+        RightBoundsMask.Get(),
+        FVector2D(
+            PlayableMinimapMax.X,
+            0.0f
+        ),
+        FVector2D(
+            MinimapSize.X - PlayableMinimapMax.X,
+            MinimapSize.Y
+        )
+    );
+
+    SetMaskRect(
+        TopBoundsMask.Get(),
+        FVector2D(
+            PlayableMinimapMin.X,
+            0.0f
+        ),
+        FVector2D(
+            PlayableMinimapMax.X -
+            PlayableMinimapMin.X,
+            PlayableMinimapMin.Y
+        )
+    );
+
+    SetMaskRect(
+        BottomBoundsMask.Get(),
+        FVector2D(
+            PlayableMinimapMin.X,
+            PlayableMinimapMax.Y
+        ),
+        FVector2D(
+            PlayableMinimapMax.X -
+            PlayableMinimapMin.X,
+            MinimapSize.Y - PlayableMinimapMax.Y
+        )
+    );
+}
+
+bool USFMinimapPanelWidget::GetPlayableMinimapBounds(
+    FVector2D& OutMinimapMin,
+    FVector2D& OutMinimapMax
+) const
+{
+    if (
+        !HasValidMapBounds() ||
+        PlayableWorldMax.X <= PlayableWorldMin.X ||
+        PlayableWorldMax.Y <= PlayableWorldMin.Y ||
+        !IsValid(MinimapMarkerLayer)
+        )
+    {
+        return false;
+    }
+
+    const FVector2D TopLeft =
+        WorldToMinimapPosition(
+            FVector(
+                PlayableWorldMax.X,
+                PlayableWorldMin.Y,
+                0.0f
+            )
+        );
+
+    const FVector2D BottomRight =
+        WorldToMinimapPosition(
+            FVector(
+                PlayableWorldMin.X,
+                PlayableWorldMax.Y,
+                0.0f
+            )
+        );
+
+    OutMinimapMin = FVector2D(
+        FMath::Min(TopLeft.X, BottomRight.X),
+        FMath::Min(TopLeft.Y, BottomRight.Y)
+    );
+
+    OutMinimapMax = FVector2D(
+        FMath::Max(TopLeft.X, BottomRight.X),
+        FMath::Max(TopLeft.Y, BottomRight.Y)
+    );
+
+    return
+        OutMinimapMax.X > OutMinimapMin.X &&
+        OutMinimapMax.Y > OutMinimapMin.Y;
+}
+
+FVector2D USFMinimapPanelWidget::ClampToPlayableMinimapBounds(
+    const FVector2D& MinimapPosition
+) const
+{
+    FVector2D PlayableMinimapMin;
+    FVector2D PlayableMinimapMax;
+
+    if (
+        !GetPlayableMinimapBounds(
+            PlayableMinimapMin,
+            PlayableMinimapMax
+        )
+        )
+    {
+        return MinimapPosition;
+    }
+
+    return FVector2D(
+        FMath::Clamp(
+            MinimapPosition.X,
+            PlayableMinimapMin.X,
+            PlayableMinimapMax.X
+        ),
+        FMath::Clamp(
+            MinimapPosition.Y,
+            PlayableMinimapMin.Y,
+            PlayableMinimapMax.Y
+        )
+    );
 }
 
 void USFMinimapPanelWidget::NativeTick(
@@ -111,6 +807,7 @@ void USFMinimapPanelWidget::NativeTick(
         InDeltaTime
     );
 
+    UpdateMinimapBoundsMasks();
     UpdatePlayerViewIndicator();
     UpdateMinimapMarkers();
 }
@@ -455,10 +1152,26 @@ void USFMinimapPanelWidget::SetMarkerLayerPosition(
     const FVector2D MarkerAlignment =
         MarkerCanvasSlot->GetAlignment();
 
+    FVector2D AllowedMinimapMin =
+        FVector2D::ZeroVector;
+
+    FVector2D AllowedMinimapMax =
+        MinimapSize;
+
+    if (MarkerWidget == PlayerViewIndicator.Get())
+    {
+        GetPlayableMinimapBounds(
+            AllowedMinimapMin,
+            AllowedMinimapMax
+        );
+    }
+
     const FVector2D MinimumPosition(
+        AllowedMinimapMin.X +
         MarkerSize.X *
         MarkerAlignment.X,
 
+        AllowedMinimapMin.Y +
         MarkerSize.Y *
         MarkerAlignment.Y
     );
@@ -467,7 +1180,7 @@ void USFMinimapPanelWidget::SetMarkerLayerPosition(
         FMath::Max(
             MinimumPosition.X,
 
-            MinimapSize.X -
+            AllowedMinimapMax.X -
             MarkerSize.X *
             (
                 1.0f -
@@ -478,7 +1191,7 @@ void USFMinimapPanelWidget::SetMarkerLayerPosition(
         FMath::Max(
             MinimumPosition.Y,
 
-            MinimapSize.Y -
+            AllowedMinimapMax.Y -
             MarkerSize.Y *
             (
                 1.0f -
@@ -546,4 +1259,160 @@ FLinearColor USFMinimapPanelWidget::GetMarkerColor(
     default:
         return FLinearColor::Transparent;
     }
+}
+
+FVector USFMinimapPanelWidget::MinimapToWorldLocation(const FVector2D& MinimapPosition) const
+{
+    if (!HasValidMapBounds() || !IsValid(MinimapMarkerLayer))
+    {
+        return FVector::ZeroVector;
+    }
+
+    const FVector2D MinimapSize = MinimapMarkerLayer->GetCachedGeometry().GetLocalSize();
+
+    if (MinimapSize.X <= 0.0f || MinimapSize.Y <= 0.0f)
+    {
+        return FVector::ZeroVector;
+    }
+
+    const float NormalizedHorizontal = FMath::Clamp(MinimapPosition.X / MinimapSize.X, 0.0f, 1.0f);
+    const float NormalizedVertical = FMath::Clamp(MinimapPosition.Y / MinimapSize.Y, 0.0f, 1.0f);
+
+    return FVector(
+        FMath::Lerp(MapWorldMin.X, MapWorldMax.X, 1.0f - NormalizedVertical),
+        FMath::Lerp(MapWorldMin.Y, MapWorldMax.Y, NormalizedHorizontal),
+        0.0f
+    );
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (!IsValid(MinimapMarkerLayer))
+    {
+        return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    }
+
+    const FGeometry MinimapGeometry = MinimapMarkerLayer->GetCachedGeometry();
+    const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+
+    if (!MinimapGeometry.IsUnderLocation(ScreenPosition))
+    {
+        return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+    }
+
+    const FVector2D LocalPosition = MinimapGeometry.AbsoluteToLocal(ScreenPosition);
+
+    const FVector2D ClampedLocalPosition =
+        ClampToPlayableMinimapBounds(
+            LocalPosition
+        );
+
+    if (!LocalPosition.Equals(ClampedLocalPosition, 0.5f))
+    {
+        return FReply::Handled();
+    }
+
+    const FVector WorldLocation =
+        MinimapToWorldLocation(
+            ClampedLocalPosition
+        );
+
+    ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (!IsValid(PlayerController))
+    {
+        return FReply::Handled();
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        bIsMinimapCameraDragging = true;
+        MoveCameraToPointerPosition(InMouseEvent);
+
+        SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag started.");
+
+        return FReply::Handled().CaptureMouse(TakeWidget());
+    }
+
+    if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+    {
+        PlayerController->IssueMoveCommand(WorldLocation);
+        SF_LOG(Log, "[SFMinimapPanelWidget] Move requested | Location: %s", *WorldLocation.ToString());
+        return FReply::Handled();
+    }
+
+    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+void USFMinimapPanelWidget::MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent)
+{
+    if (!IsValid(MinimapMarkerLayer))
+    {
+        return;
+    }
+
+    const FGeometry MinimapGeometry = MinimapMarkerLayer->GetCachedGeometry();
+    const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+
+    ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    ASFRTSCameraPawn* CameraPawn = Cast<ASFRTSCameraPawn>(PlayerController->GetPawn());
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    const FVector2D LocalPosition =
+        MinimapGeometry.AbsoluteToLocal(
+            ScreenPosition
+        );
+
+    const FVector2D ClampedLocalPosition =
+        ClampToPlayableMinimapBounds(
+            LocalPosition
+        );
+
+    const FVector WorldLocation =
+        MinimapToWorldLocation(
+            ClampedLocalPosition
+        );
+
+    CameraPawn->FocusOnWorldLocation(WorldLocation);
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (!bIsMinimapCameraDragging)
+    {
+        return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+    }
+
+    if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+    {
+        bIsMinimapCameraDragging = false;
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+
+    MoveCameraToPointerPosition(InMouseEvent);
+    return FReply::Handled();
+}
+
+FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bIsMinimapCameraDragging)
+    {
+        bIsMinimapCameraDragging = false;
+
+        SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag ended.");
+
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+
+    return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }

@@ -2,13 +2,17 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Input/Reply.h"
 #include "SFMinimapMarkerInfo.h"
 #include "SFMinimapPanelWidget.generated.h"
 
 class AActor;
+class ASceneCapture2D;
 class UBorder;
 class UCanvasPanel;
+class UTextureRenderTarget2D;
 class UWidget;
+struct FSFMinimapSettings;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFMinimapPanelWidget
@@ -32,17 +36,59 @@ public:
         const FVector& WorldLocation
     ) const;
 
+    UFUNCTION(BlueprintPure, Category = "SF|Minimap|Coordinate")
+    FVector MinimapToWorldLocation(const FVector2D& MinimapPosition) const;
+
 protected:
     virtual void NativeConstruct() override;
 
     virtual void NativeDestruct() override;
 
-    virtual void NativeTick(
-        const FGeometry& MyGeometry,
-        float InDeltaTime
-    ) override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+    virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+    virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
+    void InitializeMinimapCapture();
+
+    bool LoadCurrentMinimapSettings(
+        FSFMinimapSettings& OutSettings
+    ) const;
+
+    bool TryResolveMapBoundsFromNavMesh(
+        float BoundsPadding
+    );
+
+    void ApplySquareMapBounds(
+        const FVector2D& InWorldMin,
+        const FVector2D& InWorldMax
+    );
+
+    void CreateRuntimeMinimapCapture(
+        float CaptureHeight
+    );
+
+    void DestroyRuntimeMinimapCapture();
+
+    void CreateMinimapBoundsMasks();
+
+    void ClearMinimapBoundsMasks();
+
+    void UpdateMinimapBoundsMasks();
+
+    bool GetPlayableMinimapBounds(
+        FVector2D& OutMinimapMin,
+        FVector2D& OutMinimapMax
+    ) const;
+
+    FVector2D ClampToPlayableMinimapBounds(
+        const FVector2D& MinimapPosition
+    ) const;
+
     void CreateMinimapMarkers();
 
     void CreateMarkersForTag(
@@ -60,6 +106,10 @@ private:
     void UpdatePlayerViewIndicator();
 
     void UpdateMinimapMarkers();
+
+    void MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent);
+
+    bool bIsMinimapCameraDragging = false;
 
     void SetMarkerLayerPosition(
         UWidget* MarkerWidget,
@@ -97,6 +147,36 @@ protected:
             5000.0f,
             5000.0f
         );
+
+    UPROPERTY(
+        VisibleInstanceOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|World Bounds"
+    )
+    FVector2D PlayableWorldMin =
+        FVector2D(
+            -5000.0f,
+            -5000.0f
+        );
+
+    UPROPERTY(
+        VisibleInstanceOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|World Bounds"
+    )
+    FVector2D PlayableWorldMax =
+        FVector2D(
+            5000.0f,
+            5000.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Capture"
+    )
+    TObjectPtr<UTextureRenderTarget2D>
+        MinimapRenderTarget = nullptr;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -215,4 +295,23 @@ protected:
 private:
     UPROPERTY(Transient)
     TArray<FSFMinimapMarkerEntry> MinimapMarkerEntries;
+
+    UPROPERTY(Transient)
+    TObjectPtr<ASceneCapture2D>
+        RuntimeMinimapCaptureActor = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UBorder> LeftBoundsMask = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UBorder> RightBoundsMask = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UBorder> TopBoundsMask = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UBorder> BottomBoundsMask = nullptr;
+
+    FVector2D CachedMinimapMaskSize =
+        FVector2D::ZeroVector;
 };

@@ -20,11 +20,34 @@ enum class ESFControlMode : uint8
     BuildPlacement UMETA(DisplayName = "Build Placement")
 };
 
+UENUM(BlueprintType)
+enum class ESFUnitCommandMode : uint8
+{
+    None UMETA(DisplayName = "None"),
+    Attack UMETA(DisplayName = "Attack"),
+    Move UMETA(DisplayName = "Move")
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnMoveInput, FVector, Destination);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnMoveInput,
+    FVector,
+    Destination
+);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnSelectionDragStarted,
+    FVector2D,
+    StartScreenPosition
+);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FSFOnSelectionDragCompleted,
+    FVector2D,
+    StartScreenPosition,
+    FVector2D,
+    EndScreenPosition
+);
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
     : public APlayerController
@@ -50,13 +73,32 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    bool SpawnBuildingFunction(const FName& InRowName);
+
+    bool SpawnBuildingFunction(const FName& InBuildingId);
+
     void ClearSpawnedBuildingRef();
+
+    void ClearPendingBuildingRef();
+
     void NotifyBuilderArrived();
-    void CancelPendingConstruction();
     
     void SetSelectedActor(AActor* InActor);
+
     void RegisterCommander(ASFCommander* InCommander);
+
+    void IssueMoveCommand(const FVector& Destination);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginAttackCommand();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void StopSelectedUnits();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginMoveCommand();
+    // team
+    FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
+    FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
 protected:
     virtual void BeginPlay() override;
 
@@ -80,8 +122,9 @@ private:
     void HandleStageResultChanged(
         ESFStageResult NewStageResult
     );
-
-    void HandleSelectInput();
+    //드래그
+    void HandleSelectionDragStarted();
+    void HandleSelectionDragCompleted();
 
     void HandleMoveInput();
 
@@ -92,6 +135,28 @@ private:
     void HandleFocusCommanderInput();
 
     void CreateInGameHUD();
+    
+    void HandleToggleSettingsInput();
+
+    void HandleToggleBuildModeInput();
+    
+	// 생산 슬롯 입력 처리
+    void HandleProduceSlot1Input();
+
+    void HandleProduceSlot2Input();
+
+    void HandleProduceSlot3Input();
+
+    void RequestProductionBySlot(int32 SlotIndex);
+
+	// 커맨드 입력 처리
+    void HandleAttackCommandInput();
+
+    void HandleStopCommandInput();
+
+    void HandleMoveCommandModeInput();
+
+    bool ExecutePendingUnitCommandUnderCursor();
     // 변수 영역
 protected:
     
@@ -196,6 +261,60 @@ protected:
     )
     TObjectPtr<UInputAction> FocusCommanderAction = nullptr;
 
+    UPROPERTY(
+        EditDefaultsOnly, 
+        BlueprintReadOnly, 
+        Category = "SF|Input"
+    )
+    TObjectPtr<UInputAction> ToggleSettingsAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly, 
+        BlueprintReadOnly, 
+        Category = "SF|Input", 
+        meta = (AllowPrivateAccess = "true")
+    )
+    TObjectPtr<UInputAction> ToggleBuildModeAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    float SelectionDragThreshold = 8.f;
+
+    /**
+     * 다중 이동 시 유닛 간 간격(cm).
+     *
+     * 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
+     * 유닛 지름 90cm(Agent Radius 45 x 2) 보다 여유가 있어야 한다.
+     */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Selection",
+        meta = (ClampMin = "50.0")
+    )
+    float FormationSpacing = 120.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot1Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot2Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ProduceSlot3Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> AttackCommandAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> StopCommandAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> MoveCommandModeAction = nullptr;
+
 private:
     UPROPERTY(
         Transient
@@ -206,14 +325,27 @@ private:
     
     UPROPERTY()
     TWeakObjectPtr<AActor> SelectedActor;
+
     UPROPERTY()
     TObjectPtr<ASFBaseBuilding> SpawnedBuildingRef;           // 드래그 중인 고스트
+
     UPROPERTY()
-    TObjectPtr<ASFBaseBuilding> PendingConstructionBuilding;  // 확정, 커맨더 대기 중
+    TObjectPtr<ASFBaseBuilding> PendingSpawnedBuildingRef;  // 확정, 커맨더 대기 중
+
     UPROPERTY()
     TWeakObjectPtr<ASFCommander> MyCommander;
+
     UPROPERTY(Transient)
     TObjectPtr<ASFGameState> SFGameState;
+
+    FVector2D SelectionPressPosition = FVector2D::ZeroVector;
+    bool bSelectionPressActive = false;
+
+    ESFUnitCommandMode PendingUnitCommandMode = ESFUnitCommandMode::None;
+    bool bCommandClickConsumed = false;
+
+    // team
+    int32 MyTeamIndex = 0;
     // Delegate 변수는 최하단
 public:
     UPROPERTY(
@@ -239,4 +371,16 @@ public:
         Category = "SF|Input"
     )
     FSFOnCancelBuildInput OnCancelBuildInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSelectionDragStarted OnSelectionDragStarted;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSelectionDragCompleted OnSelectionDragCompleted;
 };

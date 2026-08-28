@@ -1,8 +1,8 @@
 #include "SFResourcePanelWidget.h"
-
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "Game/GameState/SFGameState.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Logging/SFLog.h"
 
 void USFResourcePanelWidget::NativeConstruct()
@@ -120,21 +120,23 @@ void USFResourcePanelWidget::BindResourceData()
 
         return;
     }
+    
+    CachedPlayerTeamIndex = 0;
+    if (ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
+    {
+        CachedPlayerTeamIndex = SFPC->GetMyTeamIndex();
+    }
+    
+    USFTeamState* MyTeam = BoundGameState->FindOrAddTeam(CachedPlayerTeamIndex);
+    if (!MyTeam)
+    {
+        SF_LOG(Warning, "[SFResourcePanelWidget] Team %d 의 상태가 아직 없습니다.", CachedPlayerTeamIndex);
+        return;
+    }
 
-    BoundGameState->OnMineralChanged.AddUniqueDynamic(
-        this,
-        &USFResourcePanelWidget::UpdateMineral
-    );
-
-    BoundGameState->OnEtherChanged.AddUniqueDynamic(
-        this,
-        &USFResourcePanelWidget::UpdateEther
-    );
-
-    BoundGameState->OnPopulationChanged.AddUniqueDynamic(
-        this,
-        &USFResourcePanelWidget::UpdatePopulation
-    );
+    MyTeam->OnMineralChanged.AddUniqueDynamic(this, &USFResourcePanelWidget::UpdateMineral);
+    MyTeam->OnEtherChanged.AddUniqueDynamic(this, &USFResourcePanelWidget::UpdateEther);
+    MyTeam->OnPopulationChanged.AddUniqueDynamic(this, &USFResourcePanelWidget::UpdatePopulation);
 
     RefreshResourceData();
 }
@@ -147,20 +149,12 @@ void USFResourcePanelWidget::UnbindResourceData()
         return;
     }
 
-    BoundGameState->OnMineralChanged.RemoveDynamic(
-        this,
-        &USFResourcePanelWidget::UpdateMineral
-    );
-
-    BoundGameState->OnEtherChanged.RemoveDynamic(
-        this,
-        &USFResourcePanelWidget::UpdateEther
-    );
-
-    BoundGameState->OnPopulationChanged.RemoveDynamic(
-        this,
-        &USFResourcePanelWidget::UpdatePopulation
-    );
+    if (USFTeamState* MyTeam = BoundGameState->GetTeamState(CachedPlayerTeamIndex))
+    {
+        MyTeam->OnMineralChanged.RemoveDynamic(this, &USFResourcePanelWidget::UpdateMineral);
+        MyTeam->OnEtherChanged.RemoveDynamic(this, &USFResourcePanelWidget::UpdateEther);
+        MyTeam->OnPopulationChanged.RemoveDynamic(this, &USFResourcePanelWidget::UpdatePopulation);
+    }
 
     BoundGameState = nullptr;
 }
@@ -172,20 +166,13 @@ void USFResourcePanelWidget::RefreshResourceData()
         return;
     }
 
-    UpdateMineral(
-        BoundGameState->GetMineral(),
-        BoundGameState->GetMineralIncomeRate()
-    );
+    const USFTeamState* MyTeam = BoundGameState->GetTeamState(CachedPlayerTeamIndex);
+    if (!MyTeam) return;
 
-    UpdateEther(
-        BoundGameState->GetEther(),
-        BoundGameState->GetEtherIncomeRate()
-    );
-
-    UpdatePopulation(
-        BoundGameState->GetCurrentPopulation(),
-        BoundGameState->GetMaximumPopulation()
-    );
+    UpdateMineral(MyTeam->GetMineral(), MyTeam->GetMineralIncomeRate());
+    UpdateEther(MyTeam->GetEther(), MyTeam->GetEtherIncomeRate());
+    UpdatePopulation(MyTeam->GetCurrentPopulation(), MyTeam->GetMaximumPopulation());
+    
 }
 
 FText USFResourcePanelWidget::MakeResourceRateText(

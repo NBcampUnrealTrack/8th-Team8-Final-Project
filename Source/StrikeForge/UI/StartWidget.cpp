@@ -1,19 +1,15 @@
-#include "StartWidget.h"
+ï»¿#include "StartWidget.h"
+#include "SettingWidget.h"
 #include "Components/Button.h"
 #include "Components/Widget.h"
-#include "Components/BackgroundBlur.h"
-#include "Components/ComboBoxString.h"
-#include "GameFramework/GameUserSettings.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
 
 void UStartWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	SetIsFocusable(true);
 
-	// ¹öÆ° Å¬¸¯ ÀÌº¥Æ® ¹ÙÀÎµù
+	// ë²„íŠ¼ í´ë¦­ ì´ë²¤íŠ¸ ë°”ì¸ë”©
 	if (IsValid(Start_Btn))
 	{
 		Start_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnStartButtonClicked);
@@ -26,30 +22,6 @@ void UStartWidget::NativeConstruct()
 	{
 		Exit_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnExitButtonClicked);
 	}
-	if (IsValid(BackUi_Btn))
-	{
-		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
-	}
-	if (IsValid(BackUi_Btn))
-	{
-		BackUi_Btn->OnClicked.AddDynamic(this, &UStartWidget::OnBackUiButtonClicked);
-	}
-
-	// ¿É¼Ç ÃÊ±âÈ­ (ÀÌº¥Æ® ¹ÙÀÎµù Àü¿¡ È£ÃâÇØ¾ß ºÒÇÊ¿äÇÑ OnSelectionChanged ¹æÁö)
-	InitializeSettingOptions();
-
-	// ÄÞº¸¹Ú½º ¼±ÅÃ º¯°æ ÀÌº¥Æ® ¹ÙÀÎµù
-	if (IsValid(DisplayComboBox))
-	{
-		DisplayComboBox->OnSelectionChanged.AddDynamic(this, &UStartWidget::OnResolutionChanged);
-	}
-	if (IsValid(FullScreenComboBox))
-	{
-		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &UStartWidget::OnFullscreenModeChanged);
-	}
-
-	// ÃÊ±â »óÅÂ: ¼³Á¤Ã¢ ¼û±è
-	SetSettingMenuVisible(false);
 }
 
 void UStartWidget::OnStartButtonClicked()
@@ -65,128 +37,10 @@ void UStartWidget::OnStartButtonClicked()
 
 void UStartWidget::OnSettingButtonClicked()
 {
-	if (!IsValid(SettingPanel))
+	if (IsValid(SettingWidget))
 	{
-		return;
+		SettingWidget->OpenSetting();
 	}
-
-	bool bCurrentlyVisible = (SettingPanel->GetVisibility() == ESlateVisibility::Visible);
-	SetSettingMenuVisible(!bCurrentlyVisible);
-}
-
-void UStartWidget::InitializeSettingOptions()
-{
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	// 1. ÇØ»óµµ ¿É¼Ç ¼³Á¤
-	if (IsValid(DisplayComboBox))
-	{
-		DisplayComboBox->ClearOptions();
-		DisplayComboBox->AddOption(TEXT("1024x576"));
-		DisplayComboBox->AddOption(TEXT("1280x720"));
-		DisplayComboBox->AddOption(TEXT("1366x768"));
-		DisplayComboBox->AddOption(TEXT("1600x900"));
-		DisplayComboBox->AddOption(TEXT("1920x1080"));
-		DisplayComboBox->AddOption(TEXT("2560x1440"));
-
-		const FIntPoint CurrentRes = Settings->GetScreenResolution();
-		const FString CurrentResStr = FString::Printf(TEXT("%dx%d"), CurrentRes.X, CurrentRes.Y);
-
-		if (DisplayComboBox->FindOptionIndex(CurrentResStr) != INDEX_NONE)
-		{
-			DisplayComboBox->SetSelectedOption(CurrentResStr);
-		}
-		else
-		{
-			DisplayComboBox->SetSelectedOption(TEXT("1920x1080"));
-		}
-	}
-
-	// 2. ÀüÃ¼È­¸é ¸ðµå ¿É¼Ç ¼³Á¤
-	if (IsValid(FullScreenComboBox))
-	{
-		FullScreenComboBox->ClearOptions();
-		FullScreenComboBox->AddOption(TEXT("Fullscreen"));
-		FullScreenComboBox->AddOption(TEXT("WindowedFullscreen"));
-		FullScreenComboBox->AddOption(TEXT("Windowed"));
-
-		switch (Settings->GetFullscreenMode())
-		{
-		case EWindowMode::Fullscreen:
-			FullScreenComboBox->SetSelectedOption(TEXT("Fullscreen"));
-			break;
-		case EWindowMode::WindowedFullscreen:
-			FullScreenComboBox->SetSelectedOption(TEXT("WindowedFullscreen"));
-			break;
-		case EWindowMode::Windowed:
-		default:
-			FullScreenComboBox->SetSelectedOption(TEXT("Windowed"));
-			break;
-		}
-	}
-}
-
-void UStartWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	// ÄÚµå ³»ºÎ ÁöÁ¤À¸·Î ÀÎÇÑ Æ®¸®°Å ¹æÁö
-	if (SelectionType == ESelectInfo::Direct)
-	{
-		return;
-	}
-
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	FString WidthStr, HeightStr;
-	if (SelectedItem.Split(TEXT("x"), &WidthStr, &HeightStr))
-	{
-		const int32 Width = FCString::Atoi(*WidthStr);
-		const int32 Height = FCString::Atoi(*HeightStr);
-
-		Settings->SetScreenResolution(FIntPoint(Width, Height));
-		Settings->ApplySettings(false);
-		Settings->SaveSettings();
-	}
-}
-
-void UStartWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
-{
-	if (SelectionType == ESelectInfo::Direct)
-	{
-		return;
-	}
-
-	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
-	if (!Settings)
-	{
-		return;
-	}
-
-	EWindowMode::Type NewMode = EWindowMode::Windowed;
-
-	if (SelectedItem == TEXT("Fullscreen"))
-	{
-		NewMode = EWindowMode::Fullscreen;
-	}
-	else if (SelectedItem == TEXT("WindowedFullscreen"))
-	{
-		NewMode = EWindowMode::WindowedFullscreen;
-	}
-	else if (SelectedItem == TEXT("Windowed"))
-	{
-		NewMode = EWindowMode::Windowed;
-	}
-
-	Settings->SetFullscreenMode(NewMode);
-	Settings->ApplySettings(false);
-	Settings->SaveSettings();
 }
 
 void UStartWidget::OnExitButtonClicked()
@@ -196,41 +50,4 @@ void UStartWidget::OnExitButtonClicked()
 	{
 		UKismetSystemLibrary::QuitGame(this, SpecificPlayer, EQuitPreference::Quit, false);
 	}
-}
-
-void UStartWidget::OnBackUiButtonClicked()
-{
-	SetSettingMenuVisible(false);
-}
-
-void UStartWidget::SetSettingMenuVisible(bool bIsVisible)
-{
-	ESlateVisibility SettingVis = bIsVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	ESlateVisibility MainUIVis = bIsVisible ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
-
-	if (IsValid(SettingPanel)) { SettingPanel->SetVisibility(SettingVis); }
-	if (IsValid(BackgroundBlur)) { BackgroundBlur->SetVisibility(SettingVis); }
-	if (IsValid(BackUi_Btn)) { BackUi_Btn->SetVisibility(SettingVis); }
-	if (IsValid(Title)) { Title->SetVisibility(MainUIVis); }
-	if (IsValid(Start_Btn)) { Start_Btn->SetVisibility(MainUIVis); }
-	if (IsValid(Setting_Btn)) { Setting_Btn->SetVisibility(MainUIVis); }
-	if (IsValid(Exit_Btn)) { Exit_Btn->SetVisibility(MainUIVis); }
-
-	if (bIsVisible)
-	{
-		SetFocus();
-	}
-}
-
-FReply UStartWidget::NativeOnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
-{
-	if (InKeyEvent.GetKey() == EKeys::Escape)
-	{
-		if (IsValid(SettingPanel) && SettingPanel->GetVisibility() == ESlateVisibility::Visible)
-		{
-			SetSettingMenuVisible(false);
-			return FReply::Handled();
-		}
-	}
-	return Super::NativeOnKeyDown(MyGeometry, InKeyEvent);
 }

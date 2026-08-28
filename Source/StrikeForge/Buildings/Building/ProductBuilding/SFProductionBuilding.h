@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Datas/Unit/UnitProductData.h"
 #include "Interfaces/Building/Productable.h"
 #include "SFProductionBuilding.generated.h"
 
@@ -20,14 +19,14 @@ class STRIKEFORGE_API ASFProductionBuilding
 	GENERATED_BODY()
 
 public:
-	ASFProductionBuilding();
+	ASFProductionBuilding(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(BlueprintAssignable, Category = "Production")
 	FProductUnitArrayChanged OnSpawnableUnitsChanged;
 
 protected:
-	virtual void OnTierActivated(const FBuildingTier& ActivatedTier) override;
-	virtual void OnTierDeactivated(const FBuildingTier& DeactivatedTier) override;
+	virtual void OnTierActivated() override;
+	virtual void OnUpgradeStarted() override;
 	virtual void OnBuildingDestroyed() override;
 
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;

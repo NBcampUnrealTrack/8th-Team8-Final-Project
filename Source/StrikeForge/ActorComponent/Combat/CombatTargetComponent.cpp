@@ -7,6 +7,7 @@
 
 UCombatTargetComponent::UCombatTargetComponent()
 	: bRegistered(false)
+	, bDead(false)
 {
 	PrimaryComponentTick.bCanEverTick = false;
 }
@@ -31,7 +32,7 @@ void UCombatTargetComponent::BeginPlay()
 
 	if (OverrideMaxHealth > 0.f)
 	{
-		HealthComponent->InitHealth(OverrideMaxHealth);
+		HealthComponent->InitializeHealth(OverrideMaxHealth);
 	}
 
 	HealthComponent->OnHealthIsZero.AddDynamic(this, &UCombatTargetComponent::HandleOwnerDeath);
@@ -77,6 +78,15 @@ void UCombatTargetComponent::SetTeamIndex(int32 InTeamIndex)
 
 bool UCombatTargetComponent::IsAlive() const
 {
+	// 사망 통지를 이미 받았으면 그것으로 끝이다.
+	// 소유 액터가 DeathLifeSpan 동안 남아 있어도 전투 대상으로 보지 않는다.
+	if (bDead) return false;
+
+	// UPROPERTY 포인터는 GC 전까지 nullptr 이 되지 않는다.
+	// Destroy() 예약 상태를 따로 확인해야 파괴 중인 액터를 걸러낸다.
+	const AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || Owner->IsActorBeingDestroyed()) return false;
+
 	return IsValid(HealthComponent) && !HealthComponent->GetIsDead();
 }
 
@@ -101,6 +111,10 @@ void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InIn
 
 void UCombatTargetComponent::HandleOwnerDeath()
 {
+	// 등록 해제보다 먼저 세운다.
+	// 해제 도중 돌아가는 델리게이트에서 IsAlive() 를 물어도 이미 false 여야 한다.
+	bDead = true;
+
 	// 사망 즉시 목록에서 뺀다.
 	// 이걸 먼저 해야 다른 유닛이 시체를 계속 때리지 않는다.
 	if (bRegistered)

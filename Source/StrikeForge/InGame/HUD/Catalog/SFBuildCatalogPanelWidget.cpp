@@ -1,12 +1,12 @@
 #include "SFBuildCatalogPanelWidget.h"
-
 #include "SFBuildCatalogEntryWidget.h"
-
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
-
-#include "Game/Subsystem/SFDataTableManager.h"
 #include "Logging/SFLog.h"
+#include "Datas/Building/SFBuildingCatalog.h"
+#include "Datas/Building/SFBuildingDefinition.h"
+#include "Game/GameState/SFGameState.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 
 void USFBuildCatalogPanelWidget::NativeConstruct()
 {
@@ -17,63 +17,82 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 
 void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 {
-	if (
-		!IsValid(BuildingEntryHorizontalBox) ||
-		!BuildingEntryWidgetClass
-		)
+	if (!IsValid(BuildingEntryHorizontalBox) ||
+		!BuildingEntryWidgetClass)
 	{
 		return;
 	}
 
 	BuildingEntryHorizontalBox->ClearChildren();
 
-	UGameInstance* GameInstance =
-		GetGameInstance();
+	ASFInGamePlayerController* SFPC =
+		Cast<ASFInGamePlayerController>(
+			GetOwningPlayer());
 
-	if (!IsValid(GameInstance))
+	if (!IsValid(SFPC))
 	{
 		SF_LOG(
 			Error,
 			"[SFBuildCatalogPanelWidget] "
-			"GameInstance is invalid."
-		);
+			"PlayerController가 유효하지 않습니다.");
 
 		return;
 	}
 
-	USFDataTableManager* DataTableManager =
-		GameInstance->GetSubsystem<USFDataTableManager>();
+	ASFGameState* SFGameState =
+		GetWorld()->GetGameState<ASFGameState>();
 
-	if (!IsValid(DataTableManager))
+	if (!IsValid(SFGameState))
 	{
 		SF_LOG(
 			Error,
 			"[SFBuildCatalogPanelWidget] "
-			"DataTableManager is invalid."
-		);
+			"GameState가 유효하지 않습니다.");
 
 		return;
 	}
 
-	const TArray<FName> BuildingRowNames =
-		DataTableManager->GetDataRowNames(
-			EDataTableType::BuildCatalogUI
-		);
+	USFBuildingCatalog* Catalog =
+		SFGameState->GetTeamBuildingCatalog(
+			SFPC->GetMyTeamIndex());
 
-	SF_LOG(
-		Log,
-		"[SFBuildCatalogPanelWidget] "
-		"Build Catalog Row Count: %d",
-		BuildingRowNames.Num()
-	);
-
-	for (const FName& BuildingRowName : BuildingRowNames)
+	if (!IsValid(Catalog))
 	{
+		SF_LOG(
+			Error,
+			"[SFBuildCatalogPanelWidget] "
+			"Team %d의 BuildingCatalog가 없습니다.",
+			SFPC->GetMyTeamIndex());
+
+		return;
+	}
+
+	for (const TSoftObjectPtr<USFBuildingDefinition>& DefinitionRef
+		: Catalog->BuildableDefinitions)
+	{
+		if (DefinitionRef.IsNull())
+		{
+			continue;
+		}
+
+		USFBuildingDefinition* Definition =
+			DefinitionRef.LoadSynchronous();
+
+		if (!IsValid(Definition))
+		{
+			SF_LOG(
+				Warning,
+				"[SFBuildCatalogPanelWidget] "
+				"Definition 로드에 실패했습니다. Asset=%s",
+				*DefinitionRef.ToSoftObjectPath().ToString());
+
+			continue;
+		}
+
 		USFBuildCatalogEntryWidget* EntryWidget =
 			CreateWidget<USFBuildCatalogEntryWidget>(
 				GetOwningPlayer(),
-				BuildingEntryWidgetClass
-			);
+				BuildingEntryWidgetClass);
 
 		if (!IsValid(EntryWidget))
 		{
@@ -81,32 +100,24 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 		}
 
 		EntryWidget->InitializeBuildingEntry(
-			BuildingRowName
-		);
-		
+			Definition);
+
 		UHorizontalBoxSlot* EntrySlot =
 			BuildingEntryHorizontalBox
 			->AddChildToHorizontalBox(
-				EntryWidget
-			);
+				EntryWidget);
+		
 
 		if (IsValid(EntrySlot))
 		{
 			EntrySlot->SetPadding(
-				FMargin(
-					5.0f,
-					0.0f,
-					5.0f,
-					0.0f
-				)
-			);
+				FMargin(5.f, 0.f, 5.f, 0.f));
 		}
 
 		SF_LOG(
 			Log,
 			"[SFBuildCatalogPanelWidget] "
 			"Entry Created: %s",
-			*BuildingRowName.ToString()
-		);
+			*Definition->BuildingId.ToString());
 	}
 }

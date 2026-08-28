@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Game/Subsystem/BuildingGridInfo.h"
 #include "BuildingPlacement.generated.h"
 
+class ASFBaseBuilding;
 class USFBuildingGridSubsystem;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -16,24 +18,28 @@ public:
 	
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 						   FActorComponentTickFunction* ThisTickFunction) override;
+	UFUNCTION(BlueprintCallable)
+	bool StartPlacementMode(ASFBaseBuilding* InTargetBuilding);
+	bool TryConfirmPlacementMode();
+	// = endplacementmode == tick off cachedproperty nullptr
 	
-	UFUNCTION(BlueprintCallable)
-	void StartPlacementMode(AActor* InTargetActor);
-	UFUNCTION(BlueprintCallable)
-	void UpdatePlacementMode();
-	UFUNCTION(BlueprintCallable)
-	void ConfirmPlacementMode();
-	
-	UFUNCTION(BlueprintCallable)
-	void ToggleGridFunction(bool toggle);
+	void EndPlacementSession();
 private:
+	void UpdatePlacementMode();
 	
+	bool CanPlaceOnCurrentGrid() const;
+	// nav
+	bool CanPlaceOnNavMeshXY(const FVector& WorldLocation) const;
+
 	UPROPERTY()
-	TWeakObjectPtr<AActor> TargetActor;
+	TWeakObjectPtr<ASFBaseBuilding> TargetBuilding;
+	UPROPERTY()
+	FBuildingGridInfo TargetBuildingGridInfo;
+	UPROPERTY()
+	bool bCanPlaceCurrentLocation = false;
+	
 	UPROPERTY()
 	TWeakObjectPtr<APlayerController> OwnerController;
 	UPROPERTY() // should not be deleted by GC
 	TObjectPtr<USFBuildingGridSubsystem> CachedGridSubsystem;
-	
-	bool ToggleGrid = true;
 };

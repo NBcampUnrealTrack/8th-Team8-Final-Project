@@ -13,6 +13,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	BuildingRowName
 );
 
+class USFBuildingDefinition;
+
 UCLASS()
 class STRIKEFORGE_API USFBuildCatalogEntryWidget
 	: public UCommonButtonBase
@@ -22,8 +24,7 @@ class STRIKEFORGE_API USFBuildCatalogEntryWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Build Catalog")
 	void InitializeBuildingEntry(
-		FName InBuildingRowName
-	);
+	USFBuildingDefinition* InDefinition);
 
 	UFUNCTION(BlueprintPure, Category = "SF|Build Catalog")
 	FName GetBuildingRowName() const;
@@ -54,4 +55,7 @@ private:
 
 	UPROPERTY(Transient)
 	FName BuildingRowName = NAME_None;
+	// 현재종족의 건물 종합 카테고리
+	UPROPERTY(Transient)
+	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
 };

@@ -1,8 +1,23 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Game/Subsystem/BuildingGridInfo.h"
 #include "SFBuildingGridSubsystem.generated.h"
+
+class AResourceBase;
+// 블루프린트 노출 x
+struct FSFGridCellData
+{
+	TWeakObjectPtr<AResourceBase> ResourceActor;
+	TWeakObjectPtr<AActor> BuildingActor;
+	
+	bool IsEmpty() const
+	{
+		return !ResourceActor.IsValid() && !BuildingActor.IsValid();
+	}
+};
 
 UCLASS()
 class STRIKEFORGE_API USFBuildingGridSubsystem : public UWorldSubsystem
@@ -13,22 +28,44 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	
-	UFUNCTION(BlueprintCallable)
-	FIntPoint WorldCoordinateToGrid(const FVector& WorldLocation) const;
+	// // WorldCenterToGridInfo로 전환됨. 현재는 사용x
+	// FIntPoint WorldCoordinateToGrid(const FVector& WorldLocation) const;
 	UFUNCTION(BlueprintCallable)
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
-	//check can build
-	bool CanPlaceBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize);
-	bool TryRegistBuildingGrid(const FIntPoint& OriginCoordinate, const FIntPoint& GridSize);
+	// check
+	// 건물끼리 겹치는지 검사
+	bool CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
+	// 일반건물 - 건물과 자원 모두 없어야 배치 가능
+	bool CanPlaceNormalBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
 	
+	// building
+	// 점유o이면 x, 점유x면 regist까지 진행
+	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
+	void UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo);
+	// resource
+	bool TryRegisterResourceGrid(AResourceBase* Resource, const FBuildingGridInfo& GridInfo);
+	void UnregisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo);
+	// filter resource
+	AResourceBase* FindResourceInGrid(const AActor* InBuilding, const FBuildingGridInfo& GridInfo) const;
+	
+	FVector GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const;
+	// world location -> grid
+	FBuildingGridInfo WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& GridSize) const;
+	// upgrade?
+	//bool TryResizeBuildingGrid(AActor* Owner, const FBuildingGridInfo& OldFootprint, const FBuildingGridInfo& NewFootprint);
 	FORCEINLINE float GetCellSize() const { return CellSize; }
 	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
 #pragma region Debug
-	UFUNCTION(BlueprintCallable)
-	void DebugDrawRadius(const FVector& WorldLocation, float Radius);
-	UFUNCTION(BlueprintCallable)
-	void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
+	// UFUNCTION(BlueprintCallable)
+	// void DebugDrawRadius(const FVector& WorldLocation, float Radius);
+	// UFUNCTION(BlueprintCallable) 
+	// void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
+	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
+	void DebugDrawOccupiedCells(float Duration = 5.0f) const;
+	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
+	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;
+	void DebugDrawResourceCells(EResourceType ResourceType, float Duration = 5.0f) const;
 #pragma endregion 
 private:
 	// size of grid
@@ -38,5 +75,5 @@ private:
 	
 	// array of placed grid // (1, 1)
 	// (1, 1) = 1(X) * cellsize + cellsize / 2
-	TSet<FIntPoint> PlacedCells; 
+	TMap<FIntPoint, FSFGridCellData> GridCells; 
 };

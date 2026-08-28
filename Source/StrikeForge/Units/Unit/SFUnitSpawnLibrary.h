@@ -49,6 +49,30 @@ public:
 	static int32 ResolveTeamIndex(const AActor* InActor);
 
 	/**
+	 * 이 지점에 건물을 세울 수 있는가 — 진격로 코리도 밖이면 세울 수 있다.
+	 *
+	 * 배치 검증은 건물 쪽 담당이라 이쪽에서 손대지 않는다. 대신 판정만 BP 노드로
+	 * 내어준다. 배치 고스트의 틱과 배치 확정 직전 양쪽에서 부르면 된다 —
+	 * 확정 직전에만 부르면 플레이어는 클릭할 때까지 안 되는 줄 모른다.
+	 *
+	 * 레벨에 ALanePath 가 하나도 없으면 언제나 true 다. 코리도를 모르는 채로
+	 * 막으면 어디에도 건물을 못 짓게 된다.
+	 *
+	 * @param InLocation        배치하려는 지점(건물 중심)
+	 * @param InFootprintRadius 건물의 수평 반경(cm). 0 이면 중심점만 본다.
+	 *                          중심만 검사하면 큰 건물이 길을 반쯤 덮을 수 있다 —
+	 *                          유닛끼리는 통과해도 건물은 통과하지 못하므로
+	 *                          그대로 진격로가 봉쇄된다.
+	 * @return 코리도 밖이면 true
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Build",
+		meta = (WorldContext = "InWorldContext", AdvancedDisplay = "InFootprintRadius"))
+	static bool IsBuildableLocation(
+		const UObject* InWorldContext,
+		const FVector& InLocation,
+		float InFootprintRadius = 0.f);
+
+	/**
 	 * NavMesh 위의 생성 가능한 지점을 찾는다.
 	 * 실패해도 OutLocation 에는 원점이 들어가므로 호출부는 그대로 진행해도 된다.
 	 */

@@ -26,7 +26,15 @@ public:
 	 */
 	void RequestMoveToActor(AActor* InGoal, float InAcceptanceRadius);
 
-	void RequestMoveToLocation(const FVector& InLocation, float InAcceptanceRadius);
+	/**
+	 * 지점 이동.
+	 *
+	 * @param bInThrottle 목표 지점이 계속 조금씩 움직이는 경우(공격 슬롯 추적)에 켠다.
+	 *                    위치가 바뀔 때마다 MoveTo 를 새로 내면 DetourCrowd 가
+	 *                    요청마다 에이전트를 리셋해 유닛이 조향을 시작하지 못한다.
+	 *                    플레이어 명령은 즉시 반영돼야 하므로 끈 채로 부른다.
+	 */
+	void RequestMoveToLocation(const FVector& InLocation, float InAcceptanceRadius, bool bInThrottle = false);
 
 	/** 이동을 멈추고 경로를 버린다 */
 	void ClearMoveRequest();
@@ -56,6 +64,17 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.05"))
 	float MinRequestInterval = 0.5f;
+
+	/**
+	 * 공격 슬롯 추적 전용 재요청 간격(초).
+	 *
+	 * 슬롯은 대상을 따라 계속 조금씩 움직이므로 재요청이 잦다.
+	 * MinRequestInterval(0.5) 을 그대로 쓰면 낡은 지점을 오래 붙들어
+	 * 접근이 눈에 띄게 굼떠진다. 사거리 근처에서만 쓰는 경로라
+	 * 조금 짧게 잡아도 DetourCrowd 가 버틴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement", meta = (ClampMin = "0.05"))
+	float SlotRequestInterval = 0.2f;
 
 	/** 켜면 MoveTo 결과와 경로 상태를 Output Log 에 찍는다 */
 	UPROPERTY(EditDefaultsOnly, Category = "Debug")

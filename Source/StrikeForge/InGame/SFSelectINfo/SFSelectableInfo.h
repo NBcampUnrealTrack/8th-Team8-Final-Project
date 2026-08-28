@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Datas/Resource/ResourceTypes.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectableInfo.generated.h"
 
 class UTexture2D;
@@ -12,6 +12,7 @@ enum class ESFSelectableType : uint8
     None                UMETA(DisplayName = "None"),
     Commander           UMETA(DisplayName = "Commander"),
     MainBuilding        UMETA(DisplayName = "Main Building"),
+    NormalBuilding      UMETA(DisplayName = "Normal Building"),
     ProductionBuilding  UMETA(DisplayName = "Production Building"),
     ResourceBuilding    UMETA(DisplayName = "Resource Building"),
     Unit                UMETA(DisplayName = "Unit")
@@ -129,4 +130,10 @@ public:
     )
     bool bShowMoveSpeed = true;
 
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    bool bShowSkillIcons = false;
 };

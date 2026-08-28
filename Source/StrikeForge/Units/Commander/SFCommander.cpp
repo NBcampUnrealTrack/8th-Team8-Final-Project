@@ -58,6 +58,18 @@ void ASFCommander::BeginPlay()
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(LoadPCTimer);
+	
+	if (CommandAction == ECommandAction::BUILD &&
+	EndPlayReason == EEndPlayReason::Destroyed)
+	{
+		if (ASFInGamePlayerController* SFPC =
+			GetWorld()->GetFirstPlayerController<
+				ASFInGamePlayerController>())
+		{
+			SFPC->ClearPendingBuildingRef();
+		}
+	}
+	
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -260,7 +272,7 @@ void ASFCommander::CheckFailMoving(bool IsSuccessed)
 
 	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 	{
-		SFPC->CancelPendingConstruction();
+		SFPC->ClearPendingBuildingRef();
 	}
 
 	StopMoving();
@@ -272,7 +284,7 @@ void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 	{
 		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
 		{
-			SFPC->CancelPendingConstruction();
+			SFPC->ClearPendingBuildingRef();
 		}
 	}
 	

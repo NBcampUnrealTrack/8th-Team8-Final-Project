@@ -375,6 +375,7 @@ void USFInGameHUDWidget::ApplySelection(
 
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
+    RefreshMultiSelectionPanel();
 }
 
 void USFInGameHUDWidget::ApplySelectionUIData(
@@ -434,13 +435,27 @@ void USFInGameHUDWidget::ApplySelectionUIData(
 
     InOutSelectableInfo.bShowMoveSpeed =
         UIData->bShowMoveSpeed;
+
+    InOutSelectableInfo.bShowSkillIcons =
+        UIData->bShowSkillIcons;
 }
 
 void USFInGameHUDWidget::RefreshSelectionPanels()
 {
+    const bool bHasValidSelection =
+        IsValid(SelectedActor) &&
+        SelectedInfo.SelectableType != ESFSelectableType::None;
+
     if (IsValid(SelectionPanel))
     {
-        SelectionPanel->ShowSelection(SelectedInfo);
+        if (bHasValidSelection)
+        {
+            SelectionPanel->ShowSelection(SelectedInfo);
+        }
+        else
+        {
+            SelectionPanel->ClearSelection();
+        }
     }
 
     if (!IsValid(ProductionBuildingPanel))
@@ -458,9 +473,21 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         return;
     }
 
-    if (SelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding)
+    if (SelectedActors.Num() > 1)
     {
-        ProductionBuildingPanel->ShowProductionBuilding(SelectedActor.Get());
+        ProductionBuildingPanel->HideProductionBuilding();
+        return;
+    }
+
+    if (
+        bHasValidSelection &&
+        SelectedInfo.SelectableType ==
+        ESFSelectableType::ProductionBuilding
+        )
+    {
+        ProductionBuildingPanel->ShowProductionBuilding(
+            SelectedActor.Get()
+        );
         return;
     }
 
@@ -1801,4 +1828,14 @@ void USFInGameHUDWidget::HandleStageIntroDeactivated()
         Log,
         "[SFInGameHUDWidget] Stage intro finished."
     );
+}
+
+bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
+{
+    if (!IsValid(ProductionBuildingPanel))
+    {
+        return false;
+    }
+
+    return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
 }

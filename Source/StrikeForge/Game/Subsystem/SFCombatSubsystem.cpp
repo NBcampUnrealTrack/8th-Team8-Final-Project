@@ -1,6 +1,14 @@
 ﻿#include "SFCombatSubsystem.h"
 
+// GFrameCounter — 격자를 프레임당 한 번만 다시 채우기 위해 쓴다
+#include "CoreGlobals.h"
+
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+
+// 팀 조회의 단일 창구를 만들기 위해 읽기 전용으로 참조한다.
+// 두 파일 모두 수정하지 않는다.
+#include "Buildings/SFRootBase.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Units/Lane/LanePath.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
@@ -84,6 +92,46 @@ UCombatTargetComponent* USFCombatSubsystem::FindTargetComponent(const AActor* In
 	if (!IsValid(InActor)) return nullptr;
 
 	return InActor->FindComponentByClass<UCombatTargetComponent>();
+}
+
+int32 USFCombatSubsystem::GetTeamOf(const AActor* InActor)
+{
+	if (!IsValid(InActor)) return Targetable::NeutralTeam;
+
+	// 전투 컴포넌트가 팀의 실제 저장소다. 건물의 ASFRootBase::GetTeamIndex 도
+	// 내부에서 이 컴포넌트를 읽으므로, 여기 하나만 보면 유닛·건물이 모두 맞는다.
+	if (const UCombatTargetComponent* Combat = FindTargetComponent(InActor))
+	{
+		return Combat->GetTeamIndex();
+	}
+
+	// 컴포넌트가 없는 액터(스포너, 커맨더 등)를 위한 경로.
+	if (const ASFRootBase* RootBase = Cast<ASFRootBase>(InActor))
+	{
+		return RootBase->GetTeamIndex();
+	}
+
+	// 0(플레이어 팀)이 아니라 중립을 돌려준다.
+	// 0 을 돌려주면 팀 주입을 빠뜨린 액터가 조용히 아군이 되어,
+	// 아군끼리 안 싸우는 것으로만 나타나 원인 추적이 어렵다.
+	// 중립은 아무와도 싸우지 않으므로 "아무것도 안 한다" 로 눈에 띈다.
+	SF_LOG(Warning,
+		"[Combat] %s : 팀 번호를 찾지 못해 중립(-1)으로 봅니다. "
+		"CombatTarget 컴포넌트가 붙어 있는지 확인하세요.",
+		*InActor->GetName());
+
+	return Targetable::NeutralTeam;
+}
+
+int32 USFCombatSubsystem::GetLocalPlayerTeam() const
+{
+	const UWorld* World = GetWorld();
+	if (!IsValid(World)) return Targetable::NeutralTeam;
+
+	const ASFInGamePlayerController* PC = World->GetFirstPlayerController<ASFInGamePlayerController>();
+	if (!IsValid(PC)) return Targetable::NeutralTeam;
+
+	return PC->GetMyTeamIndex();
 }
 
 bool USFCombatSubsystem::IsHostileTeam(int32 InTeamA, int32 InTeamB)
@@ -251,6 +299,23 @@ ALanePath* USFCombatSubsystem::FindNearestLane(const FVector& InLocation, int32 
 // 각도를 대상 회전에 맞추면 적이 몸을 돌릴 때마다 아군 전체가 같이 돌게 된다.
 // 그래서 월드 기준으로 고정한다.
 // ─────────────────────────────────────────────────────────
+/**
+ * 이 점유자가 아직 자리를 지키고 있는가.
+ *
+ * IsValid 만으로는 부족하다. Destroy() 가 예약된 액터는 DeathLifeSpan 동안
+ * 유효한 채로 남아 자리를 계속 차지한다.
+ *
+ * 전투 컴포넌트까지 뒤져 생존을 확인하지는 않는다 — 링 순회는 자주 도는데
+ * FindComponentByClass 는 액터의 컴포넌트 배열을 선형으로 훑기 때문이다.
+ * 정상 사망 경로는 AUnitBase::HandleDeath 가 직접 반납하므로,
+ * 여기서는 그 경로를 놓친 경우만 걷어내면 된다.
+ */
+static bool IsOccupantHolding(const TWeakObjectPtr<AActor>& InOccupant)
+{
+	const AActor* Actor = InOccupant.Get();
+	return IsValid(Actor) && !Actor->IsActorBeingDestroyed();
+}
+
 void USFCombatSubsystem::MeasureTargetBounds(const AActor* InTarget, float& OutRadius, FVector2D& OutExtent)
 {
 	OutRadius = 45.f;						// 캡슐 기본 반지름
@@ -303,12 +368,14 @@ FSFAttackSlotRing* USFCombatSubsystem::FindOrCreateRing(AActor* InTarget, float 
 
 	if (FSFAttackSlotRing* Existing = SlotRings.Find(Key))
 	{
-		// 사라진 점유자를 비운다.
-		// 여기서 정리하지 않으면 죽은 유닛이 자리를 계속 차지해
-		// 링이 영영 가득 찬 상태로 남는다.
+		// 사라졌거나 파괴 예약된 점유자를 비운다.
+		//
+		// 예전에는 !IsValid() 일 때만 Reset() 했는데, 무효 약참조를 무효로
+		// 만드는 것이라 아무 효과가 없었다. 실제로 자리를 붙잡고 있는 것은
+		// "아직 유효하지만 Destroy() 가 예약된" 시체 쪽이다.
 		for (TWeakObjectPtr<AActor>& Occupant : Existing->Occupants)
 		{
-			if (!Occupant.IsValid())
+			if (!IsOccupantHolding(Occupant))
 			{
 				Occupant.Reset();
 			}
@@ -326,12 +393,21 @@ FSFAttackSlotRing* USFCombatSubsystem::FindOrCreateRing(AActor* InTarget, float 
 	// 끝내 도착하지 못하고 공격도 못 한다.
 	NewRing.Occupants.SetNum(ComputeSlotCount(NewRing.TargetRadius + FMath::Max(0.f, InApproachDistance)));
 
+	// 세대를 붙인다. 이 링이 나중에 버려졌다 다시 만들어지면 값이 달라지고,
+	// 옛 자리를 들고 있던 공격자들이 그것을 보고 스스로 다시 잡는다.
+	NewRing.Generation = NextRingGeneration++;
+
+	// 랩어라운드 방어. 0 은 "링 없음" 을 뜻하므로 건너뛴다.
+	if (NextRingGeneration == 0) NextRingGeneration = 1;
+
 	return &SlotRings.Add(Key, MoveTemp(NewRing));
 }
 
 int32 USFCombatSubsystem::ClaimAttackSlot(AActor* InTarget, AActor* InAttacker, float InApproachDistance)
 {
 	if (!IsValid(InTarget) || !IsValid(InAttacker)) return INDEX_NONE;
+
+	++StatSlotClaims;
 
 	FSFAttackSlotRing* Ring = FindOrCreateRing(InTarget, InApproachDistance);
 	if (!Ring) return INDEX_NONE;
@@ -346,7 +422,12 @@ int32 USFCombatSubsystem::ClaimAttackSlot(AActor* InTarget, AActor* InAttacker, 
 
 	for (int32 Index = 0; Index < SlotCount; ++Index)
 	{
-		if (!Ring->Occupants[Index].IsValid()) continue;
+		if (!IsOccupantHolding(Ring->Occupants[Index]))
+		{
+			// 이 자리는 비었다. 훑는 김에 정리해 둔다.
+			Ring->Occupants[Index].Reset();
+			continue;
+		}
 
 		++Occupied;
 
@@ -555,9 +636,73 @@ int32 USFCombatSubsystem::GetAttackerCount(const AActor* InTarget) const
 	int32 Count = 0;
 	for (const TWeakObjectPtr<AActor>& Occupant : Ring->Occupants)
 	{
-		if (Occupant.IsValid()) ++Count;
+		if (IsOccupantHolding(Occupant)) ++Count;
 	}
 	return Count;
+}
+
+uint32 USFCombatSubsystem::GetRingGeneration(const AActor* InTarget) const
+{
+	const FSFAttackSlotRing* Ring = FindRing(InTarget);
+	return Ring ? Ring->Generation : 0;
+}
+
+// ─────────────────────────────────────────────────────────
+// 공간 격자
+//
+// 프레임당 한 번만 채우고, 반경 질의는 겹치는 칸만 본다.
+// 액터·위치·팀·분류를 채울 때 한 번 확인해 복사해 두므로, 질의 중에는
+// ResolveTarget(유효성 + 생존 + GetOwner) 을 다시 돌지 않는다.
+// ─────────────────────────────────────────────────────────
+FIntPoint USFCombatSubsystem::ToCell(const FVector& InLocation)
+{
+	return FIntPoint(
+		FMath::FloorToInt(InLocation.X / GridCellSize),
+		FMath::FloorToInt(InLocation.Y / GridCellSize));
+}
+
+void USFCombatSubsystem::EnsureGridCurrent() const
+{
+	// GFrameCounter 는 프레임마다 증가한다.
+	// 한 프레임 안에서 몇 번을 물어도 실제 재구성은 한 번뿐이다.
+	if (GridBuiltFrame == GFrameCounter) return;
+
+	GridBuiltFrame = GFrameCounter;
+	RebuildGrid();
+}
+
+void USFCombatSubsystem::RebuildGrid() const
+{
+	// 칸 배열은 비우되 키는 남긴다. 다음 프레임에 같은 칸이 다시 쓰일 확률이
+	// 높아서, 매번 TMap 을 비우면 해시 재할당이 반복된다.
+	for (TPair<FIntPoint, TArray<FSFGridEntry>>& Pair : Grid)
+	{
+		Pair.Value.Reset();
+	}
+
+	GridEntryCount = 0;
+
+	for (const TPair<int32, FSFTargetBucket>& Bucket : TeamBuckets)
+	{
+		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket.Value.Targets)
+		{
+			AActor* Actor = nullptr;
+			if (!ResolveTarget(Weak, Actor)) continue;
+
+			const FVector Location = Actor->GetActorLocation();
+
+			FSFGridEntry Entry;
+			Entry.Actor = Actor;
+			Entry.Location = FVector2D(Location.X, Location.Y);
+			Entry.TeamIndex = Bucket.Key;
+			Entry.TargetType = Weak->GetTargetType();
+
+			Grid.FindOrAdd(ToCell(Location)).Add(MoveTemp(Entry));
+			++GridEntryCount;
+		}
+	}
+
+	++StatGridRebuilds;
 }
 
 bool USFCombatSubsystem::ResolveTarget(const TWeakObjectPtr<UCombatTargetComponent>& InWeak, AActor*& OutActor)
@@ -579,6 +724,31 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 
 	const bool bLimitRange = InMaxRange > 0.f;
 	const float MaxRangeSq = InMaxRange * InMaxRange;
+	const FVector2D Origin2D(InOrigin.X, InOrigin.Y);
+
+	// 범위가 있으면 격자로 좁힌다.
+	// 범위 제한이 없는 호출(진격 목표 탐색)은 맵 전체가 대상이라
+	// 격자로 좁혀지지 않으므로 그대로 전체를 훑는다. 자주 불리지도 않는다.
+	if (bLimitRange)
+	{
+		ForEachEntryInRadius(InOrigin, InMaxRange,
+			[&](const FSFGridEntry& Entry)
+			{
+				if (Entry.TargetType != InTargetType) return;
+				if (!IsHostileTeam(InSeekerTeam, Entry.TeamIndex)) return;
+
+				const float DistSq = FVector2D::DistSquared(Origin2D, Entry.Location);
+				if (DistSq > MaxRangeSq || DistSq >= BestDistSq) return;
+
+				AActor* Candidate = Entry.Actor.Get();
+				if (!IsValid(Candidate)) return;
+
+				BestDistSq = DistSq;
+				Best = Candidate;
+			});
+
+		return Best;
+	}
 
 	for (const TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
 	{
@@ -586,15 +756,14 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 
 		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value.Targets)
 		{
+			// 싼 판별부터 한다. ResolveTarget 은 유효성·생존·소유 액터를 모두 본다.
+			if (Weak->GetTargetType() != InTargetType) continue;
+
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
 
-			if (Weak->GetTargetType() != InTargetType) continue;
-
 			// 수평 거리로 판정한다. 언덕 높이 차로 사거리가 어긋나지 않게.
 			const float DistSq = FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation());
-
-			if (bLimitRange && DistSq > MaxRangeSq) continue;
 
 			if (DistSq < BestDistSq)
 			{
@@ -641,22 +810,21 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 	if (InRadius <= 0.f) return;
 
 	const float RadiusSq = InRadius * InRadius;
+	const FVector2D Origin2D(InOrigin.X, InOrigin.Y);
 
-	for (const TPair<int32, FSFTargetBucket>& Pair : TeamBuckets)
-	{
-		if (!IsHostileTeam(InSeekerTeam, Pair.Key)) continue;
-
-		for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Pair.Value.Targets)
+	ForEachEntryInRadius(InOrigin, InRadius,
+		[&](const FSFGridEntry& Entry)
 		{
-			AActor* Candidate = nullptr;
-			if (!ResolveTarget(Weak, Candidate)) continue;
+			if (!IsHostileTeam(InSeekerTeam, Entry.TeamIndex)) return;
 
-			if (FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation()) <= RadiusSq)
-			{
-				OutActors.Add(Candidate);
-			}
-		}
-	}
+			if (FVector2D::DistSquared(Origin2D, Entry.Location) > RadiusSq) return;
+
+			// 격자를 채운 뒤 이 프레임 안에서 파괴됐을 수 있다.
+			AActor* Candidate = Entry.Actor.Get();
+			if (!IsValid(Candidate)) return;
+
+			OutActors.Add(Candidate);
+		});
 }
 
 void USFCombatSubsystem::GetNearbyAlliesForSeparation(const AActor* InSelf, int32 InTeamIndex, float InRadius, TArray<AActor*>& OutActors) const
@@ -665,28 +833,28 @@ void USFCombatSubsystem::GetNearbyAlliesForSeparation(const AActor* InSelf, int3
 
 	if (!IsValid(InSelf) || InRadius <= 0.f) return;
 
-	const FSFTargetBucket* Bucket = TeamBuckets.Find(InTeamIndex);
-	if (!Bucket) return;
-
 	const FVector Origin = InSelf->GetActorLocation();
+	const FVector2D Origin2D(Origin.X, Origin.Y);
 	const float RadiusSq = InRadius * InRadius;
 
-	for (const TWeakObjectPtr<UCombatTargetComponent>& Weak : Bucket->Targets)
-	{
-		AActor* Candidate = nullptr;
-		if (!ResolveTarget(Weak, Candidate)) continue;
-
-		if (Candidate == InSelf) continue;
-
-		// 건물은 뺀다. 크고 고정된 대상이라 분리 대상에 넣으면 오히려
-		// 그 근처에서 밀려나 대상에게 못 붙는 원인이 된다.
-		if (Weak->GetTargetType() != ETargetType::CombatUnit) continue;
-
-		if (FVector::DistSquared2D(Origin, Candidate->GetActorLocation()) <= RadiusSq)
+	// 이 함수는 근접 조향에서 유닛당 매 틱 불린다. 전체 순회로 두면
+	// 프레임당 O(T²) 가 되므로 격자에서 겹치는 칸만 본다.
+	ForEachEntryInRadius(Origin, InRadius,
+		[&](const FSFGridEntry& Entry)
 		{
+			if (Entry.TeamIndex != InTeamIndex) return;
+
+			// 건물은 뺀다. 크고 고정된 대상이라 분리 대상에 넣으면 오히려
+			// 그 근처에서 밀려나 대상에게 못 붙는 원인이 된다.
+			if (Entry.TargetType != ETargetType::CombatUnit) return;
+
+			if (FVector2D::DistSquared(Origin2D, Entry.Location) > RadiusSq) return;
+
+			AActor* Candidate = Entry.Actor.Get();
+			if (!IsValid(Candidate) || Candidate == InSelf) return;
+
 			OutActors.Add(Candidate);
-		}
-	}
+		});
 }
 
 void USFCombatSubsystem::GetTeamTargets(int32 InTeamIndex, TArray<AActor*>& OutActors) const
@@ -800,6 +968,107 @@ static void SFDumpCombatTargets(const TArray<FString>& Args, UWorld* World)
 
 	Combat->DumpTargets();
 }
+
+void USFCombatSubsystem::DumpStats() const
+{
+	// 격자를 최신으로 맞춰야 항목 수가 지금 값으로 나온다.
+	EnsureGridCurrent();
+
+	const UWorld* World = GetWorld();
+	const double Now = IsValid(World) ? World->GetTimeSeconds() : 0.0;
+	const double Window = FMath::Max(0.0001, Now - StatWindowStart);
+
+	SF_LOG(Warning, "===== 전투 계측 (최근 %.1f초) =====", Window);
+
+	// ── 등록 현황 ───────────────────────────────────
+	TArray<int32> TeamKeys;
+	TeamBuckets.GetKeys(TeamKeys);
+	TeamKeys.Sort();
+
+	for (const int32 TeamIndex : TeamKeys)
+	{
+		SF_LOG(Warning, "  Team %-3d 생존 %d / 등록 %d",
+			TeamIndex, GetTargetCount(TeamIndex), TeamBuckets[TeamIndex].Targets.Num());
+	}
+
+	// ── 격자 ────────────────────────────────────────
+	int32 UsedCells = 0;
+	int32 MaxCellEntries = 0;
+
+	for (const TPair<FIntPoint, TArray<FSFGridEntry>>& Pair : Grid)
+	{
+		if (Pair.Value.Num() == 0) continue;
+
+		++UsedCells;
+		MaxCellEntries = FMath::Max(MaxCellEntries, Pair.Value.Num());
+	}
+
+	SF_LOG(Warning, "  격자        항목 %d / 사용 칸 %d (보유 %d) / 가장 붐비는 칸 %d / 칸크기 %.0f",
+		GridEntryCount, UsedCells, Grid.Num(), MaxCellEntries, GridCellSize);
+
+	// ── 링 ──────────────────────────────────────────
+	int32 LiveRings = 0;
+	int32 TotalAttackers = 0;
+	int32 FullRings = 0;
+
+	for (const TPair<TWeakObjectPtr<AActor>, FSFAttackSlotRing>& Pair : SlotRings)
+	{
+		const AActor* Target = Pair.Key.Get();
+		if (!IsValid(Target)) continue;
+
+		++LiveRings;
+
+		const int32 Attackers = GetAttackerCount(Target);
+		TotalAttackers += Attackers;
+
+		if (Attackers >= GetSlotCapacity(Target)) ++FullRings;
+	}
+
+	SF_LOG(Warning, "  공격 슬롯   링 %d (정원참 %d) / 총 공격자 %d / 평균 %.1f",
+		LiveRings, FullRings, TotalAttackers,
+		LiveRings > 0 ? static_cast<float>(TotalAttackers) / LiveRings : 0.f);
+
+	// ── 질의 부하 ───────────────────────────────────
+	//
+	// 훑은 항목 수가 격자 효과를 직접 보여준다.
+	// 격자 이전에는 질의 한 번마다 등록 대상 전체를 훑었다.
+	SF_LOG(Warning, "  반경 질의   %d회 (초당 %.0f) / 훑은 항목 %d (질의당 %.1f)",
+		StatRadiusQueries,
+		StatRadiusQueries / Window,
+		StatEntriesVisited,
+		StatRadiusQueries > 0 ? static_cast<float>(StatEntriesVisited) / StatRadiusQueries : 0.f);
+
+	SF_LOG(Warning, "  슬롯 배정   %d회 (초당 %.0f) / 격자 재구성 %d회 (초당 %.0f)",
+		StatSlotClaims, StatSlotClaims / Window,
+		StatGridRebuilds, StatGridRebuilds / Window);
+
+	// 창을 비운다. 다음 호출은 이 시점부터의 값을 보여준다.
+	StatRadiusQueries = 0;
+	StatEntriesVisited = 0;
+	StatGridRebuilds = 0;
+	StatSlotClaims = 0;
+	StatWindowStart = Now;
+}
+
+#if !UE_BUILD_SHIPPING
+static void SFDumpCombatStats(const TArray<FString>& Args, UWorld* World)
+{
+	const USFCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<USFCombatSubsystem>() : nullptr;
+
+	if (!IsValid(Combat))
+	{
+		SF_LOG(Error, "USFCombatSubsystem 을 찾지 못했습니다. 플레이 중인지 확인하세요.");
+		return;
+	}
+
+	Combat->DumpStats();
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSFDumpCombatStats(
+	TEXT("sf.CombatStats"),
+	TEXT("전투 시스템 계측값을 출력하고 측정 창을 초기화한다."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SFDumpCombatStats));
+#endif
 
 static FAutoConsoleCommandWithWorldAndArgs GSFDumpCombatTargets(
 	TEXT("sf.DumpCombatTargets"),

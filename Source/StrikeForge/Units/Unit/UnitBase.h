@@ -326,6 +326,15 @@ protected:
 	UFUNCTION()
 	void HandleDeath(UCombatTargetComponent* InTarget);
 
+	/**
+	 * CombatTargetComponent 의 피격 델리게이트에 연결된다 — 반격.
+	 *
+	 * 이 훅이 없으면 사거리 밖에서 쏘는 원거리 유닛에게 일방적으로 맞는다.
+	 * 제자리 고수 중인 유닛은 아예 무저항이 된다.
+	 */
+	UFUNCTION()
+	void HandleDamaged(UCombatTargetComponent* InTarget, float InDamage, AActor* InInstigator);
+
 	bool IsTargetUsable(const AActor* InTarget) const;
 
 	/**
@@ -375,6 +384,14 @@ protected:
 	 * 들어오는 순간 위쪽 교전 분기가 멈춰 세운다.
 	 */
 	void SteerTowardSlot(float DeltaSeconds);
+
+	/**
+	 * 조향 방향에서 지형에 막히는 성분을 걷어낸다.
+	 *
+	 * 근접 구간은 NavMesh 이동을 끄고 직접 조향하므로, 지형을 피하는 책임이
+	 * 여기에 있다. WallProbeDistance 가 0 이면 아무것도 하지 않는다.
+	 */
+	void ApplyWallAvoidance(FVector& InOutDirection) const;
 
 	/**
 	 * 명령 목적지의 마지막 구간(CommandFinalApproachRange 안) 전용 이동.
@@ -659,6 +676,37 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float LineOfSightRadius = 40.f;
 
+	/**
+	 * 피격 시 반격할 것인가.
+	 *
+	 * 끄면 예전처럼 교전 반경 탐색으로만 대상을 정한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	uint8 bRetaliateWhenDamaged : 1;
+
+	/**
+	 * 이미 다른 대상과 싸우는 중일 때, 가해자로 갈아탈 거리 조건.
+	 *
+	 * 가해자가 "현재 대상까지의 거리 × 이 값" 보다 가까울 때만 바꾼다.
+	 * 1.0 이면 조금이라도 가까우면 갈아탄다 — 광역 피해나 난전에서 매 타격마다
+	 * 대상이 뒤바뀌어 아무것도 못 때리게 된다. 그래서 기본값을 낮게 둔다.
+	 *
+	 * 대상이 아예 없을 때는 이 값과 무관하게 무조건 받는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.1", ClampMax = "1.0"))
+	float RetaliateSwitchRatio = 0.6f;
+
+	/**
+	 * 반격 대상을 유지하는 시간(초).
+	 *
+	 * 이 시간 동안은 주기 재탐색(RetargetInterval)이 반격 대상을 덮지 않는다.
+	 * 없으면 0.3초 뒤 최근접 판정이 다시 돌아 원래 대상으로 돌아가 버린다.
+	 *
+	 * 대상이 죽거나 사라지면 유지와 무관하게 즉시 다시 찾는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float RetaliateStickyDuration = 2.f;
+
 	/** 시야 트레이스를 쏘는 높이 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
 	float EyeHeight = 60.f;
@@ -726,11 +774,24 @@ private:
 	 * 포위 모양은 어차피 붙어서 싸울 때 보이는 것이라 먼 거리는 상관없다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
-	float SlotActivationRange = 600.f;
+	float SlotActivationRange = 250.f;
 
 	/** 근접 조향에서 슬롯(또는 접근 지점)으로 당기는 힘의 가중치 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float SeekWeight = 1.f;
+
+	/**
+	 * 근접 조향 중 앞을 살피는 거리(cm). 0 이면 지형 회피를 끈다.
+	 *
+	 * SteerTowardSlot 은 NavMesh 를 쓰지 않고 AddMovementInput 만 한다.
+	 * 평지에서는 문제가 없지만 벽·바위·건물이 파먹은 NavMesh 구멍 앞에서는
+	 * 유닛이 지형을 밀며 갈린다. 진행 방향으로 한 번 스윕해서 막혀 있으면
+	 * 벽면을 따라 미끄러지도록 방향을 튼다.
+	 *
+	 * 캡슐 반지름(45)보다 충분히 커야 부딪히기 전에 감지된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float WallProbeDistance = 120.f;
 
 	/**
 	 * 근접 조향에서 근처 아군에게 밀려나는 힘의 가중치.
@@ -1054,11 +1115,23 @@ private:
 	 */
 	int32 AttackSlotIndex = INDEX_NONE;
 
+	/**
+	 * 자리를 받을 때의 링 세대.
+	 *
+	 * 대상의 팀이 바뀌면 링이 통째로 버려지는데, 그때 이 유닛은 여전히 유효한
+	 * 인덱스를 쥐고 있다. 세대를 함께 보지 않으면 UpdateAttackSlot 의
+	 * "이미 자리가 있다" 조기 탈출에 영원히 걸려 다시 잡지 못한다.
+	 */
+	uint32 SlotGeneration = 0;
+
 	/** 슬롯을 잡아둔 대상. CurrentTarget 과 어긋나면 반납하고 다시 잡는다 */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> SlotTarget;
 
 	float AttackCooldownRemaining = 0.f;
+
+	/** 반격 대상을 유지할 남은 시간(초). 이 동안 주기 재탐색을 억제한다 */
+	float RetaliateHoldRemaining = 0.f;
 
 	/**
 	 * 공격 모션을 끊지 않고 보장할 남은 시간(초).
@@ -1087,6 +1160,17 @@ private:
 
 	/** 근접 조향의 현재 방향. 매 틱 목표 방향으로 보간해서 흔들림을 줄인다 */
 	FVector SmoothedSteerDirection = FVector::ZeroVector;
+
+	/**
+	 * 근접 조향의 이웃 목록 임시 버퍼.
+	 *
+	 * SteerTowardSlot 이 유닛당 매 틱 불리는데, 지역 배열을 쓰면 그때마다
+	 * 힙 할당이 발생한다. 멤버로 올려 재사용한다.
+	 *
+	 * 채운 직후 같은 함수 안에서만 읽고 버리므로 리플렉션에 올리지 않는다.
+	 * 프레임을 넘겨 들고 있지 않으니 GC 앵커도 필요 없다.
+	 */
+	TArray<AActor*> SteerNeighborScratch;
 
 	/**
 	 * 코리도를 벗어난 상태인가.

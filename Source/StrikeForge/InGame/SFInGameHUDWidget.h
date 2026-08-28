@@ -172,6 +172,35 @@ private:
 
     void TryStartStageIntro();
 
+    /**
+     * 스테이지 인트로 위젯을 열고 지정한 노드부터 재생한다.
+     *
+     * TryStartStageIntro 의 본문을 그대로 옮겨온 것이다. 여는 절차(위젯 생성,
+     * HUD 숨김, 일시정지, 입력 모드 전환, OnDeactivated 바인딩)가 한 곳에만
+     * 있어야 목표 대기 후 재개할 때 상태가 어긋나지 않는다.
+     *
+     * @param InNodeIndex INDEX_NONE 이면 행에 지정된 StartNodeIndex 부터 시작한다.
+     *                    목표 대기에서 돌아올 때는 멈췄던 노드 번호가 들어온다.
+     */
+    bool OpenStageIntro(
+        UDataTable* InDataTable,
+        FName InRowName,
+        int32 InNodeIndex
+    );
+
+    /**
+     * 튜토리얼 목표 대기가 끝났다. 멈췄던 노드부터 인트로를 다시 연다.
+     *
+     * USFTutorialSubsystem::OnResumeRequested 에 연결된다. 동적 델리게이트라
+     * UFUNCTION 이 필요하다.
+     */
+    UFUNCTION()
+    void HandleTutorialResumeRequested(
+        UDataTable* InDataTable,
+        FName InRowName,
+        int32 InNodeIndex
+    );
+
     void HandleStageIntroDeactivated();
     
     FName ResolveStageIntroRowName() const;

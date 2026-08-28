@@ -95,3 +95,8 @@ FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
 	Info.SelectableType = ESFSelectableType::ProductionBuilding;
 	return Info;
 }
+
+void ASFProductionBuilding::SetAssembleVectorPoint(const FVector& InAssemblePoint)
+{
+	ProductComponent->SetAssemblePoint(InAssemblePoint);
+}

@@ -21,7 +21,7 @@ void USFTeamState::AddMaxPopulation(int32 InDelta)
 	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
 }
 
-bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
+bool USFTeamState::InitializeTeamData(ESFRace InRace, USFBuildingCatalog* InBuildingCatalog)
 {
 	if (!IsValid(InBuildingCatalog))
 	{
@@ -31,7 +31,8 @@ bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
 
 		return false;
 	}
-
+	if (InRace == ESFRace::None) return false;
+	
 	if (IsValid(BuildingCatalog) &&
 		BuildingCatalog != InBuildingCatalog)
 	{
@@ -43,6 +44,7 @@ bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
 			*GetNameSafe(InBuildingCatalog));
 	}
 
+	Race = InRace;
 	BuildingCatalog = InBuildingCatalog;
 	return true;
 }

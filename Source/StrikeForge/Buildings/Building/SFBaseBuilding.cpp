@@ -202,7 +202,6 @@ void ASFBaseBuilding::ApplySpawnMode()
 					Error,
 					"[%s] 초기 티어 활성화 실패",
 					*GetName());
-				
 				Destroy();
 				return;
 			}
@@ -579,6 +578,12 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	PlayConstructionCompleteSound();
 }
 
+void ASFBaseBuilding::SetMyTeamIndex(const int32 InTeamIndex)
+{
+	TeamIndex = InTeamIndex;
+	CombatTargetComponent->SetTeamIndex(TeamIndex);
+}
+
 bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
 {
 	if (!IsValid(InDefinition))
@@ -601,11 +606,18 @@ void ASFBaseBuilding::BeginPlay()
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
-	
+	if (!LoadBuildingDefinition())
+	{
+		Destroy();
+		return; // 디폴트값 로딩 실패시
+	}
 	OnBuildingDefinitionLoaded();
 	// if load failed return
-	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
+	if (!PrepareTier(CurrentTier))
+	{
+		Destroy();
+		return; // 메쉬준비 실패시
+	}
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
 	
@@ -950,19 +962,21 @@ void ASFBaseBuilding::SetBoxExtent()
 	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
-	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
-	BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
-	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
-	// FVector Extent = BoundsInParent.BoxExtent;
-	// Extent.X *= 0.8f;
-	// Extent.Y *= 0.8f;
+	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.7;
+	float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
+	
+	FVector CustomOrigin = BoundsInParent.Origin;
+	CustomOrigin.Z -= SubBoxExtentZ;
+	
+	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
+	BoxComponent->SetRelativeLocation(CustomOrigin);
 }
 
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
-	const UStaticMesh* Mesh = StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr;
-	return Mesh ? Mesh->GetBounds() : FBoxSphereBounds(ForceInit);
+	return StaticMeshComponent->CalcBounds(
+		StaticMeshComponent->GetRelativeTransform());
 }
 
 
@@ -1064,6 +1078,10 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
 		return false;
 	}
+	
+	const FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
+	SetActorLocation(WorldCenterVector);
+	
 	return true;
 }
 #pragma endregion 

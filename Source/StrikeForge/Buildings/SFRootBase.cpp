@@ -21,6 +21,9 @@ ASFRootBase::ASFRootBase(const FObjectInitializer& ObjectInitializer)
 	BoxComponent->SetVisibility(true);
 	BoxComponent->SetLineThickness(2.f);
 	BoxComponent->SetHiddenInGame(false);
+	
+	BoxComponent->CanCharacterStepUpOn = ECB_No;
+	BoxComponent->SetWalkableSlopeOverride(FWalkableSlopeOverride(WalkableSlope_Unwalkable, 0.f));
 }
 
 FSFSelectableInfo ASFRootBase::GetSelectableInfo_Implementation()

@@ -89,7 +89,26 @@ bool USFGameInstance::SelectStage(FName StageRowName)
 
         return false;
     }
+    
+    // stage테이블의 default플레이어 종족값 캐싱
+    if (StageData->PlayerRace == ESFRace::None)
+    {
+        // elseif 때문에 7스테이지만 
+        // 이전 스테이지의 종족값 제거
+        SelectedRace = ESFRace::None;
+    }
+    else if (!SelectRace(StageData->PlayerRace))
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 플레이어 종족 설정 실패. "
+            "Stage=%s, Race=%s",
+            *StageRowName.ToString(),
+            *UEnum::GetValueAsString(
+                StageData->PlayerRace));
 
+        return false;
+    }
     SelectedStageRowName = StageRowName;
 
     SF_LOG(Log, "[SFGameInstance] Stage selected: %s, DisplayName: %s", *SelectedStageRowName.ToString(), *StageData->DisplayName.ToString());
@@ -129,6 +148,15 @@ bool USFGameInstance::MoveToStage()
         return false;
     }
 
+    if (SelectedRace == ESFRace::None)
+    {
+        SF_LOG(
+            Warning,
+            "[SFGameInstance] 종족을 선택해야 스테이지로 이동할 수 있습니다.");
+
+        return false;
+    }
+    
     return TravelToLevel(StageData->StageLevel);
 }
 
@@ -233,34 +261,6 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
     return true;
 }
 
-USFBuildingCatalog* USFGameInstance::LoadPlayerBuildingCatalog() const
-{
-    if (PlayerBuildingCatalog.IsNull())
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] PlayerBuildingCatalog이 "
-            "설정되지 않았습니다.");
-
-        return nullptr;
-    }
-
-    USFBuildingCatalog* Catalog = PlayerBuildingCatalog.LoadSynchronous();
-
-    if (!IsValid(Catalog))
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] PlayerBuildingCatalog "
-            "로드에 실패했습니다. Asset=%s",
-            *PlayerBuildingCatalog.ToSoftObjectPath().ToString());
-
-        return nullptr;
-    }
-
-    return Catalog;
-}
-
 bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)
 {
 	if (TargetLevel.IsNull())
@@ -284,4 +284,52 @@ bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TargetLevel);
 
 	return true;
+}
+
+bool USFGameInstance::SelectRace(ESFRace InRace)
+{   // 간단한 enum저장 함수
+    const TSoftObjectPtr<USFBuildingCatalog>* Catalog =
+        CatalogsByRace.Find(InRace);
+
+    if (!Catalog || Catalog->IsNull())
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 선택한 종족의 카탈로그가 없습니다. Race=%d",
+            static_cast<int32>(InRace));
+
+        return false;
+    }
+
+    SelectedRace = InRace;
+    return true;
+}
+
+USFBuildingCatalog* USFGameInstance::LoadBuildingCatalog(ESFRace InRace) const
+{
+    // map에서 종족으로 카테고리 가져오기
+    const TSoftObjectPtr<USFBuildingCatalog>* CatalogAsset =
+        CatalogsByRace.Find(InRace);
+    if (!CatalogAsset || CatalogAsset->IsNull())
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 종족에 해당하는 카탈로그가 없습니다. Race=%s",
+            *UEnum::GetValueAsString(InRace));
+        return nullptr;
+    } // 못가져오면 리턴
+    
+    // 종족 카테고리 로드하고 반환 -> 게임모드가 종족카테고리를 저장할거임
+    USFBuildingCatalog* LoadedCatalog =  CatalogAsset->LoadSynchronous();
+    if (!IsValid(LoadedCatalog))
+    {
+        SF_LOG(
+            Error,
+            "[SFGameInstance] 카탈로그 로드에 실패했습니다. Race=%d",
+            static_cast<int32>(InRace));
+
+        return nullptr;
+    }
+
+    return LoadedCatalog;
 }

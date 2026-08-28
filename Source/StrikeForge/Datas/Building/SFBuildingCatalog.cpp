@@ -59,3 +59,44 @@ USFBuildingCatalog::FindDefinition(
 
 	return nullptr;
 }
+
+USFBuildingDefinition* USFBuildingCatalog::FindDefinitionByBuildingType(ESFBuildingType InBuildingType) const
+{
+	if (InBuildingType == ESFBuildingType::None)
+	{
+		return nullptr;
+	}
+	
+	// 리턴값이 있는 람다 정의
+	auto FindMatchingDefinition = [InBuildingType](const TSoftObjectPtr<USFBuildingDefinition>& DefinitionRef)->USFBuildingDefinition*
+	{
+		USFBuildingDefinition* Definition =
+				DefinitionRef.LoadSynchronous();
+
+		if (!IsValid(Definition))
+		{
+			return nullptr;
+		}
+
+		return Definition->BuildingType == InBuildingType
+			? Definition
+			: nullptr;
+	};
+	
+	// 건설가능 DA배열에 넥서스는 빠져있으므로 따로 검증
+	if (USFBuildingDefinition* Nexus = FindMatchingDefinition(NexusDefinition))
+	{
+		return Nexus;
+	}
+	
+	// TArray for문으로 돌면서 있는지 람다식으로 검증
+	for (const TSoftObjectPtr<USFBuildingDefinition>& DefinitionRef	: BuildableDefinitions)
+	{
+		if (USFBuildingDefinition* Definition =	FindMatchingDefinition(DefinitionRef))
+		{
+			return Definition;
+		}
+	}
+
+	return nullptr;
+}

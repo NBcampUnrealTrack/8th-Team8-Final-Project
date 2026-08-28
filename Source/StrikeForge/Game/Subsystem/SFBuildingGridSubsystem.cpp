@@ -1,7 +1,7 @@
 ﻿#include "SFBuildingGridSubsystem.h"
-
 #include "Buildings/Resource/ResourceBase.h"
 #include "GameFramework/Actor.h"
+#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
 
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -67,33 +67,32 @@ bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const F
 	return true;
 }
 
-bool USFBuildingGridSubsystem::CanPlaceNormalBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+bool USFBuildingGridSubsystem::CanPlacePlayerBuildingGrid(const AActor* Building,
+	const FBuildingGridInfo& GridInfo) const
 {
-	if (!IsValid(Owner) || !GridInfo.IsValid()) return false;
-	
-	for (int Y = 0; Y < GridInfo.GridSize.Y; Y++)
+	if (!CanRegisterBuildingGrid(Building, GridInfo))
 	{
-		for (int X = 0; X < GridInfo.GridSize.X; X++)
-		{
-			const FIntPoint TempCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			const FSFGridCellData* Cell = GridCells.Find(TempCoordinate);
-			if (!Cell) continue; // 맵에 키값이 있는지 판단
-			// 있다면 actor가 존재하는지 판단 ( 둘중하나라도 존재하면 false 건설불가 )
-			
-			if (Cell->ResourceActor.IsValid()) return false;
-			
-			if (Cell->BuildingActor.IsValid() && Cell->BuildingActor.Get() != Owner)
-				return false;
-		}
+		return false;
 	}
-	
-	return true;
+
+	const ISFGridResourceConsumer* Consumer =
+		Cast<ISFGridResourceConsumer>(Building);
+
+	// 일반 건물은 CanRegisterBuildingGrid 결과만 따르면 된다.
+	if (!Consumer)
+	{
+		return true;
+	}
+
+	// 플레이어가 배치하는 자원 소비 건물은
+	// 반드시 현재 전체 격자에 자원이 존재해야 한다.
+	return IsValid(FindResourceInGrid(Building, GridInfo));
 }
 
 bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
 	// ! > 누군가 점유중
-	if (!CanPlaceBuildingGrid(Owner, GridInfo))
+	if (!CanRegisterBuildingGrid(Owner, GridInfo))
 	{
 		return false;
 	}
@@ -110,12 +109,30 @@ bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBui
 		}
 	}
 
+	AResourceBase* Resource = FindResourceInGrid(Owner, GridInfo);
+
+	if (IsValid(Resource) && !TryResolveResourceConnection(Owner, Resource))
+	{
+		// 점유는 등록됐지만 연결이 실패했으므로 원상 복구
+		UnregisterBuildingGrid(Owner, GridInfo);
+		return false;
+	}
+	
 	return true;
 }
 
-void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo)
+void USFBuildingGridSubsystem::UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
 	if (!GridInfo.IsValid()) return;
+	// 자원격자 해제
+	AResourceBase* Resource = FindResourceInGrid(Owner, GridInfo);
+
+	if (IsValid(Resource))
+	{
+		DisconnectResourceConnection(
+			Owner,
+			Resource);
+	}
 	
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
@@ -143,32 +160,32 @@ void USFBuildingGridSubsystem::UnregisterBuildingGrid(const AActor* Owner, const
 
 bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
 {
-	if (!IsValid(Resource) || !GridInfo.IsValid()) return false;
-	
-	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	if (!CanRegisterResourceGrid(Resource, GridInfo))
 	{
-		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
-		{
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
-			if (!Cell) continue;
-			// 셀에 이미 자원엑터가 존재하고, 배치되어있는 자원이 등록하려는 자원과 같지않을때 
-			if (Cell->ResourceActor.IsValid() && Cell->ResourceActor.Get() != Resource) return false;
-			// 샐에 건물이 배치되어있을때
-			if (Cell->BuildingActor.IsValid()) return false;
-		}
+		return false;
 	}
 	
-	// register
+	// 실제 등록만 수행
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			FSFGridCellData& Cell = GridCells.FindOrAdd(CellCoordinate);
-			
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			FSFGridCellData& Cell =
+				GridCells.FindOrAdd(CellCoordinate);
+
 			Cell.ResourceActor = Resource;
 		}
+	}
+
+	AActor* Building = FindBuildingInGrid(GridInfo);
+
+	if (IsValid(Building) && !TryResolveResourceConnection(Building, Resource))
+	{
+		UnregisterResourceGrid(Resource, GridInfo);
+		return false;
 	}
 	
 	return true;
@@ -177,6 +194,16 @@ bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, 
 void USFBuildingGridSubsystem::UnregisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
 {
 	if (!GridInfo.IsValid()) return;
+	
+	// 건물 격자 해제
+	AActor* Building = FindBuildingInGrid(GridInfo);
+
+	if (IsValid(Building))
+	{
+		DisconnectResourceConnection(
+			Building,
+			Resource);
+	}
 	
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
@@ -268,6 +295,121 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 			LocalCenter.Y - InGridSize.Y * 0.5f));
 
 	return Result;
+}
+
+bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+{
+	// 건물 겹침검사
+	if (!CanPlaceBuildingGrid(Owner, GridInfo))
+	{
+		return false;
+	}
+	
+	// 겹치지않았으면 실행
+	AResourceBase* FoundResource = nullptr;
+	int32 ResourceCellCount = 0;
+
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) continue;
+			
+			AResourceBase* CellResource = Cell->ResourceActor.Get();
+			if (!IsValid(CellResource))	continue;
+			
+			++ResourceCellCount;
+
+			if (!FoundResource)
+			{
+				FoundResource = CellResource;
+			}
+			else if (FoundResource != CellResource)
+			{
+				return false;
+			}
+		}
+	}
+
+	// 자원이 없다면 일반 건물과 광산 모두 등록 가능하다.
+	// 플레이어 광산 배치는 기존 BuildingPlacement에서 자원을 요구한다.
+	if (ResourceCellCount == 0)
+	{
+		return true;
+	}
+
+	const int32 TotalCellCount = GridInfo.GridSize.X * GridInfo.GridSize.Y;
+
+	// 일부 셀만 자원과 겹치는 배치는 허용하지 않는다.
+	if (ResourceCellCount != TotalCellCount)
+	{
+		return false;
+	}
+
+	return CanShareResourceGrid(Owner, FoundResource);
+}
+
+bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Resource,
+	const FBuildingGridInfo& GridInfo) const
+{
+	if (!IsValid(Resource) || !GridInfo.IsValid())
+	{
+		return false;
+	}
+
+	AActor* FoundBuilding = nullptr;
+	int32 BuildingCellCount = 0;
+
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+			if (!Cell) continue;
+
+			AResourceBase* ExistingResource = Cell->ResourceActor.Get();
+
+			if (IsValid(ExistingResource) && ExistingResource != Resource)
+			{
+				return false;
+			}
+
+			AActor* CellBuilding = Cell->BuildingActor.Get();
+			if (!IsValid(CellBuilding))	continue;
+
+			++BuildingCellCount;
+
+			if (!FoundBuilding)
+			{
+				FoundBuilding = CellBuilding;
+			}
+			else if (FoundBuilding != CellBuilding)
+			{
+				return false;
+			}
+		}
+	}
+
+	if (BuildingCellCount == 0)
+	{
+		return true;
+	}
+
+	const int32 TotalCellCount = GridInfo.GridSize.X * GridInfo.GridSize.Y;
+
+	if (BuildingCellCount != TotalCellCount)
+	{
+		return false;
+	}
+
+	return CanShareResourceGrid(FoundBuilding, Resource);
 }
 
 // void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
@@ -456,5 +598,100 @@ void USFBuildingGridSubsystem::DebugDrawResourceCells(EResourceType ResourceType
 		Duration,
 		0,
 		3.0f);
+	}
+}
+
+bool USFBuildingGridSubsystem::CanShareResourceGrid(const AActor* Building, const AResourceBase* Resource) const
+{
+	if (!IsValid(Building) || !IsValid(Resource))
+	{
+		return false;
+	}
+
+	const ISFGridResourceConsumer* Consumer =
+		Cast<ISFGridResourceConsumer>(Building);
+
+	return Consumer &&
+		Consumer->CanAcceptResource(Resource);
+}
+
+AActor* USFBuildingGridSubsystem::FindBuildingInGrid(const FBuildingGridInfo& GridInfo) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return nullptr;
+	}
+
+	AActor* FoundBuilding = nullptr;
+
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			const FSFGridCellData* Cell =
+				GridCells.Find(CellCoordinate);
+
+			if (!Cell)
+			{
+				return nullptr;
+			}
+
+			AActor* CellBuilding =
+				Cell->BuildingActor.Get();
+
+			if (!IsValid(CellBuilding))
+			{
+				return nullptr;
+			}
+
+			if (!FoundBuilding)
+			{
+				FoundBuilding = CellBuilding;
+			}
+			else if (FoundBuilding != CellBuilding)
+			{
+				return nullptr;
+			}
+		}
+	}
+
+	return FoundBuilding;
+}
+
+bool USFBuildingGridSubsystem::TryResolveResourceConnection(AActor* Building, AResourceBase* Resource)
+{
+	if (!IsValid(Building) || !IsValid(Resource))
+	{
+		return false;
+	}
+
+	ISFGridResourceConsumer* Consumer =
+		Cast<ISFGridResourceConsumer>(Building);
+
+	if (!Consumer ||
+		!Consumer->CanAcceptResource(Resource))
+	{
+		return false;
+	}
+
+	return Consumer->TryLinkResource(Resource);
+}
+
+void USFBuildingGridSubsystem::DisconnectResourceConnection(AActor* Building, const AResourceBase* Resource)
+{
+	if (!IsValid(Building) || !IsValid(Resource))
+	{
+		return;
+	}
+
+	ISFGridResourceConsumer* Consumer =
+		Cast<ISFGridResourceConsumer>(Building);
+
+	if (Consumer)
+	{
+		Consumer->UnlinkResource(Resource);
 	}
 }

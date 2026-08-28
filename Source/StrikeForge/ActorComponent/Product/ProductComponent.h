@@ -29,7 +29,9 @@ public:
 	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
-	
+	// 집결지 setter
+	FORCEINLINE void SetAssemblePoint(const FVector& InAssemblePoint) { AssemblePoint = InAssemblePoint; }
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
 	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
@@ -37,6 +39,9 @@ public:
 	FORCEINLINE const TArray<FProductInfo>& GetProductLine() const { return ProductLine; }
 	// current product value
 	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
+	// 집결지 getter - 나중에 vector가져와서 집결지랑 building위치벡터랑 연결해서 집결지표시용
+	FORCEINLINE const FVector& GetAssemblePoint() const { return AssemblePoint; } 
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
@@ -47,10 +52,16 @@ private:
 	void ProcessProductionToNow();
 	void TickProduction();
 	
-	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
-	bool CanAffordPopulation(const FName& InRowName) const;
-	int32 GetOwnerTeam() const;
 	void SpawnAndAdvance(FName InRowName);
+	
+	// getter
+	int32 GetOwnerTeam() const;
+	
+	// 조회도우미 함수
+	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
+	// 최대 인구 검증
+	bool CanAffordPopulation(const FName& InRowName) const;
+	
 	// population function
 	// bind
 	void BindFunctionOnMaxPopulation();
@@ -75,6 +86,9 @@ private:
 	
 	bool bProductionPaused = false;
 	bool bWaitingForPopulation = false;
+	
+	// 컨트롤러에서 값을 받으면 building이 여기로 저장
+	FVector AssemblePoint;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

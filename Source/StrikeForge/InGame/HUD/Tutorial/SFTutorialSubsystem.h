@@ -2,10 +2,20 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "NativeGameplayTags.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SFTutorialSubsystem.generated.h"
 
 class UDataTable;
+
+/**
+ * "유닛에게 이동 명령을 내렸다".
+ *
+ * 네이티브 태그라 DefaultGameplayTags.ini 에 따로 적지 않아도 된다.
+ * 전투 코드가 튜토리얼 태그 문자열을 직접 들고 있게 하고 싶지 않아서
+ * 여기에 둔다 — 이름이 바뀌어도 고칠 곳이 한 군데다.
+ */
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
 
 /** 목표 대기가 시작됐다. 목표 배너를 띄우는 쪽이 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -14,6 +24,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 /** 목표가 달성됐다. 배너를 지우거나 연출을 낼 때 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFTutorialObjectiveCompleted, FGameplayTag, ObjectiveTag);
+
+/**
+ * 목표 신호가 기록됐다. 대기 중이 아니어도 발동한다.
+ *
+ * OnObjectiveCompleted 와의 차이가 중요하다.
+ *   OnObjectiveCompleted : 튜토리얼이 그 목표를 기다리고 있었을 때만 발동
+ *   OnObjectiveRecorded  : 유효한 신호가 오면 무조건 발동
+ *
+ * 게임플레이 쪽에서 "집을 지으면 적이 나온다" 같은 반응을 걸 때는 이쪽을
+ * 써야 한다. 튜토리얼이 아직 그 목표를 말하기 전에 플레이어가 먼저
+ * 해버리면 OnObjectiveCompleted 는 영영 오지 않기 때문이다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFTutorialObjectiveRecorded, FGameplayTag, ObjectiveTag);
 
 /**
  * 튜토리얼을 다시 열어야 한다. 위젯을 띄우는 쪽이 구독한다.
@@ -87,16 +111,26 @@ public:
     /**
      * 목표 하나가 달성됐음을 알린다.
      *
-     * 대기 중이 아니어도 달성 기록에는 남는다. 튜토리얼이 "병영을 지어보세요"
-     * 라고 말하기 전에 이미 지어버린 플레이어를 그 자리에 가둬두지 않기 위해서다.
-     *
      * 태그는 계층으로 매칭된다. Tutorial.Build 를 기다리는 중에
      * Tutorial.Build.Barracks 가 오면 만족한 것으로 본다.
      *
+     * ── bRecordWhenNotWaiting ──────────────────────────────
+     *
+     * 목표에는 두 종류가 있고, 둘을 같게 다루면 반드시 사고가 난다.
+     *
+     *   상태형 (true, 기본) — "병영이 있다", "집이 있다"
+     *     튜토리얼이 말하기 전에 이미 지어버린 플레이어를 그 자리에 가둘 수
+     *     없으므로, 대기 중이 아니어도 기록해 두고 나중에 통과시킨다.
+     *
+     *   행동형 (false) — "유닛을 움직였다", "정지 명령을 내렸다"
+     *     지금 요구되지 않은 행동은 없던 일로 한다. 기록해 두면 앞 단계에서
+     *     이미 유닛을 움직인 플레이어에게 "유닛을 움직여보세요" 단계가
+     *     통째로 건너뛰어진다.
+     *
      * @return 이 신호로 대기가 풀렸으면 true
      */
-    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial", meta = (WorldContext = "InWorldContext"))
-    static bool NotifyObjective(const UObject* InWorldContext, FGameplayTag InObjectiveTag);
+    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial", meta = (WorldContext = "InWorldContext", AdvancedDisplay = "bRecordWhenNotWaiting"))
+    static bool NotifyObjective(const UObject* InWorldContext, FGameplayTag InObjectiveTag, bool bRecordWhenNotWaiting = true);
 
     /** 달성 기록을 지운다. 튜토리얼을 처음부터 다시 돌릴 때 부른다 */
     UFUNCTION(BlueprintCallable, Category = "SF|Tutorial")
@@ -124,6 +158,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
     FSFTutorialObjectiveCompleted OnObjectiveCompleted;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
+    FSFTutorialObjectiveRecorded OnObjectiveRecorded;
 
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
     FSFTutorialResumeRequested OnResumeRequested;

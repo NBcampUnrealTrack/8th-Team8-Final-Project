@@ -6,6 +6,8 @@
 #include "HAL/IConsoleManager.h"
 #include "Logging/SFLog.h"
 
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Command_Move, "Tutorial.Command.Move");
+
 USFTutorialSubsystem* USFTutorialSubsystem::Get(const UObject* WorldContext)
 {
     if (WorldContext == nullptr)
@@ -87,7 +89,7 @@ void USFTutorialSubsystem::CancelObjectiveWait()
     OnObjectiveCompleted.Broadcast(CancelledTag);
 }
 
-bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGameplayTag InObjectiveTag)
+bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGameplayTag InObjectiveTag, bool bRecordWhenNotWaiting)
 {
     USFTutorialSubsystem* Tutorial = Get(InWorldContext);
 
@@ -103,9 +105,28 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
         return false;
     }
 
+    // 계층 매칭. 기다리는 쪽이 부모 태그면 자식 태그로도 만족한다.
+    //   기다림 Tutorial.Build  +  신호 Tutorial.Build.Barracks  → 만족
+    //   기다림 Tutorial.Build.Barracks  +  신호 Tutorial.Build  → 불만족
+    const bool bMatchesPending =
+        Tutorial->PendingObjectiveTag.IsValid() && InObjectiveTag.MatchesTag(Tutorial->PendingObjectiveTag);
+
+    // 행동형 목표인데 지금 그걸 요구하고 있지 않다면 조용히 버린다.
+    //
+    // 로그도 남기지 않는다. 이동 명령은 유닛 12기를 끌어 놓고 한 번 클릭하면
+    // 12번 들어오므로, 여기서 한 줄씩 찍으면 다른 로그가 전부 밀려난다.
+    if (!bMatchesPending && !bRecordWhenNotWaiting)
+    {
+        return false;
+    }
+
     // 대기 중이 아니어도 기록은 남긴다.
     // 튜토리얼이 그 목표를 말하기 전에 이미 해버린 플레이어를 위해서다.
     Tutorial->CompletedObjectives.AddTag(InObjectiveTag);
+
+    // 대기 여부와 무관하게 먼저 알린다.
+    // 적 스포너처럼 튜토리얼 진행과 별개로 반응해야 하는 쪽이 이걸 듣는다.
+    Tutorial->OnObjectiveRecorded.Broadcast(InObjectiveTag);
 
     if (!Tutorial->PendingObjectiveTag.IsValid())
     {
@@ -114,10 +135,7 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
         return false;
     }
 
-    // 계층 매칭. 기다리는 쪽이 부모 태그면 자식 태그로도 만족한다.
-    //   기다림 Tutorial.Build  +  신호 Tutorial.Build.Barracks  → 만족
-    //   기다림 Tutorial.Build.Barracks  +  신호 Tutorial.Build  → 불만족
-    if (!InObjectiveTag.MatchesTag(Tutorial->PendingObjectiveTag))
+    if (!bMatchesPending)
     {
         SF_LOG(Log, "[SFTutorialSubsystem] Objective did not match the pending one | Notified: %s | Pending: %s",
             *InObjectiveTag.ToString(), *Tutorial->PendingObjectiveTag.ToString());

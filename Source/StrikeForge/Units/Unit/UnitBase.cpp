@@ -6,6 +6,7 @@
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Units/Lane/LanePath.h"
 
 #include "AIController.h"
@@ -695,6 +696,17 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	// 다음 진격 로그가 다시 찍히도록 초기화
 	bAdvanceTargetReported = false;
 	bNoTargetReported = false;
+
+	// 튜토리얼: "유닛을 움직여보세요" 를 여기서 만족시킨다.
+	//
+	// 여기가 맞는 자리인 이유는 위의 IsCommandableByPlayer 검사 때문이다.
+	// 이 지점에 도달했다는 건 플레이어가 실제로 명령을 내렸고 유닛이 그걸
+	// 받아들였다는 뜻이다. AI 의 Advance() 는 이 함수를 거치지 않는다.
+	//
+	// 행동형이라 false 를 넘긴다 — 앞 단계에서 이미 움직여 본 플레이어에게
+	// 이 단계가 건너뛰어지면 안 된다.
+	USFTutorialSubsystem::NotifyObjective(this, TAG_SF_Tutorial_Command_Move, false);
+
 
 	SF_LOG(Log, "[Unit] %s : 이동 명령 수신 (%s)", *GetName(), *InDestination.ToString());
 }

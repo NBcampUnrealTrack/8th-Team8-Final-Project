@@ -16,28 +16,31 @@ protected:
 	virtual void Tick(float DeltaTime) override;
 
 private:
-	FVector GetCurrentTargetLocation() const;
 	void AdvanceWaypoint();
 
 private:
-	// 카메라가 계속 바라보는 대상 위치 (보통 캐릭터 위치)
+	// 카메라가 항상 바라보는 대상 위치 (보통 캐릭터 위치)
 	UPROPERTY(EditAnywhere, Category = "SF|MenuCamera")
 	FVector LookTarget = FVector::ZeroVector;
 
-	// 시작 위치를 기준으로 한 상대 오프셋들을 순서대로 이동하며 보여줌
-	// 예: X만 다르게 주면 좌우로 이동하며 캐릭터 측면/정면을 번갈아 보여줌
+	// 캐릭터를 기준으로 도는 각도들(도 단위, 0 = 시작 위치). 이 각도들을 순서대로 부드럽게 오가며 보여줌
+	// 거리/높이는 시작 위치 기준으로 항상 고정되므로 얼굴이 갑자기 확대되는 현상이 없음
 	UPROPERTY(EditAnywhere, Category = "SF|MenuCamera")
-	TArray<FVector> WaypointOffsets = { FVector(0.f, 0.f, 0.f), FVector(200.f, 0.f, 0.f), FVector(0.f, 0.f, 0.f), FVector(-200.f, 0.f, 0.f) };
+	TArray<float> AngleWaypoints = { 0.0f, 35.0f, 0.0f, -35.0f };
 
-	// 한 지점에서 다음 지점으로 이동하는 데 걸리는 시간(초)
+	// 한 각도에서 다음 각도로 이동하는 데 걸리는 시간(초)
 	UPROPERTY(EditAnywhere, Category = "SF|MenuCamera")
-	float TravelTime = 4.0f;
+	float TravelTime = 5.0f;
 
-	// 한 지점에 도착해서 머무는 시간(초)
+	// 한 각도에 도착해서 머무는 시간(초)
 	UPROPERTY(EditAnywhere, Category = "SF|MenuCamera")
 	float DwellTime = 2.5f;
 
-	FVector InitialLocation;
+	// 시작 시점에 자동 계산되는 값들 (편집 불가)
+	float OrbitRadius = 0.0f;
+	float BaseYawDegrees = 0.0f;
+	float HeightOffset = 0.0f;
+
 	int32 CurrentWaypointIndex = 0;
 	int32 NextWaypointIndex = 0;
 	float PhaseTimer = 0.0f;

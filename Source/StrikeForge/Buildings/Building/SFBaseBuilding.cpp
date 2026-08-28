@@ -8,12 +8,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "Buildings/UI/BuildingHealthBar.h"
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "GeometryCollection/GeometryCollectionObject.h" //gc
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -102,7 +104,7 @@ void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0�
 		if (InCurrentHP <= 0.f)
 		{
 			return; // 최종 파괴는 HandleHealthZero가 담당	
-					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
+			// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
 		}
 		
 		const FSFBuildingTierData* Tier = GetCurrentTierInfo();
@@ -114,14 +116,52 @@ void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0�
 		
 		const float BeforeRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InBeforeHP, InMaxHP), 0.f, 1.f);
 		const float AfterRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.f, 1.f);
-		// 비율을 집어넣으면 인덱스를 반환함
-		const int32 PreviousStage =	Tier->Visual.FindDamageStageIndex(BeforeRatio);
-		const int32 CurrentStage =	Tier->Visual.FindDamageStageIndex(AfterRatio);
-		// 똑같은 인덱스면 FX를 플레이 하지않는다
-		// 다만 이구조로 갈때 회복시 FX가 플레이되어비린다 나중에 회복이 도입되면 수정이 필요한 지점
-		if (PreviousStage == CurrentStage) return;
 		
-		ChangeDamageStage(CurrentStage);
+		// GC 파괴 경로
+		if (IsValid(ActiveTierAssets.DestructionCollection))
+		{
+			const int32 PreviousDestructionStage =
+				Tier->Visual.FindDestructionStageIndex(BeforeRatio);
+
+			const int32 CurrentDestructionStage =
+				Tier->Visual.FindDestructionStageIndex(AfterRatio);
+
+			if (PreviousDestructionStage == CurrentDestructionStage)
+			{
+				return;
+			}
+
+			// 피해 방향으로 새로운 단계에 진입한 경우만 처리
+			if (CurrentDestructionStage == INDEX_NONE ||
+				CurrentDestructionStage <= PreviousDestructionStage)
+			{
+				return;
+			}
+
+			if (EnsureDestructionActor())
+			{
+				DestructionActor->ApplyDamageStage(
+					CurrentDestructionStage);
+
+				return;
+			}
+
+			// 생성 실패 시 return하지 않고 아래 기존 메시 경로로 폴백
+		}
+
+		// 기존 DamageMesh 경로
+		const int32 PreviousDamageStage =
+			Tier->Visual.FindDamageStageIndex(BeforeRatio);
+
+		const int32 CurrentDamageStage =
+			Tier->Visual.FindDamageStageIndex(AfterRatio);
+
+		if (PreviousDamageStage == CurrentDamageStage)
+		{
+			return;
+		}
+
+		ChangeDamageStage(CurrentDamageStage);
 	}
 }
 
@@ -316,6 +356,22 @@ void ASFBaseBuilding::EnterDestroyedState()
 	}
 	// Deactivate Ability
 	DeactivateActiveTier();
+	
+	if (IsValid(ActiveTierAssets.DestructionCollection) &&
+		EnsureDestructionActor())
+	{
+		// BaseBuilding이 제거되기 전에 독립 GC Actor에 완파를 요청한다.
+		DestructionActor->ApplyFinalDestruction();
+
+		// 파괴되는 순간부터 건물 충돌은 제거한다.
+		BoxComponent->SetCollisionEnabled(
+			ECollisionEnabled::NoCollision);
+
+		PlayDestroyEffect();
+		OnBuildingDestroyed();
+		return;
+	}
+	
 	
 	// mesh
 	RefreshVisual();
@@ -724,10 +780,13 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 			{
 				return Left.Threshold < Right.Threshold;
 			});
-
 		CachedTier.Visual.DamageStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
 			{
 				return Left.Threshold > Right.Threshold;
+			});
+		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
+			{
+				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
 	}
 
@@ -819,6 +878,12 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	// CACHED completed_mesh
 	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
 	NewAssets.DestroyedMesh = Visual.DestroyedMesh.LoadSynchronous();
+	
+	
+	if (!Visual.DestructionCollection.IsNull())
+	{
+		NewAssets.DestructionCollection = Visual.DestructionCollection.LoadSynchronous();
+	}
 	
 	// CACHED failed return false
 	if (!bConstructionMeshesLoaded ||
@@ -1049,6 +1114,62 @@ void ASFBaseBuilding::SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo)
 	//RegisteredGridInfo.OriginCell = InGridInfo.OriginCell;
 	RegisteredGridInfo = InGridInfo;
 	bGridRegistered = true;
+}
+
+bool ASFBaseBuilding::EnsureDestructionActor()
+{
+	if (IsValid(DestructionActor))
+	{
+		return true;
+	}
+
+	if (!IsValid(ActiveTierAssets.DestructionCollection))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FTransform VisualTransform =
+	StaticMeshComponent->GetComponentTransform();
+	FRotator GCRotation =
+		VisualTransform.Rotator();
+
+	GCRotation.Yaw -= 90.f; // 반대 방향이면 -= 90.f
+
+	VisualTransform.SetRotation(
+		GCRotation.Quaternion());
+	// 회전은 ComponentTransform에 들어 있으므로 건드리지 않는다.
+	// 크기만 보정한다.
+	VisualTransform.SetScale3D(GetActorScale3D());
+
+	ASFBuildingDestructionActor* SpawnedActor =
+		GetWorld()->SpawnActor<ASFBuildingDestructionActor>(
+			ASFBuildingDestructionActor::StaticClass(),
+			VisualTransform,
+			SpawnParameters);
+
+	if (!IsValid(SpawnedActor))
+	{
+		return false;
+	}
+
+	if (!SpawnedActor->InitializeDestruction(
+			ActiveTierAssets.DestructionCollection,
+			VisualTransform))
+	{
+		SpawnedActor->Destroy();
+		return false;
+	}
+
+	DestructionActor = SpawnedActor;
+
+	// GC 초기화가 성공한 뒤에만 기존 메시를 숨긴다.
+	StaticMeshComponent->SetVisibility(false, true);
+
+	return true;
 }
 
 bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)

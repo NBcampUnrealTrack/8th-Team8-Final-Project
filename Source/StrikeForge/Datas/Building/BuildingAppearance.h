@@ -10,6 +10,8 @@ class UMaterialInterface;
 class USoundBase;
 class UStaticMesh;
 class UNiagaraSystem;
+//GC
+class UGeometryCollection;
 
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingStage
@@ -21,6 +23,25 @@ struct STRIKEFORGE_API FBuildingStage
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage")
 	TSoftObjectPtr<UStaticMesh> Mesh;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingDestruction
+{
+	GENERATED_BODY()
+
+	/**
+	 * 현재 체력 비율이 이 값 이하가 되면
+	 * 대응하는 GC 파괴 단계를 실행한다.
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (
+			ClampMin = "0.0",
+			ClampMax = "1.0"))
+	float HealthThreshold = 0.5f;
 };
 
 USTRUCT(BlueprintType)
@@ -68,6 +89,21 @@ struct STRIKEFORGE_API FBuildingVisualData
 	
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
+	
+	/**
+	* 해당 Tier의 파괴 연출에 사용할 GC.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
+	TSoftObjectPtr<UGeometryCollection> DestructionCollection;
+
+	/**
+	 * 0이 아닌 체력에서 실행할 중간 파괴 단계.
+	 *
+	 * 현재 테스트에서는 [0] Threshold 0.5 하나만 사용한다.
+	 * 체력 0은 이 배열에 넣지 않고 죽음 델리게이트가 담당한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
+	TArray<FBuildingDestruction> DestructionStages;
 
 	int32 FindConstructionStageIndex(float ProgressRatio) const
 	{
@@ -105,6 +141,31 @@ struct STRIKEFORGE_API FBuildingVisualData
 		for (int32 Index = 0; Index < DamageStages.Num(); ++Index)
 		{
 			if (HealthRatio <= DamageStages[Index].Threshold)
+			{
+				Result = Index;
+			}
+		}
+
+		return Result;
+	}
+	int32 FindDestructionStageIndex(float HealthRatio) const
+	{
+		HealthRatio = FMath::Clamp(
+			HealthRatio,
+			0.f,
+			1.f);
+
+		// 체력 0은 HandleHealthZero에서 처리한다.
+		if (HealthRatio <= 0.f || HealthRatio >= 1.f)
+		{
+			return INDEX_NONE;
+		}
+
+		int32 Result = INDEX_NONE;
+
+		for (int32 Index = 0; Index < DestructionStages.Num(); ++Index)
+		{
+			if (HealthRatio <=	DestructionStages[Index].HealthThreshold)
 			{
 				Result = Index;
 			}

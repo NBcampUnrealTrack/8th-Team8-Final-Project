@@ -16,6 +16,9 @@ class UNiagaraSystem;
 class UWidgetComponent;
 
 class USFBuildingDefinition;
+// gc
+class UGeometryCollection;
+class ASFBuildingDestructionActor;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -51,6 +54,9 @@ struct FBuildingTierRuntimeAssets
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> DestroyedMesh = nullptr;
+	// gc
+	UPROPERTY()
+	TObjectPtr<UGeometryCollection> DestructionCollection = nullptr;
 	
 	UPROPERTY()
 	TObjectPtr<USoundBase> ConstructionStartSound = nullptr;
@@ -70,6 +76,7 @@ struct FBuildingTierRuntimeAssets
 		ConstructionMeshes.Reset();
 		CompletedMesh = nullptr;
 		DestroyedMesh = nullptr;
+		DestructionCollection = nullptr; // gc
 		DamageMeshes.Reset();
 		
 		ConstructionStartSound = nullptr;
@@ -235,6 +242,8 @@ private:
 	// grid system
 	void SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo);
 	
+	// gc
+	bool EnsureDestructionActor();
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
@@ -328,4 +337,8 @@ private:
 	// 빌딩DA
 	UPROPERTY(EditInstanceOnly,BlueprintReadOnly,Category = "SF|Building|Definition",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
+	
+	// gc
+	UPROPERTY(Transient)
+	TObjectPtr<ASFBuildingDestructionActor> DestructionActor;
 };

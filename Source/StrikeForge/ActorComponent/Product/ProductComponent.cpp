@@ -303,10 +303,21 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Product Restart: %d / %d"), ProductLine.Num(), MaxLineCount);
 		StartProductLine();
-		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
-	ResetProductProgress();
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
+		ResetProductProgress();
+	}
+
+	// 다음 생산까지 정리한 뒤에 알린다.
+	//
+	// 스폰 직후에 알리면, 구독자가 그 자리에서 AddProductInLine 을 부를 경우
+	// 그쪽에서 StartProductLine 이 한 번 돌고 아래 분기에서 또 한 번 돌게 된다.
+	// 이 위치에서는 큐 상태가 이미 확정돼 있어 그런 일이 없다.
+	//
+	// 조기 return 을 else 로 바꾼 이유가 이것이다. 위 두 분기의 동작은 그대로다.
+	OnProductCompleted.Broadcast(InRowName);
 }
 
 // 바인딩

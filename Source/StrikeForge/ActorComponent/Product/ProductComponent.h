@@ -9,6 +9,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductRatioChanged, float, OutProductRatio);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductCompleted, FName, OutCompletedRowName);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
@@ -82,4 +83,15 @@ public:
 	// product ratio changed
 	UPROPERTY(BlueprintAssignable)
 	FProductRatioChanged OnProductRatioChanged;
+	/**
+	 * 유닛 한 기가 실제로 생성된 직후.
+	 *
+	 * OnProductLineChanged 와 구분된다. 저쪽은 큐에 넣을 때·취소할 때·완료될 때가
+	 * 모두 같은 신호로 오지만, 이쪽은 유닛이 월드에 나온 경우에만 온다.
+	 *
+	 * 인구가 가득 차 대기 중이면 CompletedProduct 가 스폰까지 가지 않으므로
+	 * 이 신호도 오지 않는다 — 인구가 풀려 실제로 생성될 때 한 번 온다.
+	 */
+	UPROPERTY(BlueprintAssignable)
+	FProductCompleted OnProductCompleted;
 };

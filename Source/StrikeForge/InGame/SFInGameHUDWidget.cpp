@@ -1377,7 +1377,10 @@ void USFInGameHUDWidget::PerformDragSelection(
 
         FVector BoundsOrigin;
         FVector BoundsExtent;
-        Actor->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+        Actor->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+
+        const FSFSelectableInfo SelectableInfo =
+            ISFSelectable::Execute_GetSelectableInfo(Actor);
 
         FVector2D ActorScreenPosition;
 
@@ -1393,9 +1396,77 @@ void USFInGameHUDWidget::PerformDragSelection(
             continue;
         }
 
-        if (!SelectionRectangle.IsInsideOrOn(ActorScreenPosition))
+        const bool bUsesBoundsOverlap =
+            SelectableInfo.SelectableType == ESFSelectableType::Commander ||
+            SelectableInfo.SelectableType == ESFSelectableType::Unit;
+
+        if (!bUsesBoundsOverlap)
         {
-            continue;
+            if (!SelectionRectangle.IsInsideOrOn(ActorScreenPosition))
+            {
+                continue;
+            }
+        }
+        else
+        {
+            FVector2D ScreenBoundsMin = ActorScreenPosition;
+            FVector2D ScreenBoundsMax = ActorScreenPosition;
+            bool bHasProjectedCorner = false;
+
+            for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
+            {
+                const FVector CornerLocation = BoundsOrigin + FVector(
+                    (CornerIndex & 1) != 0 ? BoundsExtent.X : -BoundsExtent.X,
+                    (CornerIndex & 2) != 0 ? BoundsExtent.Y : -BoundsExtent.Y,
+                    (CornerIndex & 4) != 0 ? BoundsExtent.Z : -BoundsExtent.Z
+                );
+
+                FVector2D CornerScreenPosition;
+
+                if (!PlayerController->ProjectWorldLocationToScreen(
+                    CornerLocation,
+                    CornerScreenPosition,
+                    true
+                ))
+                {
+                    continue;
+                }
+
+                ScreenBoundsMin.X = FMath::Min(
+                    ScreenBoundsMin.X,
+                    CornerScreenPosition.X
+                );
+                ScreenBoundsMin.Y = FMath::Min(
+                    ScreenBoundsMin.Y,
+                    CornerScreenPosition.Y
+                );
+                ScreenBoundsMax.X = FMath::Max(
+                    ScreenBoundsMax.X,
+                    CornerScreenPosition.X
+                );
+                ScreenBoundsMax.Y = FMath::Max(
+                    ScreenBoundsMax.Y,
+                    CornerScreenPosition.Y
+                );
+
+                bHasProjectedCorner = true;
+            }
+
+            if (!bHasProjectedCorner)
+            {
+                continue;
+            }
+
+            const bool bOverlapsSelection =
+                ScreenBoundsMin.X <= RectangleMax.X &&
+                ScreenBoundsMax.X >= RectangleMin.X &&
+                ScreenBoundsMin.Y <= RectangleMax.Y &&
+                ScreenBoundsMax.Y >= RectangleMin.Y;
+
+            if (!bOverlapsSelection)
+            {
+                continue;
+            }
         }
 
         FoundActors.Add(Actor);

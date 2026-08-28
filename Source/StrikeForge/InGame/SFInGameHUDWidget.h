@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -19,6 +19,7 @@ class UMaterialInterface;
 class USFMultiSelectionPanelWidget;
 class UDataTable;
 class USFStageIntroWidget;
+class ASFUnitPortraitActor;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -110,6 +111,12 @@ private:
 
     void RefreshSelectionPanels();
 
+    /**
+    * 맵에 배치된 Portrait Actor를 저장할 포인터
+    * 선택 초상화를 갱신하는 함수
+    */
+    void RefreshSelectedPortrait();
+
     void ClearSelection();
 
     void BindSelectedActorsDestroyed();
@@ -192,6 +199,14 @@ protected:
         Category = "SF|Selection"
     )
     FSFSelectableInfo SelectedInfo;
+
+    // 26.08.27 추가분
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Portrait"
+    )
+    TObjectPtr<ASFUnitPortraitActor> UnitPortraitActor = nullptr;
 
     UPROPERTY(
         BlueprintReadOnly,

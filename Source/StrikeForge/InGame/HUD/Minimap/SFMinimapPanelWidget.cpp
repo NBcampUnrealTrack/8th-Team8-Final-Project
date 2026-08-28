@@ -22,6 +22,7 @@
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
+#include "TimerManager.h"
 
 #include "Logging/SFLog.h"
 
@@ -114,6 +115,13 @@ void USFMinimapPanelWidget::NativeConstruct()
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     ClearMinimapBoundsMasks();
     DestroyRuntimeMinimapCapture();
     ClearMinimapMarkers();
@@ -470,31 +478,80 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
     CaptureComponent->OrthoWidth =
         OrthoWidth;
 
+    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
+    // 기존 미니맵 마커로 표시한다.
+    CaptureComponent->bCaptureEveryFrame = false;
+    CaptureComponent->bCaptureOnMovement = false;
+
     CaptureComponent->TextureTarget =
         MinimapRenderTarget;
 
     CaptureComponent->CaptureSource =
         ESceneCaptureSource::SCS_FinalColorLDR;
 
-    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
-    // 기존 미니맵 마커로 표시한다.
-    CaptureComponent->bCaptureEveryFrame = false;
-    CaptureComponent->bCaptureOnMovement = false;
+    World->GetTimerManager().ClearTimer(
+        MinimapCaptureTimerHandle
+    );
+
+    if (MinimapCaptureDelay <= KINDA_SMALL_NUMBER)
+    {
+        CaptureMinimapScene();
+    }
+    else
+    {
+        World->GetTimerManager().SetTimer(
+            MinimapCaptureTimerHandle,
+            this,
+            &USFMinimapPanelWidget::CaptureMinimapScene,
+            MinimapCaptureDelay,
+            false
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFMinimapPanelWidget] "
+        "Runtime minimap capture prepared | "
+        "Center: %s | OrthoWidth: %.1f | Delay: %.2f",
+        *MapCenter.ToString(),
+        OrthoWidth,
+        MinimapCaptureDelay
+    );
+}
+
+void USFMinimapPanelWidget::CaptureMinimapScene()
+{
+    if (!IsValid(RuntimeMinimapCaptureActor))
+    {
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComponent =
+        RuntimeMinimapCaptureActor->GetCaptureComponent2D();
+
+    if (!IsValid(CaptureComponent) ||
+        !IsValid(CaptureComponent->TextureTarget))
+    {
+        return;
+    }
 
     CaptureComponent->CaptureScene();
 
     SF_LOG(
         Log,
-        "[SFMinimapPanelWidget] "
-        "Runtime minimap capture created | "
-        "Center: %s | OrthoWidth: %.1f",
-        *MapCenter.ToString(),
-        OrthoWidth
+        "[SFMinimapPanelWidget] Delayed minimap capture completed."
     );
 }
 
 void USFMinimapPanelWidget::DestroyRuntimeMinimapCapture()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     if (IsValid(RuntimeMinimapCaptureActor))
     {
         RuntimeMinimapCaptureActor->Destroy();

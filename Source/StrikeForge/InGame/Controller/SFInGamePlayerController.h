@@ -6,6 +6,7 @@
 #include "SFInGamePlayerController.generated.h"
 
 class ASFCommander;
+class AActor;
 class UBuildingPlacement;
 class ASFBaseBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
@@ -163,6 +164,23 @@ private:
     void HandleMoveCommandModeInput();
 
     bool ExecutePendingUnitCommandUnderCursor();
+
+    void CollectLocallyControllableActors(
+        TArray<AActor*>& OutActors
+    ) const;
+
+    void ExecuteUnitCommandForActor(
+        AActor* Actor,
+        ESFUnitCommandMode CommandMode,
+        const FVector& Location,
+        AActor* Target
+    ) const;
+
+    bool IsValidAttackTarget(const AActor* Actor) const;
+
+    bool HasLocallyControllableSelection() const;
+
+    bool IsLocallyControllableActor(const AActor* Actor) const;
     // 변수 영역
 protected:
 

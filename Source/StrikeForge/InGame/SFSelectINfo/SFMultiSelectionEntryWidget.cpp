@@ -6,6 +6,7 @@
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "GameFramework/Actor.h"
+#include "Kismet/GameplayStatics.h"
 #include "SFSelectable.h"
 
 void USFMultiSelectionEntryWidget::NativeConstruct()
@@ -91,6 +92,14 @@ void USFMultiSelectionEntryWidget::HandleEntryClicked()
 {
     if (IsValid(RepresentedActor))
     {
+        if (IsValid(SelectionClickSound))
+        {
+            UGameplayStatics::PlaySound2D(
+                this,
+                SelectionClickSound
+            );
+        }
+
         OnEntryClicked.Broadcast(
             RepresentedActor.Get()
         );

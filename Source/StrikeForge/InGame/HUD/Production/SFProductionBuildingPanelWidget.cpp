@@ -16,6 +16,7 @@
 #include "SFProductionUIDataRow.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Game/GameInstance/SFGameInstance.h"
+#include "Kismet/GameplayStatics.h"
 
 void USFProductionBuildingPanelWidget::NativeConstruct()
 {
@@ -263,6 +264,14 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         "Production Requested: %s",
         *UnitRowName.ToString()
     );
+
+    if (IsValid(UnitProductionClickSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            UnitProductionClickSound
+        );
+    }
 
     IProductable::Execute_ProductUnits(
         ProductionBuilding,

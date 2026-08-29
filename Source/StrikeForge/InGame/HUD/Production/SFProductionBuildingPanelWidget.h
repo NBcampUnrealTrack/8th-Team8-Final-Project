@@ -11,6 +11,7 @@ class USFProductionUnitEntryWidget;
 class UImage;
 class UProductComponent;
 class UProgressBar;
+class USoundBase;
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFProductionBuildingPanelWidget
@@ -142,6 +143,13 @@ protected:
         meta = (BindWidget)
     )
     TObjectPtr<UProgressBar> ProductionProgressBar = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Production|Sound"
+    )
+    TObjectPtr<USoundBase> UnitProductionClickSound = nullptr;
 
 private:
     UPROPERTY(Transient)

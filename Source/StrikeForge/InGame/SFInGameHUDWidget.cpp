@@ -725,6 +725,14 @@ void USFInGameHUDWidget::OpenBuildingMode()
         return;
     }
 
+    if (IsValid(BuildModeOpenSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            BuildModeOpenSound
+        );
+    }
+
     ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
 
     ActiveBuildingModeWidget->OnDeactivated().AddUObject(
@@ -749,6 +757,14 @@ void USFInGameHUDWidget::CloseBuildingMode()
 
 void USFInGameHUDWidget::HandleBuildingModeDeactivated()
 {
+    if (IsValid(BuildModeCloseSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            BuildModeCloseSound
+        );
+    }
+
     if (IsValid(ActiveBuildingModeWidget))
     {
         ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
@@ -1353,6 +1369,7 @@ void USFInGameHUDWidget::PerformDragSelection(
     );
 
     TArray<AActor*> FoundActors;
+    TArray<AActor*> EnemyActors;
 
     for (TActorIterator<AActor> Iterator(World); Iterator; ++Iterator)
     {
@@ -1370,10 +1387,8 @@ void USFInGameHUDWidget::PerformDragSelection(
             continue;
         }
 
-        if (!IsOwnedByLocalPlayer(Actor))
-        {
-            continue;
-        }
+        const bool bIsOwnedByLocalPlayer =
+            IsOwnedByLocalPlayer(Actor);
 
         FVector BoundsOrigin;
         FVector BoundsExtent;
@@ -1469,7 +1484,14 @@ void USFInGameHUDWidget::PerformDragSelection(
             }
         }
 
-        FoundActors.Add(Actor);
+        if (bIsOwnedByLocalPlayer)
+        {
+            FoundActors.Add(Actor);
+        }
+        else
+        {
+            EnemyActors.Add(Actor);
+        }
     }
 
     FoundActors.Sort(
@@ -1499,7 +1521,33 @@ void USFInGameHUDWidget::PerformDragSelection(
         FoundActors.SetNum(30);
     }
 
-    ApplyMultipleSelection(FoundActors);
+    if (!FoundActors.IsEmpty())
+    {
+        ApplyMultipleSelection(FoundActors);
+        return;
+    }
+
+    if (!EnemyActors.IsEmpty())
+    {
+        EnemyActors.Sort(
+            [](const AActor& Left, const AActor& Right)
+            {
+                return Left.GetName() < Right.GetName();
+            }
+        );
+
+        SelectActor(EnemyActors[0]);
+
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] Enemy drag selection reduced to one actor: %s",
+            *EnemyActors[0]->GetName()
+        );
+
+        return;
+    }
+
+    ClearSelection();
 }
 
 int32 USFInGameHUDWidget::GetSelectionPriority(
@@ -1773,15 +1821,20 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
 }
 
 void USFInGameHUDWidget::ShowMoveDestinationIndicator(
-    const FVector& WorldLocation
+    const FVector& WorldLocation,
+    bool bIsAttack
 )
 {
-    if (!IsValid(MoveDestinationIndicatorMaterial))
+    UMaterialInterface* IndicatorMaterial =
+        bIsAttack && IsValid(AttackDestinationIndicatorMaterial)
+        ? AttackDestinationIndicatorMaterial
+        : MoveDestinationIndicatorMaterial;
+
+    if (!IsValid(IndicatorMaterial))
     {
         SF_LOG(
             Warning,
-            "[SFInGameHUDWidget] "
-            "MoveDestinationIndicatorMaterial is invalid."
+            "[SFInGameHUDWidget] Destination indicator material is invalid."
         );
         return;
     }
@@ -1794,7 +1847,7 @@ void USFInGameHUDWidget::ShowMoveDestinationIndicator(
 
     UMaterialInstanceDynamic* DynamicMaterial =
         UMaterialInstanceDynamic::Create(
-            MoveDestinationIndicatorMaterial,
+            IndicatorMaterial,
             this
         );
 
@@ -2092,4 +2145,30 @@ bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
     }
 
     return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
+}
+
+void USFInGameHUDWidget::PlayBuildStartSound()
+{
+    if (!IsValid(BuildStartSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(
+        this,
+        BuildStartSound
+    );
+}
+
+void USFInGameHUDWidget::PlayResourceWarningSound()
+{
+    if (!IsValid(ResourceWarningSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(
+        this,
+        ResourceWarningSound
+    );
 }

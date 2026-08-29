@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "NativeGameplayTags.h"
+#include "InGame/HUD/Tutorial/SFStageIntroData.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SFTutorialSubsystem.generated.h"
 
@@ -16,6 +17,8 @@ class UDataTable;
  * 여기에 둔다 — 이름이 바뀌어도 고칠 곳이 한 군데다.
  */
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
+
+class ASFTutorialGhostActor;
 
 /** 목표 대기가 시작됐다. 목표 배너를 띄우는 쪽이 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -38,6 +41,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFTutorialObjectiveRecorded, FGameplayTag, ObjectiveTag);
+
+/**
+ * 단계별 안내의 한 칸이 시작됐다.
+ *
+ * 스포트라이트를 띄우는 쪽(HUD)이 구독한다. 받은 Step 을 그대로
+ * USFTutorialSpotlightWidget::ApplyGuideStep 에 넘기면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+    FSFTutorialGuideStepStarted, const FSFStageIntroGuideStep&, Step, int32, StepIndex, int32, StepCount);
+
+/** 단계별 안내가 끝났거나 취소됐다. 스포트라이트를 지울 때 구독한다 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFTutorialGuideFinished);
 
 /**
  * 튜토리얼을 다시 열어야 한다. 위젯을 띄우는 쪽이 구독한다.
@@ -106,6 +121,44 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Tutorial")
     void CancelObjectiveWait();
 
+    // ── 단계별 안내 ─────────────────────────────────────
+    //
+    // 목표 대기와 같은 자리에 산다. 안내 한 칸이 곧 목표 대기 하나이고,
+    // 마지막 칸이 끝났을 때만 튜토리얼로 돌아간다. 대기 상태를 두 벌
+    // 만들면 "지금 무엇을 기다리는가" 의 답이 두 개가 되어버린다.
+
+    /**
+     * 단계별 안내를 시작한다.
+     *
+     * @param InResumeNodeIndex 모든 칸을 마치면 돌아올 노드 번호
+     * @return 실제로 안내에 들어갔으면 true. 칸이 비어 있으면 false 이며,
+     *         이 경우 호출부가 그냥 다음 노드로 넘어가면 된다.
+     */
+    bool BeginGuide(
+        UDataTable* InDataTable,
+        FName InRowName,
+        int32 InResumeNodeIndex,
+        const TArray<FSFStageIntroGuideStep>& InSteps);
+
+    /**
+     * 지금 칸을 통과 처리하고 다음으로 넘어간다.
+     *
+     * Click 방식 칸에서 스포트라이트 위젯이 부른다. 신호를 기다리는 칸에서
+     * 불러도 그대로 넘어가므로, 막혔을 때 손으로 밀어 넣는 용도로도 쓴다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Guide")
+    void CompleteCurrentGuideStep();
+
+    /** 안내를 중단한다. 돌아갈 노드로 가지 않고 그대로 끝낸다 */
+    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Guide")
+    void CancelGuide();
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Guide")
+    bool IsGuideActive() const;
+
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Guide")
+    int32 GetCurrentGuideStepIndex() const;
+
     // ── 목표 달성 신호 (게임플레이 쪽에서 호출) ─────────
 
     /**
@@ -165,10 +218,40 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
     FSFTutorialResumeRequested OnResumeRequested;
 
+    UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
+    FSFTutorialGuideStepStarted OnGuideStepStarted;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
+    FSFTutorialGuideFinished OnGuideFinished;
+
+    /**
+     * 배치 고스트로 쓸 액터 클래스.
+     *
+     * 반투명 회색 머티리얼은 이 클래스의 블루프린트에서 지정한다 — 어떤
+     * 머티리얼이 어울리는지는 아트 쪽 판단이라 C++ 에 박지 않는다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Guide")
+    TSoftClassPtr<ASFTutorialGhostActor> GhostActorClass;
+
     /** 콘솔 명령 sf.Tutorial.DumpState 가 호출한다 */
     void DumpState() const;
 
 private:
+    /** 안내 한 칸을 화면에 올린다. 범위를 벗어나면 안내를 끝낸다 */
+    void EnterGuideStep(int32 InStepIndex);
+
+    /** 모든 칸을 마쳤다. 상태를 비우고 튜토리얼로 돌아간다 */
+    void FinishGuide();
+
+    /** 안내 상태만 비운다. 고스트와 타이머도 함께 정리한다 */
+    void ClearGuideState();
+
+    void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
+    void DestroyPlacementGhost();
+
+    UFUNCTION()
+    void HandleGuideAutoAdvance();
+
     /** 지금 기다리는 목표. 유효하지 않으면 대기 중이 아니다 */
     UPROPERTY(Transient)
     FGameplayTag PendingObjectiveTag;
@@ -193,4 +276,31 @@ private:
      */
     UPROPERTY(Transient)
     FGameplayTagContainer CompletedObjectives;
+
+    // ── 단계별 안내 상태 ────────────────────────────────
+
+    UPROPERTY(Transient)
+    TArray<FSFStageIntroGuideStep> GuideSteps;
+
+    /** INDEX_NONE 이면 안내 중이 아니다 */
+    int32 GuideStepIndex = INDEX_NONE;
+
+    /** 배치 고스트. 칸이 바뀌거나 안내가 끝나면 파괴한다 */
+    UPROPERTY(Transient)
+    TObjectPtr<ASFTutorialGhostActor> ActiveGhost = nullptr;
+
+    FTimerHandle GuideAutoAdvanceHandle;
+
+    /**
+     * BeginGuide 안에서 EnterGuideStep 이 도는 동안 켜진다.
+     *
+     * 모든 칸이 이미 달성돼 있으면 BeginGuide 가 끝나기도 전에 안내가
+     * 종료된다. 그때 재개 델리게이트를 쏘면 아직 닫지도 않은 튜토리얼
+     * 위젯 위에 위젯이 하나 더 열린다 — 목표 대기에서 겪었던 것과 같은
+     * 문제다. 이 플래그가 켜져 있으면 브로드캐스트를 미루고, BeginGuide 가
+     * false 를 돌려주어 호출부가 직접 다음 노드로 넘어가게 한다.
+     */
+    bool bEnteringGuide = false;
+
+    bool bGuideEndedWhileEntering = false;
 };

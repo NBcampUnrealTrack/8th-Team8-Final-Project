@@ -47,6 +47,70 @@ bool USFUnitSpawnLibrary::IsBuildableLocation(
 	return Combat->GetDistanceOutsideLane(InLocation) > FMath::Max(0.f, InFootprintRadius);
 }
 
+// ─────────────────────────────────────────────────────────
+// 부착 정보 조회
+//
+// 값을 꺼내는 것까지만 한다. 붙이는 쪽이 스켈레탈 메시일 수도, 초상화용
+// 사본일 수도, 나이아가라일 수도 있어서 이 라이브러리가 알 수 없다.
+// ─────────────────────────────────────────────────────────
+bool USFUnitSpawnLibrary::GetUnitAttachTransform(
+	const UObject* InWorldContext,
+	FName InUnitRowName,
+	FName& OutSocketName,
+	FTransform& OutRelativeTransform
+)
+{
+	// 실패해도 출력값은 항상 채워 둔다.
+	// 호출부가 반환값을 안 보고 그대로 써도 루트에 원본 크기로 붙을 뿐이다.
+	OutSocketName = NAME_None;
+	OutRelativeTransform = FTransform::Identity;
+
+	if (InUnitRowName.IsNone())
+	{
+		return false;
+	}
+
+	const UWorld* World = GEngine != nullptr
+		? GEngine->GetWorldFromContextObject(InWorldContext, EGetWorldErrorMode::ReturnNull)
+		: nullptr;
+
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = World->GetGameInstance();
+
+	if (!IsValid(GameInstance))
+	{
+		return false;
+	}
+
+	USFDataTableManager* TableManager = GameInstance->GetSubsystem<USFDataTableManager>();
+
+	if (!IsValid(TableManager))
+	{
+		return false;
+	}
+
+	const FUnitStatData* StatRow = TableManager->GetDataRow<FUnitStatData>(
+		EDataTableType::Unit,
+		InUnitRowName,
+		TEXT("SFUnitSpawnLibrary::GetUnitAttachTransform")
+	);
+
+	if (StatRow == nullptr)
+	{
+		SF_LOG(Warning, "[UnitSpawn] 부착 정보를 찾지 못했습니다 | Row: %s", *InUnitRowName.ToString());
+		return false;
+	}
+
+	OutSocketName = StatRow->WeaponAttach.SocketName;
+	OutRelativeTransform = StatRow->WeaponAttach.GetRelativeTransform();
+
+	return true;
+}
+
 bool USFUnitSpawnLibrary::FindSpawnLocation(
 	const UObject* InWorldContext,
 	const FVector& InOrigin,

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "SFUnitSpawnLibrary.generated.h"
 
@@ -71,6 +72,29 @@ public:
 		const UObject* InWorldContext,
 		const FVector& InLocation,
 		float InFootprintRadius = 0.f);
+
+	/**
+	 * 유닛 행에 적어둔 부착 정보를 읽는다.
+	 *
+	 * 붙이는 일 자체는 하지 않는다 — 무엇을(메시인지 이펙트인지) 어디에
+	 * (유닛 본체인지 초상화용 사본인지) 붙일지는 부르는 쪽 사정이고,
+	 * 이 라이브러리는 값만 꺼내 준다.
+	 *
+	 * 블루프린트에서는 이렇게 쓴다.
+	 *   Get Unit Attach Transform -> Attach Component To Component (소켓 이름)
+	 *                             -> Set Relative Transform (트랜스폼)
+	 *
+	 * @param OutSocketName        붙일 소켓 이름. 비어 있으면 루트에 붙인다
+	 * @param OutRelativeTransform 소켓 기준 보정값
+	 * @return 행을 찾았으면 true. 실패해도 출력값은 기본값으로 채워진다
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit",
+		meta = (WorldContext = "InWorldContext"))
+	static bool GetUnitAttachTransform(
+		const UObject* InWorldContext,
+		FName InUnitRowName,
+		FName& OutSocketName,
+		FTransform& OutRelativeTransform);
 
 	/**
 	 * NavMesh 위의 생성 가능한 지점을 찾는다.

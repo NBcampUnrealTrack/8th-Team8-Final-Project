@@ -10,6 +10,20 @@ struct STRIKEFORGE_API FSFBuildingDestructionStage
 	GENERATED_BODY()
 
 	/**
+	 * 이 Stage가 도달해야 하는 누적 클러스터 깊이.
+	 *
+	 * 1: 첫 번째 파괴
+	 * 2: 두 번째 파괴
+	 * 3: 최종 파괴
+	 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (ClampMin = "1"))
+	int32 TargetClusterDepth = 1;
+	
+	/**
 	 * Geometry Collection에 적용할 외부 Strain.
 	 * GC의 Damage Threshold와 함께 조정한다.
 	 */
@@ -20,9 +34,10 @@ struct STRIKEFORGE_API FSFBuildingDestructionStage
 	/**
 	 * LocalOffset을 중심으로 Strain을 적용할 반경.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Destruction",
-		meta = (ClampMin = "1.0"))
-	float Radius = 350.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (ClampMin = "0.1"))
+	float RadiusScale = 1.f;
 
 	/**
 	 * GC 컴포넌트 로컬 좌표 기준 파괴 중심점.
@@ -64,17 +79,10 @@ class STRIKEFORGE_API ASFBuildingDestructionActor : public AActor
 public:
 	// Sets default values for this actor's properties
 	ASFBuildingDestructionActor();
-
-	/**
-     * GC 에셋과 월드 Transform을 적용한다.
-     *
-     * InVisualTransform은 BaseBuilding의 ActorTransform이 아니라
-     * StaticMeshComponent의 ComponentTransform을 넘겨야 한다.
-     */
+	
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
     bool InitializeDestruction(
-        const UGeometryCollection* InCollection,
-        const FTransform& InVisualTransform);
+        const UGeometryCollection* InCollection);
 
     /**
      * 동일하거나 이전 단계는 다시 적용하지 않는다.
@@ -89,9 +97,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
     void ApplyFinalDestruction();
 
-    UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
-    void RemoveAfter(float InSeconds);
-
     UFUNCTION(BlueprintPure, Category = "SF|Building|Destruction")
     UGeometryCollectionComponent* GetGeometryCollectionComponent() const
     {
@@ -104,7 +109,8 @@ protected:
 private:
     void ApplyStageSettings(
         const FSFBuildingDestructionStage& StageSettings);
-
+	void ApplyNextStrainHit();
+	void SchedulePendingImpulse();
     void ApplyPendingImpulse();
 
 private:
@@ -143,23 +149,50 @@ private:
         meta = (AllowPrivateAccess = "true"))
     FSFBuildingDestructionStage FinalStage;
 
+	
+	FVector CachedLocalBoundsCenter = FVector::ZeroVector;
+	float CachedLocalBoundsRadius = 1.f;;
+	
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
         Category = "Destruction",
         meta = (ClampMin = "0.1", AllowPrivateAccess = "true"))
-    float DebrisLifetime = 3.f;
+    float DebrisLifetime = 4.f;
 
     UPROPERTY(Transient)
     int32 AppliedStageIndex = INDEX_NONE;
+	UPROPERTY(Transient)
+	int32 AppliedClusterDepth = 0;
 
+	// 현재 요청받은 목표 깊이
+	UPROPERTY(Transient)
+	int32 PendingTargetClusterDepth = 0;
+
+	FVector PendingImpulseOrigin = FVector::ZeroVector;
+	float PendingImpulseRadius = 0.f;
+	float PendingImpulseStrength = 0.f;
+	float PendingImpulseDelay = 0.f;
+
+	/**
+	 * 연속 Strain 사이의 물리 처리 간격.
+	 * Level 수와 관계없이 하나의 타이머가 재사용된다.
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (
+			ClampMin = "0.01",
+			ClampMax = "0.1",
+			AllowPrivateAccess = "true"))
+	float StrainHitInterval = 0.03f;
+	
     UPROPERTY(Transient)
     bool bInitialized = false;
 
     UPROPERTY(Transient)
     bool bFinalDestructionApplied = false;
-
-    FVector PendingImpulseOrigin = FVector::ZeroVector;
-    float PendingImpulseRadius = 0.f;
-    float PendingImpulseStrength = 0.f;
-
-    FTimerHandle ImpulseTimerHandle;
+	
+	
+	FTimerHandle StrainHitTimerHandle;
+	FTimerHandle ImpulseTimerHandle;
 };

@@ -85,6 +85,5 @@ void ASFHouseBuilding::OnBuildingDestroyed()
 	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
 	if (!IsValid(SFGameState)) return;
 	SFGameState->AddMaxPopulation(GetTeamIndex(), MaxPopulationIncreaseAmount * -1);
-	
-	Destroy();
+
 }

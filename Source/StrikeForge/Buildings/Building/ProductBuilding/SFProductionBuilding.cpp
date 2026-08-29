@@ -59,8 +59,7 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 	// 환불이 필요하면 로직을 여기 작성해야하나
 	// 환불이 되지않는것이 자연스럽다
 	ProductComponent->AllClearProductLine();
-	
-	Destroy();
+
 }
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {

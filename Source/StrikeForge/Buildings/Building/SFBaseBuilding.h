@@ -223,10 +223,11 @@ private:
 	
 	// 데미지 적용조건 함수
 	bool CanReceiveDamage() const;
-	// 체력 변경에 따른 이벤트함수
+	/** 체력 변경을 완료 건물의 손상 외형에 반영한다. */
 	UFUNCTION() // BIND with healthcomponent.applydamage
 	void HandleHealthChanged(float InBeforeHP, float InCurrentHP, float InMaxHP);
-	void ChangeDamageStage(int32 InDamageStageIndex);
+	/** 체력 비율에 맞춰 GC 또는 DamageMesh 단계를 갱신한다. */
+	void UpdateDamageVisual(float PreviousHealthRatio, float CurrentHealthRatio);
 	UFUNCTION()
 	void HandleHealthZero();
 	// 박스 콜리젼 셋Set
@@ -242,8 +243,12 @@ private:
 	// grid system
 	void SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo);
 	
-	// gc
+	/** GC 액터가 없으면 생성하고 기존 StaticMesh를 숨긴다. */
 	bool EnsureDestructionActor();
+
+	/** 기존 GC를 제거하고 StaticMesh를 다시 표시한다. */
+	void ClearDestructionVisual();
+	
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")

@@ -35,26 +35,44 @@ ASFBuildingDestructionActor::ASFBuildingDestructionActor()
         CreateDefaultSubobject<URadialFalloff>(
             TEXT("StrainField"));
 
-    // 체력 50% 중간 파괴 한 단계
-    DamageStages.SetNum(1);
+    DamageStages.SetNum(3);
 
-    DamageStages[0].Strain = 950000.f;
-    DamageStages[0].Radius = 1000.f;
-    DamageStages[0].LocalOffset = FVector(0.f, 0.f, 300.f);
+    // 체력 80% 파괴 한 단계
+    DamageStages[0].TargetClusterDepth = 1;
+    DamageStages[0].Strain = 550000.f;
+    DamageStages[0].RadiusScale = 1.2f;
+    DamageStages[0].LocalOffset = FVector::ZeroVector;
     DamageStages[0].ImpulseStrength = 0.f;
-    DamageStages[0].ImpulseDelay = 0.04f;
+    DamageStages[0].ImpulseDelay = 0.05f;
 
-    // 체력 0 최종 파괴
+    // 체력 40% 파괴 한 단계
+    DamageStages[1].TargetClusterDepth = 2;
+    DamageStages[1].Strain = 950000.f;
+    DamageStages[1].RadiusScale = 1.2f;
+    DamageStages[1].LocalOffset = FVector::ZeroVector;
+    DamageStages[1].ImpulseStrength = 250.f;
+    DamageStages[1].ImpulseDelay = 0.05f;
+    
+    // 체력 20%: GC Level 3까지 진행
+    DamageStages[2].TargetClusterDepth = 3;
+    // 실제 값은 GC의 Level 3 Damage Threshold보다 충분히 커야 합니다.
+    DamageStages[2].Strain = 1500000.f;
+    DamageStages[2].RadiusScale = 1.2f;
+    DamageStages[2].LocalOffset = FVector::ZeroVector;
+    DamageStages[2].ImpulseStrength = 300.f;
+    DamageStages[2].ImpulseDelay = 0.05f;
+
+    // 체력 0: GC Level 4까지 진행
+    FinalStage.TargetClusterDepth = 4;
     FinalStage.Strain = 1500000.f;
-    FinalStage.Radius = 1200.f;
-    FinalStage.LocalOffset = FVector(0.f, 0.f, 250.f);
-    FinalStage.ImpulseStrength = 450.f;
-    FinalStage.ImpulseDelay = 0.04f;
+    FinalStage.RadiusScale = 1.2f;
+    FinalStage.LocalOffset = FVector::ZeroVector;
+    FinalStage.ImpulseStrength = 300.f;
+    FinalStage.ImpulseDelay = 0.05f;
 }
 
 bool ASFBuildingDestructionActor::InitializeDestruction(
-    const UGeometryCollection* InCollection,
-    const FTransform& InVisualTransform)
+    const UGeometryCollection* InCollection)
 {
     if (bInitialized)
     {
@@ -79,15 +97,20 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
     InCollection,
     true);
     
-    /**
-     * StaticMeshComponent의 월드 Transform을 그대로 사용한다.
-     * BP에서 설정한 상대 Scale도 이 Transform에 포함된다.
-     */
-    SetActorTransform(
-        InVisualTransform,
-        false,
-        nullptr,
-        ETeleportType::TeleportPhysics);
+    // 파괴 radius의 위치와 크기
+    const FBox LocalBounds =
+    GeometryCollectionComponent->GetLocalBounds();
+
+    if (LocalBounds.IsValid)
+    {
+        CachedLocalBoundsCenter = LocalBounds.GetCenter();
+        CachedLocalBoundsRadius = FMath::Max(
+            LocalBounds.GetExtent().Size(),
+            1.f);
+    }
+    
+    
+    GeometryCollectionComponent->bAllowRemovalOnBreak = true;
     
     // 단계별 파괴 실험 중에는 Damage 전파 차단
     FGeometryCollectionDamagePropagationData NoPropagation;
@@ -131,33 +154,25 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
 void ASFBuildingDestructionActor::ApplyDamageStage(
     const int32 StageIndex)
 {
-    if (!bInitialized || bFinalDestructionApplied)
-    {
-        return;
-    }
-
-    if (!DamageStages.IsValidIndex(StageIndex))
-    {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[%s] Invalid destruction stage: %d"),
-            *GetName(),
-            StageIndex);
-
-        return;
-    }
-
-    // 동일 단계 재실행 및 회복 방향 역실행 방지
-    if (StageIndex <= AppliedStageIndex)
+    if (!bInitialized ||
+        bFinalDestructionApplied ||
+        !DamageStages.IsValidIndex(StageIndex) ||
+        StageIndex <= AppliedStageIndex)
     {
         return;
     }
 
     AppliedStageIndex = StageIndex;
 
-    ApplyStageSettings(DamageStages[StageIndex]);
+    FSFBuildingDestructionStage StageSettings =
+        DamageStages[StageIndex];
 
+    // Stage 0 → Level 1
+    // Stage 1 → Level 2
+    // Stage 2 → Level 3
+    StageSettings.TargetClusterDepth = StageIndex + 1;
+
+    ApplyStageSettings(StageSettings);
     UE_LOG(
         LogTemp,
         Log,
@@ -174,18 +189,14 @@ void ASFBuildingDestructionActor::ApplyFinalDestruction()
     }
 
     bFinalDestructionApplied = true;
-    
-    UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[%s] Final destruction applied"),
-            *GetName());
-    
-    GetWorldTimerManager().ClearTimer(
-        ImpulseTimerHandle);
 
-    ApplyStageSettings(FinalStage);
-    RemoveAfter(DebrisLifetime);
+    FSFBuildingDestructionStage FinalSettings = FinalStage;
+
+    // 중간 단계가 3개면 최종 단계는 Level 4
+    FinalSettings.TargetClusterDepth = DamageStages.Num() + 1;
+
+    ApplyStageSettings(FinalSettings);
+    SetLifeSpan(DebrisLifetime);
 }
 
 void ASFBuildingDestructionActor::ApplyStageSettings(
@@ -200,21 +211,27 @@ void ASFBuildingDestructionActor::ApplyStageSettings(
     const FTransform& ComponentTransform =
         GeometryCollectionComponent->GetComponentTransform();
 
+    const FVector LocalFieldCenter =
+    CachedLocalBoundsCenter +
+    StageSettings.LocalOffset;
+
     const FVector WorldCenter =
         ComponentTransform.TransformPosition(
-            StageSettings.LocalOffset);
+            LocalFieldCenter);
 
     /**
      * BP StaticMeshComponent가 2,2,2 Scale이면
      * 파괴 반경도 그에 맞춰 증가시킨다.
      */
     const float ComponentScale =
-        FMath::Max(
-            ComponentTransform.GetScale3D().GetAbsMax(),
-            KINDA_SMALL_NUMBER);
+    FMath::Max(
+        ComponentTransform.GetScale3D().GetAbsMax(),
+        KINDA_SMALL_NUMBER);
 
     const float WorldRadius =
-        StageSettings.Radius * ComponentScale;
+        CachedLocalBoundsRadius *
+        StageSettings.RadiusScale *
+        ComponentScale;
 
     /**
      * Falloff None:
@@ -229,11 +246,47 @@ void ASFBuildingDestructionActor::ApplyStageSettings(
         WorldRadius,
         WorldCenter,
         EFieldFalloffType::Field_FallOff_None);
+    
+    // 이전 단계의 예약 작업이 남아 있다면 새 목표로 교체한다.
+    GetWorldTimerManager().ClearTimer(
+        StrainHitTimerHandle);
 
-    /**
-     * 이 GeometryCollectionComponent의 PhysicsProxy에만 전달된다.
-     * 주변 건물 GC에는 적용되지 않는다.
-     */
+    GetWorldTimerManager().ClearTimer(
+        ImpulseTimerHandle);
+
+    PendingTargetClusterDepth =
+        FMath::Max(
+            StageSettings.TargetClusterDepth,
+            1);
+
+    PendingImpulseOrigin = WorldCenter;
+    PendingImpulseRadius = WorldRadius;
+    PendingImpulseStrength =
+        StageSettings.ImpulseStrength;
+    PendingImpulseDelay =
+        StageSettings.ImpulseDelay;
+
+    ApplyNextStrainHit();
+}
+
+void ASFBuildingDestructionActor::ApplyNextStrainHit()
+{
+    if (!bInitialized ||
+        !IsValid(GeometryCollectionComponent) ||
+        !IsValid(StrainField))
+    {
+        return;
+    }
+
+    if (AppliedClusterDepth >=
+        PendingTargetClusterDepth)
+    {
+        SchedulePendingImpulse();
+        return;
+    }
+
+    GeometryCollectionComponent->WakeAllRigidBodies();
+
     GeometryCollectionComponent->ApplyPhysicsField(
         true,
         EGeometryCollectionPhysicsTypeEnum::
@@ -241,37 +294,54 @@ void ASFBuildingDestructionActor::ApplyStageSettings(
         nullptr,
         StrainField);
 
-    if (StageSettings.ImpulseStrength <= 0.f)
+    ++AppliedClusterDepth;
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("[%s] Strain hit: %d / %d"),
+        *GetName(),
+        AppliedClusterDepth,
+        PendingTargetClusterDepth);
+
+    if (AppliedClusterDepth <
+        PendingTargetClusterDepth)
+    {
+        // 같은 타이머 핸들을 다음 평가에 재사용한다.
+        GetWorldTimerManager().SetTimer(
+            StrainHitTimerHandle,
+            this,
+            &ThisClass::ApplyNextStrainHit,
+            StrainHitInterval,
+            false);
+
+        return;
+    }
+
+    SchedulePendingImpulse();
+}
+
+void ASFBuildingDestructionActor::SchedulePendingImpulse()
+{
+    GetWorldTimerManager().ClearTimer(
+        ImpulseTimerHandle);
+
+    if (PendingImpulseStrength <= 0.f)
     {
         return;
     }
 
-    PendingImpulseOrigin = WorldCenter;
-    PendingImpulseRadius = WorldRadius;
-    PendingImpulseStrength =
-        StageSettings.ImpulseStrength;
-
-    GetWorldTimerManager().ClearTimer(
-        ImpulseTimerHandle);
-
-    if (StageSettings.ImpulseDelay <= 0.f)
+    if (PendingImpulseDelay <= 0.f)
     {
         ApplyPendingImpulse();
         return;
     }
 
-    /**
-     * Strain으로 클러스터가 먼저 분리된 다음,
-     * 새로 활성화된 파편에 Impulse를 적용한다.
-     *
-     * 초기화 순서를 억지로 맞추는 타이머가 아니라
-     * 두 물리 연출을 순차 실행하기 위한 짧은 지연이다.
-     */
     GetWorldTimerManager().SetTimer(
         ImpulseTimerHandle,
         this,
         &ThisClass::ApplyPendingImpulse,
-        StageSettings.ImpulseDelay,
+        PendingImpulseDelay,
         false);
 }
 
@@ -283,32 +353,32 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
     {
         return;
     }
-
+    
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[%s] Radial impulse fired: Strength=%.1f Radius=%.1f Origin=%s"),
+        *GetName(),
+        PendingImpulseStrength,
+        PendingImpulseRadius,
+        *PendingImpulseOrigin.ToString());
+    
     GeometryCollectionComponent->AddRadialImpulse(
         PendingImpulseOrigin,
         PendingImpulseRadius,
         PendingImpulseStrength,
         ERadialImpulseFalloff::RIF_Linear,
-        true); // Velocity Change
+        true); // 질량과 관계없이 속도 변화 적용
 
     PendingImpulseStrength = 0.f;
-}
-
-void ASFBuildingDestructionActor::RemoveAfter(
-    const float InSeconds)
-{
-    if (InSeconds <= 0.f)
-    {
-        Destroy();
-        return;
-    }
-
-    SetLifeSpan(InSeconds);
 }
 
 void ASFBuildingDestructionActor::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearTimer(
+        StrainHitTimerHandle);
+
     GetWorldTimerManager().ClearTimer(
         ImpulseTimerHandle);
 

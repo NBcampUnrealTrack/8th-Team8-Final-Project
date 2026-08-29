@@ -114,8 +114,7 @@ void ASFMiningBuilding::OnTierDeactivated()
 void ASFMiningBuilding::OnBuildingDestroyed()
 {
 	Super::OnBuildingDestroyed();
-	
-	Destroy();
+
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const

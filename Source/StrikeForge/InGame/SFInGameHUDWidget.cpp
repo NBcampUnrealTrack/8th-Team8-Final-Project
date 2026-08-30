@@ -70,7 +70,6 @@ void USFInGameHUDWidget::NativeConstruct()
         return;
     }
 
-    // 추가분
     UnitPortraitActor =
         Cast<ASFUnitPortraitActor>(
             UGameplayStatics::GetActorOfClass(
@@ -92,10 +91,12 @@ void USFInGameHUDWidget::NativeConstruct()
         this,
         &USFInGameHUDWidget::HandleSelectInput
     );
+
     PlayerController->OnSelectionDragStarted.RemoveDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragStarted
     );
+
     PlayerController->OnSelectionDragStarted.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragStarted
@@ -105,6 +106,7 @@ void USFInGameHUDWidget::NativeConstruct()
         this,
         &USFInGameHUDWidget::HandleSelectionDragCompleted
     );
+
     PlayerController->OnSelectionDragCompleted.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragCompleted
@@ -128,6 +130,16 @@ void USFInGameHUDWidget::NativeConstruct()
         SelectionPanel->OnTierUpgradeRequested.AddUniqueDynamic(
             this,
             &USFInGameHUDWidget::HandleTierUpgradeRequested
+        );
+
+        SelectionPanel->OnRallyPointRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleRallyPointRequested
+        );
+
+        SelectionPanel->OnRallyPointRequested.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleRallyPointRequested
         );
 
         SF_LOG(
@@ -510,6 +522,30 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         {
             SelectionPanel->ClearSelection();
         }
+
+        const bool bCanTierUp =
+            bHasValidSelection &&
+            (
+                SelectedInfo.SelectableType ==
+                ESFSelectableType::MainBuilding ||
+                SelectedInfo.SelectableType ==
+                ESFSelectableType::ProductionBuilding
+                ) &&
+            IsOwnedByLocalPlayer(SelectedActor.Get());
+
+        SelectionPanel->SetTierUpButtonVisible(
+            bCanTierUp
+        );
+
+        const bool bCanSetRallyPoint =
+            bHasValidSelection &&
+            SelectedInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding &&
+            IsOwnedByLocalPlayer(SelectedActor.Get());
+
+        SelectionPanel->SetRallyPointButtonVisible(
+            bCanSetRallyPoint
+        );
     }
 
     if (!IsValid(ProductionBuildingPanel))
@@ -536,7 +572,8 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     if (
         bHasValidSelection &&
         SelectedInfo.SelectableType ==
-        ESFSelectableType::ProductionBuilding
+        ESFSelectableType::ProductionBuilding &&
+        IsOwnedByLocalPlayer(SelectedActor.Get())
         )
     {
         ProductionBuildingPanel->ShowProductionBuilding(
@@ -707,6 +744,18 @@ void USFInGameHUDWidget::OpenBuildingMode()
         return;
     }
 
+    const bool bIsSelectedBuilding =
+        SelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+
+    if (bIsSelectedBuilding &&
+        !IsOwnedByLocalPlayer(SelectedActor.Get()))
+    {
+        return;
+    }
+
     if (
         IsValid(ActiveBuildingModeWidget) &&
         ActiveBuildingModeWidget->IsActivated()
@@ -723,6 +772,14 @@ void USFInGameHUDWidget::OpenBuildingMode()
     if (!IsValid(ActiveBuildingModeWidget))
     {
         return;
+    }
+
+    if (IsValid(BuildModeOpenSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            BuildModeOpenSound
+        );
     }
 
     ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
@@ -749,6 +806,14 @@ void USFInGameHUDWidget::CloseBuildingMode()
 
 void USFInGameHUDWidget::HandleBuildingModeDeactivated()
 {
+    if (IsValid(BuildModeCloseSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            BuildModeCloseSound
+        );
+    }
+
     if (IsValid(ActiveBuildingModeWidget))
     {
         ActiveBuildingModeWidget->OnDeactivated().RemoveAll(this);
@@ -786,6 +851,8 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
     const bool bIsBuildingSelected =
         SelectedInfo.SelectableType ==
         ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType == 
+        ESFSelectableType::NormalBuilding ||
         SelectedInfo.SelectableType ==
         ESFSelectableType::ProductionBuilding ||
         SelectedInfo.SelectableType ==
@@ -1353,6 +1420,7 @@ void USFInGameHUDWidget::PerformDragSelection(
     );
 
     TArray<AActor*> FoundActors;
+    TArray<AActor*> EnemyActors;
 
     for (TActorIterator<AActor> Iterator(World); Iterator; ++Iterator)
     {
@@ -1370,10 +1438,8 @@ void USFInGameHUDWidget::PerformDragSelection(
             continue;
         }
 
-        if (!IsOwnedByLocalPlayer(Actor))
-        {
-            continue;
-        }
+        const bool bIsOwnedByLocalPlayer =
+            IsOwnedByLocalPlayer(Actor);
 
         FVector BoundsOrigin;
         FVector BoundsExtent;
@@ -1469,7 +1535,14 @@ void USFInGameHUDWidget::PerformDragSelection(
             }
         }
 
-        FoundActors.Add(Actor);
+        if (bIsOwnedByLocalPlayer)
+        {
+            FoundActors.Add(Actor);
+        }
+        else
+        {
+            EnemyActors.Add(Actor);
+        }
     }
 
     FoundActors.Sort(
@@ -1499,7 +1572,33 @@ void USFInGameHUDWidget::PerformDragSelection(
         FoundActors.SetNum(30);
     }
 
-    ApplyMultipleSelection(FoundActors);
+    if (!FoundActors.IsEmpty())
+    {
+        ApplyMultipleSelection(FoundActors);
+        return;
+    }
+
+    if (!EnemyActors.IsEmpty())
+    {
+        EnemyActors.Sort(
+            [](const AActor& Left, const AActor& Right)
+            {
+                return Left.GetName() < Right.GetName();
+            }
+        );
+
+        SelectActor(EnemyActors[0]);
+
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] Enemy drag selection reduced to one actor: %s",
+            *EnemyActors[0]->GetName()
+        );
+
+        return;
+    }
+
+    ClearSelection();
 }
 
 int32 USFInGameHUDWidget::GetSelectionPriority(
@@ -1773,15 +1872,20 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
 }
 
 void USFInGameHUDWidget::ShowMoveDestinationIndicator(
-    const FVector& WorldLocation
+    const FVector& WorldLocation,
+    bool bIsAttack
 )
 {
-    if (!IsValid(MoveDestinationIndicatorMaterial))
+    UMaterialInterface* IndicatorMaterial =
+        bIsAttack && IsValid(AttackDestinationIndicatorMaterial)
+        ? AttackDestinationIndicatorMaterial
+        : MoveDestinationIndicatorMaterial;
+
+    if (!IsValid(IndicatorMaterial))
     {
         SF_LOG(
             Warning,
-            "[SFInGameHUDWidget] "
-            "MoveDestinationIndicatorMaterial is invalid."
+            "[SFInGameHUDWidget] Destination indicator material is invalid."
         );
         return;
     }
@@ -1794,7 +1898,7 @@ void USFInGameHUDWidget::ShowMoveDestinationIndicator(
 
     UMaterialInstanceDynamic* DynamicMaterial =
         UMaterialInstanceDynamic::Create(
-            MoveDestinationIndicatorMaterial,
+            IndicatorMaterial,
             this
         );
 
@@ -2092,4 +2196,41 @@ bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
     }
 
     return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
+}
+
+void USFInGameHUDWidget::PlayBuildStartSound()
+{
+    if (!IsValid(BuildStartSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(
+        this,
+        BuildStartSound
+    );
+}
+
+void USFInGameHUDWidget::PlayResourceWarningSound()
+{
+    if (!IsValid(ResourceWarningSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySound2D(
+        this,
+        ResourceWarningSound
+    );
+}
+
+void USFInGameHUDWidget::HandleRallyPointRequested()
+{
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (IsValid(PlayerController))
+    {
+        PlayerController->BeginRallyPointCommand();
+    }
 }

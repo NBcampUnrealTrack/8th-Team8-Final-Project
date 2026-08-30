@@ -564,6 +564,7 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 
 	Info.DataRowName = UnitRowName;
 	Info.SelectableType = ESFSelectableType::Unit;
+	Info.PortraitAnimation = PortraitIdleAnimation;
 
 	// ── 런타임 값 ───────────────────────────────────────
 	if (IsValid(HealthComponent))

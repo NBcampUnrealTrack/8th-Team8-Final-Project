@@ -303,6 +303,10 @@ void ASFBaseBuilding::EnterCompletedState()
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 	SetBoxExtent();
+	//성윤 미니맵 마커제작
+	Tags.AddUnique(
+		FName(TEXT("MinimapBuilding"))
+	);
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -323,6 +327,10 @@ void ASFBaseBuilding::EnterDestroyedState()
 	SetBoxExtent();
 	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
 	PlayDestroyEffect();
+	//성윤 미니맵 마커제작
+	Tags.Remove(
+		FName(TEXT("MinimapBuilding"))
+	);
 	// sound effect
 	OnBuildingDestroyed();
 }

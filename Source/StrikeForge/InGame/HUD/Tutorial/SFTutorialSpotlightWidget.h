@@ -103,6 +103,27 @@ protected:
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float PulseAmount = 0.35f;
 
+    // ── 문구 배치 ───────────────────────────────────────
+
+    /**
+     * 문구를 스포트라이트를 따라 움직일지.
+     *
+     * 끄면 디자이너에서 잡아둔 자리에 그대로 둔다. 화면 아래에 자막처럼
+     * 고정하고 싶을 때 쓴다 — 구멍을 따라다니면 시선이 두 군데로 갈린다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SF|Tutorial|Spotlight|Look")
+    bool bInstructionFollowsSpotlight = true;
+
+    /**
+     * 구멍 가장자리와 문구 사이 여백(픽셀).
+     *
+     * 문구는 이 값만큼 떨어진 지점을 중심으로 놓인다. 글자 높이의 절반보다
+     * 작으면 문구 윗부분이 구멍 테두리에 걸친다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SF|Tutorial|Spotlight|Look",
+        meta = (EditCondition = "bInstructionFollowsSpotlight", ClampMin = "0.0"))
+    float InstructionOffset = 56.f;
+
 private:
     /** 월드 좌표를 화면 비율로 바꾼다. 화면 밖이면 false */
     bool ProjectStepToScreen(FVector2D& OutCenter, float& OutRadius) const;

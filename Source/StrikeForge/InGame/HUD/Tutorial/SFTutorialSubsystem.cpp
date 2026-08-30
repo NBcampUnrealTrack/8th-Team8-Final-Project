@@ -1,6 +1,11 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
 #include "InGame/HUD/Tutorial/SFTutorialGhostActor.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
@@ -419,12 +424,6 @@ int32 USFTutorialSubsystem::GetCurrentGuideStepIndex() const
 
 void USFTutorialSubsystem::SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep)
 {
-    if (InStep.GhostMesh.IsNull())
-    {
-        SF_LOG(Warning, "[SFTutorialSubsystem] The guide step asks for a ghost but no mesh is set.");
-        return;
-    }
-
     UWorld* World = GetWorld();
 
     if (!IsValid(World))
@@ -432,12 +431,50 @@ void USFTutorialSubsystem::SpawnPlacementGhost(const FSFStageIntroGuideStep& InS
         return;
     }
 
-    UClass* GhostClass = GhostActorClass.IsNull()
-        ? ASFTutorialGhostActor::StaticClass()
-        : GhostActorClass.LoadSynchronous();
+    // 무엇을 세울지 먼저 정한다.
+    //
+    // 건물 클래스를 지정했으면 그쪽이 우선이다. 메시만 꺼내 세우면 건물 BP 가
+    // 메시에 걸어둔 회전·크기·바닥 보정이 전부 빠져서, 플레이어가 마우스로
+    // 들고 있는 배치 미리보기와 크기도 방향도 어긋난다.
+    UStaticMesh* GhostMesh = nullptr;
+    FTransform GhostRelative = FTransform::Identity;
+
+    if (!InStep.GhostBuildingClass.IsNull())
+    {
+        UClass* BuildingClass = InStep.GhostBuildingClass.LoadSynchronous();
+
+        if (!ResolveBuildingGhostVisual(BuildingClass, GhostMesh, GhostRelative))
+        {
+            SF_LOG(Warning,
+                "[SFTutorialSubsystem] No static mesh was found on the ghost building class | Class: %s",
+                BuildingClass != nullptr ? *BuildingClass->GetName() : TEXT("None"));
+        }
+    }
+
+    if (!IsValid(GhostMesh))
+    {
+        GhostMesh = InStep.GhostMesh.LoadSynchronous();
+    }
+
+    if (!IsValid(GhostMesh))
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] The guide step asks for a ghost but no mesh could be resolved.");
+        return;
+    }
+
+    // 칸마다 다른 건물을 세울 수 있어야 하므로 클래스도 칸에서 가져온다.
+    UClass* GhostClass = InStep.GhostActorClass.IsNull()
+        ? nullptr
+        : InStep.GhostActorClass.LoadSynchronous();
 
     if (GhostClass == nullptr)
     {
+        // 지정하지 않았으면 C++ 기본 클래스로 세운다. 모양은 나오지만
+        // 머티리얼이 없어 실제 건물과 구분이 안 되므로 경고를 남긴다.
+        SF_LOG(Warning,
+            "[SFTutorialSubsystem] The guide step has no ghost actor class. "
+            "It falls back to the base class, so the ghost will not look translucent.");
+
         GhostClass = ASFTutorialGhostActor::StaticClass();
     }
 
@@ -449,10 +486,105 @@ void USFTutorialSubsystem::SpawnPlacementGhost(const FSFStageIntroGuideStep& InS
         FTransform(InStep.GhostRotation, InStep.WorldLocation, InStep.GhostScale),
         Params);
 
-    if (IsValid(ActiveGhost))
+    if (!IsValid(ActiveGhost))
     {
-        ActiveGhost->SetGhostMesh(InStep.GhostMesh.LoadSynchronous());
+        SF_LOG(Error, "[SFTutorialSubsystem] The placement ghost failed to spawn.");
+        return;
     }
+
+    ActiveGhost->SetGhostMesh(GhostMesh, GhostRelative);
+
+    // 스폰됐는데 안 보이는 경우와 아예 안 스폰된 경우를 구분할 수 있어야 한다.
+    // 크기가 0 이면 스폰은 되고 화면에는 아무것도 없다 — 눈으로는 보이지
+    // 않는 실패라서 로그에 값을 그대로 남긴다.
+    SF_LOG(Log,
+        "[SFTutorialSubsystem] Placement ghost spawned | Mesh: %s | Location: %s | Actor scale: %s | Mesh relative: %s",
+        *GhostMesh->GetName(),
+        *InStep.WorldLocation.ToString(),
+        *InStep.GhostScale.ToString(),
+        *GhostRelative.ToString());
+
+    if (InStep.GhostScale.IsNearlyZero())
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] The ghost scale is zero, so nothing will be visible.");
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// 건물 클래스에서 겉모습 꺼내기
+//
+// 두 곳을 본다.
+//   1) 클래스 기본값(CDO) — C++ 생성자가 만든 컴포넌트가 여기 산다.
+//      SFRootBase 계열의 StaticMeshComponent 가 이쪽이다.
+//   2) SimpleConstructionScript — 블루프린트에서 손으로 추가한 컴포넌트.
+//
+// 프로젝트마다 어느 쪽에 있는지 다르고, 한 건물 안에 둘 다 있기도 하다.
+// 먼저 찾은 쪽을 쓴다.
+// ─────────────────────────────────────────────────────────
+bool USFTutorialSubsystem::ResolveBuildingGhostVisual(
+    UClass* InBuildingClass,
+    UStaticMesh*& OutMesh,
+    FTransform& OutRelativeTransform
+)
+{
+    OutMesh = nullptr;
+    OutRelativeTransform = FTransform::Identity;
+
+    if (InBuildingClass == nullptr)
+    {
+        return false;
+    }
+
+    // 1) 네이티브 컴포넌트
+    if (const AActor* DefaultActor = InBuildingClass->GetDefaultObject<AActor>())
+    {
+        if (const UStaticMeshComponent* MeshComponent =
+            DefaultActor->FindComponentByClass<UStaticMeshComponent>())
+        {
+            if (UStaticMesh* Mesh = MeshComponent->GetStaticMesh())
+            {
+                OutMesh = Mesh;
+                OutRelativeTransform = MeshComponent->GetRelativeTransform();
+                return true;
+            }
+        }
+    }
+
+    // 2) 블루프린트에서 추가한 컴포넌트.
+    //    부모 클래스까지 거슬러 올라간다 — 메시가 상위 BP 에 있을 수 있다.
+    for (UClass* Current = InBuildingClass; Current != nullptr; Current = Current->GetSuperClass())
+    {
+        UBlueprintGeneratedClass* BlueprintClass = Cast<UBlueprintGeneratedClass>(Current);
+
+        if (BlueprintClass == nullptr || BlueprintClass->SimpleConstructionScript == nullptr)
+        {
+            continue;
+        }
+
+        for (const USCS_Node* Node : BlueprintClass->SimpleConstructionScript->GetAllNodes())
+        {
+            if (Node == nullptr)
+            {
+                continue;
+            }
+
+            const UStaticMeshComponent* Template = Cast<UStaticMeshComponent>(Node->ComponentTemplate);
+
+            if (Template == nullptr)
+            {
+                continue;
+            }
+
+            if (UStaticMesh* Mesh = Template->GetStaticMesh())
+            {
+                OutMesh = Mesh;
+                OutRelativeTransform = Template->GetRelativeTransform();
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void USFTutorialSubsystem::DestroyPlacementGhost()

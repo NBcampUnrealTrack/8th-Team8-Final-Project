@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "SFStageIntroData.generated.h"
 
+class ASFTutorialGhostActor;
 class UStaticMesh;
 class UTexture2D;
 
@@ -169,15 +170,55 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
     bool bShowPlacementGhost = false;
 
-    /** 고스트로 세울 메시. 비우면 고스트를 띄우지 않는다 */
+    /**
+     * 이 건물처럼 보이게 한다. 지정하면 아래 GhostMesh 는 무시된다.
+     *
+     * ── 왜 메시가 아니라 건물 클래스인가 ────────────────
+     *
+     * 건물 BP 안의 메시 컴포넌트는 대개 자기 상대 트랜스폼을 갖고 있다.
+     * 90도 돌려 붙였거나, 0.8배로 줄였거나, 바닥에 맞추려고 Z 를 내렸거나.
+     * 메시만 꺼내 세우면 그 보정이 전부 빠져서 실제 건물과 크기도 방향도
+     * 어긋난다.
+     *
+     * 여기에 건물 BP 를 넣으면 메시와 상대 트랜스폼을 함께 읽어온다.
+     * 건물 쪽에서 크기를 바꿔도 고스트가 알아서 따라간다.
+     *
+     * 건물을 스폰하지는 않는다 — 클래스 기본값만 들여다본다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
+        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    TSoftClassPtr<AActor> GhostBuildingClass;
+
+    /**
+     * 고스트로 세울 메시. GhostBuildingClass 를 비워뒀을 때만 쓴다.
+     *
+     * 건물이 아닌 것(자원 노드, 표식 등)을 가리킬 때 쓴다.
+     */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
         meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
     TSoftObjectPtr<UStaticMesh> GhostMesh;
 
+    /**
+     * 고스트로 쓸 액터 클래스. 반투명 회색 머티리얼이 여기에 들어 있다.
+     *
+     * 비워두면 C++ 기본 클래스로 스폰되는데, 그러면 메시 원본 머티리얼을
+     * 그대로 써서 실제 건물과 구분이 안 된다. BP_TutorialGhost 같은
+     * 블루프린트를 지정하는 편이 낫다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
+        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    TSoftClassPtr<ASFTutorialGhostActor> GhostActorClass;
+
+    /**
+     * 액터 자체의 회전. 건물 BP 안의 메시 회전과는 별개로 더해진다.
+     *
+     * 건물 클래스를 지정했다면 대개 0 으로 두면 된다.
+     */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
         meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
     FRotator GhostRotation = FRotator::ZeroRotator;
 
+    /** 액터 자체의 크기. 건물 클래스를 지정했다면 1 로 두면 된다 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
         meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
     FVector GhostScale = FVector::OneVector;

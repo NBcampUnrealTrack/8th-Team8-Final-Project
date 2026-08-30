@@ -31,7 +31,7 @@ void ASFTutorialGhostActor::BeginPlay()
     OnGhostAppeared();
 }
 
-void ASFTutorialGhostActor::SetGhostMesh(UStaticMesh* InMesh)
+void ASFTutorialGhostActor::SetGhostMesh(UStaticMesh* InMesh, const FTransform& InRelativeTransform)
 {
     if (!IsValid(GhostMeshComponent) || !IsValid(InMesh))
     {
@@ -39,6 +39,14 @@ void ASFTutorialGhostActor::SetGhostMesh(UStaticMesh* InMesh)
     }
 
     GhostMeshComponent->SetStaticMesh(InMesh);
+
+    // 루트가 곧 메시 컴포넌트라 상대 트랜스폼을 그대로 얹으면 된다.
+    // 액터 트랜스폼(위치·회전·크기)과 곱해져 최종 자리가 나온다.
+    GhostMeshComponent->SetRelativeTransform(InRelativeTransform);
+
+    // 흔들림 기준점을 다시 잡는다. BeginPlay 때 잡아둔 값은 상대 트랜스폼을
+    // 얹기 전이라, 그대로 두면 첫 틱에 원래 자리로 튄다.
+    BaseLocation = GetActorLocation();
 
     if (!IsValid(GhostMaterial))
     {

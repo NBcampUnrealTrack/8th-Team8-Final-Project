@@ -174,7 +174,7 @@ bool USFTutorialSpotlightWidget::ProjectStepToScreen(FVector2D& OutCenter, float
 
 void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGeometry)
 {
-    if (!IsValid(InstructionText))
+    if (!IsValid(InstructionText) || !bInstructionFollowsSpotlight)
     {
         return;
     }
@@ -200,7 +200,7 @@ void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGe
     FVector2D Position = HoleCenterNorm * LocalSize;
 
     // 구멍 아래에 붙인다. 아래가 화면 밖으로 나가면 위로 넘긴다.
-    const float Margin = RadiusPx + 24.f;
+    const float Margin = RadiusPx + FMath::Max(InstructionOffset, 0.f);
     Position.Y = (Position.Y + Margin > LocalSize.Y * 0.9f)
         ? Position.Y - Margin
         : Position.Y + Margin;

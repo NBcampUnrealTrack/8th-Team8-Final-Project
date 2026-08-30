@@ -31,12 +31,16 @@ public:
     ASFTutorialGhostActor();
 
     /**
-     * 세울 메시를 바꾼다. 스폰 직후 서브시스템이 부른다.
+     * 세울 메시와 그 상대 트랜스폼을 지정한다. 스폰 직후 서브시스템이 부른다.
+     *
+     * 상대 트랜스폼을 함께 받는 이유: 건물 BP 안의 메시 컴포넌트는 대개
+     * 돌아가 있거나 줄어들어 있거나 바닥에 맞춰 내려가 있다. 그 보정을
+     * 그대로 옮겨야 실제 건물과 같은 자리에 같은 크기로 선다.
      *
      * 블루프린트에서 GhostMaterial 을 지정해 두었다면 모든 슬롯에 덮어씌운다.
      */
     UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Ghost")
-    void SetGhostMesh(UStaticMesh* InMesh);
+    void SetGhostMesh(UStaticMesh* InMesh, const FTransform& InRelativeTransform);
 
 protected:
     virtual void BeginPlay() override;

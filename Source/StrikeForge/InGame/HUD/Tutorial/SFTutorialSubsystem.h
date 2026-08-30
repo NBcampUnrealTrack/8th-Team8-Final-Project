@@ -224,15 +224,6 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
     FSFTutorialGuideFinished OnGuideFinished;
 
-    /**
-     * 배치 고스트로 쓸 액터 클래스.
-     *
-     * 반투명 회색 머티리얼은 이 클래스의 블루프린트에서 지정한다 — 어떤
-     * 머티리얼이 어울리는지는 아트 쪽 판단이라 C++ 에 박지 않는다.
-     */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Guide")
-    TSoftClassPtr<ASFTutorialGhostActor> GhostActorClass;
-
     /** 콘솔 명령 sf.Tutorial.DumpState 가 호출한다 */
     void DumpState() const;
 
@@ -248,6 +239,20 @@ private:
 
     void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
     void DestroyPlacementGhost();
+
+    /**
+     * 건물 클래스에서 메시와 그 상대 트랜스폼을 꺼낸다.
+     *
+     * 건물을 스폰하지 않는다 — 클래스 기본값(CDO)과 컴포넌트 템플릿만
+     * 들여다본다. 스폰하면 BeginPlay 가 돌아 전투 레지스트리와 건설 그리드에
+     * 등록되어 버린다.
+     *
+     * @return 메시를 찾았으면 true
+     */
+    static bool ResolveBuildingGhostVisual(
+        UClass* InBuildingClass,
+        UStaticMesh*& OutMesh,
+        FTransform& OutRelativeTransform);
 
     UFUNCTION()
     void HandleGuideAutoAdvance();

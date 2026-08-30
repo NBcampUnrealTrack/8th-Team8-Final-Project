@@ -20,6 +20,7 @@
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -383,6 +384,16 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::HandleMoveCommandModeInput
         );
     }
+
+    if (IsValid(RallyPointAction))
+    {
+        EnhancedInputComponent->BindAction(
+            RallyPointAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleRallyPointInput
+        );
+    }
 }
 
 void ASFInGamePlayerController::SetSFControlMode(
@@ -539,7 +550,14 @@ void ASFInGamePlayerController::RegisterBaseMappingContext()
 
 void ASFInGamePlayerController::HandleSelectionDragStarted()
 {
-    bCommandClickConsumed = ExecutePendingUnitCommandUnderCursor();
+    bCommandClickConsumed =
+        ExecutePendingRallyPointUnderCursor();
+
+    if (!bCommandClickConsumed)
+    {
+        bCommandClickConsumed =
+            ExecutePendingUnitCommandUnderCursor();
+    }
 
     if (bCommandClickConsumed)
     {
@@ -1311,4 +1329,117 @@ bool ASFInGamePlayerController::IsLocallyControllableActor(const AActor* Actor) 
 
     return IsValid(CombatTarget) &&
         CombatTarget->GetTeamIndex() == MyTeamIndex;
+}
+
+void ASFInGamePlayerController::HandleRallyPointInput()
+{
+    BeginRallyPointCommand();
+}
+
+void ASFInGamePlayerController::BeginRallyPointCommand()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Rally point requires a production building."
+        );
+        return;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        ProductionBuilding->FindComponentByClass<
+        UCombatTargetComponent
+        >();
+
+    if (!IsValid(CombatTarget) ||
+        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Cannot set rally point on enemy building."
+        );
+        return;
+    }
+
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+    bRallyPointPending = true;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Rally point mode started."
+    );
+}
+
+bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
+{
+    if (!bRallyPointPending)
+    {
+        return false;
+    }
+
+    bRallyPointPending = false;
+
+    FHitResult Hit;
+
+    if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Rally point canceled: no ground."
+        );
+        return true;
+    }
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return true;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        ProductionBuilding->FindComponentByClass<
+        UCombatTargetComponent
+        >();
+
+    if (!IsValid(CombatTarget) ||
+        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    {
+        return true;
+    }
+
+    ProductionBuilding->SetAssembleVectorPoint(
+        Hit.Location
+    );
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->ShowMoveDestinationIndicator(
+            Hit.Location,
+            false
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Rally point set: %s",
+        *Hit.Location.ToString()
+    );
+
+    return true;
 }

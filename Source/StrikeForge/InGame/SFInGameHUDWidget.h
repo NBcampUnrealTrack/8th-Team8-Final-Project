@@ -212,6 +212,9 @@ private:
     
     FName ResolveStageIntroRowName() const;
 
+    UFUNCTION()
+    void HandleRallyPointRequested();
+
     // ==================== Variables ====================
 
 protected:

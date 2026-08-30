@@ -103,9 +103,16 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|Command")
     void BeginMoveCommand();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginRallyPointCommand();
+
     // team
     FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
+
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
+
+
 protected:
     virtual void BeginPlay() override;
 
@@ -181,6 +188,10 @@ private:
     bool HasLocallyControllableSelection() const;
 
     bool IsLocallyControllableActor(const AActor* Actor) const;
+
+    void HandleRallyPointInput();
+
+    bool ExecutePendingRallyPointUnderCursor();
     // 변수 영역
 protected:
 
@@ -303,6 +314,13 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> RallyPointAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Selection"
     )
     float SelectionDragThreshold = 8.f;
@@ -367,6 +385,8 @@ private:
 
     ESFUnitCommandMode PendingUnitCommandMode = ESFUnitCommandMode::None;
     bool bCommandClickConsumed = false;
+
+    bool bRallyPointPending = false;
 
     // team
     int32 MyTeamIndex = 0;

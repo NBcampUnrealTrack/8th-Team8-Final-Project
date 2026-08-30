@@ -70,7 +70,6 @@ void USFInGameHUDWidget::NativeConstruct()
         return;
     }
 
-    // 추가분
     UnitPortraitActor =
         Cast<ASFUnitPortraitActor>(
             UGameplayStatics::GetActorOfClass(
@@ -92,10 +91,12 @@ void USFInGameHUDWidget::NativeConstruct()
         this,
         &USFInGameHUDWidget::HandleSelectInput
     );
+
     PlayerController->OnSelectionDragStarted.RemoveDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragStarted
     );
+
     PlayerController->OnSelectionDragStarted.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragStarted
@@ -105,6 +106,7 @@ void USFInGameHUDWidget::NativeConstruct()
         this,
         &USFInGameHUDWidget::HandleSelectionDragCompleted
     );
+
     PlayerController->OnSelectionDragCompleted.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectionDragCompleted
@@ -128,6 +130,16 @@ void USFInGameHUDWidget::NativeConstruct()
         SelectionPanel->OnTierUpgradeRequested.AddUniqueDynamic(
             this,
             &USFInGameHUDWidget::HandleTierUpgradeRequested
+        );
+
+        SelectionPanel->OnRallyPointRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleRallyPointRequested
+        );
+
+        SelectionPanel->OnRallyPointRequested.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleRallyPointRequested
         );
 
         SF_LOG(
@@ -510,6 +522,30 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         {
             SelectionPanel->ClearSelection();
         }
+
+        const bool bCanTierUp =
+            bHasValidSelection &&
+            (
+                SelectedInfo.SelectableType ==
+                ESFSelectableType::MainBuilding ||
+                SelectedInfo.SelectableType ==
+                ESFSelectableType::ProductionBuilding
+                ) &&
+            IsOwnedByLocalPlayer(SelectedActor.Get());
+
+        SelectionPanel->SetTierUpButtonVisible(
+            bCanTierUp
+        );
+
+        const bool bCanSetRallyPoint =
+            bHasValidSelection &&
+            SelectedInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding &&
+            IsOwnedByLocalPlayer(SelectedActor.Get());
+
+        SelectionPanel->SetRallyPointButtonVisible(
+            bCanSetRallyPoint
+        );
     }
 
     if (!IsValid(ProductionBuildingPanel))
@@ -536,7 +572,8 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     if (
         bHasValidSelection &&
         SelectedInfo.SelectableType ==
-        ESFSelectableType::ProductionBuilding
+        ESFSelectableType::ProductionBuilding &&
+        IsOwnedByLocalPlayer(SelectedActor.Get())
         )
     {
         ProductionBuildingPanel->ShowProductionBuilding(
@@ -707,6 +744,18 @@ void USFInGameHUDWidget::OpenBuildingMode()
         return;
     }
 
+    const bool bIsSelectedBuilding =
+        SelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+        SelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+
+    if (bIsSelectedBuilding &&
+        !IsOwnedByLocalPlayer(SelectedActor.Get()))
+    {
+        return;
+    }
+
     if (
         IsValid(ActiveBuildingModeWidget) &&
         ActiveBuildingModeWidget->IsActivated()
@@ -802,6 +851,8 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
     const bool bIsBuildingSelected =
         SelectedInfo.SelectableType ==
         ESFSelectableType::MainBuilding ||
+        SelectedInfo.SelectableType == 
+        ESFSelectableType::NormalBuilding ||
         SelectedInfo.SelectableType ==
         ESFSelectableType::ProductionBuilding ||
         SelectedInfo.SelectableType ==
@@ -2171,4 +2222,15 @@ void USFInGameHUDWidget::PlayResourceWarningSound()
         this,
         ResourceWarningSound
     );
+}
+
+void USFInGameHUDWidget::HandleRallyPointRequested()
+{
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    if (IsValid(PlayerController))
+    {
+        PlayerController->BeginRallyPointCommand();
+    }
 }

@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
 #include "Components/ProgressBar.h"
+#include "Components/Button.h"
 
 #include "Components/VerticalBoxSlot.h"
 #include "ActorComponent/Product/ProductComponent.h"
@@ -30,6 +31,31 @@ void USFProductionBuildingPanelWidget::NativeConstruct()
         QueueIcon04,
         QueueIcon05
     };
+
+    QueueButton01->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton01Clicked
+    );
+
+    QueueButton02->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton02Clicked
+    );
+
+    QueueButton03->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton03Clicked
+    );
+
+    QueueButton04->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton04Clicked   
+    );
+
+    QueueButton05->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton05Clicked
+    );
 
     HideProductionBuilding();
 }
@@ -449,4 +475,46 @@ void USFProductionBuildingPanelWidget::RefreshProductionProgress(
             1.0f
         )
     );
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton01Clicked()
+{
+    CancelProductionAtQueueIndex(0);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton02Clicked()
+{
+    CancelProductionAtQueueIndex(1);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton03Clicked()
+{
+    CancelProductionAtQueueIndex(2);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton04Clicked()
+{
+    CancelProductionAtQueueIndex(3);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton05Clicked()
+{
+    CancelProductionAtQueueIndex(4);
+}   
+
+void USFProductionBuildingPanelWidget::CancelProductionAtQueueIndex(
+    int32 QueueIndex
+)
+{
+    if (!IsValid(CurrentProductComponent))
+    {
+        return;
+    }
+
+    if (!CurrentProductComponent->GetProductLine().IsValidIndex(QueueIndex))
+    {
+        return;
+    }
+
+    CurrentProductComponent->RemoveProductInLine(QueueIndex);
 }

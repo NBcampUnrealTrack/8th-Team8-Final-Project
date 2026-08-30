@@ -373,11 +373,10 @@ void ASFBaseBuilding::EnterCompletedState()
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 	SetBoxExtent();
-	
-	// 건설 중 받은 피해를 완료 외형에 반영한다.
-	UpdateDamageVisual(
-	1.f,
-	HealthComponent->GetHealthPercent());
+	//성윤 미니맵 마커제작
+	Tags.AddUnique(
+		FName(TEXT("MinimapBuilding"))
+	);
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -455,6 +454,11 @@ void ASFBaseBuilding::EnterDestroyedState()
 	}
 
 	PlayDestroyEffect();
+	//성윤 미니맵 마커제작
+	Tags.Remove(
+		FName(TEXT("MinimapBuilding"))
+	);
+	// sound effect
 	OnBuildingDestroyed();
 	Destroy();
 }

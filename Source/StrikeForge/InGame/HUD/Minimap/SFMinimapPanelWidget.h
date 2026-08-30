@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Input/Reply.h"
 #include "SFMinimapMarkerInfo.h"
+#include "TimerManager.h"
 #include "SFMinimapPanelWidget.generated.h"
 
 class AActor;
@@ -71,6 +72,8 @@ private:
     void CreateRuntimeMinimapCapture(
         float CaptureHeight
     );
+
+    void CaptureMinimapScene();
 
     void DestroyRuntimeMinimapCapture();
 
@@ -178,6 +181,18 @@ protected:
     TObjectPtr<UTextureRenderTarget2D>
         MinimapRenderTarget = nullptr;
 
+    /**
+     * 레벨 시작 후 실제 미니맵 장면을 캡처하기까지 기다리는 시간.
+     * 스트리밍된 지형과 머티리얼이 준비될 시간을 준다.
+     */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Capture",
+        meta = (ClampMin = "0.0", Units = "s")
+    )
+    float MinimapCaptureDelay = 1.5f;
+
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -205,12 +220,20 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Tag"
+	)
+    FName CommanderMarkerActorTag =
+        TEXT("MinimapCommander");
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
     FVector2D AllyMarkerSize =
         FVector2D(
-            8.0f,
-            8.0f
+            4.0f,
+            4.0f
         );
 
     UPROPERTY(
@@ -218,23 +241,21 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D EnemyMarkerSize =
-        FVector2D(
-            8.0f,
-            8.0f
-        );
+    FVector2D EnemyMarkerSize = FVector2D(4.0f, 4.0f);
 
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D BuildingMarkerSize =
-        FVector2D(
-            12.0f,
-            12.0f
-        );
+    FVector2D BuildingMarkerSize = FVector2D(7.0f, 7.0f);
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Size"
+    )
+    FVector2D CommanderMarkerSize = FVector2D(7.0f, 7.0f);
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -242,9 +263,9 @@ protected:
     )
     FLinearColor AllyMarkerColor =
         FLinearColor(
-            0.1f,
-            0.65f,
-            1.0f,
+            0.0f,
+            0.8f,
+            0.95f,
             1.0f
         );
 
@@ -256,8 +277,8 @@ protected:
     FLinearColor EnemyMarkerColor =
         FLinearColor(
             1.0f,
-            0.2f,
-            0.2f,
+            0.05f,
+            0.05f,
             1.0f
         );
 
@@ -271,6 +292,19 @@ protected:
             1.0f,
             0.8f,
             0.2f,
+            1.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Color"
+    )
+    FLinearColor CommanderMarkerColor =
+        FLinearColor(
+            1.0f, 
+            0.75f, 
+            0.05f, 
             1.0f
         );
 
@@ -314,4 +348,6 @@ private:
 
     FVector2D CachedMinimapMaskSize =
         FVector2D::ZeroVector;
+
+    FTimerHandle MinimapCaptureTimerHandle;
 };

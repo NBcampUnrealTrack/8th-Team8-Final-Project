@@ -46,6 +46,7 @@ public:
 	void ForceRepath();
 
 	/** 현재 이동 명령이 살아 있는가 */
+	UFUNCTION(BlueprintCallable)
 	bool IsMoving() const;
 
 #pragma region Properties

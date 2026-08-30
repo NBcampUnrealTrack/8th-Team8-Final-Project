@@ -6,6 +6,7 @@
 #include "SFInGamePlayerController.generated.h"
 
 class ASFCommander;
+class AActor;
 class UBuildingPlacement;
 class ASFBaseBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
@@ -81,10 +82,16 @@ public:
     void ClearPendingBuildingRef();
 
     void NotifyBuilderArrived();
-    
+
     void SetSelectedActor(AActor* InActor);
 
     void RegisterCommander(ASFCommander* InCommander);
+
+    /** 이 로컬 플레이어에게 등록된 지휘관을 반환한다. */
+    ASFCommander* GetMyCommander() const
+    {
+        return MyCommander.Get();
+    }
 
     void IssueMoveCommand(const FVector& Destination);
 
@@ -96,9 +103,16 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|Command")
     void BeginMoveCommand();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginRallyPointCommand();
+
     // team
     FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
+
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
+
+
 protected:
     virtual void BeginPlay() override;
 
@@ -131,16 +145,16 @@ private:
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
-    
+
     void HandleFocusCommanderInput();
 
     void CreateInGameHUD();
-    
+
     void HandleToggleSettingsInput();
 
     void HandleToggleBuildModeInput();
-    
-	// 생산 슬롯 입력 처리
+
+    // 생산 슬롯 입력 처리
     void HandleProduceSlot1Input();
 
     void HandleProduceSlot2Input();
@@ -149,7 +163,7 @@ private:
 
     void RequestProductionBySlot(int32 SlotIndex);
 
-	// 커맨드 입력 처리
+    // 커맨드 입력 처리
     void HandleAttackCommandInput();
 
     void HandleStopCommandInput();
@@ -157,12 +171,33 @@ private:
     void HandleMoveCommandModeInput();
 
     bool ExecutePendingUnitCommandUnderCursor();
+
+    void CollectLocallyControllableActors(
+        TArray<AActor*>& OutActors
+    ) const;
+
+    void ExecuteUnitCommandForActor(
+        AActor* Actor,
+        ESFUnitCommandMode CommandMode,
+        const FVector& Location,
+        AActor* Target
+    ) const;
+
+    bool IsValidAttackTarget(const AActor* Actor) const;
+
+    bool HasLocallyControllableSelection() const;
+
+    bool IsLocallyControllableActor(const AActor* Actor) const;
+
+    void HandleRallyPointInput();
+
+    bool ExecutePendingRallyPointUnderCursor();
     // 변수 영역
 protected:
-    
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component")
     TObjectPtr<UBuildingPlacement> PlacementComponent; //======================================================================
-    
+
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -262,19 +297,26 @@ protected:
     TObjectPtr<UInputAction> FocusCommanderAction = nullptr;
 
     UPROPERTY(
-        EditDefaultsOnly, 
-        BlueprintReadOnly, 
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Input"
     )
     TObjectPtr<UInputAction> ToggleSettingsAction = nullptr;
 
     UPROPERTY(
-        EditDefaultsOnly, 
-        BlueprintReadOnly, 
-        Category = "SF|Input", 
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input",
         meta = (AllowPrivateAccess = "true")
     )
     TObjectPtr<UInputAction> ToggleBuildModeAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> RallyPointAction = nullptr;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -322,7 +364,7 @@ private:
     TObjectPtr<USFInGameHUDWidget> InGameHUDWidget;
 
     bool bControlModeInitialized = false;
-    
+
     UPROPERTY()
     TWeakObjectPtr<AActor> SelectedActor;
 
@@ -343,6 +385,8 @@ private:
 
     ESFUnitCommandMode PendingUnitCommandMode = ESFUnitCommandMode::None;
     bool bCommandClickConsumed = false;
+
+    bool bRallyPointPending = false;
 
     // team
     int32 MyTeamIndex = 0;

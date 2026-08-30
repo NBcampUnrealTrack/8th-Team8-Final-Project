@@ -8,6 +8,7 @@
 #include "InGame/Controller/SFRTSCameraPawn.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -20,8 +21,10 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Interfaces/Units/Targetable.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
+#include "TimerManager.h"
 
 #include "Logging/SFLog.h"
 
@@ -114,6 +117,13 @@ void USFMinimapPanelWidget::NativeConstruct()
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     ClearMinimapBoundsMasks();
     DestroyRuntimeMinimapCapture();
     ClearMinimapMarkers();
@@ -470,31 +480,80 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
     CaptureComponent->OrthoWidth =
         OrthoWidth;
 
+    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
+    // 기존 미니맵 마커로 표시한다.
+    CaptureComponent->bCaptureEveryFrame = false;
+    CaptureComponent->bCaptureOnMovement = false;
+
     CaptureComponent->TextureTarget =
         MinimapRenderTarget;
 
     CaptureComponent->CaptureSource =
         ESceneCaptureSource::SCS_FinalColorLDR;
 
-    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
-    // 기존 미니맵 마커로 표시한다.
-    CaptureComponent->bCaptureEveryFrame = false;
-    CaptureComponent->bCaptureOnMovement = false;
+    World->GetTimerManager().ClearTimer(
+        MinimapCaptureTimerHandle
+    );
+
+    if (MinimapCaptureDelay <= KINDA_SMALL_NUMBER)
+    {
+        CaptureMinimapScene();
+    }
+    else
+    {
+        World->GetTimerManager().SetTimer(
+            MinimapCaptureTimerHandle,
+            this,
+            &USFMinimapPanelWidget::CaptureMinimapScene,
+            MinimapCaptureDelay,
+            false
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFMinimapPanelWidget] "
+        "Runtime minimap capture prepared | "
+        "Center: %s | OrthoWidth: %.1f | Delay: %.2f",
+        *MapCenter.ToString(),
+        OrthoWidth,
+        MinimapCaptureDelay
+    );
+}
+
+void USFMinimapPanelWidget::CaptureMinimapScene()
+{
+    if (!IsValid(RuntimeMinimapCaptureActor))
+    {
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComponent =
+        RuntimeMinimapCaptureActor->GetCaptureComponent2D();
+
+    if (!IsValid(CaptureComponent) ||
+        !IsValid(CaptureComponent->TextureTarget))
+    {
+        return;
+    }
 
     CaptureComponent->CaptureScene();
 
     SF_LOG(
         Log,
-        "[SFMinimapPanelWidget] "
-        "Runtime minimap capture created | "
-        "Center: %s | OrthoWidth: %.1f",
-        *MapCenter.ToString(),
-        OrthoWidth
+        "[SFMinimapPanelWidget] Delayed minimap capture completed."
     );
 }
 
 void USFMinimapPanelWidget::DestroyRuntimeMinimapCapture()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     if (IsValid(RuntimeMinimapCaptureActor))
     {
         RuntimeMinimapCaptureActor->Destroy();
@@ -825,6 +884,11 @@ void USFMinimapPanelWidget::CreateMinimapMarkers()
     }
 
     CreateMarkersForTag(
+        CommanderMarkerActorTag,
+        ESFMinimapMarkerType::Commander
+    );
+
+    CreateMarkersForTag(
         AllyMarkerActorTag,
         ESFMinimapMarkerType::Ally
     );
@@ -882,9 +946,45 @@ void USFMinimapPanelWidget::CreateMarkersForTag(
             continue;
         }
 
+        ESFMinimapMarkerType ResolvedMarkerType = MarkerType;
+
+        if (MarkerType == ESFMinimapMarkerType::Building)
+        {
+            const ASFBaseBuilding* Building =
+                Cast<ASFBaseBuilding>(FoundActor);
+
+            ASFInGamePlayerController* PlayerController =
+                Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+            if (
+                IsValid(Building) &&
+                IsValid(PlayerController)
+                )
+            {
+                const int32 BuildingTeam =
+                    Building->GetTeamIndex();
+
+                const int32 LocalTeam =
+                    PlayerController->GetMyTeamIndex();
+
+                if (BuildingTeam == LocalTeam)
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::AllyBuilding;
+                }
+                else if (
+                    BuildingTeam != Targetable::NeutralTeam
+                    )
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::EnemyBuilding;
+                }
+            }
+        }
+
         CreateMarkerForActor(
             FoundActor,
-            MarkerType
+            ResolvedMarkerType
         );
     }
 }
@@ -1116,6 +1216,20 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers()
             MinimapPosition
         );
     }
+    CreateMarkersForTag(
+        AllyMarkerActorTag,
+        ESFMinimapMarkerType::Ally
+    );
+
+    CreateMarkersForTag(
+        EnemyMarkerActorTag,
+        ESFMinimapMarkerType::Enemy
+    );
+
+    CreateMarkersForTag(
+        BuildingMarkerActorTag,
+        ESFMinimapMarkerType::Building
+    );
 }
 
 void USFMinimapPanelWidget::SetMarkerLayerPosition(
@@ -1234,6 +1348,14 @@ FVector2D USFMinimapPanelWidget::GetMarkerSize(
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerSize;
 
+    case ESFMinimapMarkerType::AllyBuilding:
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return BuildingMarkerSize;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerSize;
+
     case ESFMinimapMarkerType::None:
     default:
         return FVector2D::ZeroVector;
@@ -1254,6 +1376,15 @@ FLinearColor USFMinimapPanelWidget::GetMarkerColor(
 
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerColor;
+
+    case ESFMinimapMarkerType::AllyBuilding:
+        return AllyMarkerColor;
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return EnemyMarkerColor;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerColor;
 
     case ESFMinimapMarkerType::None:
     default:

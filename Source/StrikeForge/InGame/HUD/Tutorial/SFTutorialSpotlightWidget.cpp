@@ -8,6 +8,45 @@
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 
+void USFTutorialSpotlightWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    if (IsValid(WarningText))
+    {
+        WarningText->SetText(WarningMessage);
+        WarningText->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
+    {
+        Tutorial->OnBuildBlockedChanged.AddUniqueDynamic(
+            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
+    }
+}
+
+void USFTutorialSpotlightWidget::NativeDestruct()
+{
+    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
+    {
+        Tutorial->OnBuildBlockedChanged.RemoveDynamic(
+            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
+    }
+
+    Super::NativeDestruct();
+}
+
+void USFTutorialSpotlightWidget::HandleBuildBlockedChanged(bool bBlocked)
+{
+    if (!IsValid(WarningText))
+    {
+        return;
+    }
+
+    WarningText->SetVisibility(
+        bBlocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
 void USFTutorialSpotlightWidget::ApplyGuideStep(
     const FSFStageIntroGuideStep& InStep,
     int32 InStepIndex,
@@ -60,10 +99,15 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
     // 클릭으로 넘기는 칸은 클릭을 받아야 하므로 덮개가 입력을 가져간다.
     // 그 외에는 플레이어가 실제로 조작해야 한다 — 여기서 막으면
     // "드래그하세요" 안내가 드래그 자체를 막는다.
+    //
+    // SelfHitTestInvisible 이 아니라 HitTestInvisible 이어야 한다.
+    // 앞의 것은 "나는 안 받지만 자식은 받는다" 라서, 화면을 덮는 캔버스
+    // 패널이 그대로 클릭을 먹는다. 위젯을 만든 사람이 캔버스 가시성을
+    // 어떻게 뒀는지에 따라 되기도 하고 안 되기도 하는 상태가 된다.
     SetVisibility(
         CurrentStep.Completion == ESFGuideCompletion::Click
         ? ESlateVisibility::Visible
-        : ESlateVisibility::SelfHitTestInvisible);
+        : ESlateVisibility::HitTestInvisible);
 
     OnGuideStepApplied(CurrentStep);
 }
@@ -71,6 +115,11 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
 void USFTutorialSpotlightWidget::ClearGuide()
 {
     bHasStep = false;
+
+    if (IsValid(WarningText))
+    {
+        WarningText->SetVisibility(ESlateVisibility::Collapsed);
+    }
 
     if (IsValid(InstructionText))
     {
@@ -174,7 +223,7 @@ bool USFTutorialSpotlightWidget::ProjectStepToScreen(FVector2D& OutCenter, float
 
 void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGeometry)
 {
-    if (!IsValid(InstructionText))
+    if (!IsValid(InstructionText) || !bInstructionFollowsSpotlight)
     {
         return;
     }
@@ -200,7 +249,7 @@ void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGe
     FVector2D Position = HoleCenterNorm * LocalSize;
 
     // 구멍 아래에 붙인다. 아래가 화면 밖으로 나가면 위로 넘긴다.
-    const float Margin = RadiusPx + 24.f;
+    const float Margin = RadiusPx + FMath::Max(InstructionOffset, 0.f);
     Position.Y = (Position.Y + Margin > LocalSize.Y * 0.9f)
         ? Position.Y - Margin
         : Position.Y + Margin;

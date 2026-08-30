@@ -1,6 +1,7 @@
 ﻿#include "BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
 #include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
@@ -95,9 +96,13 @@ void UBuildingPlacement::UpdatePlacementMode()
 			bUsesResourceGrid ||
 			CanPlaceOnNavMeshXY(BuildingLocation);
 
+		// 튜토리얼이 자리를 제한하는 중이면 그것도 조건에 넣는다.
+		// 별도 문장으로 부르면 반환값이 버려져서, 경고만 뜨고 배치는 그대로
+		// 허용되는 상태가 된다.
 		bCanPlaceCurrentLocation =
 			bCanPlaceOnGrid &&
-			bCanPlaceOnNavigation;
+			bCanPlaceOnNavigation &&
+			USFTutorialSubsystem::IsBuildLocationAllowed(this, BuildingLocation);
 		
 		CachedGridSubsystem->DebugDrawGridInfo(
 		TargetBuildingGridInfo,
@@ -180,6 +185,19 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		return false;
 	}
 
+	// 튜토리얼 자리 제한은 여기서도 본다.
+	//
+	// 위쪽 틱 판정만 믿으면 판정과 클릭 사이 한 프레임에 자리가 바뀐 경우를
+	// 놓친다. 실제로 짓는 문은 이 함수 하나뿐이므로 여기서 막는 것이 확실하다.
+	if (!USFTutorialSubsystem::IsBuildLocationAllowed(
+			this,
+			Building->GetActorLocation()))
+	{
+		bCanPlaceCurrentLocation = false;
+		Building->ApplyPreviewMaterial(false);
+		return false;
+	}
+
 	// 등록과 자원 연결 모두 GridSubsystem이 처리한다.
 	if (!Building->TryRegisterGrid(
 		TargetBuildingGridInfo))
@@ -188,6 +206,11 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
+
+	// 짓겠다고 확정한 순간 안내용 모형을 치운다.
+	// 건설이 끝날 때까지 두면 실제 건물과 겹쳐 서 있어서 무엇이 진짜인지
+	// 알 수 없다.
+	USFTutorialSubsystem::HidePlacementGhost(this);
 
 	EndPlacementSession();
 	return true;

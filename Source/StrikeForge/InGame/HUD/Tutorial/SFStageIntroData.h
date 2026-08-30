@@ -5,6 +5,8 @@
 #include "GameplayTagContainer.h"
 #include "SFStageIntroData.generated.h"
 
+class ASFTutorialGhostActor;
+class USFBuildingDefinition;
 class UStaticMesh;
 class UTexture2D;
 
@@ -104,8 +106,7 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      *
      * 해상도가 달라져도 같은 자리를 가리키도록 픽셀이 아니라 비율로 둔다.
      */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
-        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::ScreenRegion", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen")
     FVector2D ScreenAnchor = FVector2D(0.5f, 0.5f);
 
     /**
@@ -114,20 +115,16 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      * 세로 기준으로 재므로 화면이 넓어져도 크기가 그대로다.
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
-        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::ScreenRegion", EditConditionHides,
-                ClampMin = "0.01", ClampMax = "1.0"))
+        meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float ScreenRadius = 0.12f;
 
     /** TargetKind 가 WorldLocation 일 때 가리킬 월드 좌표 */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World",
-        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::WorldLocation", EditConditionHides,
-                MakeEditWidget = true))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World")
     FVector WorldLocation = FVector::ZeroVector;
 
     /** 월드 기준 반지름(cm). 화면 반지름은 카메라 거리에 따라 자동 계산된다 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World",
-        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::WorldLocation", EditConditionHides,
-                ClampMin = "10.0"))
+        meta = (ClampMin = "10.0"))
     float WorldRadius = 300.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
@@ -138,8 +135,7 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      *
      * WaitForObjective 와 같은 규칙으로 계층 매칭된다.
      */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion",
-        meta = (EditCondition = "Completion == ESFGuideCompletion::ObjectiveTag", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
     FGameplayTag CompletionTag;
 
     /**
@@ -150,6 +146,21 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion", meta = (ClampMin = "0.0"))
     float AutoAdvanceSeconds = 0.f;
+
+    /**
+     * 표시한 자리에서 한 것만 인정할지.
+     *
+     * 끄면 어디서 지었든 태그만 오면 통과한다. 켜면 WorldRadius 안에서
+     * 일어난 일만 인정하고, 밖에서 한 것은 없던 일로 친다 — 기록도 남기지
+     * 않으므로 나중에 그 태그로 다른 단계가 건너뛰어지지도 않는다.
+     *
+     * 판정 반경이 화면에 그려지는 반경과 같다는 점이 중요하다. 플레이어가
+     * 보고 있는 동그라미가 곧 유효 범위여야 "왜 안 되지" 가 안 생긴다.
+     *
+     * TargetKind 가 WorldLocation 일 때만 의미가 있다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
+    bool bRequireNearTarget = false;
 
     /**
      * 화면을 어둡게 덮을지.
@@ -169,17 +180,67 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
     bool bShowPlacementGhost = false;
 
-    /** 고스트로 세울 메시. 비우면 고스트를 띄우지 않는다 */
+    /**
+     * 이 건물처럼 보이게 한다. 셋 중 가장 먼저 채워진 것을 쓴다.
+     *
+     * ── 왜 메시를 직접 안 넣는가 ────────────────────────
+     *
+     * 건물의 겉모습은 두 곳에 나뉘어 있다.
+     *   메시        — Definition 의 Tiers[N].Visual.CompletedMesh (런타임 주입)
+     *   상대 트랜스폼 — 건물 BP 의 StaticMeshComponent
+     *
+     * 메시만 꺼내 세우면 BP 가 걸어둔 회전·크기·바닥 보정이 빠져서 플레이어가
+     * 마우스로 들고 있는 배치 미리보기와 어긋난다. 여기에 Definition 을
+     * 넣으면 두 곳을 알아서 합쳐 준다.
+     *
+     * 건물을 스폰하지는 않는다 — 클래스 기본값만 들여다본다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
+    TSoftObjectPtr<USFBuildingDefinition> GhostBuildingDefinition;
+
+    /** 어느 티어의 모습으로 세울지. 배열 인덱스 0 이 게임의 1티어다 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
-        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+        meta = (ClampMin = "0"))
+    int32 GhostTierIndex = 0;
+
+    /**
+     * 메시가 클래스 기본값에 박혀 있는 건물일 때 쓴다.
+     *
+     * Definition 을 지정했다면 비워두면 된다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
+    TSoftClassPtr<AActor> GhostBuildingClass;
+
+    /**
+     * 고스트로 세울 메시. 위 둘을 비워뒀을 때만 쓴다.
+     *
+     * 건물이 아닌 것(자원 노드, 표식 등)을 가리킬 때 쓴다.
+     * 이 경로에서는 상대 트랜스폼이 없으므로 GhostRotation / GhostScale 을
+     * 직접 맞춰야 한다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
     TSoftObjectPtr<UStaticMesh> GhostMesh;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
-        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    /**
+     * 고스트로 쓸 액터 클래스. 반투명 회색 머티리얼이 여기에 들어 있다.
+     *
+     * 비워두면 C++ 기본 클래스로 스폰되는데, 그러면 메시 원본 머티리얼을
+     * 그대로 써서 실제 건물과 구분이 안 된다. BP_TutorialGhost 같은
+     * 블루프린트를 지정하는 편이 낫다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
+    TSoftClassPtr<ASFTutorialGhostActor> GhostActorClass;
+
+    /**
+     * 액터 자체의 회전. 건물 BP 안의 메시 회전과는 별개로 더해진다.
+     *
+     * 건물 클래스를 지정했다면 대개 0 으로 두면 된다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
     FRotator GhostRotation = FRotator::ZeroRotator;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
-        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    /** 액터 자체의 크기. 건물 클래스를 지정했다면 1 로 두면 된다 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
     FVector GhostScale = FVector::OneVector;
 };
 

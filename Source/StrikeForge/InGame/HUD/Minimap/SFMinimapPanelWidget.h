@@ -220,12 +220,20 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Tag"
+	)
+    FName CommanderMarkerActorTag =
+        TEXT("MinimapCommander");
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
     FVector2D AllyMarkerSize =
         FVector2D(
-            8.0f,
-            8.0f
+            4.0f,
+            4.0f
         );
 
     UPROPERTY(
@@ -233,23 +241,21 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D EnemyMarkerSize =
-        FVector2D(
-            8.0f,
-            8.0f
-        );
+    FVector2D EnemyMarkerSize = FVector2D(4.0f, 4.0f);
 
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D BuildingMarkerSize =
-        FVector2D(
-            12.0f,
-            12.0f
-        );
+    FVector2D BuildingMarkerSize = FVector2D(7.0f, 7.0f);
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Size"
+    )
+    FVector2D CommanderMarkerSize = FVector2D(7.0f, 7.0f);
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -257,9 +263,9 @@ protected:
     )
     FLinearColor AllyMarkerColor =
         FLinearColor(
-            0.1f,
-            0.65f,
-            1.0f,
+            0.0f,
+            0.8f,
+            0.95f,
             1.0f
         );
 
@@ -271,8 +277,8 @@ protected:
     FLinearColor EnemyMarkerColor =
         FLinearColor(
             1.0f,
-            0.2f,
-            0.2f,
+            0.05f,
+            0.05f,
             1.0f
         );
 
@@ -286,6 +292,19 @@ protected:
             1.0f,
             0.8f,
             0.2f,
+            1.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Color"
+    )
+    FLinearColor CommanderMarkerColor =
+        FLinearColor(
+            1.0f, 
+            0.75f, 
+            0.05f, 
             1.0f
         );
 

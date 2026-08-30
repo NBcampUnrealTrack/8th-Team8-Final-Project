@@ -12,7 +12,10 @@ enum class ESFMinimapMarkerType : uint8
     None        UMETA(DisplayName = "None"),
     Ally        UMETA(DisplayName = "Ally"),
     Enemy       UMETA(DisplayName = "Enemy"),
-    Building    UMETA(DisplayName = "Building")
+    Building    UMETA(DisplayName = "Building"),
+    AllyBuilding  UMETA(DisplayName = "Ally Building"),
+    EnemyBuilding UMETA(DisplayName = "Enemy Building"),
+    Commander UMETA(DisplayName = "Commander")
 };
 
 USTRUCT()

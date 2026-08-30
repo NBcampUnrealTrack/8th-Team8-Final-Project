@@ -1,6 +1,8 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 #include "Engine/DataTable.h"
+#include "InGame/HUD/Tutorial/SFTutorialGhostActor.h"
+#include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -69,6 +71,14 @@ bool USFTutorialSubsystem::BeginObjectiveWait(
 
 void USFTutorialSubsystem::CancelObjectiveWait()
 {
+    // 안내 중이었다면 그쪽 상태도 함께 접는다.
+    // 대기만 풀고 안내를 남겨두면 스포트라이트가 화면에 그대로 붙어 있는다.
+    if (GuideStepIndex != INDEX_NONE)
+    {
+        CancelGuide();
+        return;
+    }
+
     if (!PendingObjectiveTag.IsValid())
     {
         return;
@@ -156,13 +166,303 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
     Tutorial->PendingRowName = NAME_None;
     Tutorial->PendingResumeNodeIndex = INDEX_NONE;
 
+    Tutorial->OnObjectiveCompleted.Broadcast(CompletedTag);
+
+    // 안내 중이라면 튜토리얼로 돌아가지 않는다. 아직 남은 칸이 있을 수 있고,
+    // 마지막 칸이었는지는 EnterGuideStep 이 판단한다.
+    if (Tutorial->GuideStepIndex != INDEX_NONE)
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] Guide step %d completed | Tag: %s",
+            Tutorial->GuideStepIndex, *CompletedTag.ToString());
+
+        // 재개 정보를 되돌려 놓는다. EnterGuideStep 이 다음 칸의 대기를
+        // 등록할 때 이 값들을 그대로 다시 써야 한다.
+        Tutorial->PendingDataTable = ResumeTable;
+        Tutorial->PendingRowName = ResumeRow;
+        Tutorial->PendingResumeNodeIndex = ResumeIndex;
+
+        Tutorial->EnterGuideStep(Tutorial->GuideStepIndex + 1);
+        return true;
+    }
+
     SF_LOG(Log, "[SFTutorialSubsystem] Objective completed | Tag: %s | Resuming at node %d",
         *CompletedTag.ToString(), ResumeIndex);
 
-    Tutorial->OnObjectiveCompleted.Broadcast(CompletedTag);
     Tutorial->OnResumeRequested.Broadcast(ResumeTable, ResumeRow, ResumeIndex);
 
     return true;
+}
+
+// ─────────────────────────────────────────────────────────
+// 단계별 안내
+//
+// 목표 대기 위에 얹은 얇은 층이다. 칸 하나가 곧 목표 대기 하나이고,
+// 대기가 풀릴 때 튜토리얼로 돌아가는 대신 다음 칸을 연다.
+//
+// 대기 상태(PendingObjectiveTag 등)를 그대로 재사용하는 것이 핵심이다.
+// 안내 전용 대기를 따로 만들면 "지금 무엇을 기다리는가" 의 답이 두 개가
+// 되어, 둘 중 하나만 풀리는 상태가 반드시 생긴다.
+// ─────────────────────────────────────────────────────────
+bool USFTutorialSubsystem::BeginGuide(
+    UDataTable* InDataTable,
+    FName InRowName,
+    int32 InResumeNodeIndex,
+    const TArray<FSFStageIntroGuideStep>& InSteps
+)
+{
+    if (InSteps.IsEmpty())
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] The guide has no steps, so it is skipped.");
+        return false;
+    }
+
+    if (GuideStepIndex != INDEX_NONE)
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] A previous guide was still active and has been replaced.");
+        ClearGuideState();
+    }
+
+    GuideSteps = InSteps;
+    GuideStepIndex = INDEX_NONE;
+
+    PendingDataTable = InDataTable;
+    PendingRowName = InRowName;
+    PendingResumeNodeIndex = InResumeNodeIndex;
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Guide started | Steps: %d | Resume node: %d",
+        GuideSteps.Num(), InResumeNodeIndex);
+
+    bEnteringGuide = true;
+    bGuideEndedWhileEntering = false;
+
+    EnterGuideStep(0);
+
+    bEnteringGuide = false;
+
+    // 이미 전부 해버린 안내였다. 호출부가 다음 노드로 넘어가면 된다.
+    if (bGuideEndedWhileEntering)
+    {
+        bGuideEndedWhileEntering = false;
+
+        SF_LOG(Log, "[SFTutorialSubsystem] Every guide step was already satisfied, so the guide is skipped.");
+
+        return false;
+    }
+
+    return true;
+}
+
+void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
+{
+    // 칸이 바뀔 때마다 정리한다. 다음 칸이 고스트를 안 쓸 수도 있고,
+    // 이전 칸의 자동 넘김 타이머가 살아 있으면 두 칸이 겹쳐 진행된다.
+    DestroyPlacementGhost();
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(GuideAutoAdvanceHandle);
+    }
+
+    if (!GuideSteps.IsValidIndex(InStepIndex))
+    {
+        FinishGuide();
+        return;
+    }
+
+    GuideStepIndex = InStepIndex;
+    const FSFStageIntroGuideStep& Step = GuideSteps[GuideStepIndex];
+
+    // 신호를 기다리는 칸만 대기 태그를 건다.
+    // Click / Timer 칸은 스포트라이트나 타이머가 직접 넘기므로 대기가 없다.
+    PendingObjectiveTag = FGameplayTag();
+    PendingBannerText = Step.InstructionText;
+
+    if (Step.Completion == ESFGuideCompletion::ObjectiveTag)
+    {
+        if (Step.CompletionTag.IsValid())
+        {
+            // 이미 해버린 조작이면 기다릴 이유가 없다. 곧바로 다음 칸으로.
+            if (CompletedObjectives.HasTag(Step.CompletionTag))
+            {
+                SF_LOG(Log, "[SFTutorialSubsystem] Guide step %d was already satisfied | Tag: %s",
+                    GuideStepIndex, *Step.CompletionTag.ToString());
+
+                EnterGuideStep(GuideStepIndex + 1);
+                return;
+            }
+
+            PendingObjectiveTag = Step.CompletionTag;
+        }
+        else
+        {
+            // 태그를 비워두면 영영 풀리지 않는다. 조용히 멈추는 대신
+            // 클릭으로 넘어갈 수 있게 두고 경고를 남긴다.
+            SF_LOG(Error,
+                "[SFTutorialSubsystem] Guide step %d waits for an empty tag. "
+                "It falls back to click-to-advance.", GuideStepIndex);
+        }
+    }
+
+    if (Step.bShowPlacementGhost && Step.TargetKind == ESFGuideTargetKind::WorldLocation)
+    {
+        SpawnPlacementGhost(Step);
+    }
+
+    // 자동 넘김. 신호를 기다리는 칸에서도 배선이 빠졌을 때를 대비해 걸어둔다.
+    const float AutoSeconds = Step.Completion == ESFGuideCompletion::Timer
+        ? FMath::Max(Step.AutoAdvanceSeconds, 0.1f)
+        : Step.AutoAdvanceSeconds;
+
+    if (AutoSeconds > 0.f)
+    {
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimer(
+                GuideAutoAdvanceHandle, this, &USFTutorialSubsystem::HandleGuideAutoAdvance, AutoSeconds, false);
+        }
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Guide step %d/%d | Tag: %s | Text: %s",
+        GuideStepIndex + 1, GuideSteps.Num(),
+        PendingObjectiveTag.IsValid() ? *PendingObjectiveTag.ToString() : TEXT("(none)"),
+        *Step.InstructionText.ToString());
+
+    OnGuideStepStarted.Broadcast(Step, GuideStepIndex, GuideSteps.Num());
+}
+
+void USFTutorialSubsystem::CompleteCurrentGuideStep()
+{
+    if (GuideStepIndex == INDEX_NONE)
+    {
+        return;
+    }
+
+    EnterGuideStep(GuideStepIndex + 1);
+}
+
+void USFTutorialSubsystem::HandleGuideAutoAdvance()
+{
+    if (GuideStepIndex == INDEX_NONE)
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Guide step %d advanced by timer.", GuideStepIndex);
+
+    EnterGuideStep(GuideStepIndex + 1);
+}
+
+void USFTutorialSubsystem::FinishGuide()
+{
+    // 돌아갈 자리를 먼저 빼둔다. ClearGuideState 가 대기 상태까지 비운다.
+    UDataTable* ResumeTable = PendingDataTable;
+    const FName ResumeRow = PendingRowName;
+    const int32 ResumeIndex = PendingResumeNodeIndex;
+
+    ClearGuideState();
+
+    // BeginGuide 가 아직 실행 중이다. 여기서 재개를 쏘면 위젯이 둘이 된다.
+    if (bEnteringGuide)
+    {
+        bGuideEndedWhileEntering = true;
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Guide finished | Resuming at node %d", ResumeIndex);
+
+    OnGuideFinished.Broadcast();
+    OnResumeRequested.Broadcast(ResumeTable, ResumeRow, ResumeIndex);
+}
+
+void USFTutorialSubsystem::CancelGuide()
+{
+    if (GuideStepIndex == INDEX_NONE)
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Guide cancelled at step %d", GuideStepIndex);
+
+    ClearGuideState();
+
+    OnGuideFinished.Broadcast();
+}
+
+void USFTutorialSubsystem::ClearGuideState()
+{
+    DestroyPlacementGhost();
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(GuideAutoAdvanceHandle);
+    }
+
+    GuideSteps.Empty();
+    GuideStepIndex = INDEX_NONE;
+
+    PendingObjectiveTag = FGameplayTag();
+    PendingBannerText = FText::GetEmpty();
+    PendingDataTable = nullptr;
+    PendingRowName = NAME_None;
+    PendingResumeNodeIndex = INDEX_NONE;
+}
+
+bool USFTutorialSubsystem::IsGuideActive() const
+{
+    return GuideStepIndex != INDEX_NONE;
+}
+
+int32 USFTutorialSubsystem::GetCurrentGuideStepIndex() const
+{
+    return GuideStepIndex;
+}
+
+void USFTutorialSubsystem::SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep)
+{
+    if (InStep.GhostMesh.IsNull())
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] The guide step asks for a ghost but no mesh is set.");
+        return;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    UClass* GhostClass = GhostActorClass.IsNull()
+        ? ASFTutorialGhostActor::StaticClass()
+        : GhostActorClass.LoadSynchronous();
+
+    if (GhostClass == nullptr)
+    {
+        GhostClass = ASFTutorialGhostActor::StaticClass();
+    }
+
+    FActorSpawnParameters Params;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ActiveGhost = World->SpawnActor<ASFTutorialGhostActor>(
+        GhostClass,
+        FTransform(InStep.GhostRotation, InStep.WorldLocation, InStep.GhostScale),
+        Params);
+
+    if (IsValid(ActiveGhost))
+    {
+        ActiveGhost->SetGhostMesh(InStep.GhostMesh.LoadSynchronous());
+    }
+}
+
+void USFTutorialSubsystem::DestroyPlacementGhost()
+{
+    if (IsValid(ActiveGhost))
+    {
+        ActiveGhost->Destroy();
+    }
+
+    ActiveGhost = nullptr;
 }
 
 void USFTutorialSubsystem::ResetCompletedObjectives()
@@ -214,6 +514,11 @@ void USFTutorialSubsystem::DumpState() const
     else
     {
         SF_LOG(Warning, "  Not waiting for any objective.");
+    }
+
+    if (GuideStepIndex != INDEX_NONE)
+    {
+        SF_LOG(Warning, "  Guide       : step %d / %d", GuideStepIndex + 1, GuideSteps.Num());
     }
 
     SF_LOG(Warning, "  Completed (%d) : %s",

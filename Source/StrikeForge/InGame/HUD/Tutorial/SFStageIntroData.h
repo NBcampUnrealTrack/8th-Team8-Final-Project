@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "SFStageIntroData.generated.h"
 
+class UStaticMesh;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -25,7 +26,161 @@ enum class ESFStageIntroNodeType : uint8
      * 새 값은 반드시 목록 맨 뒤에 추가할 것. 중간에 끼워 넣으면 그 뒤 값들의
      * 번호가 밀려서, 이미 만들어둔 DT 의 End 노드가 다른 타입으로 읽힌다.
      */
-    WaitForObjective UMETA(DisplayName = "Wait For Objective")
+    WaitForObjective UMETA(DisplayName = "Wait For Objective"),
+
+    /**
+     * 화면을 짚어 가며 조작을 시키는 단계별 안내.
+     *
+     * WaitForObjective 와 동작이 같다 — 위젯을 닫고, 플레이어가 직접 조작하고,
+     * 다 끝나면 NextNodeIndex 로 돌아온다. 다른 점은 기다리는 대상이 하나가
+     * 아니라 GuideSteps 배열이라는 것뿐이다.
+     *
+     * "여기를 클릭 -> 드래그 -> 우클릭" 처럼 여러 조작을 순서대로 시킬 때 쓴다.
+     * 한 단계짜리 안내라면 WaitForObjective 로도 되지만, 스포트라이트를 띄우고
+     * 싶다면 이쪽을 쓴다.
+     */
+    InteractiveGuide UMETA(DisplayName = "Interactive Guide")
+};
+
+/** 스포트라이트가 무엇을 기준으로 자리를 잡는가 */
+UENUM(BlueprintType)
+enum class ESFGuideTargetKind : uint8
+{
+    /** 화면 비율 좌표. 0~1 이며 (0,0) 이 좌상단이다 */
+    ScreenRegion UMETA(DisplayName = "Screen Region"),
+
+    /**
+     * 월드 좌표를 화면에 투영한다.
+     *
+     * 카메라가 움직이면 스포트라이트도 따라간다. 대상이 화면 밖으로 나가면
+     * 가장자리에 화살표만 남는다.
+     */
+    WorldLocation UMETA(DisplayName = "World Location")
+};
+
+/** 이 단계를 무엇으로 통과 처리하는가 */
+UENUM(BlueprintType)
+enum class ESFGuideCompletion : uint8
+{
+    /**
+     * CompletionTag 신호를 기다린다.
+     *
+     * 신호는 USFTutorialSubsystem::NotifyObjective 로 온다 — 건물 건설이든
+     * 유닛 이동이든 이미 쓰고 있는 그 경로 그대로다.
+     */
+    ObjectiveTag UMETA(DisplayName = "Objective Tag"),
+
+    /**
+     * 화면 아무 곳이나 클릭하면 넘어간다.
+     *
+     * 조작을 시키는 게 아니라 "여기를 보세요" 라고 짚어주기만 할 때 쓴다.
+     */
+    Click UMETA(DisplayName = "Click Anywhere"),
+
+    /** AutoAdvanceSeconds 가 지나면 저절로 넘어간다 */
+    Timer UMETA(DisplayName = "Timer")
+};
+
+/**
+ * 단계별 안내 한 칸.
+ *
+ * 한 칸이 화면에 스포트라이트 하나와 문구 한 줄을 띄우고, 통과 조건이
+ * 만족되면 다음 칸으로 넘어간다.
+ */
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FSFStageIntroGuideStep
+{
+    GENERATED_BODY()
+
+    /** "여기를 클릭하세요" 처럼 지금 무엇을 해야 하는지 한 줄 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide", meta = (MultiLine = true))
+    FText InstructionText;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide")
+    ESFGuideTargetKind TargetKind = ESFGuideTargetKind::ScreenRegion;
+
+    /**
+     * 화면 비율 좌표(0~1). TargetKind 가 ScreenRegion 일 때 쓴다.
+     *
+     * 해상도가 달라져도 같은 자리를 가리키도록 픽셀이 아니라 비율로 둔다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
+        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::ScreenRegion", EditConditionHides))
+    FVector2D ScreenAnchor = FVector2D(0.5f, 0.5f);
+
+    /**
+     * 구멍 반지름. 화면 짧은 변에 대한 비율이다.
+     *
+     * 세로 기준으로 재므로 화면이 넓어져도 크기가 그대로다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
+        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::ScreenRegion", EditConditionHides,
+                ClampMin = "0.01", ClampMax = "1.0"))
+    float ScreenRadius = 0.12f;
+
+    /** TargetKind 가 WorldLocation 일 때 가리킬 월드 좌표 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World",
+        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::WorldLocation", EditConditionHides,
+                MakeEditWidget = true))
+    FVector WorldLocation = FVector::ZeroVector;
+
+    /** 월드 기준 반지름(cm). 화면 반지름은 카메라 거리에 따라 자동 계산된다 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World",
+        meta = (EditCondition = "TargetKind == ESFGuideTargetKind::WorldLocation", EditConditionHides,
+                ClampMin = "10.0"))
+    float WorldRadius = 300.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
+    ESFGuideCompletion Completion = ESFGuideCompletion::Click;
+
+    /**
+     * 기다릴 신호. Completion 이 ObjectiveTag 일 때만 쓴다.
+     *
+     * WaitForObjective 와 같은 규칙으로 계층 매칭된다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion",
+        meta = (EditCondition = "Completion == ESFGuideCompletion::ObjectiveTag", EditConditionHides))
+    FGameplayTag CompletionTag;
+
+    /**
+     * 신호를 기다리는 단계라도 이 시간이 지나면 넘어간다. 0 이면 무한 대기.
+     *
+     * 신호 배선을 빠뜨렸을 때 튜토리얼이 그 자리에서 영영 멈추는 것을 막는
+     * 안전장치다. Completion 이 Timer 면 이 값이 곧 대기 시간이다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion", meta = (ClampMin = "0.0"))
+    float AutoAdvanceSeconds = 0.f;
+
+    /**
+     * 화면을 어둡게 덮을지.
+     *
+     * 끄면 스포트라이트 테두리와 문구만 그린다. 플레이어가 전체 상황을 보면서
+     * 조작해야 하는 단계(드래그 선택 등)에서는 끄는 편이 낫다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Look")
+    bool bDimBackground = true;
+
+    /**
+     * 회색 배치 고스트를 띄울지. TargetKind 가 WorldLocation 일 때만 뜬다.
+     *
+     * "여기에 지으세요" 를 말로 하는 것보다 자리에 반투명 모형을 세워두는
+     * 편이 훨씬 빠르다. 플레이어가 그 자리에 실제로 지으면 사라진다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost")
+    bool bShowPlacementGhost = false;
+
+    /** 고스트로 세울 메시. 비우면 고스트를 띄우지 않는다 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
+        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    TSoftObjectPtr<UStaticMesh> GhostMesh;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
+        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    FRotator GhostRotation = FRotator::ZeroRotator;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Ghost",
+        meta = (EditCondition = "bShowPlacementGhost", EditConditionHides))
+    FVector GhostScale = FVector::OneVector;
 };
 
 UENUM(BlueprintType)
@@ -85,6 +240,28 @@ struct STRIKEFORGE_API FSFStageIntroNode
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Objective", meta = (MultiLine = true))
     FText ObjectiveBannerText;
+
+    /**
+     * 단계별 안내. NodeType 이 InteractiveGuide 일 때만 쓰인다.
+     *
+     * 위에서부터 순서대로 진행하고, 마지막 칸이 끝나면 NextNodeIndex 로
+     * 돌아온다. 비어 있으면 아무것도 하지 않고 곧바로 다음 노드로 간다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Guide Steps")
+    TArray<FSFStageIntroGuideStep> GuideSteps;
+
+    /**
+     * 이 노드의 타자 속도(초당 글자 수). 0 이면 위젯 기본값을 쓴다.
+     *
+     * 긴 설명은 빠르게, 결정적인 한 줄은 느리게 — 연출 목적의 값이므로
+     * 노드마다 따로 둔다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Typewriter", meta = (ClampMin = "0.0"))
+    float TypeSpeedOverride = 0.f;
+
+    /** 이 노드만 타자 효과 없이 즉시 전부 보여준다 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Typewriter")
+    bool bSkipTypewriter = false;
 
     /** WaitForObjective 노드에서는 "목표를 달성하면 돌아올 자리" 가 된다 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Flow")

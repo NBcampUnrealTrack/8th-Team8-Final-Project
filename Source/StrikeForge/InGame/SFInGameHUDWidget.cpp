@@ -594,7 +594,7 @@ void USFInGameHUDWidget::RefreshSelectedPortrait()
 
     UnitPortraitActor->ApplyPortrait(
         SelectedSkeletalMesh,
-        nullptr
+        SelectedInfo.PortraitAnimation
     );
 }
 

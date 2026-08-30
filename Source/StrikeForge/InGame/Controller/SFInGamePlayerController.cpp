@@ -144,39 +144,46 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
     if (!IsValid(PendingSpawnedBuildingRef)) return;
+    
+    ASFBaseBuilding* const Building = PendingSpawnedBuildingRef;
+    const FResources ConstructCost = Building->GetConstructCost();
 
-    const FResources NeedConstructCost = PendingSpawnedBuildingRef->GetConstructCost();
-    ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
-
+    ASFGameState* const SFGS = GetWorld()->GetGameState<ASFGameState>();
     if (!IsValid(SFGS))
-    {   // SFGS 게임스테이트 없을때
-        SF_LOG(Error, "[SFPC] SFGameState 를 찾을 수 없어 건설할 수 없습니다.");
+    {
+        SF_LOG(Error, "[SFPC] SFGameState를 찾을 수 없어 건설할 수 없습니다.");
         ClearPendingBuildingRef();
         return;
     }
 
-    if (!SFGS->CanAffordResource(GetMyTeamIndex(), NeedConstructCost))
-    {   // 자원 없을때
-        SF_LOG(Warning, "[SFPC] 지휘관이 도착했으나 자원이 부족해 건설이 취소되었습니다: %s", *PendingSpawnedBuildingRef->GetName());
+    const int32 TeamIndex = GetMyTeamIndex();
+
+    // 실제 비용 차감에 성공해야 건설을 시작한다.
+    if (!SFGS->TrySpendCost(TeamIndex, ConstructCost))
+    {
+        SF_LOG(Warning, "[SFPC] 자원이 부족해 건설을 취소합니다: %s",
+            *Building->GetName());
 
         if (IsValid(InGameHUDWidget))
         {
             InGameHUDWidget->PlayResourceWarningSound();
         }
+        ClearPendingBuildingRef();
+        return;
+    }
+
+    // 비용 차감 후 건설 시작에 실패하면 비용을 복구한다.
+    if (!Building->TryStartConstruction())
+    {
+        SFGS->RefundCost(TeamIndex, ConstructCost);
+
+        SF_LOG(Error, "[SFPC] 건설 시작에 실패하여 비용을 환불했습니다: %s",
+            *Building->GetName());
 
         ClearPendingBuildingRef();
         return;
     }
 
-    if (!PendingSpawnedBuildingRef->TryStartConstruction())
-    {   // 다른 외부 조건
-        SF_LOG(Error, "[SFPC] 건설 시작 실패: %s", *PendingSpawnedBuildingRef->GetName());
-        ClearPendingBuildingRef();
-        return;
-    }
-
-    // 모든 조건 통과시 - 차감
-    SFGS->TrySpendCost(GetMyTeamIndex(), NeedConstructCost);
     PendingSpawnedBuildingRef = nullptr;
 }
 

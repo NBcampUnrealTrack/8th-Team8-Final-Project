@@ -46,7 +46,19 @@ public:
     void ClearGuide();
 
 protected:
+    virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+    /**
+     * 안내가 허용하지 않는 자리를 겨누고 있을 때 경고를 켠다.
+     *
+     * 서브시스템을 직접 구독한다. HUD 를 거치면 배선이 하나 더 늘어나는데,
+     * 이 문구는 스포트라이트가 떠 있을 때만 의미가 있어서 이 위젯이 스스로
+     * 챙기는 편이 맞다.
+     */
+    UFUNCTION()
+    void HandleBuildBlockedChanged(bool bBlocked);
 
     virtual int32 NativePaint(
         const FPaintArgs& Args,
@@ -74,6 +86,18 @@ protected:
     /** "2 / 4" 처럼 진행도를 보여준다 */
     UPROPERTY(BlueprintReadOnly, Category = "SF|Tutorial|Spotlight", meta = (BindWidgetOptional))
     TObjectPtr<UTextBlock> StepCounterText = nullptr;
+
+    /**
+     * 허용되지 않는 자리를 겨눌 때만 뜨는 경고 문구.
+     *
+     * 없어도 동작한다. 배치 미리보기가 이미 빨갛게 변하므로, 문구까지
+     * 필요한지는 붙여보고 정하면 된다.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "SF|Tutorial|Spotlight", meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> WarningText = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SF|Tutorial|Spotlight")
+    FText WarningMessage = NSLOCTEXT("SFTutorialSpotlight", "BuildBlocked", "표시된 자리에만 건설할 수 있습니다");
 
     // ── 모양 ────────────────────────────────────────────
 

@@ -1,7 +1,9 @@
 #include "InGame/HUD/Tutorial/SFTutorialGhostActor.h"
 
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Logging/SFLog.h"
 #include "Materials/MaterialInterface.h"
 
 ASFTutorialGhostActor::ASFTutorialGhostActor()
@@ -10,8 +12,11 @@ ASFTutorialGhostActor::ASFTutorialGhostActor()
     // BobAmplitude 를 0 으로 두면 Tick 첫 줄에서 빠져나간다.
     PrimaryActorTick.bCanEverTick = true;
 
+    SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+    SetRootComponent(SceneRoot);
+
     GhostMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GhostMesh"));
-    SetRootComponent(GhostMeshComponent);
+    GhostMeshComponent->SetupAttachment(SceneRoot);
 
     // 안내용 모형이다. 무엇과도 부딪히면 안 된다 —
     // 콜리전을 남겨두면 플레이어가 그 자리에 실제 건물을 못 짓는다.
@@ -20,6 +25,7 @@ ASFTutorialGhostActor::ASFTutorialGhostActor()
     GhostMeshComponent->SetGenerateOverlapEvents(false);
     GhostMeshComponent->SetCanEverAffectNavigation(false);
     GhostMeshComponent->SetCastShadow(false);
+
 }
 
 void ASFTutorialGhostActor::BeginPlay()
@@ -40,13 +46,25 @@ void ASFTutorialGhostActor::SetGhostMesh(UStaticMesh* InMesh, const FTransform& 
 
     GhostMeshComponent->SetStaticMesh(InMesh);
 
+    // Nanite 끄기는 메시를 붙인 뒤에 적용한다.
+    // 생성자에서 걸면 메시가 없어 무시되는 경우가 있다.
+    GhostMeshComponent->bDisallowNanite = bDisableNanite;
+    GhostMeshComponent->MarkRenderStateDirty();
+
     // 루트가 곧 메시 컴포넌트라 상대 트랜스폼을 그대로 얹으면 된다.
     // 액터 트랜스폼(위치·회전·크기)과 곱해져 최종 자리가 나온다.
     GhostMeshComponent->SetRelativeTransform(InRelativeTransform);
 
-    // 흔들림 기준점을 다시 잡는다. BeginPlay 때 잡아둔 값은 상대 트랜스폼을
-    // 얹기 전이라, 그대로 두면 첫 틱에 원래 자리로 튄다.
     BaseLocation = GetActorLocation();
+
+    // 눈으로는 "안 보인다" 하나로 뭉뚱그려지는 실패가 여럿이라, 실제로
+    // 어디에 얼마나 큰 것이 섰는지 값으로 남긴다.
+    SF_LOG(Log,
+        "[SFTutorialGhost] Mesh applied | Actor: %s | Mesh world scale: %s | Bounds radius: %.1f | Nanite disabled: %s",
+        *GetActorLocation().ToString(),
+        *GhostMeshComponent->GetComponentScale().ToString(),
+        GhostMeshComponent->Bounds.SphereRadius,
+        bDisableNanite ? TEXT("yes") : TEXT("no"));
 
     if (!IsValid(GhostMaterial))
     {

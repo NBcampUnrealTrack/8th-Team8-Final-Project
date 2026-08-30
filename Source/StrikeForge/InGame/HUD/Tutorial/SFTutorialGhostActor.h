@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "SFTutorialGhostActor.generated.h"
 
+class USceneComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -50,6 +51,16 @@ protected:
     UFUNCTION(BlueprintImplementableEvent, Category = "SF|Tutorial|Ghost")
     void OnGhostAppeared();
 
+    /**
+     * 액터의 자리를 잡는 루트.
+     *
+     * 메시를 루트로 두면 안 된다. 루트 컴포넌트의 "상대" 트랜스폼은 곧
+     * 액터 자신의 트랜스폼이라, 건물에서 읽어온 메시 보정을 얹는 순간
+     * 고스트가 스폰 위치를 버리고 그 보정값 자리로 순간이동한다.
+     */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+    TObjectPtr<USceneComponent> SceneRoot;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     TObjectPtr<UStaticMeshComponent> GhostMeshComponent;
 
@@ -61,6 +72,23 @@ protected:
      */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Ghost")
     TObjectPtr<UMaterialInterface> GhostMaterial = nullptr;
+
+    /**
+     * 이 메시에서 Nanite 를 끌지.
+     *
+     * Nanite 는 투명 머티리얼을 지원하지 않아서, 건물 메시가 Nanite 면
+     * 반투명 머티리얼이 무시된다. 이 값을 켜면 Nanite 를 끄고 일반 메시로
+     * 그리므로 반투명이 살아난다.
+     *
+     * 기본값이 꺼짐인 이유: Nanite 를 끄면 폴백 메시로 그리는데, 폴백이
+     * 거의 비어 있게 빌드된 에셋이면 아무것도 안 보인다. 그 경우는 눈으로만
+     * 보면 "고스트가 안 뜬다" 와 구분이 안 되므로, 기본값은 안전한 쪽으로
+     * 두고 필요할 때만 켠다.
+     *
+     * 켜도 안 보이면 머티리얼을 Opaque 나 Masked 로 바꾸는 편이 낫다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Ghost")
+    bool bDisableNanite = false;
 
     /** 위아래로 흔들리는 폭(cm). 0 이면 가만히 있는다 */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Ghost", meta = (ClampMin = "0.0"))

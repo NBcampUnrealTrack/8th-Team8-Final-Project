@@ -8,6 +8,45 @@
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 
+void USFTutorialSpotlightWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    if (IsValid(WarningText))
+    {
+        WarningText->SetText(WarningMessage);
+        WarningText->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
+    {
+        Tutorial->OnBuildBlockedChanged.AddUniqueDynamic(
+            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
+    }
+}
+
+void USFTutorialSpotlightWidget::NativeDestruct()
+{
+    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
+    {
+        Tutorial->OnBuildBlockedChanged.RemoveDynamic(
+            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
+    }
+
+    Super::NativeDestruct();
+}
+
+void USFTutorialSpotlightWidget::HandleBuildBlockedChanged(bool bBlocked)
+{
+    if (!IsValid(WarningText))
+    {
+        return;
+    }
+
+    WarningText->SetVisibility(
+        bBlocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
 void USFTutorialSpotlightWidget::ApplyGuideStep(
     const FSFStageIntroGuideStep& InStep,
     int32 InStepIndex,
@@ -60,10 +99,15 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
     // 클릭으로 넘기는 칸은 클릭을 받아야 하므로 덮개가 입력을 가져간다.
     // 그 외에는 플레이어가 실제로 조작해야 한다 — 여기서 막으면
     // "드래그하세요" 안내가 드래그 자체를 막는다.
+    //
+    // SelfHitTestInvisible 이 아니라 HitTestInvisible 이어야 한다.
+    // 앞의 것은 "나는 안 받지만 자식은 받는다" 라서, 화면을 덮는 캔버스
+    // 패널이 그대로 클릭을 먹는다. 위젯을 만든 사람이 캔버스 가시성을
+    // 어떻게 뒀는지에 따라 되기도 하고 안 되기도 하는 상태가 된다.
     SetVisibility(
         CurrentStep.Completion == ESFGuideCompletion::Click
         ? ESlateVisibility::Visible
-        : ESlateVisibility::SelfHitTestInvisible);
+        : ESlateVisibility::HitTestInvisible);
 
     OnGuideStepApplied(CurrentStep);
 }
@@ -71,6 +115,11 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
 void USFTutorialSpotlightWidget::ClearGuide()
 {
     bHasStep = false;
+
+    if (IsValid(WarningText))
+    {
+        WarningText->SetVisibility(ESlateVisibility::Collapsed);
+    }
 
     if (IsValid(InstructionText))
     {

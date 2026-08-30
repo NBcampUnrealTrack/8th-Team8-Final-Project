@@ -4,13 +4,6 @@
 #include "Game/GameState/SFGameState.h"
 #include "Logging/SFLog.h"
 
-ASFHouseBuilding::ASFHouseBuilding(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	PrimaryActorTick.bCanEverTick = false;
-	
-}
-
 FSFSelectableInfo ASFHouseBuilding::GetSelectableInfo_Implementation()
 {
 	FSFSelectableInfo Info = Super::GetSelectableInfo_Implementation();
@@ -67,14 +60,6 @@ void ASFHouseBuilding::OnTierActivated()
 	}
 
 	SFGameState->AddMaxPopulation(GetTeamIndex(),IncreasePopulation);
-}
-
-void ASFHouseBuilding::OnTierDeactivated()
-{
-	Super::OnTierDeactivated();
-	// 업그레이드 도중 최대 인구를 일시 차감하지 않는다.
-	// 최종 파괴 시 OnBuildingDestroyed()에서 적용값을 회수한다.
-	
 }
 
 void ASFHouseBuilding::OnBuildingDestroyed()

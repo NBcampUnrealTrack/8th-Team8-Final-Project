@@ -5,8 +5,6 @@
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
-
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
 }
 
@@ -72,7 +70,7 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
 	ProductData.ProductComponent = ProductComponent;
-	ProductData.UpgradeCost = CurrentUpgradeBuildCost;
+	ProductData.UpgradeCost = GetUpgradeCost();
 	return ProductData;
 }
 

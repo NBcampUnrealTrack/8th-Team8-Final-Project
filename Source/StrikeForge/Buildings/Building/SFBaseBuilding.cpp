@@ -15,12 +15,12 @@
 #include "Components/WidgetComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
 
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
 	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
@@ -64,8 +64,21 @@ void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 {	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
+		// 손상 단계와 Field 위치 계산 전에 원위치 복구
+		StopHitReaction();
+
 		HealthComponent->ApplyDamage(InDamage);
-		PlayHitReaction(FVector::ForwardVector);
+
+		/*
+		 * 체력 0에서는 BaseBuilding이 제거되므로
+		 * 최종 파괴 연출이 HitReact를 대신한다.
+		 */
+		if (CurrentBuildingState !=
+			EBuildingState::Destroyed)
+		{
+			PlayHitReaction(
+				FVector::ForwardVector);
+		}
 	}
 }
 
@@ -89,8 +102,8 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.DisplayName = DisplayName;
 	Data.CurrentTier = CurrentTier;
 	Data.HealthComponent = HealthComponent;
-	Data.ConstructCost = CurrentConstructBuildCost;
-	Data.UpgradeCost = CurrentUpgradeBuildCost;
+	Data.ConstructCost = GetConstructCost();
+	Data.UpgradeCost = GetUpgradeCost();
 	return Data;
 }
 // Damagable 인터페이스 -> CanbeDamaged조건(underconstruct, completed : pass) ->
@@ -99,9 +112,7 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0일때도 호출된다
 (float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
-	if (InCurrentHP <= 0.f ||
-		CurrentBuildingState != EBuildingState::Completed ||
-		InMaxHP <= 0.f)
+	if (InCurrentHP <= 0.f || InMaxHP <= 0.f)
 	{
 		return;
 	}
@@ -152,12 +163,17 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 			return;
 		}
 
-		if (EnsureDestructionActor())
+		const FBuildingDestruction* StageData =
+			Tier->Visual.GetDestructionStage(CurrentStage);
+
+		if (StageData && EnsureDestructionActor())
 		{
-			DestructionActor->ApplyDamageStage(CurrentStage);
+			DestructionActor->ApplyDamageStage(
+				CurrentStage,
+				*StageData);
+
 			return;
 		}
-
 		// GC 생성 실패 시 아래 DamageMesh 경로를 사용한다.
 	}
 
@@ -366,6 +382,9 @@ void ASFBaseBuilding::EnterCompletedState()
 
 void ASFBaseBuilding::EnterDestroyedState()
 {
+	// 이동한 GC 위치에서 최종 Strain이 계산되는 것을 방지
+	StopHitReaction();
+	
 	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
 
@@ -373,32 +392,70 @@ void ASFBaseBuilding::EnterDestroyedState()
 	{
 		ProgressComponent->StopProgress();
 	}
-	// Deactivate Ability
+	// 반드시 DeactivateActiveTier() 전에 저장
+	// 완료 상태=true, 건설/업그레이드 중=false
+	const bool bCanPlayCompletedGC = bIsTierActivated;
+
 	DeactivateActiveTier();
-	
-	const bool bUseGeometryCollection =
+
+	bool bUseGeometryCollection = false;
+
+	// 완성된 상태에서 파괴될 때만 GC 처리
+	if (bCanPlayCompletedGC)
+	{
+		const FSFBuildingTierData* DestructionTier =
+			GetCurrentTierInfo();
+
+		const FBuildingDestruction* FinalStage =
+			DestructionTier
+				? DestructionTier->Visual.GetFinalDestructionStage()
+				: nullptr;
+
+		const int32 FinalStageIndex =
+			DestructionTier
+				? DestructionTier->Visual.DestructionStages.Num() - 1
+				: INDEX_NONE;
+
+		bUseGeometryCollection =
+			FinalStage &&
 			IsValid(ActiveTierAssets.DestructionCollection) &&
 			EnsureDestructionActor();
 
+		if (bUseGeometryCollection)
+		{
+			ASFBuildingDestructionActor* DebrisActor = DestructionActor;
+			
+			DebrisActor->ApplyFinalDestruction(
+				FinalStageIndex,
+				*FinalStage);
+			
+			// 이후 DebrisActor는 자신의 LifeSpan으로 제거된다.
+			DestructionActor = nullptr;
+		}
+	}
+
 	if (bUseGeometryCollection)
 	{
-		DestructionActor->ApplyFinalDestruction();
-		BoxComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		BoxComponent->SetCollisionEnabled(
+			ECollisionEnabled::NoCollision);
+	}
+	else if (bCanPlayCompletedGC)
+	{
+		// 완성 건물이지만 GC가 없을 때만 파괴 메시 사용
+		RefreshVisual();
+		BoxComponent->SetCollisionProfileName(
+			TEXT("DestroyedBuilding"));
+		SetBoxExtent();
 	}
 	else
 	{
-		// GC가 없으면 기존 파괴 메시를 사용한다.
-		RefreshVisual();
-		BoxComponent->SetCollisionProfileName(TEXT("DestroyedBuilding"));
-		SetBoxExtent();
+		// 건설 중 파괴: 완성 GC와 파괴 완료 메시 모두 사용하지 않는다.
+		BoxComponent->SetCollisionEnabled(
+			ECollisionEnabled::NoCollision);
 	}
 
 	PlayDestroyEffect();
-
-	// 파생 건물의 인구·생산·채굴 기능을 정리한다.
 	OnBuildingDestroyed();
-
-	// Actor 수명은 BaseBuilding이 단 한 번 책임진다.
 	Destroy();
 }
 
@@ -620,9 +677,9 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		}
 	}
 	// 업그레이드비용 저장
-	const FResources SpendCost = CurrentUpgradeBuildCost;
+	const FResources SpendCost = GetUpgradeCost();
 	
-	if (!SFGS->CanAffordResource(GetTeamIndex(), SpendCost))
+	if (!SFGS->TrySpendCost(GetTeamIndex(),	SpendCost))
 	{
 		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
 			*GetName(), SpendCost.Mineral, SpendCost.Ether);
@@ -632,11 +689,15 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	// 다음티어 있는지확인하고 다음티어정보로 치환 ( 티어정보 교체시점 )
 	if (!PrepareTier(NextTier))
 	{
+		// 준비 실패 시 차감한 비용을 원상 복구한다.
+		SFGS->RefundCost(GetTeamIndex(), SpendCost);
+
+		SF_LOG(Error, "[%s] Tier %d 준비 실패. 업그레이드 비용을 환불했습니다.",
+			*GetName(),
+			NextTier);
 		return;
 	}
-	// 이시점에서는 건설비용이 업그레이된티어의 값으로 바뀐상태
-	
-	SFGS->TrySpendCost(GetTeamIndex(), SpendCost);
+
 	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
@@ -695,10 +756,6 @@ void ASFBaseBuilding::BeginPlay()
 	}
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
-	
-	// cached staticmesh location, before hit react
-	OriginalMeshLocation = StaticMeshComponent->GetRelativeLocation();
-	OriginalMeshRotation = StaticMeshComponent->GetRelativeRotation();
 
 	if (IsValid(HitReactionCurve))
 	{
@@ -734,6 +791,14 @@ void ASFBaseBuilding::BeginPlay()
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopHitReaction();
+	
+	if (IsValid(DestructionActor))
+	{
+		DestructionActor->Destroy();
+		DestructionActor = nullptr;
+	}
+	
 	if (bGridRegistered)
 	{
 		if (USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
@@ -832,9 +897,6 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 		return false;
 	}
 	
-	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
-	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
-	
 	// CACHED LoadAsset by currentTier
 	FBuildingTierRuntimeAssets NewAssets;
 	NewAssets.TierIndex = TierIndex;
@@ -917,7 +979,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	// CACHED sounds
 	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.LoadSynchronous();
 	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.LoadSynchronous();
-	
+
 	// CACHED load assets
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
@@ -959,8 +1021,6 @@ bool ASFBaseBuilding::CommitPreparedTier()
 	PendingTier = INDEX_NONE;
 
 	CurrentTier = CommittedTier;
-	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
-	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
 
 	return true;
 }
@@ -1085,55 +1145,96 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 #pragma region HitReact
 void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 {
-	const FVector Offset =
+	USceneComponent* Target =
+		ActiveHitReactionTarget.Get();
+
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	const FVector LocalOffset =
 		HitLocalDirection *
 		HitMoveDistance *
 		CurveValue;
 
-	const FRotator RotationOffset(
+	const FRotator LocalRotationOffset(
 		HitRotationAmount * CurveValue,
-		0.0f,
-		-HitRotationAmount * CurveValue
-	);
+		0.f,
+		-HitRotationAmount * CurveValue);
 
-	StaticMeshComponent->SetRelativeLocation(
-		OriginalMeshLocation + Offset
-	);
+	const FQuat BaseRotation =
+		OriginalHitReactionTransform.GetRotation();
 
-	StaticMeshComponent->SetRelativeRotation(
-		OriginalMeshRotation + RotationOffset
-	);
+	FTransform TargetTransform =
+		OriginalHitReactionTransform;
+
+	TargetTransform.SetLocation(
+		OriginalHitReactionTransform.GetLocation() +
+		BaseRotation.RotateVector(LocalOffset));
+
+	TargetTransform.SetRotation(
+		(BaseRotation *
+		 LocalRotationOffset.Quaternion())
+		.GetNormalized());
+
+	/*
+	 * GC의 기존 파편 속도는 변경하지 않고
+	 * Collection 전체 Transform만 움직인다.
+	 */
+	Target->SetWorldTransform(
+		TargetTransform,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
 }
 
 void ASFBaseBuilding::FinishHitReaction()
 {
-	// Root로 원상복귀
-	StaticMeshComponent->SetRelativeLocation(OriginalMeshLocation);
-	StaticMeshComponent->SetRelativeRotation(OriginalMeshRotation);
+	USceneComponent* Target =
+		ActiveHitReactionTarget.Get();
+
+	if (IsValid(Target))
+	{
+		Target->SetWorldTransform(
+			OriginalHitReactionTransform,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+
+	ActiveHitReactionTarget.Reset();
 }
 
 
 void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 {
 	if (!IsValid(HitReactionTimeline) ||
-		!IsValid(HitReactionCurve))
+	   !IsValid(HitReactionCurve))
 	{
 		return;
 	}
-	// 때린 방향 캐싱 - 타임라인은 인자가없다
-	HitLocalDirection = LocalDirection.GetSafeNormal();
-	// 타임라인은 인자가 없다
+	
+	USceneComponent* Target =
+		ResolveHitReactionTarget();
+
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	ActiveHitReactionTarget = Target;
+	OriginalHitReactionTransform =
+		Target->GetComponentTransform();
+
+	HitLocalDirection =
+		LocalDirection.GetSafeNormal();
+
 	HitReactionTimeline->PlayFromStart();
 }
 #pragma endregion 
 
 #pragma region GridSystem
-void ASFBaseBuilding::SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo)
-{
-	//RegisteredGridInfo.OriginCell = InGridInfo.OriginCell;
-	RegisteredGridInfo = InGridInfo;
-	bGridRegistered = true;
-}
 
 bool ASFBaseBuilding::EnsureDestructionActor()
 {
@@ -1142,18 +1243,23 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 		return true;
 	}
 
-	if (!IsValid(ActiveTierAssets.DestructionCollection))
+	UGeometryCollection* Collection =
+		ActiveTierAssets.DestructionCollection;
+	
+	if (!IsValid(Collection))
 	{
 		return false;
 	}
+
+	StopHitReaction();
 	
-	FTransform VisualTransform =
-	StaticMeshComponent->GetComponentTransform();
+	const FTransform VisualTransform =
+		StaticMeshComponent->GetComponentTransform();
 
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	
+
 	ASFBuildingDestructionActor* SpawnedActor =
 		GetWorld()->SpawnActor<ASFBuildingDestructionActor>(
 			ASFBuildingDestructionActor::StaticClass(),
@@ -1165,16 +1271,13 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 		return false;
 	}
 
-	if (!SpawnedActor->InitializeDestruction(
-			ActiveTierAssets.DestructionCollection))
+	if (!SpawnedActor->InitializeDestruction(Collection))
 	{
 		SpawnedActor->Destroy();
 		return false;
 	}
 
 	DestructionActor = SpawnedActor;
-
-	// GC 초기화가 성공한 뒤에만 기존 메시를 숨긴다.
 	StaticMeshComponent->SetVisibility(false, true);
 
 	return true;
@@ -1182,6 +1285,12 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 
 void ASFBaseBuilding::ClearDestructionVisual()
 {
+	/*
+	 * HitReact 대상이 GC일 수 있으므로
+	 * GC를 제거하기 전에 Timeline과 Transform을 정리한다.
+	 */
+	StopHitReaction();
+
 	if (IsValid(DestructionActor))
 	{
 		DestructionActor->Destroy();
@@ -1194,6 +1303,38 @@ void ASFBaseBuilding::ClearDestructionVisual()
 			true,
 			true);
 	}
+}
+
+const FSFBuildingTierData* ASFBaseBuilding::GetCostTierInfo() const
+{
+	const int32 CostTier =
+		PendingTier != INDEX_NONE
+			? PendingTier
+			: CurrentTier;
+
+	return GetTierInfo(CostTier);
+}
+
+USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const
+{
+	if (IsValid(DestructionActor))
+	{
+		return DestructionActor
+			->GetGeometryCollectionComponent();
+	}
+
+	return StaticMeshComponent;
+}
+
+void ASFBaseBuilding::StopHitReaction()
+{
+	if (IsValid(HitReactionTimeline) &&
+	HitReactionTimeline->IsPlaying())
+	{
+		HitReactionTimeline->Stop();
+	}
+
+	FinishHitReaction();
 }
 
 bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
@@ -1209,8 +1350,27 @@ bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
 		return false;
 	}
 	// 등록성공하면 건물이 정보를 저장
-	SetRegisteredGridInfo(GridInfo);
+	RegisteredGridInfo = GridInfo;
+	bGridRegistered = true;
 	return true;
+}
+
+FResources ASFBaseBuilding::GetConstructCost() const
+{
+	const FSFBuildingTierData* Tier = GetCostTierInfo();
+
+	return Tier
+		? Tier->Construction.ConstructCost
+		: FResources{};
+}
+
+FResources ASFBaseBuilding::GetUpgradeCost() const
+{
+	const FSFBuildingTierData* Tier = GetCostTierInfo();
+
+	return Tier
+		? Tier->Construction.UpgradeCost
+		: FResources{};
 }
 
 bool ASFBaseBuilding::TryRegistInitialGrid()

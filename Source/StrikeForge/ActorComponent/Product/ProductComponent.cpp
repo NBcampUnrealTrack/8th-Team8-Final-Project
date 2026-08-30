@@ -38,12 +38,6 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 	if (!IsValid(SFGS)) return;
 	
 	const int32 OwnerTeam = GetOwnerTeam();
-	if (!SFGS->CanAffordResource(OwnerTeam, UnitStatsRow->UnitProductionCost))
-	{
-		SF_LOG(Warning, "[Product]자원이 부족해 [%s]을 생산하지못합니다. 현재유닛의 Cost: M: %d, E: %d",
-			*InProductName.ToString(), UnitStatsRow->UnitProductionCost.Mineral, UnitStatsRow->UnitProductionCost.Ether);
-		return;
-	}
 	
 	if (!SFGS->CanAffordPopulation(OwnerTeam, UnitStatsRow->PopulationCost))
 	{
@@ -52,7 +46,12 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 		return;
 	}
 #pragma endregion 
-	SFGS->TrySpendCost(OwnerTeam, UnitStatsRow->UnitProductionCost);
+	if (!SFGS->TrySpendCost(OwnerTeam,	UnitStatsRow->UnitProductionCost))
+	{
+		SF_LOG(Warning, "생산 자원이 부족합니다.");
+		return;
+	}
+	
 	ProductLine.Add({InProductName, UnitStatsRow->UnitProductionDuration});
 	OnProductLineChanged.Broadcast(ProductLine);
 	UE_LOG(LogTemp, Warning, TEXT("Insert ProductLine: %s / Currentindex: %d"), *InProductName.ToString(), ProductLine.Num() - 1);

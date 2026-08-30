@@ -10,15 +10,12 @@ class STRIKEFORGE_API ASFHouseBuilding : public ASFBaseBuilding
 	GENERATED_BODY()
 
 public:
-	ASFHouseBuilding(const FObjectInitializer& ObjectInitializer);
+	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
 
-	// DELETE BUILDING's ABILITY
-	// OnDestroyed1
-	virtual void OnTierDeactivated() override;
 	// when construct destroyed, play effects
 	// OnDestroyed2
 	virtual void OnBuildingDestroyed() override;
@@ -27,6 +24,4 @@ protected:
 	// 증가시킬 인구
 	UPROPERTY()
 	int32 MaxPopulationIncreaseAmount;
-private:
-	
 };

@@ -10,7 +10,6 @@ ASFNexusBuilding::ASFNexusBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UCoreObjectiveComponent>(TEXT("CombatTargetComponent")))
 	, bFinishStageOnDestroyed(true)
 {
-	PrimaryActorTick.bCanEverTick = false;
 }
 
 FSFSelectableInfo ASFNexusBuilding::GetSelectableInfo_Implementation()
@@ -24,6 +23,11 @@ void ASFNexusBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (IsActorBeingDestroyed())
+	{
+		return;
+	}
+	
 	// 컴포넌트를 BP 에서 지우거나 다른 클래스로 바꾸면
 	// 유닛이 이 건물을 진격 목표로 인식하지 못한다.
 	// 조용히 동작을 멈추므로 시작할 때 한 번 알린다.

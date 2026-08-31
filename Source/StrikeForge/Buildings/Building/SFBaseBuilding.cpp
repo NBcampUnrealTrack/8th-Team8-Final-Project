@@ -106,6 +106,25 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.UpgradeCost = GetUpgradeCost();
 	return Data;
 }
+
+USoundBase* ASFBaseBuilding::GetSelectionSound_Implementation()
+{
+	switch (CurrentBuildingState)
+	{
+	case EBuildingState::UnderConstruction:
+		return UnderConstructionSelectionSound;
+
+	case EBuildingState::Completed:
+		return CompletedSelectionSound;
+
+	case EBuildingState::None:
+	case EBuildingState::Preview:
+	case EBuildingState::Destroyed:
+	default:
+		return nullptr;
+	}
+}
+
 // Damagable 인터페이스 -> CanbeDamaged조건(underconstruct, completed : pass) ->
 // HealthComp이동 데미지적용 -> broadcast -> 이함수 실행 -> 이 함수는 체력별 비율을 인덱스로변환하고 인덱스를 메쉬적용함수에 전달한다
 // called by 죽기전까지 - 체력은 바뀔때마다 UI에 갱신해줘야함 > 바뀔때마다 broadcast필요
@@ -842,6 +861,9 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 
 	CachedCommonTiers.Reset(TierCount);
 
+	// ? for문으로 찾아야만하는 이유가 있나?
+	// definition에 현재티어의 tierdata를 반환하는 함수를만들고
+	// 그걸 호출만해서 데이터를 받아오면되는거아닌가?
 	for (int32 TierIndex = 0; TierIndex < TierCount; ++TierIndex)
 	{
 		const FSFBuildingTierData* SourceTier =	BuildingDefinition->FindTier(TierIndex);
@@ -877,11 +899,16 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
 	}
-
+	
 	DisplayName = BuildingDefinition->DisplayName;
+	// grid
 	ConfiguredGridSize = BuildingDefinition->GridSize;
+	// sound
+	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
+	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
 	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
 	DestroyedEffect = BuildingDefinition->DestroyedEffect.LoadSynchronous();
+	// preview ghost
 	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
 
 	return true;

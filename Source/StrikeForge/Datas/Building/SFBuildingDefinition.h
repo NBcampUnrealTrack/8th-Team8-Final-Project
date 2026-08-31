@@ -67,6 +67,14 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Requirement", meta = (ClampMin = "1"))
     int32 RequiredNexusTier = 1;
     
+    // 건설중 상태 sound
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio|Selection")
+    TSoftObjectPtr<USoundBase> UnderConstructionSelectionSound;
+
+    // 건설완료 상태 sound
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio|Selection")
+    TSoftObjectPtr<USoundBase> CompletedSelectionSound;
+    
     // * 건물 파괴 시 재생할 공통 사운드.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destroyed")
     TSoftObjectPtr<USoundBase> DestroyedSound;

@@ -2,14 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Datas/Resource/SFResourceTypes.h"
-#include "Engine/DataTable.h"
 #include "BuildingAppearance.generated.h"
 
-class ASFBaseBuilding;
-class UMaterialInterface;
 class USoundBase;
 class UStaticMesh;
-class UNiagaraSystem;
+//GC
+class UGeometryCollection;
 
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingStage
@@ -21,6 +19,63 @@ struct STRIKEFORGE_API FBuildingStage
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stage")
 	TSoftObjectPtr<UStaticMesh> Mesh;
+};
+
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingDestruction
+{
+	GENERATED_BODY()
+
+	/** 이 체력 비율 이하에서 해당 파괴 단계에 진입한다. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (
+			ClampMin = "0.0",
+			ClampMax = "1.0"))
+	float HealthThreshold = 0.5f;
+
+	/** GC Damage Threshold를 넘기기 위한 External Strain. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (ClampMin = "0.0"))
+	float Strain = 550000.f;
+
+	/** GC 로컬 Bounds를 기준으로 계산할 Field 반경 배율. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (ClampMin = "0.1"))
+	float RadiusScale = 1.f;
+
+	/** GC 로컬 Bounds 중심으로부터의 Field 위치 오프셋. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction")
+	FVector LocalOffset = FVector::ZeroVector;
+
+	/** 분리된 파편에 적용할 힘. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (ClampMin = "0.0"))
+	float ImpulseStrength = 0.f;
+
+	/** Strain 이후 Impulse를 적용하기 전 대기 시간. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "Destruction",
+		meta = (
+			ClampMin = "0.0",
+			ClampMax = "0.2"))
+	float ImpulseDelay = 0.05f;
 };
 
 USTRUCT(BlueprintType)
@@ -68,6 +123,25 @@ struct STRIKEFORGE_API FBuildingVisualData
 	
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
+	
+	/**
+	* 해당 Tier의 파괴 연출에 사용할 GC.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
+	TSoftObjectPtr<UGeometryCollection> DestructionCollection;
+
+	/**
+	 * 체력에 따른 GC 파괴 단계.
+	 *
+	 * HealthThreshold 내림차순으로 정렬한다.
+	 * 마지막 원소는 반드시 HealthThreshold 0인 최종 파괴 단계다.
+	 *
+	 * [0] → GC Level 1
+	 * [1] → GC Level 2
+	 * [2] → GC Level 3
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
+	TArray<FBuildingDestruction> DestructionStages;
 
 	int32 FindConstructionStageIndex(float ProgressRatio) const
 	{
@@ -112,6 +186,52 @@ struct STRIKEFORGE_API FBuildingVisualData
 
 		return Result;
 	}
+	int32 FindDestructionStageIndex(float HealthRatio) const
+	{
+		HealthRatio = FMath::Clamp(
+			HealthRatio,
+			0.f,
+			1.f);
+
+		// 체력 0은 HandleHealthZero에서 처리한다.
+		if (HealthRatio <= 0.f || HealthRatio >= 1.f)
+		{
+			return INDEX_NONE;
+		}
+
+		int32 Result = INDEX_NONE;
+
+		for (int32 Index = 0; Index < DestructionStages.Num(); ++Index)
+		{
+			if (HealthRatio <=	DestructionStages[Index].HealthThreshold)
+			{
+				Result = Index;
+			}
+		}
+
+		return Result;
+	}
+	const FBuildingDestruction* GetDestructionStage(const int32 StageIndex) const
+	{
+		return DestructionStages.IsValidIndex(StageIndex)
+			? &DestructionStages[StageIndex]
+			: nullptr;
+	}
+	const FBuildingDestruction* GetFinalDestructionStage() const
+	{
+		if (DestructionStages.IsEmpty())
+		{
+			return nullptr;
+		}
+
+		const FBuildingDestruction& FinalStage =
+			DestructionStages.Last();
+
+		return FMath::IsNearlyZero(
+			FinalStage.HealthThreshold)
+				? &FinalStage
+				: nullptr;
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -124,73 +244,4 @@ struct STRIKEFORGE_API FBuildingAudioData
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
 	TSoftObjectPtr<USoundBase> ConstructionComplete;
 	
-};
-
-USTRUCT(BlueprintType)
-struct STRIKEFORGE_API FBuildingTier
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tier")
-	FBuildingConstructionData Construction;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
-	FBuildingStatData Stats;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
-	FBuildingVisualData Visual;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Tier")
-	FBuildingAudioData Audio;
-
-	/**
-	 * 생산 건물에서만 사용한다.
-	 * 건물별 기능 데이터가 더 늘어나면 Extension 구조로 이전한다.
-	 */
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,Category = "Tier|Production")
-	TArray<FName> SpawnableUnits;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|House")
-	int32 PopulationCapacity = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
-	float ExtractBaseWorkAmount = 10.f; // 일단 초당 증가량으로
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
-	int32 ExtractAmount = 5;
-};
-
-USTRUCT(BlueprintType)
-struct STRIKEFORGE_API FBuildingAppearance: public FTableRowBase
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Identity")
-	FText DisplayName;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Spawn")
-	TSoftClassPtr<ASFBaseBuilding> BuildingClass;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement",	meta = (ClampMin = "1"))
-	FIntPoint GridSize = FIntPoint(1, 1);
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Placement")
-	TSoftObjectPtr<UMaterialInterface>	PreviewMaterial;
-
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly, Category = "Audio")
-	TSoftObjectPtr<USoundBase> DestroyedSound;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect")
-	TSoftObjectPtr<UNiagaraSystem> DestroyedEffect;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier|Mining")
-	EResourceType CanDigResourceType;
-	
-	/** 배열 인덱스 0이 게임의 1티어 */
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Tiers")
-	TArray<FBuildingTier> Tiers;
-
-	const FBuildingTier* FindTier(int32 TierIndex) const
-	{
-		return Tiers.IsValidIndex(TierIndex)
-			? &Tiers[TierIndex]
-			: nullptr;
-	}
 };

@@ -8,6 +8,7 @@
 #include "InGame/Controller/SFRTSCameraPawn.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -20,6 +21,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Interfaces/Units/Targetable.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "TimerManager.h"
@@ -882,6 +884,11 @@ void USFMinimapPanelWidget::CreateMinimapMarkers()
     }
 
     CreateMarkersForTag(
+        CommanderMarkerActorTag,
+        ESFMinimapMarkerType::Commander
+    );
+
+    CreateMarkersForTag(
         AllyMarkerActorTag,
         ESFMinimapMarkerType::Ally
     );
@@ -939,9 +946,45 @@ void USFMinimapPanelWidget::CreateMarkersForTag(
             continue;
         }
 
+        ESFMinimapMarkerType ResolvedMarkerType = MarkerType;
+
+        if (MarkerType == ESFMinimapMarkerType::Building)
+        {
+            const ASFBaseBuilding* Building =
+                Cast<ASFBaseBuilding>(FoundActor);
+
+            ASFInGamePlayerController* PlayerController =
+                Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+            if (
+                IsValid(Building) &&
+                IsValid(PlayerController)
+                )
+            {
+                const int32 BuildingTeam =
+                    Building->GetTeamIndex();
+
+                const int32 LocalTeam =
+                    PlayerController->GetMyTeamIndex();
+
+                if (BuildingTeam == LocalTeam)
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::AllyBuilding;
+                }
+                else if (
+                    BuildingTeam != Targetable::NeutralTeam
+                    )
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::EnemyBuilding;
+                }
+            }
+        }
+
         CreateMarkerForActor(
             FoundActor,
-            MarkerType
+            ResolvedMarkerType
         );
     }
 }
@@ -1173,6 +1216,20 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers()
             MinimapPosition
         );
     }
+    CreateMarkersForTag(
+        AllyMarkerActorTag,
+        ESFMinimapMarkerType::Ally
+    );
+
+    CreateMarkersForTag(
+        EnemyMarkerActorTag,
+        ESFMinimapMarkerType::Enemy
+    );
+
+    CreateMarkersForTag(
+        BuildingMarkerActorTag,
+        ESFMinimapMarkerType::Building
+    );
 }
 
 void USFMinimapPanelWidget::SetMarkerLayerPosition(
@@ -1291,6 +1348,14 @@ FVector2D USFMinimapPanelWidget::GetMarkerSize(
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerSize;
 
+    case ESFMinimapMarkerType::AllyBuilding:
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return BuildingMarkerSize;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerSize;
+
     case ESFMinimapMarkerType::None:
     default:
         return FVector2D::ZeroVector;
@@ -1311,6 +1376,15 @@ FLinearColor USFMinimapPanelWidget::GetMarkerColor(
 
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerColor;
+
+    case ESFMinimapMarkerType::AllyBuilding:
+        return AllyMarkerColor;
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return EnemyMarkerColor;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerColor;
 
     case ESFMinimapMarkerType::None:
     default:

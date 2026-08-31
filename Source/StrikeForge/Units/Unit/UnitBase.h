@@ -16,6 +16,7 @@ class AUnitAIController;
 class UNiagaraSystem;
 class UAnimMontage;
 class ALanePath;
+class UAnimationAsset;
 
 /** 전투 상태 머신 */
 UENUM(BlueprintType)
@@ -290,6 +291,10 @@ public:
 	/** 대상 표면까지의 수평 거리. 건물처럼 큰 대상에서 필수 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	float GetDistanceToTargetEdge(const AActor* InTarget) const;
+
+	/** 유닛 초상화 애니메이션 설정 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
+	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
 
 	// ── 연출 훅 (BP 에서 구현) ──────────────────────────
 

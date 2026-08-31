@@ -7,14 +7,17 @@
 
 ASFMiningBuilding::ASFMiningBuilding()
 {
-	PrimaryActorTick.bCanEverTick = false;
-	
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
 }
 
 void ASFMiningBuilding::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (IsActorBeingDestroyed())
+	{
+		return;
+	}
 	
 	BindDelegateFunction();
 }
@@ -109,13 +112,6 @@ void ASFMiningBuilding::OnTierDeactivated()
 	Super::OnTierDeactivated();
 	
 	RefreshMiningState();
-}
-
-void ASFMiningBuilding::OnBuildingDestroyed()
-{
-	Super::OnBuildingDestroyed();
-	
-	Destroy();
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const

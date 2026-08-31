@@ -33,6 +33,7 @@ void USFSelectionPanelWidget::NativeConstruct()
             "TierUpButton OnClicked binding completed."
         );
     }
+
     else
     {
         SF_LOG(
@@ -42,6 +43,28 @@ void USFSelectionPanelWidget::NativeConstruct()
         );
     }
 
+
+    if (IsValid(RallyPointButton))
+    {
+        RallyPointButton->SetVisibility(
+            ESlateVisibility::Collapsed
+        );
+        RallyPointButton->OnClicked.RemoveDynamic(
+            this,
+            &USFSelectionPanelWidget::HandleRallyPointButtonClicked
+        );
+
+        RallyPointButton->OnClicked.AddUniqueDynamic(
+            this,
+            &USFSelectionPanelWidget::HandleRallyPointButtonClicked
+        );
+
+        SF_LOG(
+            Log,
+            "[SFSelectionPanelWidget] "
+            "RallyPointButton OnClicked binding completed."
+        );
+    }
     ClearSelection();
 }
 
@@ -52,7 +75,6 @@ void USFSelectionPanelWidget::ShowSelection(
     CurrentSelectableInfo = SelectableInfo;
     bHasSelection = true;
 
-    // 버튼 표시 여부는 BP의 SelectableType 조건이 결정한다.
     BP_OnSelectionInfoUpdated(
         CurrentSelectableInfo
     );
@@ -66,6 +88,19 @@ void USFSelectionPanelWidget::ShowSelection(
     if (IsValid(TierUpButton))
     {
         TierUpButton->SetIsEnabled(true);
+    }
+
+    if (IsValid(RallyPointButton))
+    {
+        const bool bIsProductionBuilding =
+            SelectableInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding;
+
+        RallyPointButton->SetVisibility(
+            bIsProductionBuilding
+            ? ESlateVisibility::Visible
+            : ESlateVisibility::Collapsed
+        );
     }
 
     SF_LOG(
@@ -103,6 +138,15 @@ void USFSelectionPanelWidget::ClearSelection()
             ESlateVisibility::Collapsed
         );
     }
+
+    if (IsValid(RallyPointButton))
+    {
+        RallyPointButton->SetVisibility(
+            ESlateVisibility::Collapsed
+        );
+    }
+
+    SetRallyPointButtonVisible(false);
 }
 
 bool USFSelectionPanelWidget::HasSelection() const
@@ -112,11 +156,11 @@ bool USFSelectionPanelWidget::HasSelection() const
 
 void USFSelectionPanelWidget::NativeDestruct()
 {
-    if (IsValid(TierUpButton))
+    if (IsValid(RallyPointButton))
     {
-        TierUpButton->OnClicked.RemoveDynamic(
+        RallyPointButton->OnClicked.RemoveDynamic(
             this,
-            &USFSelectionPanelWidget::HandleTierUpgradeButtonClicked
+            &USFSelectionPanelWidget::HandleRallyPointButtonClicked
         );
     }
 
@@ -139,4 +183,37 @@ bool USFSelectionPanelWidget::IsTierUpButtonHovered() const
     return
         IsValid(TierUpButton) &&
         TierUpButton->IsHovered();
+}
+
+void USFSelectionPanelWidget::SetRallyPointButtonVisible(bool bVisible)
+{
+    if (!IsValid(RallyPointButton))
+    {
+        return;
+    }
+
+    RallyPointButton->SetVisibility(
+        bVisible
+        ? ESlateVisibility::Visible
+        : ESlateVisibility::Collapsed
+    );
+}
+
+void USFSelectionPanelWidget::HandleRallyPointButtonClicked()
+{
+    OnRallyPointRequested.Broadcast();
+}
+
+void USFSelectionPanelWidget::SetTierUpButtonVisible(bool bVisible)
+{
+    if (!IsValid(TierUpButton))
+    {
+        return;
+    }
+
+    TierUpButton->SetVisibility(
+        bVisible
+        ? ESlateVisibility::Visible
+        : ESlateVisibility::Collapsed
+    );
 }

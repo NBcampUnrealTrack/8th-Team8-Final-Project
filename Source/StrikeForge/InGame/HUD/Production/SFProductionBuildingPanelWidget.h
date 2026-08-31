@@ -11,6 +11,8 @@ class USFProductionUnitEntryWidget;
 class UImage;
 class UProductComponent;
 class UProgressBar;
+class USoundBase;
+class UButton;
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFProductionBuildingPanelWidget
@@ -80,6 +82,21 @@ public:
     )
     TObjectPtr<UImage> QueueIcon05 = nullptr;
 
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton01 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton02 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton03 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton04 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton05 = nullptr;
+
     UFUNCTION()
     void HandleProductRatioChanged(
         float ProductRatio
@@ -120,6 +137,23 @@ private:
         const TArray<FProductInfo>& ProductLine
     );
 
+    UFUNCTION()
+    void HandleQueueButton01Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton02Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton03Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton04Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton05Clicked();
+
+    void CancelProductionAtQueueIndex(int32 QueueIndex);
+
 protected:
     UPROPERTY(
         BlueprintReadOnly,
@@ -142,6 +176,13 @@ protected:
         meta = (BindWidget)
     )
     TObjectPtr<UProgressBar> ProductionProgressBar = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Production|Sound"
+    )
+    TObjectPtr<USoundBase> UnitProductionClickSound = nullptr;
 
 private:
     UPROPERTY(Transient)

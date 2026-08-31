@@ -114,6 +114,9 @@ public:
 	 */
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
+	// 유닛 선택시 재생될 사운드를 Return하는 함수.
+	// 추후 UnitStatData.h에 유닛별 선택음을 추가해야한다
+	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }

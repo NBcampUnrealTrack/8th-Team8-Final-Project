@@ -116,8 +116,4 @@ protected:
 
 	// 플레이어 컨트롤러 불러오기 타이머
 	FTimerHandle LoadPCTimer;
-
-	FTimerHandle CooldownTimer_Skill1;
-	FTimerHandle CooldownTimer_Skill2;
-	FTimerHandle CooldownTimer_Skill3;
 };

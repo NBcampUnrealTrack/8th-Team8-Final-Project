@@ -66,9 +66,6 @@ void ASFCommander::BeginPlay()
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(LoadPCTimer);
-	GetWorldTimerManager().ClearTimer(CooldownTimer_Skill1);
-	GetWorldTimerManager().ClearTimer(CooldownTimer_Skill2);
-	GetWorldTimerManager().ClearTimer(CooldownTimer_Skill3);
 	
 	if (CommandAction == ECommandAction::BUILD &&
 	EndPlayReason == EEndPlayReason::Destroyed)

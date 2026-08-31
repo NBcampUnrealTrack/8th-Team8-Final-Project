@@ -24,9 +24,8 @@ public class StrikeForge : ModuleRules
 			
 			// gc
 			"GeometryCollectionEngine",
+			"FieldSystemEngine",
         });
-
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
 

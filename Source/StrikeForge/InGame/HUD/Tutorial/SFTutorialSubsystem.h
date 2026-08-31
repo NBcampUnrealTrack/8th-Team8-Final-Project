@@ -19,6 +19,7 @@ class UDataTable;
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
 
 class ASFTutorialGhostActor;
+class USFBuildingDefinition;
 
 /** 목표 대기가 시작됐다. 목표 배너를 띄우는 쪽이 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -53,6 +54,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 
 /** 단계별 안내가 끝났거나 취소됐다. 스포트라이트를 지울 때 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFTutorialGuideFinished);
+
+/**
+ * 지금 겨누고 있는 자리가 안내가 허용하지 않는 곳으로 바뀌었다.
+ *
+ * 배치 미리보기가 매 틱 자리를 묻는데, 그 결과가 바뀔 때만 알린다.
+ * 매 틱 알리면 구독하는 쪽이 같은 문구를 초당 60번 다시 세운다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFTutorialBuildBlockedChanged, bool, bBlocked);
 
 /**
  * 튜토리얼을 다시 열어야 한다. 위젯을 띄우는 쪽이 구독한다.
@@ -159,6 +168,37 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Guide")
     int32 GetCurrentGuideStepIndex() const;
 
+    /**
+     * 지금 안내가 이 지점의 건설을 허용하는가.
+     *
+     * 안내 중이 아니거나, 지금 칸이 자리를 제한하지 않으면 언제나 true 다.
+     * 제한하는 칸이면 표시된 반경 안일 때만 true 다.
+     *
+     * ── 건설 배치 쪽에서 이 함수를 부르는 이유 ─────────────
+     *
+     * 목표 판정만으로 막으면 플레이어는 엉뚱한 곳에 건물을 지어버린 뒤에야
+     * "안 넘어가네" 를 알게 된다. 자원은 이미 나갔고 건물은 서 있는데
+     * 튜토리얼은 멈춘 상태가 된다.
+     *
+     * 배치 단계에서 막으면 애초에 지어지지 않으므로 그런 상태가 없다.
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Guide",
+        meta = (WorldContext = "InWorldContext"))
+    static bool IsBuildLocationAllowed(const UObject* InWorldContext, const FVector& InLocation);
+
+    /**
+     * 배치 고스트를 지운다. 칸은 그대로 둔다.
+     *
+     * 플레이어가 그 자리에 짓겠다고 클릭한 순간 부른다. 고스트는 "여기에
+     * 지으세요" 라는 안내인데, 짓기 시작한 뒤에도 남아 있으면 실제 건물과
+     * 겹쳐서 무엇이 진짜인지 알 수 없게 된다.
+     *
+     * 칸을 넘기지는 않는다 — 건설이 끝났는지는 여전히 목표 신호가 정한다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Guide",
+        meta = (WorldContext = "InWorldContext"))
+    static void HidePlacementGhost(const UObject* InWorldContext);
+
     // ── 목표 달성 신호 (게임플레이 쪽에서 호출) ─────────
 
     /**
@@ -224,14 +264,8 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
     FSFTutorialGuideFinished OnGuideFinished;
 
-    /**
-     * 배치 고스트로 쓸 액터 클래스.
-     *
-     * 반투명 회색 머티리얼은 이 클래스의 블루프린트에서 지정한다 — 어떤
-     * 머티리얼이 어울리는지는 아트 쪽 판단이라 C++ 에 박지 않는다.
-     */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Tutorial|Guide")
-    TSoftClassPtr<ASFTutorialGhostActor> GhostActorClass;
+    UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
+    FSFTutorialBuildBlockedChanged OnBuildBlockedChanged;
 
     /** 콘솔 명령 sf.Tutorial.DumpState 가 호출한다 */
     void DumpState() const;
@@ -246,8 +280,54 @@ private:
     /** 안내 상태만 비운다. 고스트와 타이머도 함께 정리한다 */
     void ClearGuideState();
 
+    /**
+     * 지금 안내 칸이 "표시한 자리에서" 를 요구할 때, 신호가 그 자리에서
+     * 왔는지 본다.
+     *
+     * 요구하지 않는 칸이거나 위치를 알아낼 수 없으면 true 를 돌려준다.
+     * 여기서 막아버리면 위치를 못 읽는 신호원 하나 때문에 튜토리얼이
+     * 영영 멈춘다 — 조용히 통과시키고 경고만 남기는 편이 낫다.
+     */
+    bool IsGuideStepLocationSatisfied(const UObject* InWorldContext) const;
+
+    /** 신호를 보낸 쪽의 월드 위치를 찾는다. 액터든 컴포넌트든 받는다 */
+    static bool TryGetNotifierLocation(const UObject* InWorldContext, FVector& OutLocation);
+
+    /** 값이 바뀔 때만 알린다 */
+    void SetBuildBlocked(bool bInBlocked);
+
     void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
     void DestroyPlacementGhost();
+
+    /**
+     * 건물 클래스에서 메시 컴포넌트의 겉모습을 꺼낸다.
+     *
+     * 건물을 스폰하지 않는다 — 클래스 기본값(CDO)과 컴포넌트 템플릿만
+     * 들여다본다. 스폰하면 BeginPlay 가 돌아 전투 레지스트리와 건설 그리드에
+     * 등록되어 버린다.
+     *
+     * OutMesh 는 비어 있을 수 있다. 이 프로젝트의 건물은 메시를 런타임에
+     * Definition 에서 주입받으므로 클래스에는 상대 트랜스폼만 남아 있다.
+     * 그래도 그 트랜스폼은 꺼내 써야 하므로, 메시 유무와 반환값을 분리한다.
+     *
+     * @return 스태틱 메시 컴포넌트를 찾았으면 true
+     */
+    static bool ResolveBuildingMeshTemplate(
+        UClass* InBuildingClass,
+        UStaticMesh*& OutMesh,
+        FTransform& OutRelativeTransform);
+
+    /**
+     * 건물 Definition 에서 겉모습을 꺼낸다.
+     *
+     * 메시는 Definition 의 티어에서, 상대 트랜스폼은 Definition 이 가리키는
+     * 건물 클래스에서 가져와 합친다.
+     */
+    static bool ResolveDefinitionGhostVisual(
+        const USFBuildingDefinition* InDefinition,
+        int32 InTierIndex,
+        UStaticMesh*& OutMesh,
+        FTransform& OutRelativeTransform);
 
     UFUNCTION()
     void HandleGuideAutoAdvance();
@@ -290,6 +370,9 @@ private:
     TObjectPtr<ASFTutorialGhostActor> ActiveGhost = nullptr;
 
     FTimerHandle GuideAutoAdvanceHandle;
+
+    /** 마지막으로 알린 배치 가능 여부. 값이 바뀔 때만 브로드캐스트한다 */
+    bool bLastBuildBlocked = false;
 
     /**
      * BeginGuide 안에서 EnterGuideStep 이 도는 동안 켜진다.

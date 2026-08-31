@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectableInfo.generated.h"
 
+class UAnimationAsset;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -91,6 +92,13 @@ public:
         Category = "SF|Selection|UI"
     )
     TObjectPtr<UTexture2D> PortraitImage = nullptr;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "SF|Selection|UI"
+    )
+    TObjectPtr<UAnimationAsset> PortraitAnimation = nullptr;
 
     UPROPERTY(
         EditAnywhere,

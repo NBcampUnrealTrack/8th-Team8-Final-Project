@@ -33,6 +33,7 @@ FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 	FSFSelectableInfo Info;
 	Info.SelectableType = ESFSelectableType::Commander;
 	Info.DataRowName    = "";      // 행 이름 필드 추가 필요
+	Info.PortraitAnimation = PortraitIdleAnimation;
 	return Info;
 }
 

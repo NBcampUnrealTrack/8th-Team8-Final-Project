@@ -6,6 +6,7 @@
 #include "SFInGamePlayerController.generated.h"
 
 class ASFCommander;
+class AActor;
 class UBuildingPlacement;
 class ASFBaseBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
@@ -105,9 +106,16 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|Command")
     void BeginMoveCommand();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command")
+    void BeginRallyPointCommand();
+
     // team
     FORCEINLINE void SetMyTeamIndex(const int32 InMyTeamIndex) { MyTeamIndex = InMyTeamIndex; }
+
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
+
+
 protected:
     virtual void BeginPlay() override;
 
@@ -168,6 +176,32 @@ private:
     void HandleSkillCommandInput(int32 Tier);
 
     bool ExecutePendingUnitCommandUnderCursor();
+
+    void CollectLocallyControllableActors(
+        TArray<AActor*>& OutActors
+    ) const;
+
+    void ExecuteUnitCommandForActor(
+        AActor* Actor,
+        ESFUnitCommandMode CommandMode,
+        const FVector& Location,
+        AActor* Target
+    ) const;
+
+    bool IsValidAttackTarget(const AActor* Actor) const;
+
+    bool HasLocallyControllableSelection() const;
+
+    bool IsLocallyControllableActor(const AActor* Actor) const;
+
+    void HandleRallyPointInput();
+
+    bool ExecutePendingRallyPointUnderCursor();
+    
+    // 선택하면 소리재생 함수
+    UFUNCTION(BlueprintCallable)
+    void PlaySelectionSound(AActor* SelectedTarget);
+    
     // 변수 영역
 protected:
 
@@ -290,6 +324,13 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Input|Action"
+    )
+    TObjectPtr<UInputAction> RallyPointAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Selection"
     )
     float SelectionDragThreshold = 8.f;
@@ -364,8 +405,11 @@ private:
     ESFUnitCommandMode PendingUnitCommandMode = ESFUnitCommandMode::None;
     bool bCommandClickConsumed = false;
 
+    bool bRallyPointPending = false;
+
     // team
     int32 MyTeamIndex = 0;
+    
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

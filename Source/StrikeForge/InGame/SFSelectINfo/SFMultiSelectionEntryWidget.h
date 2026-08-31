@@ -10,6 +10,7 @@ class UButton;
 class UImage;
 class UProgressBar;
 class UHealthComponent;
+class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFOnMultiSelectionEntryClicked,
@@ -57,6 +58,13 @@ protected:
 
     UPROPERTY(Transient, BlueprintReadOnly, Category = "SF|Selection")
     int32 EntryIndex = INDEX_NONE;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Selection|Sound"
+    )
+    TObjectPtr<USoundBase> SelectionClickSound = nullptr;
 
 private:
     UFUNCTION()

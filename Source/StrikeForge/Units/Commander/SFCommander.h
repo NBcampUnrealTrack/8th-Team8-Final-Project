@@ -9,6 +9,7 @@
 #include "SFCommander.generated.h"
 
 class ASFInGamePlayerController;
+class UAnimationAsset;
 class USFBuffComponent;
 
 UENUM(BlueprintType)
@@ -53,6 +54,10 @@ public:
 	// 스태틱메시의 GetBounds()를 가져와 Bounds에 등록해주세요.
 	UFUNCTION(BlueprintCallable, Category = "Command")
 	void MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Rotation = 0.f);
+
+	// 지휘관 초상화 애니메이션 설정
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
+	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
 
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);

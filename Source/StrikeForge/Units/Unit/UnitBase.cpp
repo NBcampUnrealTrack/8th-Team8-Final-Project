@@ -567,6 +567,7 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 
 	Info.DataRowName = UnitRowName;
 	Info.SelectableType = ESFSelectableType::Unit;
+	Info.PortraitAnimation = PortraitIdleAnimation;
 
 	// ── 런타임 값 ───────────────────────────────────────
 	if (IsValid(HealthComponent))
@@ -632,6 +633,20 @@ const FHealthData AUnitBase::GetHealthData_Implementation()
 	Data.CurrentTier = -1;
 	Data.HealthComponent = HealthComponent;
 	return Data;
+}
+
+USoundBase* AUnitBase::GetSelectionSound_Implementation()
+{
+	// 유닛별 사운드를 캐싱하고 넘겨줘야함
+	// ex) UnitStatData.h
+	// UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Selection") TSoftObjectPtr<USoundBase> SelectionSound;
+	// ex) UnitBase.h
+	// UPROPERTY(Transient)
+	// TObjectPtr<USoundBase> CachedSelectionSound = nullptr;
+	// ex) UnitBase.cpp 의 InitStat()함수안에서 미리 소리 로딩후 Cached에 저장
+	// 
+	// 이후 return CachedSelectionSound;
+	return nullptr;
 }
 
 // ─────────────────────────────────────────────────────────

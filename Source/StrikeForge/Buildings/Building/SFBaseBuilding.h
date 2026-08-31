@@ -17,6 +17,10 @@ class UNiagaraSystem;
 class UWidgetComponent;
 
 class USFBuildingDefinition;
+// gc
+class UGeometryCollection;
+class ASFBuildingDestructionActor;
+class USceneComponent;
 
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
@@ -52,6 +56,9 @@ struct FBuildingTierRuntimeAssets
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> DestroyedMesh = nullptr;
+	// gc
+	UPROPERTY()
+	TObjectPtr<UGeometryCollection> DestructionCollection = nullptr;
 	
 	UPROPERTY()
 	TObjectPtr<USoundBase> ConstructionStartSound = nullptr;
@@ -71,6 +78,7 @@ struct FBuildingTierRuntimeAssets
 		ConstructionMeshes.Reset();
 		CompletedMesh = nullptr;
 		DestroyedMesh = nullptr;
+		DestructionCollection = nullptr; // gc
 		DamageMeshes.Reset();
 		
 		ConstructionStartSound = nullptr;
@@ -92,7 +100,7 @@ public:
 	virtual void TakeDamaged_Implementation(float InDamage) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
-	
+	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 프리뷰 색상 갱신 */
 	void ApplyPreviewMaterial(bool bCanPlace);
 	
@@ -117,8 +125,11 @@ public:
 	FORCEINLINE int32 GetCurrentTier() const { return CurrentTier; }
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
-	FORCEINLINE FResources GetConstructCost() const { return CurrentConstructBuildCost; }
+	FResources GetConstructCost() const;
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
+	FResources GetUpgradeCost() const;
+	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return ConfiguredGridSize; }
 
@@ -217,10 +228,11 @@ private:
 	
 	// 데미지 적용조건 함수
 	bool CanReceiveDamage() const;
-	// 체력 변경에 따른 이벤트함수
+	/** 체력 변경을 완료 건물의 손상 외형에 반영한다. */
 	UFUNCTION() // BIND with healthcomponent.applydamage
 	void HandleHealthChanged(float InBeforeHP, float InCurrentHP, float InMaxHP);
-	void ChangeDamageStage(int32 InDamageStageIndex);
+	/** 체력 비율에 맞춰 GC 또는 DamageMesh 단계를 갱신한다. */
+	void UpdateDamageVisual(float PreviousHealthRatio, float CurrentHealthRatio);
 	UFUNCTION()
 	void HandleHealthZero();
 	// 박스 콜리젼 셋Set
@@ -232,10 +244,16 @@ private:
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
+
+	/** GC 액터가 없으면 생성하고 기존 StaticMesh를 숨긴다. */
+	bool EnsureDestructionActor();
+
+	/** 기존 GC를 제거하고 StaticMesh를 다시 표시한다. */
+	void ClearDestructionVisual();
 	
-	// grid system
-	void SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo);
 	
+	/** 건설 준비 중이면 PendingTier, 아니면 CurrentTier의 데이터를 반환한다. */
+	const FSFBuildingTierData* GetCostTierInfo() const;
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
@@ -261,11 +279,6 @@ protected:
 	int32 CurrentStageIndex = 0;
 	// 이번 건설에서 증가시킬 전체 체력
 	float ConstructionCurrentHealthIncrease  = 0.f;
-	// cost
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	FResources CurrentConstructBuildCost;
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
-	FResources CurrentUpgradeBuildCost;
 
 	/**
 	 * Definition의 공통 Tier 부분을 복사한 런타임 캐시.
@@ -301,9 +314,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
 	float HitRotationAmount = 2.0f;
 
-	FVector OriginalMeshLocation;
-	FRotator OriginalMeshRotation;
+	/** 이번 HitReact가 움직일 실제 시각 컴포넌트 */
+	TWeakObjectPtr<USceneComponent> ActiveHitReactionTarget;
+
+	/** HitReact 시작 전 대상의 World Transform */
+	FTransform OriginalHitReactionTransform =
+		FTransform::Identity;
+
+	/** 현재 화면에 표시되는 컴포넌트를 반환한다. */
+	USceneComponent* ResolveHitReactionTarget() const;
+
+	/** 진행 중인 HitReact를 중단하고 대상을 원위치로 복구한다. */
+	void StopHitReaction();
+	
 	FVector HitLocalDirection = FVector::ForwardVector;
+
 #pragma endregion 
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()
@@ -311,12 +336,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FBuildingGridInfo RegisteredGridInfo;
 	
+	// preview ghost
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
 	
+	// sound
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UnderConstructionSelectionSound = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> CompletedSelectionSound = nullptr;
 	UPROPERTY()
 	TObjectPtr<USoundBase> DestroyedSound;
 	UPROPERTY()
@@ -331,4 +361,8 @@ private:
 	// 빌딩DA
 	UPROPERTY(EditInstanceOnly,BlueprintReadOnly,Category = "SF|Building|Definition",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
+	
+	// gc
+	UPROPERTY(Transient)
+	TObjectPtr<ASFBuildingDestructionActor> DestructionActor;
 };

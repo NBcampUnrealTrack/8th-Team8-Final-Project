@@ -10,6 +10,9 @@ class UButton;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(
     FSFOnTierUpgradeRequested
 );
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(
+    FSFOnRallyPointRequested
+);
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFSelectionPanelWidget
@@ -45,11 +48,21 @@ public:
     )
     FSFOnTierUpgradeRequested OnTierUpgradeRequested;
 
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Selection|Building"
+    )
+    FSFOnRallyPointRequested OnRallyPointRequested;
+
     UFUNCTION(
         BlueprintPure,
         Category = "SF|Selection|Building"
     )
     bool IsTierUpButtonHovered() const;
+
+    void SetRallyPointButtonVisible(bool bVisible);
+
+    void SetTierUpButtonVisible(bool bVisible);
 
 protected:
     virtual void NativeConstruct() override;
@@ -82,6 +95,16 @@ protected:
     )
     TObjectPtr<UButton> TierUpButton = nullptr;
 
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UButton> RallyPointButton = nullptr;
+
+private:
+    UFUNCTION()
+    void HandleRallyPointButtonClicked();
 
     // 변수 영역
 protected:

@@ -29,9 +29,7 @@ public:
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
-	// when construct destroyed, play effects
-	virtual void OnBuildingDestroyed() override;
-	
+
 	// ISFGridResourceConsumer
 	virtual bool CanAcceptResource(
 		const AResourceBase* InResource) const override;

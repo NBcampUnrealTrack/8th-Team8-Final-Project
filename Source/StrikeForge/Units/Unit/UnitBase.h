@@ -17,6 +17,7 @@ class AUnitAIController;
 class UNiagaraSystem;
 class UAnimMontage;
 class ALanePath;
+class UAnimationAsset;
 
 /** 전투 상태 머신 */
 UENUM(BlueprintType)
@@ -114,6 +115,9 @@ public:
 	 */
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
+	// 유닛 선택시 재생될 사운드를 Return하는 함수.
+	// 추후 UnitStatData.h에 유닛별 선택음을 추가해야한다
+	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 체력 변화를 구독해 선택 패널을 갱신하려면 이걸 쓴다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE UHealthComponent* GetHealthComponent() const { return HealthComponent; }
@@ -291,6 +295,10 @@ public:
 	/** 대상 표면까지의 수평 거리. 건물처럼 큰 대상에서 필수 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	float GetDistanceToTargetEdge(const AActor* InTarget) const;
+
+	/** 유닛 초상화 애니메이션 설정 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
+	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
 
 	// ── 연출 훅 (BP 에서 구현) ──────────────────────────
 

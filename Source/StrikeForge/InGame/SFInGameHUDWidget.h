@@ -20,6 +20,7 @@ class USFMultiSelectionPanelWidget;
 class UDataTable;
 class USFStageIntroWidget;
 class ASFUnitPortraitActor;
+class USoundBase;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -70,10 +71,16 @@ public:
     const TArray<TObjectPtr<AActor>>& GetSelectedActors() const { return SelectedActors; }
 
     UFUNCTION(BlueprintCallable, Category = "SF|Command|Feedback")
-    void ShowMoveDestinationIndicator(const FVector& WorldLocation);
+    void ShowMoveDestinationIndicator(const FVector& WorldLocation, bool bIsAttack);
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Production")
     bool RequestProductionBySlot(int32 SlotIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
+    void PlayBuildStartSound();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
+    void PlayResourceWarningSound();
 
 protected:
     virtual void NativeConstruct() override;
@@ -205,6 +212,9 @@ private:
     
     FName ResolveStageIntroRowName() const;
 
+    UFUNCTION()
+    void HandleRallyPointRequested();
+
     // ==================== Variables ====================
 
 protected:
@@ -303,6 +313,9 @@ protected:
     TObjectPtr<UMaterialInterface> MoveDestinationIndicatorMaterial = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> AttackDestinationIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     FVector MoveDestinationIndicatorSize = FVector(24.f, 70.f, 70.f);
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
@@ -319,6 +332,18 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
     FName StageIntroFallbackRowName = NAME_None;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildModeOpenSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildModeCloseSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildStartSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
 private:
     UPROPERTY(Transient)

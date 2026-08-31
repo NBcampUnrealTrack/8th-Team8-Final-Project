@@ -4,7 +4,9 @@
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Interfaces/Units/Damagable.h"
 #include "GameFramework/Pawn.h"
+#include "Units/Unit/UnitBase.h"
 #include "Logging/SFLog.h"
+
 
 UCombatTargetComponent::UCombatTargetComponent()
 	: bRegistered(false)
@@ -96,6 +98,42 @@ void UCombatTargetComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void UCombatTargetComponent::SetTeamIndex(int32 InTeamIndex)
 {
+	AActor* Owner = GetOwner();
+
+	if (
+		IsValid(Owner) &&
+		Owner->IsA<AUnitBase>() &&
+		!Owner->ActorHasTag(FName(TEXT("MinimapCommander")))
+		)
+	{
+		const USFCombatSubsystem* Combat =
+			USFCombatSubsystem::Get(this);
+
+		const int32 LocalTeam =
+			Combat
+			? Combat->GetLocalPlayerTeam()
+			: Targetable::PlayerTeam;
+
+		Owner->Tags.Remove(
+			FName(TEXT("MinimapAlly"))
+		);
+
+		Owner->Tags.Remove(
+			FName(TEXT("MinimapEnemy"))
+		);
+
+		if (InTeamIndex != Targetable::NeutralTeam)
+		{
+			Owner->Tags.AddUnique(
+				FName(
+					InTeamIndex == LocalTeam
+					? TEXT("MinimapAlly")
+					: TEXT("MinimapEnemy")
+				)
+			);
+		}
+	}
+
 	if (TeamIndex == InTeamIndex) return;
 
 	TeamIndex = InTeamIndex;

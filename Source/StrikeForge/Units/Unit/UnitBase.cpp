@@ -3,6 +3,7 @@
 #include "UnitAIController.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
@@ -165,6 +166,8 @@ AUnitBase::AUnitBase()
 	StatusWidget->SetupAttachment(RootComponent);
 	StatusWidget->SetWidgetSpace(EWidgetSpace::Screen);
 	StatusWidget->SetRelativeLocation(FVector(0.f, 0.f, 130.f));
+
+	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 
 	// 스폰되든 레벨에 배치되든 자동으로 AI 가 붙는다
 	AIControllerClass = AUnitAIController::StaticClass();

@@ -193,6 +193,9 @@ void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
 {
     MyCommander = InCommander;
+
+    OnSkillInput.Clear();
+    OnSkillInput.AddUniqueDynamic(InCommander, &ASFCommander::ActiveCommanderSkill);
 }
 
 void ASFInGamePlayerController::BeginPlay()
@@ -362,6 +365,21 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::HandleMoveCommandModeInput
         );
+    }
+
+    TArray<TWeakObjectPtr<UInputAction>> SkillArray = { CommanderSkillAction1,CommanderSkillAction2 ,CommanderSkillAction3 };
+    for (int32 i = 0; i < SkillArray.Num(); i++)
+    {
+        if (SkillArray[i].IsValid())
+        {
+            EnhancedInputComponent->BindAction(
+                SkillArray[i].Get(),
+                ETriggerEvent::Started,
+                this,
+                &ASFInGamePlayerController::HandleSkillCommandInput,
+                i + 1
+            );
+        }
     }
 }
 
@@ -992,6 +1010,13 @@ void ASFInGamePlayerController::HandleStopCommandInput()
 void ASFInGamePlayerController::HandleMoveCommandModeInput()
 {
     BeginMoveCommand();
+}
+
+void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
+{
+    SF_LOG(Log, "Commander Skill: Tier%d", Tier);
+    
+    OnSkillInput.Broadcast(Tier);
 }
 
 void ASFInGamePlayerController::RequestProductionBySlot(int32 SlotIndex)

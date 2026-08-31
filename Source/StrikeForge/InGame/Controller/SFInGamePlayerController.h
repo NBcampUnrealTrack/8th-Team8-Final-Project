@@ -48,6 +48,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
     FVector2D,
     EndScreenPosition
 );
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnSkillInput, int32, SkillTier);
+
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
     : public APlayerController
@@ -161,6 +164,8 @@ private:
     void HandleStopCommandInput();
 
     void HandleMoveCommandModeInput();
+
+    void HandleSkillCommandInput(int32 Tier);
 
     bool ExecutePendingUnitCommandUnderCursor();
     // 변수 영역
@@ -321,6 +326,15 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> MoveCommandModeAction = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction1 = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction2 = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction3 = nullptr;
+
 private:
     UPROPERTY(
         Transient
@@ -365,6 +379,12 @@ public:
         Category = "SF|Input"
     )
     FSFOnMoveInput OnMoveInput;
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Input"
+    )
+    FSFOnSkillInput OnSkillInput;
 
     UPROPERTY(
         BlueprintAssignable,

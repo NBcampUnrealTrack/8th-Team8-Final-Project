@@ -99,7 +99,7 @@ public:
 	virtual void TakeDamaged_Implementation(float InDamage) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
-	
+	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 프리뷰 색상 갱신 */
 	void ApplyPreviewMaterial(bool bCanPlace);
 	
@@ -333,12 +333,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))
 	FBuildingGridInfo RegisteredGridInfo;
 	
+	// preview ghost
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> BuildingPreviewMaterialInstance;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> OverlayMID;
 	
+	// sound
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> UnderConstructionSelectionSound = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> CompletedSelectionSound = nullptr;
 	UPROPERTY()
 	TObjectPtr<USoundBase> DestroyedSound;
 	UPROPERTY()

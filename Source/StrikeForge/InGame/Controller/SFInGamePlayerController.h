@@ -192,6 +192,11 @@ private:
     void HandleRallyPointInput();
 
     bool ExecutePendingRallyPointUnderCursor();
+    
+    // 선택하면 소리재생 함수
+    UFUNCTION(BlueprintCallable)
+    void PlaySelectionSound(AActor* SelectedTarget);
+    
     // 변수 영역
 protected:
 
@@ -390,6 +395,7 @@ private:
 
     // team
     int32 MyTeamIndex = 0;
+    
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

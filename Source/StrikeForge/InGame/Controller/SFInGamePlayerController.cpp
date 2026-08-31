@@ -21,6 +21,7 @@
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
+#include "Kismet/GameplayStatics.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -1449,4 +1450,30 @@ bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
     );
 
     return true;
+}
+
+void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
+{
+    // 소리는 내 컴퓨터에서만 들려야함. 멀티가 아니라서 상관없지만 논리상 IsLocalController 조건추가
+    if (!IsLocalController() ||
+       !IsValid(SelectedTarget) ||
+       !SelectedTarget->Implements<USFSelectable>())
+    {
+        return;
+    }
+
+    USoundBase* SelectionSound =
+        ISFSelectable::Execute_GetSelectionSound(
+            SelectedTarget);
+
+    if (!IsValid(SelectionSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySoundAtLocation(
+        this,
+        SelectionSound,
+        SelectedTarget->GetActorLocation()
+    );
 }

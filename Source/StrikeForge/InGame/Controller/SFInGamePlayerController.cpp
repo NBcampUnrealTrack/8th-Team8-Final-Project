@@ -662,7 +662,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     PendingSpawnedBuildingRef = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
-    OnConfirmBuildInput.Broadcast();
+    //OnConfirmBuildInput.Broadcast();
     
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     Commander->MoveToBuild(
@@ -675,7 +675,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
 
 void ASFInGamePlayerController::HandleCancelBuildInput()
 {
-    OnCancelBuildInput.Broadcast();
+    //OnCancelBuildInput.Broadcast();
 
     if (IsValid(InGameHUDWidget))
     {
@@ -840,7 +840,7 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         return;
     }
 
-    OnMoveInput.Broadcast(Destination);
+    //OnMoveInput.Broadcast(Destination);
 
     // 명령 대상 수집.
     // 다중 선택은 HUD 가 관리하므로 거기서 가져오고,

@@ -29,13 +29,13 @@ enum class ESFUnitCommandMode : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FSFOnMoveInput,
-    FVector,
-    Destination
-);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+//    FSFOnMoveInput,
+//    FVector,
+//    Destination
+//);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFOnSelectionDragStarted,
     FVector2D,
@@ -374,11 +374,12 @@ public:
     )
     FSFOnSelectInput OnSelectInput;
 
-    UPROPERTY(
-        BlueprintAssignable,
-        Category = "SF|Input"
-    )
-    FSFOnMoveInput OnMoveInput;
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnMoveInput OnMoveInput;
 
     UPROPERTY(
         BlueprintAssignable,
@@ -386,17 +387,19 @@ public:
     )
     FSFOnSkillInput OnSkillInput;
 
-    UPROPERTY(
-        BlueprintAssignable,
-        Category = "SF|Input"
-    )
-    FSFOnConfirmBuildInput OnConfirmBuildInput;
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnConfirmBuildInput OnConfirmBuildInput;
 
-    UPROPERTY(
-        BlueprintAssignable,
-        Category = "SF|Input"
-    )
-    FSFOnCancelBuildInput OnCancelBuildInput;
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnCancelBuildInput OnCancelBuildInput;
 
     UPROPERTY(
         BlueprintAssignable,

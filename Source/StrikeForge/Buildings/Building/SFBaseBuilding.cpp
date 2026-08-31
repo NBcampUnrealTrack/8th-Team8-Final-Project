@@ -292,6 +292,11 @@ void ASFBaseBuilding::BeginConstruction()
 		DeactivateActiveTier();
 		OnUpgradeStarted();
 	}
+
+	Tags.AddUnique(
+		FName(TEXT("MinimapBuilding"))
+	);
+
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	ProgressComponent->StartProgress();
 }

@@ -64,6 +64,8 @@ public:
 
     void SetTierUpButtonVisible(bool bVisible);
 
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection|Command")
+    void SetCommandButtonsVisible(bool bVisible);
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
@@ -102,9 +104,29 @@ protected:
     )
     TObjectPtr<UButton> RallyPointButton = nullptr;
 
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Command",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UButton> AttackCommandButton = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Command",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UButton> StopCommandButton = nullptr;
+
 private:
     UFUNCTION()
     void HandleRallyPointButtonClicked();
+
+    UFUNCTION()
+    void HandleAttackCommandButtonClicked();
+
+    UFUNCTION()
+    void HandleStopCommandButtonClicked();
 
     // 변수 영역
 protected:

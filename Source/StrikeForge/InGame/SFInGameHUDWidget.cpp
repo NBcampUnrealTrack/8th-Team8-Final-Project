@@ -5,7 +5,7 @@
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
-
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
 #include "SFSelectInfo/SFSelectionUIDataRow.h"
@@ -87,6 +87,13 @@ void USFInGameHUDWidget::NativeConstruct()
         );
     }
 
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.RemoveDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
+
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
+    }
+
     PlayerController->OnSelectInput.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectInput
@@ -119,6 +126,7 @@ void USFInGameHUDWidget::NativeConstruct()
         );
     }
     RefreshBuildModeOpenButtonVisibility();
+    UnbindSelectedProductionBuilding();
 
     if (IsValid(SelectionPanel))
     {
@@ -417,12 +425,32 @@ void USFInGameHUDWidget::ApplySelection(
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
     HideAllSelectionIndicators();
+    UnbindSelectedProductionBuilding();
 
     SelectedActor = NewSelectedActor;
+
+    BindSelectedProductionBuilding(
+        SelectedActor.Get()
+    );
 
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+
+    const bool bIsCommandableUnit =
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::Unit ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::Commander;
+
+    const bool bIsMyUnit =
+        IsOwnedByLocalPlayer(
+            NewSelectedActor
+        );
+
+    SelectionPanel->SetCommandButtonsVisible(
+        bIsCommandableUnit && bIsMyUnit
     );
 
     ShowSelectionIndicator(NewSelectedActor);
@@ -647,6 +675,7 @@ void USFInGameHUDWidget::ClearSelection()
 
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
+    UnbindSelectedProductionBuilding();
 
     SelectedActor = nullptr;
     SelectedActors.Reset();
@@ -2224,6 +2253,12 @@ void USFInGameHUDWidget::PlayResourceWarningSound()
     );
 }
 
+void USFInGameHUDWidget::
+HandleProductionResourceWarningRequested()
+{
+    PlayResourceWarningSound();
+}
+
 void USFInGameHUDWidget::HandleRallyPointRequested()
 {
     ASFInGamePlayerController* PlayerController =
@@ -2232,5 +2267,97 @@ void USFInGameHUDWidget::HandleRallyPointRequested()
     if (IsValid(PlayerController))
     {
         PlayerController->BeginRallyPointCommand();
+    }
+}
+
+void USFInGameHUDWidget::BindSelectedProductionBuilding(
+    AActor* Actor
+)
+{
+    SF_LOG(
+        Log,
+        "[HUD] Production building delegate bound: %s",
+        *Actor->GetName()
+    );
+
+    UnbindSelectedProductionBuilding();
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(Actor);
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return;
+    }
+
+    SelectedProductionBuilding =
+        ProductionBuilding;
+
+    SelectedProductionBuilding->OnSpawnableUnitsChanged
+        .AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
+        );
+}
+
+void USFInGameHUDWidget::UnbindSelectedProductionBuilding()
+{
+    if (!SelectedProductionBuilding.IsValid())
+    {
+        SelectedProductionBuilding = nullptr;
+        return;
+    }
+
+    SelectedProductionBuilding->OnSpawnableUnitsChanged
+        .RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
+        );
+
+    SelectedProductionBuilding = nullptr;
+}
+
+void USFInGameHUDWidget::
+HandleSelectedProductionBuildingTierActivated(
+    const TArray<FName>& SpawnableRowNames
+)
+{
+    SF_LOG(
+        Log,
+        "[HUD] Production building tier activated: %d",
+        SpawnableRowNames.Num()
+    );
+
+    AActor* Actor = SelectedActor.Get();
+
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    FSFSelectableInfo UpdatedInfo =
+        ISFSelectable::Execute_GetSelectableInfo(Actor);
+
+    const FHealthData HealthData =
+        ISFSelectable::Execute_GetHealthData(Actor);
+
+    UpdatedInfo.Tier =
+        HealthData.CurrentTier + 1;
+
+    ApplySelectionUIData(UpdatedInfo);
+
+    SelectedInfo = UpdatedInfo;
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
+        );
+
+        SelectionPanel->SetTierUpButtonVisible(
+            IsOwnedByLocalPlayer(Actor) &&
+            SelectedInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding
+        );
     }
 }

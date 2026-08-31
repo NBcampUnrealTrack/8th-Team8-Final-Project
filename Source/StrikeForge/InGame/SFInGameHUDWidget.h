@@ -21,6 +21,7 @@ class UDataTable;
 class USFStageIntroWidget;
 class ASFUnitPortraitActor;
 class USoundBase;
+class ASFProductionBuilding;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -82,6 +83,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
     void PlayResourceWarningSound();
 
+    UFUNCTION()
+    void HandleSelectedProductionBuildingTierActivated(
+        const TArray<FName>& SpawnableRowNames
+    );
+
+    void BindSelectedProductionBuilding(AActor* Actor);
+
+    void UnbindSelectedProductionBuilding();
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFProductionBuilding>
+        SelectedProductionBuilding;
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -99,6 +113,9 @@ protected:
 private:
     UFUNCTION()
     void HandleSelectInput();
+
+    UFUNCTION()
+    void HandleProductionResourceWarningRequested();
 
     UFUNCTION()
     void HandleSelectedActorDestroyed(

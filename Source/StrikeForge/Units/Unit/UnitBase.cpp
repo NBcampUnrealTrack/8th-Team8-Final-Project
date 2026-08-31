@@ -632,6 +632,20 @@ const FHealthData AUnitBase::GetHealthData_Implementation()
 	return Data;
 }
 
+USoundBase* AUnitBase::GetSelectionSound_Implementation()
+{
+	// 유닛별 사운드를 캐싱하고 넘겨줘야함
+	// ex) UnitStatData.h
+	// UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Selection") TSoftObjectPtr<USoundBase> SelectionSound;
+	// ex) UnitBase.h
+	// UPROPERTY(Transient)
+	// TObjectPtr<USoundBase> CachedSelectionSound = nullptr;
+	// ex) UnitBase.cpp 의 InitStat()함수안에서 미리 소리 로딩후 Cached에 저장
+	// 
+	// 이후 return CachedSelectionSound;
+	return nullptr;
+}
+
 // ─────────────────────────────────────────────────────────
 // IMovable — 플레이어 이동 명령
 //

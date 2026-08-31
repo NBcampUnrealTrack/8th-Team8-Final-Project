@@ -138,12 +138,12 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 			*GetName());
 		return;
 	}
-
-	PreviousHealthRatio =
-		FMath::Clamp(PreviousHealthRatio, 0.f, 1.f);
-
-	CurrentHealthRatio =
-		FMath::Clamp(CurrentHealthRatio, 0.f, 1.f);
+	//
+	// PreviousHealthRatio =
+	// 	FMath::Clamp(PreviousHealthRatio, 0.f, 1.f);
+	//
+	// CurrentHealthRatio =
+	// 	FMath::Clamp(CurrentHealthRatio, 0.f, 1.f);
 
 	// GC가 설정된 건물은 GC 손상 단계를 사용한다.
 	if (IsValid(ActiveTierAssets.DestructionCollection))

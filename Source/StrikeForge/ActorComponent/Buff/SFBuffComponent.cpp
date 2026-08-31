@@ -158,3 +158,9 @@ void USFBuffComponent::ClearBuff()
 	}
 	BuffList.Empty();
 }
+
+const TArray<TObjectPtr<UBuffData>> USFBuffComponent::GetBuffList()
+{
+	ShrinkBuff();
+	return BuffList;
+}

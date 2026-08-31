@@ -56,7 +56,7 @@ public:
     void ShrinkBuff();  // 만료된 버프 정리
     void ClearBuff();   // 모든 버프 제거
 
-    FORCEINLINE const TArray<TObjectPtr<UBuffData>> GetBuffList() { return BuffList; }; // 해당 액터가 보유중인 모든 버프 가져오기.
+    const TArray<TObjectPtr<UBuffData>> GetBuffList(); // 해당 액터가 보유중인 모든 버프 가져오기.
 
 protected:
 	USFBuffComponent();

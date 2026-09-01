@@ -30,13 +30,13 @@ enum class ESFUnitCommandMode : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FSFOnMoveInput,
-    FVector,
-    Destination
-);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+//    FSFOnMoveInput,
+//    FVector,
+//    Destination
+//);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnConfirmBuildInput);
+//DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCancelBuildInput);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFOnSelectionDragStarted,
     FVector2D,
@@ -49,6 +49,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
     FVector2D,
     EndScreenPosition
 );
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnSkillInput, int32, SkillTier);
+
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
     : public APlayerController
@@ -169,6 +172,8 @@ private:
     void HandleStopCommandInput();
 
     void HandleMoveCommandModeInput();
+
+    void HandleSkillCommandInput(int32 Tier);
 
     bool ExecutePendingUnitCommandUnderCursor();
 
@@ -362,6 +367,15 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> MoveCommandModeAction = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction1 = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction2 = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> CommanderSkillAction3 = nullptr;
+
 private:
     UPROPERTY(
         Transient
@@ -404,23 +418,32 @@ public:
     )
     FSFOnSelectInput OnSelectInput;
 
-    UPROPERTY(
-        BlueprintAssignable,
-        Category = "SF|Input"
-    )
-    FSFOnMoveInput OnMoveInput;
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnMoveInput OnMoveInput;
 
     UPROPERTY(
         BlueprintAssignable,
         Category = "SF|Input"
     )
-    FSFOnConfirmBuildInput OnConfirmBuildInput;
+    FSFOnSkillInput OnSkillInput;
 
-    UPROPERTY(
-        BlueprintAssignable,
-        Category = "SF|Input"
-    )
-    FSFOnCancelBuildInput OnCancelBuildInput;
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnConfirmBuildInput OnConfirmBuildInput;
+
+    // 쓰이지 않는 델리게이트 변수? 체크바람.
+    //UPROPERTY(
+    //    BlueprintAssignable,
+    //    Category = "SF|Input"
+    //)
+    //FSFOnCancelBuildInput OnCancelBuildInput;
 
     UPROPERTY(
         BlueprintAssignable,

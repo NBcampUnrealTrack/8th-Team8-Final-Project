@@ -222,6 +222,9 @@ void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
 {
     MyCommander = InCommander;
+
+    OnSkillInput.Clear();
+    OnSkillInput.AddUniqueDynamic(InCommander, &ASFCommander::ActiveCommanderSkill);
 }
 
 void ASFInGamePlayerController::BeginPlay()
@@ -401,6 +404,21 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::HandleRallyPointInput
         );
+    }
+
+    TArray<TWeakObjectPtr<UInputAction>> SkillArray = { CommanderSkillAction1,CommanderSkillAction2 ,CommanderSkillAction3 };
+    for (int32 i = 0; i < SkillArray.Num(); i++)
+    {
+        if (SkillArray[i].IsValid())
+        {
+            EnhancedInputComponent->BindAction(
+                SkillArray[i].Get(),
+                ETriggerEvent::Started,
+                this,
+                &ASFInGamePlayerController::HandleSkillCommandInput,
+                i + 1
+            );
+        }
     }
 }
 
@@ -703,7 +721,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
         InGameHUDWidget->PlayBuildStartSound();
     }
 
-    OnConfirmBuildInput.Broadcast();
+    //OnConfirmBuildInput.Broadcast();
 
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     Commander->MoveToBuild(
@@ -716,7 +734,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
 
 void ASFInGamePlayerController::HandleCancelBuildInput()
 {
-    OnCancelBuildInput.Broadcast();
+    //OnCancelBuildInput.Broadcast();
 
     if (IsValid(InGameHUDWidget))
     {
@@ -896,7 +914,7 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
     }
 
     // 실제로 조종할 대상이 확인된 뒤에만 UI/BP 쪽 이동 이벤트를 알린다.
-    OnMoveInput.Broadcast(Destination);
+    //OnMoveInput.Broadcast(Destination);
 
     // 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
     // MoveAcceptanceRadius 가 50cm 라 도착 판정이 겹치기 때문이다.
@@ -1092,6 +1110,13 @@ void ASFInGamePlayerController::HandleStopCommandInput()
 void ASFInGamePlayerController::HandleMoveCommandModeInput()
 {
     BeginMoveCommand();
+}
+
+void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
+{
+    SF_LOG(Log, "Commander Skill: Tier%d", Tier);
+    
+    OnSkillInput.Broadcast(Tier);
 }
 
 void ASFInGamePlayerController::RequestProductionBySlot(int32 SlotIndex)

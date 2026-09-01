@@ -11,6 +11,7 @@
 
 class UHealthComponent;
 class UCombatTargetComponent;
+class USFBuffComponent;
 class UWidgetComponent;
 class AUnitAIController;
 class UNiagaraSystem;
@@ -497,6 +498,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> StatusWidget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
+	TObjectPtr<USFBuffComponent> BuffComponent;
 
 #pragma endregion
 

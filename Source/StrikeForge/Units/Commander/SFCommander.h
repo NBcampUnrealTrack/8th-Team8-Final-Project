@@ -10,12 +10,29 @@
 
 class ASFInGamePlayerController;
 class UAnimationAsset;
+class USFBuffComponent;
+
+UENUM(BlueprintType)
+enum class ERace : uint8
+{
+	BEAST,
+	ETHERIAN
+};
 
 UENUM()
 enum class ECommandAction : uint8
 {
 	NONE,
 	BUILD
+};
+
+USTRUCT()
+struct FBuffTarget
+{
+	GENERATED_BODY()
+
+	TWeakObjectPtr<AActor> ActorPtr;
+	TWeakObjectPtr<USFBuffComponent> BuffCompPtr;
 };
 
 UCLASS()
@@ -42,6 +59,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
 	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
 
+	UFUNCTION()
+	void ActiveCommanderSkill(int32 SkillTier);
+
+	void ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UWorld> World);
+	void ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UWorld> World);
+
+	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, float Radius);
+	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, TSubclassOf<AActor> ActorClass);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -65,10 +91,15 @@ protected:
 	void PrintMessage(FString Msg);
 
 	void StopMoving();
-
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
+	TObjectPtr<USFBuffComponent> BuffComponent;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Race")
+	ERace Race;
 
 	const float MaxDistToBuild = 50.f;	// 건설이 가능한 최대거리
 

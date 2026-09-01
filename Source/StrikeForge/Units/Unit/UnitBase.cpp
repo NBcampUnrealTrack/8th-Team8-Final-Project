@@ -8,6 +8,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
 #include "Units/Lane/LanePath.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 #include "AIController.h"
 #include "Components/CapsuleComponent.h"
@@ -1026,6 +1027,24 @@ void AUnitBase::SteerTowardSlot(float DeltaSeconds)
 // 지정한 한 점에 닿아야 하는데, 아군이 밀어내면 도착 반경 안으로 못 들어와
 // 명령이 영영 안 풀린다. 대신 못 닿는 경우는 Advance 의 정체 타이머가 받는다.
 // ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// 튜토리얼 — 명령 지점 도착 통지
+//
+// 명령을 내린 순간이 아니라 실제로 닿았을 때 알린다.
+// 클릭만 하고 넘어가면 플레이어가 유닛이 움직이는 것을 못 보고 지나간다.
+//
+// bRecordWhenNotWaiting 을 false 로 준다. 지금 이 행동을 요구하고 있지
+// 않다면 없던 일로 쳐야, 튜토리얼이 시키기 전에 한 번 움직였다는 이유로
+// 이동 단계가 통째로 건너뛰어지지 않는다.
+//
+// 여러 기를 한꺼번에 보내면 도착할 때마다 들어오지만, 첫 신호가 대기를
+// 풀고 나면 나머지는 서브시스템에서 조용히 버려진다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::NotifyTutorialCommandArrived()
+{
+	USFTutorialSubsystem::NotifyObjective(this, TAG_SF_Tutorial_Command_Move, false);
+}
+
 void AUnitBase::SteerTowardCommandPoint(float DeltaSeconds)
 {
 	FVector ToDestination = CommandedDestination - GetActorLocation();
@@ -1366,6 +1385,8 @@ void AUnitBase::Advance(float DeltaSeconds)
 			AI->ClearMoveRequest();
 
 			SF_LOG(Log, "[Unit] %s : 명령 지점 도착", *GetName());
+
+			NotifyTutorialCommandArrived();
 		}
 		else if (DistToCommand <= CommandFinalApproachRange)
 		{
@@ -1403,6 +1424,11 @@ void AUnitBase::Advance(float DeltaSeconds)
 
 					SF_LOG(Log, "[Unit] %s : 명령 지점 %.0fcm 앞에서 막혀 정지합니다.",
 						*GetName(), DistToCommand);
+
+					// 막혀서 멈춘 것도 도착으로 친다.
+					// 여기서 안 알리면 지형에 걸린 유닛 하나 때문에
+					// 튜토리얼이 다음으로 넘어가지 못한다.
+					NotifyTutorialCommandArrived();
 				}
 			}
 			else

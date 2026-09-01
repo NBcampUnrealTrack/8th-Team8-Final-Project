@@ -4,6 +4,7 @@
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
+#include "Units/Unit/UnitBase.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "SFSelectInfo/SFSelectable.h"
@@ -85,6 +86,13 @@ void USFInGameHUDWidget::NativeConstruct()
             "[SFInGameHUDWidget] "
             "UnitPortraitActor was not found."
         );
+    }
+
+    if (IsValid(ProductionBuildingPanel))
+    {
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.RemoveDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
+
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
     }
 
     PlayerController->OnSelectInput.AddUniqueDynamic(
@@ -390,6 +398,11 @@ void USFInGameHUDWidget::PerformSelectionTrace()
         return;
     }
 
+    if (TryHandleUnitDoubleClick(HitActor))
+    {
+        return;
+    }
+
     SelectActor(HitActor);
 }
 
@@ -429,6 +442,21 @@ void USFInGameHUDWidget::ApplySelection(
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+
+    const bool bIsCommandableUnit =
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::Unit ||
+        NewSelectedInfo.SelectableType ==
+        ESFSelectableType::Commander;
+
+    const bool bIsMyUnit =
+        IsOwnedByLocalPlayer(
+            NewSelectedActor
+        );
+
+    SelectionPanel->SetCommandButtonsVisible(
+        bIsCommandableUnit && bIsMyUnit
     );
 
     ShowSelectionIndicator(NewSelectedActor);
@@ -948,6 +976,139 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
 
     ApplySelectionUIData(SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
+}
+
+bool USFInGameHUDWidget::TryHandleUnitDoubleClick(
+    AActor* ClickedActor
+)
+{
+    AUnitBase* ClickedUnit =
+        Cast<AUnitBase>(ClickedActor);
+
+    UWorld* World = GetWorld();
+
+    if (
+        !IsValid(ClickedUnit) ||
+        !IsValid(World) ||
+        !IsOwnedByLocalPlayer(ClickedUnit)
+        )
+    {
+        LastClickedUnit = nullptr;
+        LastUnitClickTime = -1.0f;
+        return false;
+    }
+
+    const float CurrentTime =
+        World->GetTimeSeconds();
+
+    const bool bIsDoubleClick =
+        LastClickedUnit.Get() == ClickedUnit &&
+        CurrentTime - LastUnitClickTime <=
+        DoubleClickInterval;
+
+    LastClickedUnit = ClickedUnit;
+    LastUnitClickTime = CurrentTime;
+
+    if (!bIsDoubleClick)
+    {
+        return false;
+    }
+
+    SelectNearbyUnitsOfSameType(ClickedUnit);
+
+    LastClickedUnit = nullptr;
+    LastUnitClickTime = -1.0f;
+
+    return true;
+}
+
+void USFInGameHUDWidget::SelectNearbyUnitsOfSameType(
+    AUnitBase* CenterUnit
+)
+{
+    if (!IsValid(CenterUnit))
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    TArray<AActor*> FoundUnits;
+
+    const FVector CenterLocation =
+        CenterUnit->GetActorLocation();
+
+    const FName CenterUnitRowName =
+        CenterUnit->GetUnitRowName();
+
+    const float SearchRadiusSquared =
+        FMath::Square(SameUnitSearchRadius);
+
+    for (
+        TActorIterator<AUnitBase> Iterator(World);
+        Iterator;
+        ++Iterator
+        )
+    {
+        AUnitBase* CandidateUnit = *Iterator;
+
+        if (!IsValid(CandidateUnit))
+        {
+            continue;
+        }
+
+        if (!IsOwnedByLocalPlayer(CandidateUnit))
+        {
+            continue;
+        }
+
+        if (
+            CandidateUnit->GetUnitRowName() !=
+            CenterUnitRowName
+            )
+        {
+            continue;
+        }
+
+        if (
+            FVector::DistSquared(
+                CenterLocation,
+                CandidateUnit->GetActorLocation()
+            ) > SearchRadiusSquared
+            )
+        {
+            continue;
+        }
+
+        if (
+            CandidateUnit->GetCombatState() ==
+            EUnitCombatState::Dead
+            )
+        {
+            continue;
+        }
+
+        FoundUnits.Add(CandidateUnit);
+    }
+
+    if (FoundUnits.IsEmpty())
+    {
+        FoundUnits.Add(CenterUnit);
+    }
+
+    ApplyMultipleSelection(FoundUnits);
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Same unit double click selection | Type: %s | Count: %d",
+        *CenterUnitRowName.ToString(),
+        FoundUnits.Num()
+    );
 }
 
 bool USFInGameHUDWidget::IsPointerOverSelectionAction() const
@@ -2255,6 +2416,12 @@ void USFInGameHUDWidget::PlayResourceWarningSound()
     );
 }
 
+void USFInGameHUDWidget::
+HandleProductionResourceWarningRequested()
+{
+    PlayResourceWarningSound();
+}
+
 void USFInGameHUDWidget::HandleRallyPointRequested()
 {
     ASFInGamePlayerController* PlayerController =
@@ -2357,4 +2524,3 @@ HandleSelectedProductionBuildingTierActivated(
         );
     }
 }
-

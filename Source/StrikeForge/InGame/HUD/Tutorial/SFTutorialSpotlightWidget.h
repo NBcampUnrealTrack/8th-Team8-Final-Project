@@ -155,6 +155,9 @@ private:
     /** 문구 위젯을 구멍 아래로 옮긴다. 캔버스 슬롯이 아니면 아무것도 안 한다 */
     void UpdateInstructionPosition(const FGeometry& MyGeometry);
 
+    /** 구멍의 반쪽 크기를 픽셀로 돌려준다. 그리기와 문구 배치가 같은 값을 쓴다 */
+    FVector2D GetHoleExtentPx(const FVector2D& InSize) const;
+
     UPROPERTY(Transient)
     FSFStageIntroGuideStep CurrentStep;
 
@@ -165,6 +168,13 @@ private:
 
     /** 화면 세로 길이에 대한 비율. 가로로 넓어져도 크기가 그대로다 */
     float HoleRadiusNorm = 0.12f;
+
+    /**
+     * 축별 반쪽 크기. 0 이면 HoleRadiusNorm 으로 정사각형을 만든다.
+     *
+     * 가로로 긴 UI 를 감싸려면 정사각형으로는 안 된다.
+     */
+    FVector2D HoleExtentNorm = FVector2D::ZeroVector;
 
     /** 대상이 카메라 뒤에 있으면 구멍을 그리지 않고 문구만 남긴다 */
     bool bTargetVisible = true;

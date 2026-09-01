@@ -2,11 +2,15 @@
 
 #include "SFProductionUnitEntryWidget.h"
 
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
+#include "Buildings/SFRootBase.h"
 #include "Components/VerticalBox.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
 #include "Components/ProgressBar.h"
 #include "Components/Button.h"
+#include "Game/GameState/SFGameState.h"
 
 #include "Components/VerticalBoxSlot.h"
 #include "ActorComponent/Product/ProductComponent.h"
@@ -89,6 +93,12 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
     CurrentProductionBuilding =
         InProductionBuilding;
 
+    BindProductionBuilding(
+        Cast<ASFProductionBuilding>(
+            InProductionBuilding
+        )
+    );
+
     const FProductableData ProductableData =
         IProductable::Execute_GetProductableData(InProductionBuilding);
 
@@ -128,6 +138,7 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
 
 void USFProductionBuildingPanelWidget::HideProductionBuilding()
 {
+    UnbindProductionBuilding();
     UnbindProductComponent();
 
     CurrentProductionBuilding.Reset();
@@ -284,6 +295,53 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         return;
     }
 
+    ASFRootBase* RootBuilding =
+        Cast<ASFRootBase>(ProductionBuilding);
+
+    UGameInstance* GameInstance =
+        GetGameInstance();
+
+    USFDataTableManager* DataTableManager =
+        IsValid(GameInstance)
+        ? GameInstance->GetSubsystem<USFDataTableManager>()
+        : nullptr;
+
+    const FUnitStatData* UnitStatsRow =
+        IsValid(DataTableManager)
+        ? DataTableManager->GetDataRow<FUnitStatData>(
+            EDataTableType::Unit,
+            UnitRowName,
+            TEXT("HandleProductionUnitClicked")
+        )
+        : nullptr;
+
+    ASFGameState* GameState =
+        GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (
+        IsValid(RootBuilding) &&
+        UnitStatsRow &&
+        IsValid(GameState)
+        )
+    {
+        const int32 TeamIndex =
+            RootBuilding->GetTeamIndex();
+
+        const bool bCanAfford =
+            GameState->CanAffordResource(
+                TeamIndex,
+                UnitStatsRow->UnitProductionCost
+            );
+
+        if (!bCanAfford)
+        {
+            OnProductionResourceWarningRequested.Broadcast();
+            return;
+        }
+    }
+
     SF_LOG(
         Log,
         "[SFProductionBuildingPanelWidget] "
@@ -350,6 +408,44 @@ void USFProductionBuildingPanelWidget::UnbindProductComponent()
     );
 
     CurrentProductComponent = nullptr;
+}
+
+void USFProductionBuildingPanelWidget::BindProductionBuilding(
+    ASFProductionBuilding* InProductionBuilding
+)
+{
+    UnbindProductionBuilding();
+
+    if (!IsValid(InProductionBuilding))
+    {
+        return;
+    }
+
+    BoundProductionBuilding =
+        InProductionBuilding;
+
+    BoundProductionBuilding->OnSpawnableUnitsChanged
+        .AddUniqueDynamic(
+            this,
+            &USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged
+        );
+}
+
+void USFProductionBuildingPanelWidget::UnbindProductionBuilding()
+{
+    if (!BoundProductionBuilding.IsValid())
+    {
+        BoundProductionBuilding = nullptr;
+        return;
+    }
+
+    BoundProductionBuilding->OnSpawnableUnitsChanged
+        .RemoveDynamic(
+            this,
+            &USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged
+        );
+
+    BoundProductionBuilding = nullptr;
 }
 
 void USFProductionBuildingPanelWidget::HandleProductLineChanged(
@@ -517,4 +613,35 @@ void USFProductionBuildingPanelWidget::CancelProductionAtQueueIndex(
     }
 
     CurrentProductComponent->RemoveProductInLine(QueueIndex);
+}
+
+void USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged(
+    const TArray<FName>& SpawnableRowNames
+)
+{
+    AActor* ProductionBuilding =
+        CurrentProductionBuilding.Get();
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return;
+    }
+
+    const FProductableData ProductableData =
+        IProductable::Execute_GetProductableData(
+            ProductionBuilding
+        );
+
+    FProductableData UpdatedData =
+        ProductableData;
+
+    UpdatedData.ProductableUnitFNames =
+        SpawnableRowNames;
+
+    CurrentProductableUnitRowNames =
+        SpawnableRowNames;
+
+    RefreshProductionUnitEntries(
+        UpdatedData
+    );
 }

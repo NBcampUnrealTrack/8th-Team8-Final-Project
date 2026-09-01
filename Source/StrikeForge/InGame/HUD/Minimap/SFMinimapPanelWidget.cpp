@@ -1,5 +1,6 @@
 #include "SFMinimapPanelWidget.h"
 
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Datas/Stage/SFStageData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
@@ -110,8 +111,31 @@ void USFMinimapPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    if (IsValid(CombatDangerOverlay))
+    {
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+    }
+
+    if (IsValid(BuildingEventOverlay))
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+    }
+    else
+    {
+        SF_LOG(
+            Warning,
+            "[SFMinimapPanelWidget] "
+            "BuildingEventOverlay is invalid."
+        );
+    }
+
     InitializeMinimapCapture();
     CreateMinimapMarkers();
+    bInitialMarkerScanCompleted = true;
     CreateMinimapBoundsMasks();
 }
 
@@ -868,7 +892,9 @@ void USFMinimapPanelWidget::NativeTick(
 
     UpdateMinimapBoundsMasks();
     UpdatePlayerViewIndicator();
-    UpdateMinimapMarkers();
+    UpdateMinimapMarkers(InDeltaTime);
+    UpdateCombatDangerOverlay(InDeltaTime);
+    UpdateBuildingEventOverlay(InDeltaTime);
 }
 
 void USFMinimapPanelWidget::CreateMinimapMarkers()
@@ -1081,9 +1107,57 @@ void USFMinimapPanelWidget::CreateMarkerForActor(
     MarkerEntry.MarkerType =
         MarkerType;
 
+    ASFBaseBuilding* Building =
+        Cast<ASFBaseBuilding>(TargetActor);
+
+    if (IsValid(Building))
+    {
+        MarkerEntry.bWasTierActivated =
+            Building->IsTierActivated();
+
+        MarkerEntry.LastKnownTier =
+            Building->GetCurrentTier();
+    }
+
     MinimapMarkerEntries.Add(
         MarkerEntry
     );
+
+    if (
+        bInitialMarkerScanCompleted &&
+        IsValid(Building) &&
+        Building->IsTierActivated()
+        )
+    {
+        if (ASFInGamePlayerController* PlayerController =
+            Cast<ASFInGamePlayerController>(
+                GetOwningPlayer()
+            ))
+        {
+            if (
+                Building->GetTeamIndex() ==
+                PlayerController->GetMyTeamIndex()
+                )
+            {
+                SF_LOG(
+                    Log,
+                    "[Minimap] Newly completed building detected | Actor: %s",
+                    *Building->GetName()
+                );
+
+                StartBuildingEventFlash(Building);
+            }
+        }
+    }
+
+    if (UCombatTargetComponent* CombatTarget =
+        TargetActor->FindComponentByClass<UCombatTargetComponent>())
+    {
+        CombatTarget->OnCombatDamaged.AddUniqueDynamic(
+            this,
+            &USFMinimapPanelWidget::HandleCombatTargetDamaged
+        );
+    }
 }
 
 void USFMinimapPanelWidget::ClearMinimapMarkers()
@@ -1093,6 +1167,21 @@ void USFMinimapPanelWidget::ClearMinimapMarkers()
         MinimapMarkerEntries
         )
     {
+        AActor* TargetActor =
+            MarkerEntry.TargetActor.Get();
+
+        if (IsValid(TargetActor))
+        {
+            if (UCombatTargetComponent* CombatTarget =
+                TargetActor->FindComponentByClass<UCombatTargetComponent>())
+            {
+                CombatTarget->OnCombatDamaged.RemoveDynamic(
+                    this,
+                    &USFMinimapPanelWidget::HandleCombatTargetDamaged
+                );
+            }
+        }
+
         UBorder* MarkerWidget =
             MarkerEntry.MarkerWidget.Get();
 
@@ -1169,7 +1258,9 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
     );
 }
 
-void USFMinimapPanelWidget::UpdateMinimapMarkers()
+void USFMinimapPanelWidget::UpdateMinimapMarkers(
+    float InDeltaTime
+)
 {
     for (
         int32 Index =
@@ -1215,7 +1306,96 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers()
             MarkerWidget,
             MinimapPosition
         );
+
+        if (MarkerEntry.DangerTimeRemaining > 0.0f)
+        {
+            MarkerEntry.DangerTimeRemaining =
+                FMath::Max(
+                    0.0f,
+                    MarkerEntry.DangerTimeRemaining - InDeltaTime
+                );
+
+            if (MarkerEntry.DangerTimeRemaining > 0.0f)
+            {
+                MarkerWidget->SetBrushColor(
+                    DangerMarkerColor
+                );
+            }
+            else
+            {
+                MarkerWidget->SetBrushColor(
+                    GetMarkerColor(
+                        MarkerEntry.MarkerType
+                    )
+                );
+            }
+        }
+
+        if (
+            bBuildingEventFlashActive &&
+            BuildingEventTarget.Get() == MarkerEntry.TargetActor.Get() &&
+            (
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::Building ||
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::AllyBuilding ||
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::EnemyBuilding
+                ) &&
+            MarkerEntry.DangerTimeRemaining <= 0.0f
+            )
+        {
+            MarkerWidget->SetBrushColor(
+                bBuildingEventOverlayVisible
+                ? FLinearColor(0.05f, 1.0f, 0.15f, 1.0f)
+                : GetMarkerColor(MarkerEntry.MarkerType)
+            );
+        }
+
+        if (ASFBaseBuilding* Building =
+            Cast<ASFBaseBuilding>(TargetActor))
+        {
+            const bool bNowTierActivated =
+                Building->IsTierActivated();
+
+            const int32 NowTier =
+                Building->GetCurrentTier();
+
+            const bool bConstructionCompleted =
+                !MarkerEntry.bWasTierActivated &&
+                bNowTierActivated;
+
+            const bool bUpgradeCompleted =
+                MarkerEntry.bWasTierActivated &&
+                bNowTierActivated &&
+                MarkerEntry.LastKnownTier != NowTier;
+
+            if (
+                bConstructionCompleted ||
+                bUpgradeCompleted
+                )
+            {
+                if (ASFInGamePlayerController* PlayerController =
+                    Cast<ASFInGamePlayerController>(
+                        GetOwningPlayer()
+                    ))
+                {
+                    if (
+                        Building->GetTeamIndex() ==
+                        PlayerController->GetMyTeamIndex()
+                        )
+                    {
+                        StartBuildingEventFlash(Building);
+                    }
+                }
+            }
+
+            MarkerEntry.bWasTierActivated =
+                bNowTierActivated;
+
+            MarkerEntry.LastKnownTier =
+                NowTier;
+        }
+
     }
+
     CreateMarkersForTag(
         AllyMarkerActorTag,
         ESFMinimapMarkerType::Ally
@@ -1546,4 +1726,172 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
     }
 
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void USFMinimapPanelWidget::HandleCombatTargetDamaged(
+    UCombatTargetComponent* InTarget,
+    float InDamage,
+    AActor* InInstigator
+)
+{
+    if (!IsValid(InTarget))
+    {
+        return;
+    }
+
+    AActor* DamagedActor = InTarget->GetOwner();
+
+    if (!IsValid(DamagedActor))
+    {
+        return;
+    }
+
+    for (FSFMinimapMarkerEntry& MarkerEntry :
+        MinimapMarkerEntries)
+    {
+        if (MarkerEntry.TargetActor.Get() != DamagedActor)
+        {
+            continue;
+        }
+
+        MarkerEntry.DangerTimeRemaining =
+            DangerMarkerDuration;
+
+        if (UBorder* MarkerWidget =
+            MarkerEntry.MarkerWidget.Get())
+        {
+            MarkerWidget->SetBrushColor(
+                DangerMarkerColor
+            );
+        }
+
+        break;
+    }
+
+    if (IsValid(CombatDangerOverlay))
+    {
+        CombatDangerFlashElapsed = 0.0f;
+        CombatDangerFlashToggleCount = 0;
+        bCombatDangerFlashActive = true;
+        bCombatDangerOverlayVisible = true;
+
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Visible
+        );
+    }
+}
+
+void USFMinimapPanelWidget::UpdateCombatDangerOverlay(
+    float InDeltaTime
+)
+{
+    if (
+        !bCombatDangerFlashActive ||
+        !IsValid(CombatDangerOverlay)
+        )
+    {
+        return;
+    }
+
+    CombatDangerFlashElapsed += InDeltaTime;
+
+    while (
+        CombatDangerFlashElapsed >=
+        CombatDangerFlashHalfPeriod &&
+        CombatDangerFlashToggleCount < 4
+        )
+    {
+        CombatDangerFlashElapsed -=
+            CombatDangerFlashHalfPeriod;
+
+        ++CombatDangerFlashToggleCount;
+
+        bCombatDangerOverlayVisible =
+            !bCombatDangerOverlayVisible;
+
+        CombatDangerOverlay->SetVisibility(
+            bCombatDangerOverlayVisible
+            ? ESlateVisibility::Visible
+            : ESlateVisibility::Hidden
+        );
+    }
+
+    if (CombatDangerFlashToggleCount >= 4)
+    {
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+
+        bCombatDangerFlashActive = false;
+        bCombatDangerOverlayVisible = false;
+        CombatDangerFlashElapsed = 0.0f;
+        CombatDangerFlashToggleCount = 0;
+    }
+}
+
+void USFMinimapPanelWidget::StartBuildingEventFlash(
+    AActor* InBuilding
+)
+{
+    BuildingEventTarget = InBuilding;
+
+    bBuildingEventFlashActive = true;
+    BuildingEventFlashElapsed = 0.0f;
+    BuildingEventFlashToggleCount = 0;
+    bBuildingEventOverlayVisible = true;
+
+    if (IsValid(BuildingEventOverlay))
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Visible
+        );
+    }
+}
+
+void USFMinimapPanelWidget::UpdateBuildingEventOverlay(
+    float InDeltaTime
+)
+{
+    if (
+        !bBuildingEventFlashActive ||
+        !IsValid(BuildingEventOverlay)
+        )
+    {
+        return;
+    }
+
+    BuildingEventFlashElapsed += InDeltaTime;
+
+    while (
+        BuildingEventFlashElapsed >=
+        BuildingEventFlashHalfPeriod &&
+        BuildingEventFlashToggleCount < 4
+        )
+    {
+        BuildingEventFlashElapsed -=
+            BuildingEventFlashHalfPeriod;
+
+        ++BuildingEventFlashToggleCount;
+
+        bBuildingEventOverlayVisible =
+            !bBuildingEventOverlayVisible;
+
+        BuildingEventOverlay->SetVisibility(
+            bBuildingEventOverlayVisible
+            ? ESlateVisibility::Visible
+            : ESlateVisibility::Hidden
+        );
+    }
+
+    if (BuildingEventFlashToggleCount >= 4)
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+
+        bBuildingEventFlashActive = false;
+        bBuildingEventOverlayVisible = false;
+        BuildingEventFlashElapsed = 0.0f;
+        BuildingEventFlashToggleCount = 0;
+    }
 }

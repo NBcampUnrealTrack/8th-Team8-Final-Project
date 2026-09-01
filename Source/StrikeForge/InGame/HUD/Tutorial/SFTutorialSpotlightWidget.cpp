@@ -58,12 +58,16 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
     bTargetVisible = true;
     PulseTime = 0.f;
 
+    // 월드 좌표 칸은 카메라 거리로 크기를 정하므로 축별 지정을 쓰지 않는다.
+    HoleExtentNorm = FVector2D::ZeroVector;
+
     // 화면 좌표 칸은 값이 고정이라 여기서 한 번만 계산한다.
     // 월드 좌표 칸은 카메라가 움직이므로 NativeTick 이 매 프레임 다시 잡는다.
     if (CurrentStep.TargetKind == ESFGuideTargetKind::ScreenRegion)
     {
         HoleCenterNorm = CurrentStep.ScreenAnchor;
         HoleRadiusNorm = CurrentStep.ScreenRadius;
+        HoleExtentNorm = CurrentStep.ScreenExtent;
     }
 
     if (IsValid(InstructionText))
@@ -221,6 +225,24 @@ bool USFTutorialSpotlightWidget::ProjectStepToScreen(FVector2D& OutCenter, float
     return true;
 }
 
+// ─────────────────────────────────────────────────────────
+// 구멍 크기
+//
+// ScreenExtent 를 지정했으면 축별 비율을 그대로 쓰고, 아니면 예전처럼
+// 세로 기준 정사각형을 만든다. 기존 DT 값은 손대지 않아도 그대로 동작한다.
+// ─────────────────────────────────────────────────────────
+FVector2D USFTutorialSpotlightWidget::GetHoleExtentPx(const FVector2D& InSize) const
+{
+    if (HoleExtentNorm.X > 0.f && HoleExtentNorm.Y > 0.f)
+    {
+        return HoleExtentNorm * InSize;
+    }
+
+    const float RadiusPx = static_cast<float>(HoleRadiusNorm * InSize.Y);
+
+    return FVector2D(RadiusPx, RadiusPx);
+}
+
 void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGeometry)
 {
     if (!IsValid(InstructionText) || !bInstructionFollowsSpotlight)
@@ -244,12 +266,12 @@ void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGe
         return;
     }
 
-    const float RadiusPx = static_cast<float>(HoleRadiusNorm * LocalSize.Y);
+    const FVector2D ExtentPx = GetHoleExtentPx(LocalSize);
 
     FVector2D Position = HoleCenterNorm * LocalSize;
 
     // 구멍 아래에 붙인다. 아래가 화면 밖으로 나가면 위로 넘긴다.
-    const float Margin = RadiusPx + FMath::Max(InstructionOffset, 0.f);
+    const float Margin = static_cast<float>(ExtentPx.Y) + FMath::Max(InstructionOffset, 0.f);
     Position.Y = (Position.Y + Margin > LocalSize.Y * 0.9f)
         ? Position.Y - Margin
         : Position.Y + Margin;
@@ -307,13 +329,16 @@ int32 USFTutorialSpotlightWidget::NativePaint(
 
     // FVector2D 가 배정밀도라 명시적으로 float 로 받는다.
     // 섞어 쓰면 FMath::Clamp 템플릿 추론이 갈린다.
-    const float RadiusPx = static_cast<float>(HoleRadiusNorm * Size.Y);
+    const FVector2D ExtentPx = GetHoleExtentPx(Size);
     const FVector2D Center = HoleCenterNorm * Size;
 
-    const float Left = FMath::Clamp<float>(Center.X - RadiusPx, 0.f, Size.X);
-    const float Right = FMath::Clamp<float>(Center.X + RadiusPx, 0.f, Size.X);
-    const float Top = FMath::Clamp<float>(Center.Y - RadiusPx, 0.f, Size.Y);
-    const float Bottom = FMath::Clamp<float>(Center.Y + RadiusPx, 0.f, Size.Y);
+    const float HalfX = static_cast<float>(ExtentPx.X);
+    const float HalfY = static_cast<float>(ExtentPx.Y);
+
+    const float Left = FMath::Clamp<float>(Center.X - HalfX, 0.f, Size.X);
+    const float Right = FMath::Clamp<float>(Center.X + HalfX, 0.f, Size.X);
+    const float Top = FMath::Clamp<float>(Center.Y - HalfY, 0.f, Size.Y);
+    const float Bottom = FMath::Clamp<float>(Center.Y + HalfY, 0.f, Size.Y);
 
     // 사각형 한 장을 그리는 헬퍼. 덮개와 테두리가 같은 방식을 쓴다.
     //

@@ -1,6 +1,7 @@
 #include "SFSelectionPanelWidget.h"
 
 #include "Components/Button.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 
 #include "Logging/SFLog.h"
 
@@ -43,6 +44,19 @@ void USFSelectionPanelWidget::NativeConstruct()
         );
     }
 
+    if (IsValid(AttackCommandButton))
+    {
+        AttackCommandButton->OnClicked.RemoveDynamic(this,&USFSelectionPanelWidget::HandleAttackCommandButtonClicked);
+
+        AttackCommandButton->OnClicked.AddUniqueDynamic(this,&USFSelectionPanelWidget::HandleAttackCommandButtonClicked);
+    }
+
+    if (IsValid(StopCommandButton))
+    {
+        StopCommandButton->OnClicked.RemoveDynamic(this,&USFSelectionPanelWidget::HandleStopCommandButtonClicked);
+
+        StopCommandButton->OnClicked.AddUniqueDynamic(this,&USFSelectionPanelWidget::HandleStopCommandButtonClicked);
+    }
 
     if (IsValid(RallyPointButton))
     {
@@ -96,11 +110,7 @@ void USFSelectionPanelWidget::ShowSelection(
             SelectableInfo.SelectableType ==
             ESFSelectableType::ProductionBuilding;
 
-        RallyPointButton->SetVisibility(
-            bIsProductionBuilding
-            ? ESlateVisibility::Visible
-            : ESlateVisibility::Collapsed
-        );
+        SetRallyPointButtonVisible(bIsProductionBuilding);
     }
 
     SF_LOG(
@@ -132,6 +142,14 @@ void USFSelectionPanelWidget::ClearSelection()
 
     BP_OnSelectionCleared();
 
+    AttackCommandButton->SetVisibility(
+        ESlateVisibility::Collapsed
+    );
+
+    StopCommandButton->SetVisibility(
+        ESlateVisibility::Collapsed
+    );
+
     if (IsValid(TierUpButton))
     {
         TierUpButton->SetVisibility(
@@ -146,6 +164,7 @@ void USFSelectionPanelWidget::ClearSelection()
         );
     }
 
+    SetCommandButtonsVisible(false);
     SetRallyPointButtonVisible(false);
 }
 
@@ -216,4 +235,58 @@ void USFSelectionPanelWidget::SetTierUpButtonVisible(bool bVisible)
         ? ESlateVisibility::Visible
         : ESlateVisibility::Collapsed
     );
+}
+
+void USFSelectionPanelWidget::HandleAttackCommandButtonClicked()
+{
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    PlayerController->BeginAttackCommand();
+}
+
+void USFSelectionPanelWidget::HandleStopCommandButtonClicked()
+{
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    PlayerController->StopSelectedUnits();
+}
+
+void USFSelectionPanelWidget::SetCommandButtonsVisible(
+    bool bVisible
+)
+{
+    const ESlateVisibility ButtonVisibility =
+        bVisible
+        ? ESlateVisibility::Visible
+        : ESlateVisibility::Collapsed;
+
+    if (IsValid(AttackCommandButton))
+    {
+        AttackCommandButton->SetVisibility(
+            ButtonVisibility
+        );
+    }
+
+    if (IsValid(StopCommandButton))
+    {
+        StopCommandButton->SetVisibility(
+            ButtonVisibility
+        );
+    }
 }

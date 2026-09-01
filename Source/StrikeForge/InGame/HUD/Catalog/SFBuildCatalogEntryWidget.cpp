@@ -3,6 +3,7 @@
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 void USFBuildCatalogEntryWidget::InitializeBuildingEntry(
 USFBuildingDefinition* InDefinition)
@@ -123,7 +124,26 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 		"Entry Clicked: %s",
 		*BuildingRowName.ToString()
 	);
-	
+
+	// 튜토리얼이 특정 건물을 고르라고 안내하는 중이면 다른 항목은 통과시키지 않는다.
+	//
+	// 브로드캐스트보다 앞에 둔다. 아래로 내리면 선택 표시 같은 UI 반응만
+	// 일어나고 실제 건설은 안 되는, 눌린 것도 안 눌린 것도 아닌 상태가 된다.
+	//
+	// 튜토리얼이 없는 판이나 건물 선택을 요구하지 않는 단계에서는 항상 true 라
+	// 일반 플레이에는 영향이 없다.
+	if (!USFTutorialSubsystem::IsBuildingSelectionAllowed(this, BuildingRowName))
+	{
+		SF_LOG(
+			Log,
+			"[SFBuildCatalogEntryWidget] "
+			"튜토리얼이 다른 건물을 요구하는 중이라 무시합니다: %s",
+			*BuildingRowName.ToString()
+		);
+
+		return;
+	}
+
 	OnBuildCatalogEntryClicked.Broadcast(
 		BuildingRowName
 	);
@@ -140,5 +160,11 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 	if (SFPC->SpawnBuildingFunction(BuildingRowName))
 	{
 		SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
+
+		// 배치 모드로 실제 들어간 뒤에 알린다.
+		//
+		// 자원이 모자라 생성이 실패하면 손에 든 건물이 없는데, 그때 알리면
+		// 튜토리얼만 "배치하세요" 로 넘어가 버린다.
+		USFTutorialSubsystem::NotifyBuildingSelected(this, BuildingRowName);
 	}
 }

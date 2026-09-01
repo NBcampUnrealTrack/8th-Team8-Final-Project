@@ -8,6 +8,7 @@
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
 
+class UPlayVFXComponent;
 class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
@@ -264,8 +265,11 @@ protected:
 	TObjectPtr<UProgressComponent> ProgressComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Combat")
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
+	// etc.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component|React")
 	TObjectPtr<UTimelineComponent> HitReactionTimeline;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component|Niagara")
+	TObjectPtr<UPlayVFXComponent> PlayVFXComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component|Buff")
 	TObjectPtr<USFBuffComponent> BuffComponent;
 	
@@ -349,7 +353,10 @@ protected:
 	TObjectPtr<USoundBase> CompletedSelectionSound = nullptr;
 	UPROPERTY()
 	TObjectPtr<USoundBase> DestroyedSound;
-	UPROPERTY()
+	// niagara
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> ConstructionEffect;
+	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraSystem> DestroyedEffect;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))

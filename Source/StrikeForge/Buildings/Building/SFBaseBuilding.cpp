@@ -9,6 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
+#include "ActorComponent/Niagara/PlayVFXComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "Buildings/UI/BuildingHealthBar.h"
 #include "Components/BoxComponent.h"
@@ -43,6 +44,8 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetVisibility(false);
 	
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
+	
+	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -385,12 +388,16 @@ void ASFBaseBuilding::BeginConstruction()
 		OnUpgradeStarted();
 	}
 	//CombatTargetComponent->SetTargetingEnabled(true);
+	
+	PlayVFXComponent->PlayConstructionEffect(ConstructionEffect, StaticMeshComponent);
+	
 	ProgressComponent->StartProgress();
 }
 
 void ASFBaseBuilding::EnterCompletedState()
 {
 	//CombatTargetComponent->SetTargetingEnabled(true);
+	PlayVFXComponent->StopConstructionEffect();
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
@@ -405,6 +412,7 @@ void ASFBaseBuilding::EnterDestroyedState()
 {
 	// 이동한 GC 위치에서 최종 Strain이 계산되는 것을 방지
 	StopHitReaction();
+	PlayVFXComponent->StopConstructionEffect();
 	
 	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
@@ -910,6 +918,8 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
 	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
 	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
+	// niagara
+	ConstructionEffect = BuildingDefinition->ConstructEffect.LoadSynchronous();
 	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
 	// preview ghost
 	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();

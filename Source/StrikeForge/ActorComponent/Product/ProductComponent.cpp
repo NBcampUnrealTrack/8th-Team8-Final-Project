@@ -312,9 +312,10 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 	// ========== 건물의 렐리포인트를 유닛에 전달 하는 지점.===========
 	// AssemblePoint == 현재 할당된 집결지 벡터
 	AUnitBase* UnitRef = USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
-	if (bSetAssemblePoint)
+	
+	if (bSetAssemblePoint && UnitRef->Implements<UMovable>())
 	{
-		UnitRef->MoveToLocation(AssemblePoint);
+		UnitRef->MoveToLocation_Implementation(AssemblePoint);
 	}
 	
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());

@@ -230,17 +230,8 @@ private:
     UFUNCTION()
     void HandleRallyPointRequested();
 
-    /**
-     * 생산에 필요한 자원이 모자랄 때 경고음을 낸다.
-     *
-     * 아직 아무도 연결하지 않았다. 생산 쪽 델리게이트에 AddDynamic 으로
-     * 붙을 예정이라 UFUNCTION 을 미리 달아 둔다 — 나중에 연결할 때
-     * 다시 빌드가 깨지지 않게 하기 위함이다.
-     */
-    UFUNCTION()
-    void HandleProductionResourceShortage();
+   
 
-    // ==================== Variables ====================
 
 protected:
     UPROPERTY(

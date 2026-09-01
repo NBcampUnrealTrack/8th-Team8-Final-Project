@@ -2358,7 +2358,3 @@ HandleSelectedProductionBuildingTierActivated(
     }
 }
 
-void USFInGameHUDWidget::HandleProductionResourceShortage()
-{
-    PlayResourceWarningSound();
-}

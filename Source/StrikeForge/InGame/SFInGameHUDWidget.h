@@ -22,6 +22,7 @@ class USFStageIntroWidget;
 class ASFUnitPortraitActor;
 class USoundBase;
 class ASFProductionBuilding;
+class AUnitBase;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -232,6 +233,14 @@ private:
     UFUNCTION()
     void HandleRallyPointRequested();
 
+    bool TryHandleUnitDoubleClick(
+        AActor* ClickedActor
+    );
+
+    void SelectNearbyUnitsOfSameType(
+        AUnitBase* CenterUnit
+    );
+
     // ==================== Variables ====================
 
 protected:
@@ -241,6 +250,17 @@ protected:
         Category = "SF|Selection"
     )
     TObjectPtr<AActor> SelectedActor = nullptr;
+
+    TWeakObjectPtr<AActor> LastClickedUnit;
+
+    float LastUnitClickTime = -1.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "SF|Selection|Double Click")
+    float DoubleClickInterval = 0.3f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "SF|Selection|Double Click")
+    float SameUnitSearchRadius = 1000.0f;
+
 
     UPROPERTY(
         Transient,

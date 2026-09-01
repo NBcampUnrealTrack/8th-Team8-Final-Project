@@ -2,6 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "CommonActivatableWidget.h"
+// FUIInputConfig / ECommonInputMode 는 CommonActivatableWidget.h 가 끌어온다.
+// 예전에 여기 있던 "Input/UIActionRouterTypes.h" 는 CommonUI 의 Private 헤더라
+// 모듈 밖에서 열 수 없다 (C1083). 공개 위치는 "Input/UIActionBindingHandle.h" 인데,
+// 엔진 버전에 따라 경로가 바뀐 적이 있어 부모 헤더에 맡긴다.
 #include "Containers/Ticker.h"
 #include "SFStageIntroData.h"
 #include "SFStageIntroWidget.generated.h"
@@ -34,6 +38,14 @@ public:
     bool StartStageIntroAt(UDataTable* InDataTable, FName InRowName, int32 InNodeIndex);
 
 protected:
+    /**
+     * CommonUI 는 활성 위젯이 요청한 입력 설정을 뷰포트에 적용한다.
+     * 아무도 요청하지 않으면 기본값(FUIInputConfig 기본 생성자)으로 되돌리는데,
+     * 그 기본값이 CapturePermanently + 캡처 중 커서 숨김이라 RTS 조작이 막힌다.
+     * 그래서 이 위젯이 쓸 설정을 명시한다.
+     */
+    virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
+
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;

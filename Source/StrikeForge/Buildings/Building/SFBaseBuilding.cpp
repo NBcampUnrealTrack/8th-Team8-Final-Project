@@ -4,6 +4,7 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
+#include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
@@ -27,6 +28,8 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 	//CombatTargetComponent->SetTargetingEnabled(false);
+
+	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	
 	WidgetComponent->SetupAttachment(GetRootComponent());
 	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));

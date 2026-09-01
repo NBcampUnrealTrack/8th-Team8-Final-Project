@@ -12,6 +12,7 @@ class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
+class USFBuffComponent;
 class UNiagaraSystem;
 class UWidgetComponent;
 
@@ -265,6 +266,8 @@ protected:
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Component|React")
 	TObjectPtr<UTimelineComponent> HitReactionTimeline;
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component|Buff")
+	TObjectPtr<USFBuffComponent> BuffComponent;
 	
 	// ui
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Information", meta=(AllowPrivateAccess=true))

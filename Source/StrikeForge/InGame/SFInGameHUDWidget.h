@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -129,6 +129,7 @@ private:
         AActor* NewSelectedActor,
         const FSFSelectableInfo& NewSelectedInfo
     );
+
 
     void ApplySelectionUIData(
         FSFSelectableInfo& InOutSelectableInfo

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -21,6 +21,7 @@ class UDataTable;
 class USFStageIntroWidget;
 class ASFUnitPortraitActor;
 class USoundBase;
+class ASFProductionBuilding;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -82,6 +83,19 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
     void PlayResourceWarningSound();
 
+    UFUNCTION()
+    void HandleSelectedProductionBuildingTierActivated(
+        const TArray<FName>& SpawnableRowNames
+    );
+
+    void BindSelectedProductionBuilding(AActor* Actor);
+
+    void UnbindSelectedProductionBuilding();
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFProductionBuilding>
+        SelectedProductionBuilding;
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -111,6 +125,7 @@ private:
         AActor* NewSelectedActor,
         const FSFSelectableInfo& NewSelectedInfo
     );
+
 
     void ApplySelectionUIData(
         FSFSelectableInfo& InOutSelectableInfo
@@ -215,7 +230,8 @@ private:
     UFUNCTION()
     void HandleRallyPointRequested();
 
-    // ==================== Variables ====================
+   
+
 
 protected:
     UPROPERTY(

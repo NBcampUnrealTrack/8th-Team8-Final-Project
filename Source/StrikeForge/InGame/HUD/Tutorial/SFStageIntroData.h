@@ -118,6 +118,20 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
         meta = (ClampMin = "0.01", ClampMax = "1.0"))
     float ScreenRadius = 0.12f;
 
+    /**
+     * 가로로 긴 UI 를 감쌀 때 쓰는 반쪽 크기. 0 이면 ScreenRadius 로
+     * 정사각형을 만든다.
+     *
+     * X 는 화면 가로, Y 는 화면 세로에 대한 비율이며 둘 다 "반지름" 이다.
+     * 화면 아래를 가로지르는 건설 메뉴처럼 정사각형으로는 덮을 수 없는
+     * 영역이 있어 따로 두었다.
+     *
+     *   건설 메뉴 전체를 감싸는 예 : (0.22, 0.16)
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    FVector2D ScreenExtent = FVector2D::ZeroVector;
+
     /** TargetKind 가 WorldLocation 일 때 가리킬 월드 좌표 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World")
     FVector WorldLocation = FVector::ZeroVector;
@@ -137,6 +151,20 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
     FGameplayTag CompletionTag;
+
+    /**
+     * 이 칸이 요구하는 건물의 행 이름. 건설 메뉴에서 무엇을 골라야 하는가.
+     *
+     * 비워두면 건물 선택을 따지지 않는다.
+     *
+     * 채워두면 그 건물을 골랐을 때만 위의 CompletionTag 가 발동하고,
+     * 다른 건물은 선택 자체가 막힌다. 태그 이름과 무관하게 동작하므로
+     * 태그는 Tutorial.Select.Building.Product 처럼 의미대로 지어도 된다.
+     *
+     * 값은 DA 의 Building Id 와 같아야 한다 (예: Barrack, MineralMine).
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
+    FName RequiredBuildingRowName = NAME_None;
 
     /**
      * 신호를 기다리는 단계라도 이 시간이 지나면 넘어간다. 0 이면 무한 대기.

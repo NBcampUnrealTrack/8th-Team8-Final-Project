@@ -31,8 +31,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
 	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
 	// 집결지 setter
-	FORCEINLINE void SetAssemblePoint(const FVector& InAssemblePoint) { AssemblePoint = InAssemblePoint; }
-
+	void SetAssemblePoint(const FVector& InAssemblePoint);
+	void CancleAssemblePoint();
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
 	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
@@ -90,6 +90,7 @@ private:
 	
 	// 컨트롤러에서 값을 받으면 building이 여기로 저장
 	FVector AssemblePoint;
+	bool bSetAssemblePoint = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

@@ -907,7 +907,7 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
 	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
 	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
-	DestroyedEffect = BuildingDefinition->DestroyedEffect.LoadSynchronous();
+	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
 	// preview ghost
 	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
 

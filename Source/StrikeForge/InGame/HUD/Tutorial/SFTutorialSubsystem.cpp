@@ -13,14 +13,30 @@
 #include "InGame/HUD/Tutorial/SFTutorialGhostActor.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Widgets/SViewport.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Logging/SFLog.h"
+#include "Blueprint/UserWidget.h"
+#include "Slate/SObjectWidget.h"
+#include "Layout/WidgetPath.h"
+#include "Containers/Ticker.h"
+#include "Engine/HitResult.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Command_Move, "Tutorial.Command.Move");
+
+void USFTutorialSubsystem::Deinitialize()
+{
+    // ClearGuideState 가 고스트·타이머·대기 상태를 모두 정리한다.
+    // 정리 대상이 늘어나도 이쪽을 고칠 필요가 없도록 그대로 재사용한다.
+    ClearGuideState();
+
+    Super::Deinitialize();
+}
 
 USFTutorialSubsystem* USFTutorialSubsystem::Get(const UObject* WorldContext)
 {
@@ -125,6 +141,18 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
     {
         SF_LOG(Warning, "[SFTutorialSubsystem] NotifyObjective was called with an empty tag.");
         return false;
+    }
+
+    // 신호가 아예 안 들어오는 경우와, 들어왔는데 걸러진 경우를 구분해야 한다.
+    // 둘 다 화면에서는 "아무 일도 안 일어남" 으로 똑같이 보이기 때문이다.
+    //
+    // 이동 명령처럼 한 번에 수십 번 들어오는 경로는 bRecordWhenNotWaiting 이
+    // false 이므로 여기서 빠진다. 건물 완성 같은 상태형 목표만 찍힌다.
+    if (bRecordWhenNotWaiting)
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] NotifyObjective | Tag: %s | From: %s",
+            *InObjectiveTag.ToString(),
+            InWorldContext != nullptr ? *InWorldContext->GetName() : TEXT("(null)"));
     }
 
     // 계층 매칭. 기다리는 쪽이 부모 태그면 자식 태그로도 만족한다.
@@ -883,6 +911,38 @@ void USFTutorialSubsystem::DumpState() const
     if (GuideStepIndex != INDEX_NONE)
     {
         SF_LOG(Warning, "  Guide       : step %d / %d", GuideStepIndex + 1, GuideSteps.Num());
+
+        // 안내가 안 넘어갈 때 확인해야 할 값은 전부 여기 있다.
+        // DT 에 적어 둔 값과 눈으로 대조하라고 한 번에 찍는다.
+        if (GuideSteps.IsValidIndex(GuideStepIndex))
+        {
+            const FSFStageIntroGuideStep& Step = GuideSteps[GuideStepIndex];
+
+            SF_LOG(Warning, "  Step wants  : Completion=%s | Tag=%s",
+                *StaticEnum<ESFGuideCompletion>()->GetNameStringByValue(static_cast<int64>(Step.Completion)),
+                Step.CompletionTag.IsValid() ? *Step.CompletionTag.ToString() : TEXT("(none)"));
+
+            // 종류에 따라 실제로 쓰이는 값이 다르다.
+            // 반대쪽 값을 찍으면 멀쩡해 보이는 숫자에 속는다.
+            if (Step.TargetKind == ESFGuideTargetKind::ScreenRegion)
+            {
+                SF_LOG(Warning, "  Step target : Kind=ScreenRegion | Anchor=%s | ScreenRadius=%.3f",
+                    *Step.ScreenAnchor.ToString(),
+                    Step.ScreenRadius);
+                SF_LOG(Warning, "                (ScreenRegion 은 bRequireNearTarget 과 건설 제한을 쓰지 않는다)");
+            }
+            else
+            {
+                SF_LOG(Warning, "  Step target : Kind=WorldLocation | RequireNear=%s | Location=%s | WorldRadius=%.0f",
+                    Step.bRequireNearTarget ? TEXT("YES") : TEXT("no"),
+                    *Step.WorldLocation.ToCompactString(),
+                    Step.WorldRadius);
+            }
+        }
+    }
+    else
+    {
+        SF_LOG(Warning, "  Guide       : not running");
     }
 
     SF_LOG(Warning, "  Completed (%d) : %s",
@@ -913,6 +973,233 @@ static void SFTutorialDumpState(const TArray<FString>& Args, UWorld* World)
 //   - 커서가 없다             → 클릭 지점이 없다
 // 눈으로는 셋이 똑같이 보이므로 값으로 찍어 가른다.
 // ─────────────────────────────────────────────────────────
+/**
+ * 입력이 막히는 순간을 콘솔로 관찰할 수 없다는 문제가 있다.
+ *
+ * 에디터 Output Log 의 입력창에 명령을 치면 그쪽이 포커스를 가져가고,
+ * 게임 안 콘솔(~)을 열면 콘솔이 포커스를 뷰포트로 되돌려 준다.
+ * 어느 쪽이든 "관찰 행위가 상태를 바꿔 버려서" 고장난 순간을 볼 수 없다.
+ *
+ * 그래서 콘솔을 건드리지 않고 상태를 계속 찍어 두는 감시기를 둔다.
+ * 일시정지 중에도 돌아야 하므로 월드 타이머가 아니라 FTSTicker 를 쓴다.
+ *
+ *   sf.Tutorial.WatchInput 1   켜기
+ *   sf.Tutorial.WatchInput 0   끄기
+ */
+namespace SFTutorialInputWatch
+{
+    static FTSTicker::FDelegateHandle TickerHandle;
+    static TWeakObjectPtr<UWorld> WatchedWorld;
+    static FString LastSignature;
+    static float HeartbeatAccumulator = 0.f;
+
+    /** 커서 아래에 쌓여 있는 위젯을 잎에서 뿌리 방향으로 나열한다. */
+    static FString BuildHoverPath()
+    {
+        if (!FSlateApplication::IsInitialized())
+        {
+            return TEXT("(slate not ready)");
+        }
+
+        FSlateApplication& Slate = FSlateApplication::Get();
+
+        const FWidgetPath Path = Slate.LocateWindowUnderMouse(
+            Slate.GetCursorPos(),
+            Slate.GetInteractiveTopLevelWindows());
+
+        if (!Path.IsValid() || Path.Widgets.Num() <= 0)
+        {
+            return TEXT("(none)");
+        }
+
+        FString Result;
+
+        // 뿌리까지 다 찍으면 한 줄이 너무 길어진다.
+        // 게임을 가리고 있는 놈은 잎 쪽에 있으므로 앞의 몇 개면 충분하다.
+        const int32 MaxDepth = 6;
+
+        for (int32 Index = Path.Widgets.Num() - 1, Printed = 0;
+             Index >= 0 && Printed < MaxDepth;
+             --Index, ++Printed)
+        {
+            const TSharedRef<SWidget>& Widget = Path.Widgets[Index].Widget;
+
+            if (!Result.IsEmpty())
+            {
+                Result += TEXT(" < ");
+            }
+
+            Result += Widget->GetTypeAsString();
+
+            if (Widget->GetType() == TEXT("SObjectWidget"))
+            {
+                const SObjectWidget& ObjectWidget =
+                    static_cast<const SObjectWidget&>(Widget.Get());
+
+                if (const UUserWidget* UserWidget = ObjectWidget.GetWidgetObject())
+                {
+                    Result += FString::Printf(TEXT("(%s)"), *UserWidget->GetClass()->GetName());
+                }
+            }
+        }
+
+        return Result;
+    }
+
+    /** 마우스가 움직일 때마다 바뀌므로 변화 감지에서는 제외한다. */
+    static FString BuildStateSignature(UWorld* World)
+    {
+        FString Signature;
+
+        Signature += FString::Printf(
+            TEXT("Paused=%d"),
+            UGameplayStatics::IsGamePaused(World) ? 1 : 0);
+
+        if (APlayerController* PlayerController = World->GetFirstPlayerController())
+        {
+            Signature += FString::Printf(
+                TEXT(" | Cursor=%d Click=%d Look=%d Move=%d"),
+                PlayerController->bShowMouseCursor ? 1 : 0,
+                PlayerController->bEnableClickEvents ? 1 : 0,
+                PlayerController->IsLookInputIgnored() ? 1 : 0,
+                PlayerController->IsMoveInputIgnored() ? 1 : 0);
+        }
+
+        if (UGameViewportClient* ViewportClient = World->GetGameViewport())
+        {
+            Signature += FString::Printf(
+                TEXT(" | Capture=%d Lock=%d IgnoreInput=%d"),
+                static_cast<int32>(ViewportClient->GetMouseCaptureMode()),
+                static_cast<int32>(ViewportClient->GetMouseLockMode()),
+                ViewportClient->IgnoreInput() ? 1 : 0);
+        }
+
+        if (FSlateApplication::IsInitialized())
+        {
+            const TSharedPtr<SWidget> Focused =
+                FSlateApplication::Get().GetUserFocusedWidget(0);
+
+            Signature += FString::Printf(
+                TEXT(" | Focus=%s Captor=%d"),
+                Focused.IsValid() ? *Focused->GetTypeAsString() : TEXT("none"),
+                FSlateApplication::Get().HasAnyMouseCaptor() ? 1 : 0);
+        }
+
+        if (const USFTutorialSubsystem* Tutorial = World->GetSubsystem<USFTutorialSubsystem>())
+        {
+            Signature += FString::Printf(
+                TEXT(" | Guide=%d Waiting=%d"),
+                Tutorial->IsGuideActive() ? 1 : 0,
+                Tutorial->IsWaitingForObjective() ? 1 : 0);
+        }
+
+        return Signature;
+    }
+
+    /** 커서 아래에 실제로 무엇이 잡히는지. 선택이 안 되는 원인을 가른다. */
+    static FString BuildTraceInfo(UWorld* World)
+    {
+        APlayerController* PlayerController = World->GetFirstPlayerController();
+
+        if (!IsValid(PlayerController))
+        {
+            return TEXT("(no controller)");
+        }
+
+        FHitResult HitResult;
+
+        const bool bHit = PlayerController->GetHitResultUnderCursor(
+            ECC_Visibility,
+            false,
+            HitResult);
+
+        const AActor* HitActor = bHit ? HitResult.GetActor() : nullptr;
+
+        return IsValid(HitActor) ? HitActor->GetName() : TEXT("none");
+    }
+
+    static bool Tick(float InDeltaTime)
+    {
+        UWorld* World = WatchedWorld.Get();
+
+        if (!IsValid(World))
+        {
+            TickerHandle.Reset();
+            LastSignature.Empty();
+            return false;
+        }
+
+        const FString Signature = BuildStateSignature(World);
+
+        HeartbeatAccumulator += InDeltaTime;
+
+        // 상태가 바뀌면 즉시, 아니면 2초마다 한 번.
+        // 마우스 위치는 신호에서 뺐으므로 움직인다고 로그가 쏟아지지 않는다.
+        const bool bChanged = Signature != LastSignature;
+        const bool bHeartbeat = HeartbeatAccumulator >= 2.f;
+
+        if (bChanged || bHeartbeat)
+        {
+            LastSignature = Signature;
+            HeartbeatAccumulator = 0.f;
+
+            SF_LOG(
+                Warning,
+                "[SFTutorialWatch]%s %s | UnderCursor=%s | Hover=%s",
+                bChanged ? TEXT(" *") : TEXT(""),
+                *Signature,
+                *BuildTraceInfo(World),
+                *BuildHoverPath());
+        }
+
+        return true;
+    }
+
+    static void Stop()
+    {
+        if (TickerHandle.IsValid())
+        {
+            FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+            TickerHandle.Reset();
+        }
+
+        WatchedWorld.Reset();
+        LastSignature.Empty();
+        HeartbeatAccumulator = 0.f;
+    }
+}
+
+static void SFTutorialWatchInput(const TArray<FString>& Args, UWorld* World)
+{
+    const bool bEnable = Args.Num() <= 0 || Args[0] != TEXT("0");
+
+    SFTutorialInputWatch::Stop();
+
+    if (!bEnable)
+    {
+        SF_LOG(Warning, "[SFTutorialSubsystem] Input watch stopped.");
+        return;
+    }
+
+    if (!IsValid(World))
+    {
+        SF_LOG(Error, "[SFTutorialSubsystem] World was not found. Are you in play mode?");
+        return;
+    }
+
+    SFTutorialInputWatch::WatchedWorld = World;
+    SFTutorialInputWatch::TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateStatic(&SFTutorialInputWatch::Tick),
+        0.25f);
+
+    SF_LOG(Warning, "[SFTutorialSubsystem] Input watch started. 콘솔을 닫고 증상을 재현하세요.");
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSFTutorialWatchInput(
+    TEXT("sf.Tutorial.WatchInput"),
+    TEXT("입력 상태를 계속 감시해서 바뀔 때마다 로그로 남긴다. 인자 0 이면 끈다."),
+    FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(SFTutorialWatchInput));
+
 static void SFTutorialDumpInput(const TArray<FString>& Args, UWorld* World)
 {
     if (!IsValid(World))
@@ -942,11 +1229,54 @@ static void SFTutorialDumpInput(const TArray<FString>& Args, UWorld* World)
         SF_LOG(Warning, "  Focused widget : %s",
             Focused.IsValid() ? *Focused->GetTypeAsString() : TEXT("(none)"));
 
+        // 타입 이름만으로는 어느 위젯 블루프린트에 있는 놈인지 알 수 없다.
+        // 부모를 타고 올라가면서 SObjectWidget 을 만나면 그게 UMG 위젯이므로,
+        // 거기서 UUserWidget 의 클래스 이름을 뽑아 범인을 특정한다.
+        if (Focused.IsValid())
+        {
+            FString Chain;
+            int32 Depth = 0;
+
+            for (TSharedPtr<SWidget> Node = Focused; Node.IsValid() && Depth < 32; Node = Node->GetParentWidget(), ++Depth)
+            {
+                if (!Chain.IsEmpty())
+                {
+                    Chain += TEXT(" < ");
+                }
+
+                Chain += Node->GetTypeAsString();
+
+                if (Node->GetType() == TEXT("SObjectWidget"))
+                {
+                    const SObjectWidget* ObjectWidget = static_cast<const SObjectWidget*>(Node.Get());
+                    const UUserWidget* UserWidget = ObjectWidget != nullptr ? ObjectWidget->GetWidgetObject() : nullptr;
+
+                    if (IsValid(UserWidget))
+                    {
+                        Chain += FString::Printf(TEXT("(%s)"), *UserWidget->GetClass()->GetName());
+                    }
+                }
+            }
+
+            SF_LOG(Warning, "  Focus chain    : %s", *Chain);
+        }
+
         // GetMouseCaptor 는 5.5 에 없다. 누가 잡았는지까지는 몰라도
         // 잡혀 있는지 여부만 알면 원인을 가르는 데는 충분하다.
         SF_LOG(Warning, "  Mouse captured : %s",
             FSlateApplication::Get().HasAnyMouseCaptor() ? TEXT("YES") : TEXT("no"));
     }
+
+    if (UGameViewportClient* ViewportClient = World->GetGameViewport())
+    {
+        SF_LOG(Warning, "  Viewport       : Capture=%d Lock=%d IgnoreInput=%d",
+            static_cast<int32>(ViewportClient->GetMouseCaptureMode()),
+            static_cast<int32>(ViewportClient->GetMouseLockMode()),
+            ViewportClient->IgnoreInput() ? 1 : 0);
+    }
+
+    SF_LOG(Warning, "  Under cursor   : %s", *SFTutorialInputWatch::BuildTraceInfo(World));
+    SF_LOG(Warning, "  Hover path     : %s", *SFTutorialInputWatch::BuildHoverPath());
 
     if (const USFTutorialSubsystem* Tutorial = World->GetSubsystem<USFTutorialSubsystem>())
     {
@@ -955,6 +1285,33 @@ static void SFTutorialDumpInput(const TArray<FString>& Args, UWorld* World)
             Tutorial->IsWaitingForObjective() ? TEXT("YES") : TEXT("no"));
     }
 }
+
+// 포커스가 편집 가능한 텍스트 위젯에 잡혀 있으면 뷰포트가 입력을 못 받는다.
+// 이 명령으로 조작이 돌아오면 원인은 포커스이고, 그대로면 다른 곳을 봐야 한다.
+static void SFTutorialFixFocus(const TArray<FString>& Args, UWorld* World)
+{
+    if (!IsValid(World) || !FSlateApplication::IsInitialized())
+    {
+        return;
+    }
+
+    FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::SetDirectly);
+
+    if (UGameViewportClient* ViewportClient = World->GetGameViewport())
+    {
+        if (const TSharedPtr<SViewport> ViewportWidget = ViewportClient->GetGameViewportWidget())
+        {
+            FSlateApplication::Get().SetAllUserFocus(ViewportWidget, EFocusCause::SetDirectly);
+        }
+    }
+
+    SF_LOG(Warning, "[SFTutorialSubsystem] Focus was forced back to the game viewport.");
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSFTutorialFixFocus(
+    TEXT("sf.Tutorial.FixFocus"),
+    TEXT("키보드 포커스를 게임 뷰포트로 되돌린다. 입력이 막혔을 때 원인이 포커스인지 가른다."),
+    FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(SFTutorialFixFocus));
 
 static FAutoConsoleCommandWithWorldAndArgs GSFTutorialDumpInput(
     TEXT("sf.Tutorial.DumpInput"),

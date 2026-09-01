@@ -267,6 +267,15 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial|Guide")
     FSFTutorialBuildBlockedChanged OnBuildBlockedChanged;
 
+    /**
+     * 월드가 내려갈 때 남은 것을 정리한다.
+     *
+     * 안내 중에 PIE 를 끄면 배치 고스트 액터와 자동 진행 타이머가 살아 있는
+     * 채로 월드가 사라진다. 다음 판에서 바로 티가 나지는 않지만, 정리 지점을
+     * 한 곳으로 두는 편이 추적하기 쉽다.
+     */
+    virtual void Deinitialize() override;
+
     /** 콘솔 명령 sf.Tutorial.DumpState 가 호출한다 */
     void DumpState() const;
 

@@ -147,4 +147,14 @@ struct FUnitStatData : public FTableRowBase
 	/** 생산 비용. 생산 큐를 거치지 않는 유닛은 기본값(0)으로 둔다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Production")
 	FResources UnitProductionCost;
+
+	/**
+	 * 이 유닛을 선택했을 때 재생할 소리.
+	 *
+	 * 비워두면 소리가 나지 않는다 — 소리를 줄 유닛만 채우면 된다.
+	 * 실제 로딩은 AUnitBase::InitStat 이 스폰 때 한 번만 한다.
+	 * 선택할 때마다 로드하면 그 유닛을 처음 고르는 순간 히치가 생긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Selection")
+	TSoftObjectPtr<class USoundBase> SelectionSound;
 };

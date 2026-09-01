@@ -16,6 +16,20 @@
 #include "InputCoreTypes.h"
 #include "Logging/SFLog.h"
 
+TOptional<FUIInputConfig> USFStageIntroWidget::GetDesiredInputConfig() const
+{
+    // ECommonInputMode::All          : 게임과 UI 가 모두 입력을 받는다.
+    // CaptureDuringMouseDown         : 누르는 동안에만 캡처한다. RTS 기본값이다.
+    // bHideCursorDuringViewportCapture=false : 드래그 중에도 커서가 보여야 한다.
+    //
+    // ASFInGamePlayerController::ConfigureMouseInput 이 설정하는 값과 같다.
+    // 둘이 어긋나면 위젯이 열리고 닫힐 때마다 조작 방식이 바뀐다.
+    return FUIInputConfig(
+        ECommonInputMode::All,
+        EMouseCaptureMode::CaptureDuringMouseDown,
+        false);
+}
+
 void USFStageIntroWidget::NativeConstruct()
 {
     Super::NativeConstruct();

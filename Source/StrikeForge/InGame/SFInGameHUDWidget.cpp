@@ -1,11 +1,11 @@
-﻿#include "SFInGameHUDWidget.h"
+#include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
-
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
 #include "SFSelectInfo/SFSelectionUIDataRow.h"
@@ -119,6 +119,7 @@ void USFInGameHUDWidget::NativeConstruct()
         );
     }
     RefreshBuildModeOpenButtonVisibility();
+    UnbindSelectedProductionBuilding();
 
     if (IsValid(SelectionPanel))
     {
@@ -417,8 +418,13 @@ void USFInGameHUDWidget::ApplySelection(
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
     HideAllSelectionIndicators();
+    UnbindSelectedProductionBuilding();
 
     SelectedActor = NewSelectedActor;
+
+    BindSelectedProductionBuilding(
+        SelectedActor.Get()
+    );
 
     SelectedActor->OnDestroyed.AddUniqueDynamic(
         this,
@@ -647,6 +653,7 @@ void USFInGameHUDWidget::ClearSelection()
 
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
+    UnbindSelectedProductionBuilding();
 
     SelectedActor = nullptr;
     SelectedActors.Reset();
@@ -1990,10 +1997,34 @@ void USFInGameHUDWidget::TryStartStageIntro()
     // 목표 대기에서 돌아올 때도 같은 함수를 타야 HUD 가시성·일시정지 같은 상태가
     // 어긋나지 않는다.
     //
+    // 예전에는 여기서 폴백 행을 그대로 열었다. 그래서 2스테이지로 넘어가도
+    // 1스테이지 튜토리얼이 다시 떴다. 지금은 스테이지를 물어보고 연다.
+    const FName RowName = ResolveStageIntroRowName();
+
+    // 튜토리얼이 없는 스테이지가 정상적으로 존재한다.
+    // 그대로 OpenStageIntro 로 넘기면 매 판 Error 로그가 남으므로 여기서 거른다.
+    // 반대로 재개(OnResumeRequested) 경로에서 행이 없는 것은 진짜 오류이므로
+    // OpenStageIntro 쪽 Error 는 그대로 둔다.
+    if (!IsValid(StageIntroDataTable))
+    {
+        SF_LOG(Log, "[SFInGameHUDWidget] StageIntroDataTable is not set. Tutorial is skipped.");
+        return;
+    }
+
+    if (RowName.IsNone() || !StageIntroDataTable->GetRowNames().Contains(RowName))
+    {
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] This stage has no tutorial, so it is skipped | Row: %s",
+            *RowName.ToString()
+        );
+        return;
+    }
+
     // INDEX_NONE 은 "행에 지정된 StartNodeIndex 부터" 라는 뜻이다.
     OpenStageIntro(
         StageIntroDataTable,
-        StageIntroFallbackRowName,
+        RowName,
         INDEX_NONE
     );
 }
@@ -2234,3 +2265,96 @@ void USFInGameHUDWidget::HandleRallyPointRequested()
         PlayerController->BeginRallyPointCommand();
     }
 }
+
+void USFInGameHUDWidget::BindSelectedProductionBuilding(
+    AActor* Actor
+)
+{
+    SF_LOG(
+        Log,
+        "[HUD] Production building delegate bound: %s",
+        *Actor->GetName()
+    );
+
+    UnbindSelectedProductionBuilding();
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(Actor);
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return;
+    }
+
+    SelectedProductionBuilding =
+        ProductionBuilding;
+
+    SelectedProductionBuilding->OnSpawnableUnitsChanged
+        .AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
+        );
+}
+
+void USFInGameHUDWidget::UnbindSelectedProductionBuilding()
+{
+    if (!SelectedProductionBuilding.IsValid())
+    {
+        SelectedProductionBuilding = nullptr;
+        return;
+    }
+
+    SelectedProductionBuilding->OnSpawnableUnitsChanged
+        .RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
+        );
+
+    SelectedProductionBuilding = nullptr;
+}
+
+void USFInGameHUDWidget::
+HandleSelectedProductionBuildingTierActivated(
+    const TArray<FName>& SpawnableRowNames
+)
+{
+    SF_LOG(
+        Log,
+        "[HUD] Production building tier activated: %d",
+        SpawnableRowNames.Num()
+    );
+
+    AActor* Actor = SelectedActor.Get();
+
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    FSFSelectableInfo UpdatedInfo =
+        ISFSelectable::Execute_GetSelectableInfo(Actor);
+
+    const FHealthData HealthData =
+        ISFSelectable::Execute_GetHealthData(Actor);
+
+    UpdatedInfo.Tier =
+        HealthData.CurrentTier + 1;
+
+    ApplySelectionUIData(UpdatedInfo);
+
+    SelectedInfo = UpdatedInfo;
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
+        );
+
+        SelectionPanel->SetTierUpButtonVisible(
+            IsOwnedByLocalPlayer(Actor) &&
+            SelectedInfo.SelectableType ==
+            ESFSelectableType::ProductionBuilding
+        );
+    }
+}
+

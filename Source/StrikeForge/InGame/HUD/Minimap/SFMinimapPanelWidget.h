@@ -11,6 +11,7 @@ class AActor;
 class ASceneCapture2D;
 class UBorder;
 class UCanvasPanel;
+class UCombatTargetComponent;
 class UTextureRenderTarget2D;
 class UWidget;
 struct FSFMinimapSettings;
@@ -108,7 +109,16 @@ private:
 
     void UpdatePlayerViewIndicator();
 
-    void UpdateMinimapMarkers();
+    void UpdateMinimapMarkers(float InDeltaTime);
+
+    void UpdateCombatDangerOverlay(float InDeltaTime);
+
+    UFUNCTION()
+    void HandleCombatTargetDamaged(
+        UCombatTargetComponent* InTarget,
+        float InDamage,
+        AActor* InInstigator
+    );
 
     void MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent);
 
@@ -126,6 +136,14 @@ private:
     FLinearColor GetMarkerColor(
         ESFMinimapMarkerType MarkerType
     ) const;
+
+    void UpdateBuildingEventOverlay(
+        float InDeltaTime
+    );
+
+    void StartBuildingEventFlash();
+
+    bool bInitialMarkerScanCompleted = false;
 
     // 변수 영역
 protected:
@@ -309,6 +327,27 @@ protected:
         );
 
     UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Color"
+    )
+    FLinearColor DangerMarkerColor =
+        FLinearColor(
+            1.0f,
+            0.0f,
+            0.0f,
+            1.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Effect",
+        meta = (ClampMin = "0.0", Units = "s")
+    )
+    float DangerMarkerDuration = 1.0f;
+
+    UPROPERTY(
         BlueprintReadOnly,
         Category = "SF|Minimap",
         meta = (
@@ -325,6 +364,20 @@ protected:
             )
     )
     TObjectPtr<UBorder> PlayerViewIndicator = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Minimap",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UBorder> CombatDangerOverlay = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Minimap",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UBorder> BuildingEventOverlay = nullptr;
 
 private:
     UPROPERTY(Transient)
@@ -350,4 +403,38 @@ private:
         FVector2D::ZeroVector;
 
     FTimerHandle MinimapCaptureTimerHandle;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        Category = "SF|Minimap|Combat Danger",
+        meta = (ClampMin = "0.01", Units = "s")
+    )
+    float CombatDangerFlashHalfPeriod = 0.15f;
+
+    float CombatDangerFlashElapsed = 0.0f;
+
+    int32 CombatDangerFlashToggleCount = 0;
+
+    bool bCombatDangerFlashActive = false;
+
+    bool bCombatDangerOverlayVisible = false;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        Category = "SF|Minimap|Building Event",
+        meta = (ClampMin = "0.01", Units = "s")
+    )
+    float BuildingEventFlashHalfPeriod = 0.15f;
+
+    float BuildingEventFlashElapsed = 0.0f;
+
+    int32 BuildingEventFlashToggleCount = 0;
+
+    bool bBuildingEventFlashActive = false;
+
+    bool bBuildingEventOverlayVisible = false;
+
+    void StartBuildingEventFlash(AActor* InBuilding);
+
+    TWeakObjectPtr<AActor> BuildingEventTarget;
 };

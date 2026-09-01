@@ -13,6 +13,11 @@ class UProductComponent;
 class UProgressBar;
 class USoundBase;
 class UButton;
+class ASFProductionBuilding;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(
+    FProductionResourceWarningRequested
+);
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFProductionBuildingPanelWidget
@@ -109,6 +114,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Production")
     bool RequestProductionBySlot(int32 SlotIndex);
 
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Production|Sound"
+    )
+    FProductionResourceWarningRequested
+        OnProductionResourceWarningRequested;
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -154,6 +166,13 @@ private:
 
     void CancelProductionAtQueueIndex(int32 QueueIndex);
 
+    UFUNCTION()
+    void HandleSpawnableUnitsChanged(const TArray<FName>& SpawnableRowNames);
+
+    void BindProductionBuilding(ASFProductionBuilding* InProductionBuilding);
+
+    void UnbindProductionBuilding();
+
 protected:
     UPROPERTY(
         BlueprintReadOnly,
@@ -195,4 +214,8 @@ private:
 
     UPROPERTY(Transient)
     TArray<FName> CurrentProductableUnitRowNames;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFProductionBuilding>
+        BoundProductionBuilding;
 };

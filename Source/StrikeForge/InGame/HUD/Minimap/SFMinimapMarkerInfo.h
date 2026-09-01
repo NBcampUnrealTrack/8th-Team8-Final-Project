@@ -30,4 +30,10 @@ struct FSFMinimapMarkerEntry
 
     ESFMinimapMarkerType MarkerType =
         ESFMinimapMarkerType::None;
+
+    float DangerTimeRemaining = 0.0f;
+
+    bool bWasTierActivated = false;
+
+    int32 LastKnownTier = INDEX_NONE;
 };

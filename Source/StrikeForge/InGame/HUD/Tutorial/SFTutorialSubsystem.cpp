@@ -511,6 +511,143 @@ bool USFTutorialSubsystem::IsBuildLocationAllowed(const UObject* InWorldContext,
     return bAllowed;
 }
 
+// ─────────────────────────────────────────────────────────
+// 건설 메뉴
+//
+// 항목 하나를 고르는 것도 튜토리얼 단계가 될 수 있어야 한다.
+// "건설 버튼을 누르세요" 만 있고 무엇을 고르든 넘어가면, 플레이어가
+// 엉뚱한 건물을 들고 배치 단계로 들어간다.
+// ─────────────────────────────────────────────────────────
+const FSFStageIntroGuideStep* USFTutorialSubsystem::GetCurrentGuideStep() const
+{
+    return GuideSteps.IsValidIndex(GuideStepIndex) ? &GuideSteps[GuideStepIndex] : nullptr;
+}
+
+FGameplayTag USFTutorialSubsystem::MakeBuildingSelectTag(FName InBuildingRowName)
+{
+    if (InBuildingRowName.IsNone())
+    {
+        return FGameplayTag();
+    }
+
+    const FString TagString =
+        FString::Printf(TEXT("Tutorial.Select.Building.%s"), *InBuildingRowName.ToString());
+
+    // 두 번째 인자가 false 라 없는 태그면 경고 없이 빈 태그가 돌아온다.
+    return FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+}
+
+void USFTutorialSubsystem::NotifyBuildingSelected(const UObject* InWorldContext, FName InBuildingRowName)
+{
+    USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial) || InBuildingRowName.IsNone())
+    {
+        return;
+    }
+
+    // 1순위 — 안내 칸이 요구 건물을 직접 지정한 경우.
+    //
+    // 이쪽이면 태그 이름과 행 이름이 달라도 된다. 태그는 DT 작성자가
+    // Tutorial.Select.Building.Product 처럼 의미대로 지으면 되고, 어떤 건물을
+    // 요구하는지는 RequiredBuildingRowName 이 따로 들고 있다.
+    if (const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep())
+    {
+        if (!Step->RequiredBuildingRowName.IsNone())
+        {
+            if (Step->RequiredBuildingRowName == InBuildingRowName &&
+                Step->CompletionTag.IsValid())
+            {
+                NotifyObjective(InWorldContext, Step->CompletionTag, false);
+            }
+
+            return;
+        }
+    }
+
+    // 2순위 — 이름 규칙으로 조립한 태그.
+    // 안내 칸을 쓰지 않는 단순 대기(WaitForObjective)에서도 쓸 수 있게 남겨둔다.
+    const FGameplayTag SelectTag = MakeBuildingSelectTag(InBuildingRowName);
+
+    if (SelectTag.IsValid())
+    {
+        NotifyObjective(InWorldContext, SelectTag, false);
+    }
+}
+
+bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName)
+{
+    // 어느 갈래에서 통과됐는지 남긴다.
+    //
+    // "전부 눌린다" 는 증상은 원인이 여럿인데(안내가 안 돌고 있다 / 요구 건물을
+    // 안 적었다 / 부모 태그가 없다) 결과만 보면 구분이 되지 않는다.
+    // 클릭할 때만 불리므로 로그가 넘치지 않는다.
+    const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial))
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] Selection allowed: 서브시스템이 없다 | Row: %s",
+            *InBuildingRowName.ToString());
+        return true;
+    }
+
+    // 1순위 — 안내 칸이 요구 건물을 지정했으면 그것만 통과시킨다.
+    const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep();
+
+    if (Step == nullptr)
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] 진행 중인 안내 칸이 없다 | GuideStepIndex: %d",
+            Tutorial->GuideStepIndex);
+    }
+    else if (Step->RequiredBuildingRowName.IsNone())
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] 안내 칸에 RequiredBuildingRowName 이 비어 있다");
+    }
+    else
+    {
+        const bool bMatches = (Step->RequiredBuildingRowName == InBuildingRowName);
+
+        SF_LOG(Log, "[SFTutorialSubsystem] Selection %s | Required: %s | Clicked: %s",
+            bMatches ? TEXT("ALLOWED") : TEXT("BLOCKED"),
+            *Step->RequiredBuildingRowName.ToString(),
+            *InBuildingRowName.ToString());
+
+        return bMatches;
+    }
+
+    // 2순위 — 이름 규칙 태그를 기다리는 중인지 본다.
+    static const FGameplayTag SelectRoot =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Select.Building"), false);
+
+    if (!SelectRoot.IsValid())
+    {
+        SF_LOG(Warning,
+            "[SFTutorialSubsystem] 'Tutorial.Select.Building' 태그가 없어 건물 선택을 제한하지 못한다. "
+            "Project Settings > GameplayTags 에 부모 태그를 추가하라.");
+        return true;
+    }
+
+    if (!Tutorial->PendingObjectiveTag.IsValid() ||
+        !Tutorial->PendingObjectiveTag.MatchesTag(SelectRoot))
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] 지금 기다리는 것이 건물 선택이 아니다 | Pending: %s",
+            Tutorial->PendingObjectiveTag.IsValid()
+                ? *Tutorial->PendingObjectiveTag.ToString()
+                : TEXT("(none)"));
+        return true;
+    }
+
+    const FGameplayTag SelectTag = MakeBuildingSelectTag(InBuildingRowName);
+    const bool bAllowed = SelectTag.IsValid() && SelectTag.MatchesTag(Tutorial->PendingObjectiveTag);
+
+    SF_LOG(Log, "[SFTutorialSubsystem] Selection %s (이름 규칙) | Pending: %s | Clicked: %s",
+        bAllowed ? TEXT("ALLOWED") : TEXT("BLOCKED"),
+        *Tutorial->PendingObjectiveTag.ToString(),
+        *InBuildingRowName.ToString());
+
+    return bAllowed;
+}
+
 void USFTutorialSubsystem::SetBuildBlocked(bool bInBlocked)
 {
     if (bLastBuildBlocked == bInBlocked)
@@ -921,6 +1058,11 @@ void USFTutorialSubsystem::DumpState() const
             SF_LOG(Warning, "  Step wants  : Completion=%s | Tag=%s",
                 *StaticEnum<ESFGuideCompletion>()->GetNameStringByValue(static_cast<int64>(Step.Completion)),
                 Step.CompletionTag.IsValid() ? *Step.CompletionTag.ToString() : TEXT("(none)"));
+
+            SF_LOG(Warning, "  Step needs  : RequiredBuildingRowName=%s",
+                Step.RequiredBuildingRowName.IsNone()
+                    ? TEXT("(none)")
+                    : *Step.RequiredBuildingRowName.ToString());
 
             // 종류에 따라 실제로 쓰이는 값이 다르다.
             // 반대쪽 값을 찍으면 멀쩡해 보이는 숫자에 속는다.

@@ -396,6 +396,14 @@ protected:
 	 */
 	void SteerTowardCommandPoint(float DeltaSeconds);
 
+	/**
+	 * 명령 지점에 닿았다고 튜토리얼에 알린다.
+	 *
+	 * 도착으로 인정되는 경로가 둘(반경 안 진입 / 막혀서 정지)이라 한 곳으로
+	 * 묶었다. 한쪽만 알리면 지형에 막힌 유닛 때문에 튜토리얼이 영영 멈춘다.
+	 */
+	void NotifyTutorialCommandArrived();
+
 	/** bBlockOtherUnits 값을 캡슐 콜리전에 반영한다 */
 	void ApplyUnitCollisionMode();
 

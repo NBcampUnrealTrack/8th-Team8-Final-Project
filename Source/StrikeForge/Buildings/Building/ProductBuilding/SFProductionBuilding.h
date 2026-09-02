@@ -26,6 +26,8 @@ public:
 	
 	// setter
 	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
+	void ApplySpeedBuff(float InMultiflyValue) const;
+	void ResetSpeedMultiplier();
 protected:
 	virtual void OnTierActivated() override;
 	virtual void OnUpgradeStarted() override;

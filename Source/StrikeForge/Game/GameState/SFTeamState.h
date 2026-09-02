@@ -6,6 +6,7 @@
 #include "Datas/Race/SFRaceType.h"
 #include "SFTeamState.generated.h"
 
+class ASFInGamePlayerController;
 class ASFNexusBuilding;
 class USFBuildingCatalog;
 
@@ -39,6 +40,7 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetMaximumPopulation() const { return MaximumPopulation; }
 	UFUNCTION(BlueprintPure) ASFNexusBuilding* GetNexus() const;
 	UFUNCTION(BlueprintPure) USFBuildingCatalog* GetBuildingCatalog() const;
+	UFUNCTION(BlueprintPure) ASFInGamePlayerController* GetPlayer() const;
 	
 	// 변경
 	void AddResource(EResourceType InType, int32 InAmount);
@@ -56,6 +58,7 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	void SetNexus(ASFNexusBuilding* InNexus);
 	bool IsNexus(const ASFNexusBuilding* InNexus) const;
 
+	void SetPlayer(ASFInGamePlayerController* InPlayer);
 private:
 	void SetMineral(int32 NewMineral);
 	void SetEther(int32 NewEther);
@@ -69,6 +72,7 @@ private:
 	UPROPERTY(VisibleAnywhere) int32 CurrentPopulation = 0;
 	UPROPERTY(VisibleAnywhere) int32 MaximumPopulation = 0;
 	UPROPERTY(VisibleAnywhere) TWeakObjectPtr<ASFNexusBuilding> Nexus;
+	UPROPERTY(VisibleAnywhere) TWeakObjectPtr<ASFInGamePlayerController> Player;
 	
 	UPROPERTY(
 	VisibleAnywhere,

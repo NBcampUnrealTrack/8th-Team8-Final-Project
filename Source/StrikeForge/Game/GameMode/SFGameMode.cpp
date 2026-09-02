@@ -23,10 +23,42 @@ void ASFGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	
-	if (ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(NewPlayer))
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(NewPlayer);
+	if (!IsValid(SFPC))	return;
+
+	const int32 AssignedTeamIndex =	PlayerTeamIndex;
+	// Controller 자신에게 팀 번호 저장
+	SFPC->SetMyTeamIndex(AssignedTeamIndex);
+	
+	ASFGameState* CurrentGameState = GetGameState<ASFGameState>();
+	if (!IsValid(CurrentGameState))	return;
+
+	// 이미 생성된 TeamState에 Controller 연결
+	if (!CurrentGameState->RegisterPlayer(AssignedTeamIndex, SFPC))
 	{
-		SFPC->SetMyTeamIndex(PlayerTeamIndex);
+		SF_LOG(
+			Error,
+			"[SFGameMode] Player 팀 등록 실패. "
+			"Team=%d, Player=%s",
+			AssignedTeamIndex,
+			*GetNameSafe(SFPC));
 	}
+}
+
+void ASFGameMode::Logout(AController* Exiting)
+{
+	// 싱글이라 할필요가없긴함. 나가면 바로 종료라서
+	// 애초에 컨트롤러가 나가면 Team정보의 Map 정보도 다 지워져야함
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(Exiting);
+	if (IsValid(SFPC))
+	{
+		if (ASFGameState* CurrentGameState = GetGameState<ASFGameState>())
+		{
+			CurrentGameState->UnregisterPlayer(SFPC->GetMyTeamIndex(), SFPC);
+		}
+	}
+	
+	Super::Logout(Exiting);
 }
 
 void ASFGameMode::InitGameState()

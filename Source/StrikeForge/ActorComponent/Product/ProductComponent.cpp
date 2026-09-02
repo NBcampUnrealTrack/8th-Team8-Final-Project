@@ -158,6 +158,47 @@ void UProductComponent::ResumeProductLine()
 	}
 }
 
+void UProductComponent::SetSpeedMultiplier(float InMultiplier)
+{
+	const float NewMultiplier =	FMath::Max(0.f, InMultiplier);
+
+	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	NewMultiplier))
+	{
+		return;
+	}
+
+	/*
+	 * 마지막 갱신부터 현재까지는 기존 배율로 처리한다.
+	 * 이후 경과 시간부터 새로운 배율이 적용된다.
+	 */
+	// 이전 배율로 현재 시점까지 먼저 계산
+	if (!ProductLine.IsEmpty() &&
+		!bProductionPaused &&
+		!bWaitingForPopulation)
+	{
+		ProcessProductionToNow();
+	}
+	
+	Tracker.WorkRateMultiplier = NewMultiplier;
+}
+
+void UProductComponent::ResetSpeedMultiplier()
+{
+	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	1.f))
+	{
+		return;
+	}
+	
+	if (!ProductLine.IsEmpty() &&
+	!bProductionPaused &&
+	!bWaitingForPopulation)
+	{
+		ProcessProductionToNow();
+	}
+	
+	Tracker.WorkRateMultiplier = 1.f;
+}
+
 void UProductComponent::SetAssemblePoint(const FVector& InAssemblePoint)
 {
 	AssemblePoint = InAssemblePoint;

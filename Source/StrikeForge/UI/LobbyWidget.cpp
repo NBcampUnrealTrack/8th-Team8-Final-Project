@@ -43,6 +43,9 @@ void ULobbyWidget::NativeConstruct()
 	{
 		Stage6->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
+
+	// 로비 진입 시 스테이지 버튼들 잠금/클리어 상태 갱신
+	RefreshStageButtons();
 }
 
 void ULobbyWidget::OnBackButtonClicked()

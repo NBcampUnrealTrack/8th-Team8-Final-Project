@@ -10,6 +10,10 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+// TObjectPtr<USoundMix/USoundClass> 를 UObject* 로 넘기려면 완전한 타입이 필요하다.
+// 전방 선언만으로는 IsValid 와 GameplayStatics 호출에서 C2664 가 난다.
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
 #include "TimerManager.h"
 #include "Input/Events.h"
 #include "Input/Reply.h"
@@ -28,6 +32,67 @@ TOptional<FUIInputConfig> USFStageIntroWidget::GetDesiredInputConfig() const
         ECommonInputMode::All,
         EMouseCaptureMode::CaptureDuringMouseDown,
         false);
+}
+
+void USFStageIntroWidget::NativeOnActivated()
+{
+    Super::NativeOnActivated();
+
+    ApplyMusicDuck(true);
+}
+
+void USFStageIntroWidget::NativeOnDeactivated()
+{
+    // Super 보다 먼저 되돌린다. 부모가 이 위젯을 정리하고 나면
+    // 월드 컨텍스트를 얻지 못할 수 있다.
+    ApplyMusicDuck(false);
+
+    Super::NativeOnDeactivated();
+}
+
+void USFStageIntroWidget::ApplyMusicDuck(bool bInDuck)
+{
+    // 이미 그 상태면 아무것도 하지 않는다.
+    //
+    // Push 를 두 번 하면 그만큼 더 눌린다. 창을 여닫을 때마다 배경음이
+    // 조금씩 작아져서 나중에는 안 들리게 된다.
+    if (bMusicDucked == bInDuck)
+    {
+        return;
+    }
+
+    if (!IsValid(DuckSoundMix))
+    {
+        return;
+    }
+
+    if (bInDuck)
+    {
+        // SoundClass 를 지정했으면 볼륨을 런타임에 덮어쓴다.
+        // 에셋을 열지 않고 DuckVolume 만 바꿔가며 맞출 수 있다.
+        if (IsValid(DuckSoundClass))
+        {
+            UGameplayStatics::SetSoundMixClassOverride(
+                this,
+                DuckSoundMix,
+                DuckSoundClass,
+                DuckVolume,
+                1.f,                // 피치는 건드리지 않는다
+                DuckFadeSeconds,
+                true);              // 하위 클래스까지 적용
+        }
+
+        UGameplayStatics::PushSoundMixModifier(this, DuckSoundMix);
+    }
+    else
+    {
+        UGameplayStatics::PopSoundMixModifier(this, DuckSoundMix);
+    }
+
+    bMusicDucked = bInDuck;
+
+    SF_LOG(Log, "[SFStageIntroWidget] 배경음 감쇠 %s | Volume: %.2f",
+        bInDuck ? TEXT("ON") : TEXT("OFF"), DuckVolume);
 }
 
 void USFStageIntroWidget::NativeConstruct()
@@ -81,8 +146,13 @@ void USFStageIntroWidget::NativeDestruct()
         NextGuideButton->OnClicked.RemoveDynamic(this, &USFStageIntroWidget::HandleNextGuideClicked);
     }
 
+    // 비활성화를 거치지 않고 파괴되는 경로가 있으면 감쇠가 남는다.
+    // 그러면 튜토리얼이 끝난 뒤에도 배경음이 계속 작다.
+    ApplyMusicDuck(false);
+
     // 티커를 안 떼면 위젯이 사라진 뒤에도 계속 불린다.
     StopTypewriterTicker();
+    StopSpeakerBlendTicker();
 
     TypingTarget = nullptr;
     FullTypingText.Reset();
@@ -142,6 +212,22 @@ bool USFStageIntroWidget::StartStageIntroAt(UDataTable* InDataTable, FName InRow
     ActiveRowName = InRowName;
 
     ActiveNodes = IntroRow->Nodes;
+
+    // 창을 새로 열 때는 이전 화자 상태를 들고 오지 않는다.
+    // 남아 있으면 첫 대사에서 엉뚱한 쪽이 어두운 채로 시작한다.
+    LastLeftCharacterImage.Reset();
+    LastRightCharacterImage.Reset();
+
+    // 이 스테이지 동안 잠글 기능을 서브시스템에 걸어 둔다.
+    //
+    // 목표 대기에서 재개될 때 이 함수가 다시 불리는데, 같은 행의 같은 값을
+    // 다시 넣는 것이라 무해하다. 오히려 그래야 재개 뒤에도 잠금이 유지된다.
+    USFTutorialSubsystem::SetStageFeatureLocks(this, IntroRow->LockedFeatures);
+
+    // 목표를 달성하는 순간은 이 위젯이 닫혀 있을 때다.
+    // 그래서 소리를 위젯이 들고 있지 않고 서브시스템에 넘겨 둔다.
+    USFTutorialSubsystem::SetStageObjectiveSuccessSound(this, IntroRow->ObjectiveSuccessSound);
+
     ShowNode(StartIndex);
 
     return true;
@@ -628,18 +714,127 @@ void USFStageIntroWidget::UpdateCharacterImages(const FSFStageIntroNode& Node)
     SetImageTexture(LeftCharacterImage, Node.LeftCharacterImage);
     SetImageTexture(RightCharacterImage, Node.RightCharacterImage);
 
-    if (IsValid(LeftCharacterImage))
+    // 그림이 바뀌는 노드는 화면 전환에 가까우므로 보간 없이 즉시 맞춘다.
+    // 새 인물이 작은 상태에서 커지면 등장 연출처럼 읽힌다.
+    const bool bPortraitChanged =
+        LastLeftCharacterImage != Node.LeftCharacterImage ||
+        LastRightCharacterImage != Node.RightCharacterImage;
+
+    LastLeftCharacterImage = Node.LeftCharacterImage;
+    LastRightCharacterImage = Node.RightCharacterImage;
+
+    ApplySpeakerHighlight(Node.SpeakerSide, bPortraitChanged);
+}
+
+void USFStageIntroWidget::ApplySpeakerHighlight(
+    ESFStageIntroSpeakerSide InSpeakerSide, bool bInInstant)
+{
+    // 끄면 둘 다 원래 크기·색으로 되돌린다.
+    if (!bUseSpeakerHighlight)
     {
-        LeftCharacterImage->SetRenderOpacity(
-            Node.SpeakerSide == ESFStageIntroSpeakerSide::Right ? 0.45f : 1.f
-        );
+        StopSpeakerBlendTicker();
+
+        LeftHighlightAlpha = LeftHighlightTarget = 1.f;
+        RightHighlightAlpha = RightHighlightTarget = 1.f;
+
+        ApplyHighlightToImage(LeftCharacterImage, 1.f);
+        ApplyHighlightToImage(RightCharacterImage, 1.f);
+        return;
     }
 
-    if (IsValid(RightCharacterImage))
+    // SpeakerSide 가 None 이면 둘 다 말하는 쪽으로 본다.
+    //
+    // 기본값이 None 이라, 여기서 한쪽을 어둡게 하면 아직 화자를 지정하지
+    // 않은 기존 행이 전부 어두워진다. 지정한 행만 반응하는 편이 안전하다.
+    LeftHighlightTarget =
+        (InSpeakerSide == ESFStageIntroSpeakerSide::Right) ? 0.f : 1.f;
+    RightHighlightTarget =
+        (InSpeakerSide == ESFStageIntroSpeakerSide::Left) ? 0.f : 1.f;
+
+    if (bInInstant || SpeakerBlendSpeed <= 0.f)
     {
-        RightCharacterImage->SetRenderOpacity(
-            Node.SpeakerSide == ESFStageIntroSpeakerSide::Left ? 0.45f : 1.f
-        );
+        StopSpeakerBlendTicker();
+
+        LeftHighlightAlpha = LeftHighlightTarget;
+        RightHighlightAlpha = RightHighlightTarget;
+
+        ApplyHighlightToImage(LeftCharacterImage, LeftHighlightAlpha);
+        ApplyHighlightToImage(RightCharacterImage, RightHighlightAlpha);
+        return;
+    }
+
+    // 이미 목표에 있으면 티커를 새로 걸지 않는다.
+    if (FMath::IsNearlyEqual(LeftHighlightAlpha, LeftHighlightTarget) &&
+        FMath::IsNearlyEqual(RightHighlightAlpha, RightHighlightTarget))
+    {
+        return;
+    }
+
+    if (!SpeakerBlendTickerHandle.IsValid())
+    {
+        SpeakerBlendTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+            FTickerDelegate::CreateUObject(this, &USFStageIntroWidget::HandleSpeakerBlendTicker));
+    }
+}
+
+void USFStageIntroWidget::ApplyHighlightToImage(UImage* InImage, float InAlpha) const
+{
+    if (!IsValid(InImage))
+    {
+        return;
+    }
+
+    // 색을 어둡게 한다. 투명도가 아니다 — 알파를 낮추면 배경이 비쳐서
+    // "물러났다" 가 아니라 "사라지는 중" 으로 보인다.
+    InImage->SetColorAndOpacity(
+        FMath::Lerp(ListenerTint, SpeakerTint, InAlpha));
+
+    // 예전 코드가 남긴 값이 있을 수 있으니 되돌려 둔다.
+    InImage->SetRenderOpacity(1.f);
+
+    InImage->SetRenderTransformPivot(SpeakerScalePivot);
+
+    const float Scale = FMath::Lerp(ListenerScale, SpeakerScale, InAlpha);
+    InImage->SetRenderScale(FVector2D(Scale, Scale));
+}
+
+bool USFStageIntroWidget::HandleSpeakerBlendTicker(float InDeltaTime)
+{
+    LeftHighlightAlpha =
+        FMath::FInterpTo(LeftHighlightAlpha, LeftHighlightTarget, InDeltaTime, SpeakerBlendSpeed);
+    RightHighlightAlpha =
+        FMath::FInterpTo(RightHighlightAlpha, RightHighlightTarget, InDeltaTime, SpeakerBlendSpeed);
+
+    ApplyHighlightToImage(LeftCharacterImage, LeftHighlightAlpha);
+    ApplyHighlightToImage(RightCharacterImage, RightHighlightAlpha);
+
+    const bool bDone =
+        FMath::IsNearlyEqual(LeftHighlightAlpha, LeftHighlightTarget, 0.005f) &&
+        FMath::IsNearlyEqual(RightHighlightAlpha, RightHighlightTarget, 0.005f);
+
+    if (bDone)
+    {
+        // 마지막에 정확한 값으로 맞춘다. 보간은 목표에 무한히 가까워질 뿐
+        // 정확히 닿지는 않아서, 놔두면 미세하게 어긋난 채로 남는다.
+        LeftHighlightAlpha = LeftHighlightTarget;
+        RightHighlightAlpha = RightHighlightTarget;
+
+        ApplyHighlightToImage(LeftCharacterImage, LeftHighlightAlpha);
+        ApplyHighlightToImage(RightCharacterImage, RightHighlightAlpha);
+
+        SpeakerBlendTickerHandle.Reset();
+        return false;
+    }
+
+    return true;
+}
+
+void USFStageIntroWidget::StopSpeakerBlendTicker()
+{
+    if (SpeakerBlendTickerHandle.IsValid())
+    {
+        FTSTicker::GetCoreTicker().RemoveTicker(SpeakerBlendTickerHandle);
+        SpeakerBlendTickerHandle.Reset();
     }
 }
 
@@ -761,6 +956,13 @@ void USFStageIntroWidget::HandleNextGuideClicked()
 
 void USFStageIntroWidget::FinishStageIntro()
 {
+    // 튜토리얼이 끝났으니 스테이지 잠금도 푼다.
+    //
+    // SuspendStageIntro 는 이 함수를 부르지 않는다. 목표 대기로 창이 닫혀
+    // 있는 동안에는 잠금이 유지되어야 하기 때문이다.
+    USFTutorialSubsystem::SetStageFeatureLocks(this, FGameplayTagContainer());
+    USFTutorialSubsystem::SetStageObjectiveSuccessSound(this, TSoftObjectPtr<USoundBase>());
+
     ActiveNodes.Empty();
     ActiveDataTable = nullptr;
     ActiveRowName = NAME_None;

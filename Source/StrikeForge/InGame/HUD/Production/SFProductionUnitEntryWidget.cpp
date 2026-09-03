@@ -6,6 +6,8 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 
+#include "Datas/Unit/UnitStatData.h"
+
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Logging/SFLog.h"
@@ -80,6 +82,23 @@ void USFProductionUnitEntryWidget::InitializeProductionUnit(
         return;
     }
 
+    const FUnitStatData* UnitStats =
+        DataTableManager->GetDataRow<FUnitStatData>(
+            EDataTableType::Unit,
+            UnitRowName,
+            TEXT("InitializeProductionUnit - Unit")
+        );
+
+    if (!UnitStats)
+    {
+        SF_LOG(
+            Warning,
+            "[SFProductionUnitEntryWidget] "
+            "Unit Row was not found: %s",
+            *UnitRowName.ToString()
+        );
+    }
+
     if (IsValid(UnitNameText))
     {
         UnitNameText->SetText(
@@ -100,6 +119,29 @@ void USFProductionUnitEntryWidget::InitializeProductionUnit(
         }
     }
 
+    if (IsValid(UnitNeedGold))
+    {
+        const int32 MineralCost =
+            UnitStats
+            ? UnitStats->UnitProductionCost.Mineral
+            : 0;
+
+        UnitNeedGold->SetText(
+            FText::AsNumber(MineralCost)
+        );
+    }
+
+    if (IsValid(UnitNeedEther))
+    {
+        const int32 EtherCost =
+            UnitStats
+            ? UnitStats->UnitProductionCost.Ether
+            : 0;
+
+        UnitNeedEther->SetText(
+            FText::AsNumber(EtherCost)
+        );
+    }
     SF_LOG(
         Log,
         "[SFProductionUnitEntryWidget] "

@@ -2548,21 +2548,13 @@ void USFInGameHUDWidget::BindSelectedProductionBuilding(
     }
 
     // 생산 건물 전용 델리게이트 연결
-    ASFProductionBuilding* ProductionBuilding =
-        Cast<ASFProductionBuilding>(Actor);
+    ASFProductionBuilding* ProductionBuilding = Cast<ASFProductionBuilding>(Actor);
 
     if (IsValid(ProductionBuilding))
     {
-        SelectedProductionBuilding =
-            ProductionBuilding;
+        SelectedProductionBuilding = ProductionBuilding;
 
-        SelectedProductionBuilding
-            ->OnSpawnableUnitsChanged
-            .AddUniqueDynamic(
-                this,
-                &USFInGameHUDWidget::
-                HandleSelectedProductionBuildingTierActivated
-            );
+        SelectedProductionBuilding->OnSpawnableUnitsChanged.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
     }
 }
 
@@ -2631,13 +2623,9 @@ HandleSelectedProductionBuildingTierActivated(
     }
 }
 
-void USFInGameHUDWidget::
-HandleSelectedBuildingTierActivated(
-    int32 ActivatedTier
-)
+void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier)
 {
-    AActor* Actor =
-        SelectedActor.Get();
+    AActor* Actor =SelectedActor.Get();
 
     if (!IsValid(Actor))
     {

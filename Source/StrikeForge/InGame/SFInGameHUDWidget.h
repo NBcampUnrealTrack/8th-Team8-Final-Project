@@ -259,9 +259,7 @@ private:
     );
 
     UFUNCTION()
-    void HandleSelectedBuildingTierActivated(
-        int32 ActivatedTier
-    );
+    void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
 
     // ==================== Variables ====================
 

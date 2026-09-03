@@ -1876,6 +1876,29 @@ void USFMinimapPanelWidget::HandleCombatTargetDamaged(
     {
         return;
     }
+ 
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    if (
+        InTarget->GetTeamIndex() !=
+        PlayerController->GetMyTeamIndex()
+        )
+    {
+        return;
+    }
+
+    if (IsActorOnMainScreen(DamagedActor))
+    {
+        return;
+    }
 
     for (FSFMinimapMarkerEntry& MarkerEntry :
         MinimapMarkerEntries)
@@ -2025,4 +2048,47 @@ void USFMinimapPanelWidget::UpdateBuildingEventOverlay(
         BuildingEventFlashElapsed = 0.0f;
         BuildingEventFlashToggleCount = 0;
     }
+}
+
+bool USFMinimapPanelWidget::IsActorOnMainScreen(
+    AActor* Actor
+) const
+{
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    if (
+        !IsValid(PlayerController) ||
+        !IsValid(Actor)
+        )
+    {
+        return false;
+    }
+
+    FVector2D ScreenPosition;
+
+    if (
+        !PlayerController->ProjectWorldLocationToScreen(
+            Actor->GetActorLocation(),
+            ScreenPosition,
+            true
+        )
+        )
+    {
+        return false;
+    }
+
+    int32 ViewportSizeX = 0;
+    int32 ViewportSizeY = 0;
+
+    PlayerController->GetViewportSize(
+        ViewportSizeX,
+        ViewportSizeY
+    );
+
+    return
+        ScreenPosition.X >= 0.0f &&
+        ScreenPosition.X <= ViewportSizeX &&
+        ScreenPosition.Y >= 0.0f &&
+        ScreenPosition.Y <= ViewportSizeY;
 }

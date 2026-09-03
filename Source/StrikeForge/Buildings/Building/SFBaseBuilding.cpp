@@ -1155,7 +1155,7 @@ void ASFBaseBuilding::SetBoxExtent()
 	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
-	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.7;
+	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.85f;
 	float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
 	
 	FVector CustomOrigin = BoundsInParent.Origin;

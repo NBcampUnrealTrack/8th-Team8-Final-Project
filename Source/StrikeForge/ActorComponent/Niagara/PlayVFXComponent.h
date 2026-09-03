@@ -27,6 +27,9 @@ public:
 			UNiagaraSystem* NiagaraSystem,
 			UStaticMeshComponent* TargetMesh);
 	
+	void PlayDestroyEffect(
+	UNiagaraSystem* NiagaraSystem,
+	UStaticMeshComponent* TargetMesh);
 	/**
  * 소유 건물과 독립적으로 재생되는 일회성 이펙트.
  * 재생 완료 후 AutoDestroy되며 ActiveEffects에는 저장하지 않는다.
@@ -36,6 +39,7 @@ public:
 		const FVector& Location,
 		const FRotator& Rotation) const;
 	
+
 	
 	void StopConstructionEffect();
 protected:

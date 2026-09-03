@@ -3,6 +3,7 @@
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
 
 ASFGameState::ASFGameState()
@@ -153,10 +154,29 @@ bool ASFGameState::UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus)
 	return true;
 }
 
+bool ASFGameState::UnregisterPlayer(int32 TeamIndex, ASFInGamePlayerController* InPlayer)
+{
+	USFTeamState* Team = GetTeamState(TeamIndex);
+
+	if (!IsValid(Team) || Team->GetPlayer() != InPlayer)
+	{
+		return false;
+	}
+
+	Team->SetPlayer(nullptr);
+	return true;
+}
+
 ASFNexusBuilding* ASFGameState::GetNexus(int32 TeamIndex) const
 {
 	const USFTeamState* Team = GetTeamState(TeamIndex);
 	return Team ? Team->GetNexus() : nullptr;
+}
+
+ASFInGamePlayerController* ASFGameState::GetPlayer(int32 TeamIndex) const
+{
+	const USFTeamState* Team = GetTeamState(TeamIndex);
+	return Team ? Team->GetPlayer() : nullptr;
 }
 
 USFTeamState* ASFGameState::GetTeamState(int32 TeamIndex) const
@@ -307,6 +327,49 @@ bool ASFGameState::RegisterTeam(int32 TeamIndex, ESFRace InRace, USFBuildingCata
 	}
 
 	return Team->InitializeTeamData(InRace, InBuildingCatalog);
+}
+
+bool ASFGameState::RegisterPlayer(int32 TeamIndex, ASFInGamePlayerController* InPlayer)
+{
+	if (!IsValid(InPlayer))
+	{
+		return false;
+	}
+	/*
+	 * FindOrAddTeam을 사용하지 않는다.
+	 * Controller가 들어오는 시점에는 InitGameState에서
+	 * 팀이 이미 생성되어 있어야 한다.
+	 */
+	USFTeamState* Team = GetTeamState(TeamIndex);
+
+	if (!IsValid(Team))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameState] Player를 연결할 팀이 없습니다. "
+			"Team=%d, Player=%s",
+			TeamIndex,
+			*GetNameSafe(InPlayer));
+
+		return false;
+	}
+
+	if (ASFInGamePlayerController* Existing = Team->GetPlayer())
+	{
+		if (Existing != InPlayer)
+		{
+			SF_LOG(
+				Warning,
+				"[SFGameState] Team %d의 Player가 교체됩니다. "
+				"Old=%s, New=%s",
+				TeamIndex,
+				*GetNameSafe(Existing),
+				*GetNameSafe(InPlayer));
+		}
+	}
+
+	Team->SetPlayer(InPlayer);
+	return true;
 }
 
 USFBuildingCatalog* ASFGameState::GetTeamBuildingCatalog(int32 TeamIndex) const

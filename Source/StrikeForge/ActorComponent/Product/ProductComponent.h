@@ -29,10 +29,16 @@ public:
 
 	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
+	void SetSpeedMultiplier(float InMultiplier);
+	UFUNCTION(BlueprintCallable, Category = "SF|Product")
+	void ResetSpeedMultiplier();
 	// 집결지 setter
 	void SetAssemblePoint(const FVector& InAssemblePoint);
 	void CancleAssemblePoint();
+	
+	// getter
+	FORCEINLINE float GetSpeedMultiplier() const { return Tracker.WorkRateMultiplier; }
+	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
 	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }

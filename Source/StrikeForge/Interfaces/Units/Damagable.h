@@ -14,6 +14,5 @@ class STRIKEFORGE_API IDamagable
 {
 	GENERATED_BODY()
 public:
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
-	void TakeDamaged(float InDamage);
+	virtual void TakeDamaged(float InDamage, TWeakObjectPtr<AActor> HitActor) = 0;
 };

@@ -12,6 +12,7 @@
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "Logging/SFLog.h"
 
 // Sets default values
@@ -626,21 +627,30 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 			/** 버프 정보 */
 
 			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
-			const FString BuffKey = TEXT("ProdSpeedUp"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("풍요의 기도"));	// 버프 UI표시명
-			const float BuffTime = 10.f;	// 버프 지속시간(초)
-			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
-			//-------------------
+			const FString BuffKey = TEXT("ProdSpeedUp");
+			const FText BuffText = FText::FromString(TEXT("빨리빨리"));
 
-			// 월드 내 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 지정 SubClass 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, ASFCommander::StaticClass());
+			const float BuffDuration = 10.f;
+			const float ProductionSpeedMultiplier = 2.f;
+			const float SkillRadius = 2000.f;
+			const float SkillRadiusSquared = FMath::Square(SkillRadius);
+			
+			DrawDebugSphere(GetWorld(), GetActorLocation(), SkillRadius, -1,FColor::Red,false, 3.f,0,2);
+
+			const ASFInGamePlayerController* SFPC =
+					World->GetFirstPlayerController<ASFInGamePlayerController>();
+			if (!IsValid(SFPC)) return;
+			
+			const int32 CasterTeamIndex = SFPC->GetMyTeamIndex();
+			
+			// 월드 내 모든 액터 가져오기 ()
+			TArray<FBuffTarget> Targets = GetSkillActors(World, ASFProductionBuilding::StaticClass());
 
 			for (FBuffTarget TG : Targets)
 			{
 				// TODO : 현재 건물에게만 버프를 부여하고 있는 상태. ['아군' 건물] 만을 필터링하도록 코드를 변경해주세요.
-				TWeakObjectPtr<ASFCommander> Target = Cast<ASFCommander>(TG.ActorPtr);
-
-				if (Target.IsValid())
+				TWeakObjectPtr<ASFProductionBuilding> Target = Cast<ASFProductionBuilding>(TG.ActorPtr);
+				if (Target.IsValid() && Target->GetTeamIndex() == CasterTeamIndex)
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
@@ -649,18 +659,20 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 							// TODO: 틱 단위 함수 작성
 							GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *Target->GetName()));
 						},
-						[Target]()	// 버프 시작 시 실행(Begin)
+						[Target, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
 							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *Target->GetName()));
+							Target->ApplySpeedBuff(ProductionSpeedMultiplier);
 						},
 						[Target]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
 							GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *Target->GetName()));
+							Target->ResetSpeedMultiplier();
 						},
-						BuffTime,
-						BuffInterval);
+						BuffDuration,
+						1.f);
 				}
 			}
 		} while (false);

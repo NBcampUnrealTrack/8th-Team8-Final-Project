@@ -8,7 +8,6 @@
 #include "Game/GameState/SFGameState.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
-#include "NiagaraFunctionLibrary.h"
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "Buildings/UI/BuildingHealthBar.h"
@@ -1129,12 +1128,13 @@ void ASFBaseBuilding::PlayDestroyEffect()
 			? StaticMeshComponent->Bounds.Origin
 			: GetActorLocation();
 	
-	if (DestroyedEffect)
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
+	if (IsValid(PlayVFXComponent))
+	{
+		PlayVFXComponent->PlayOneShotAtLocation(
 			DestroyedEffect,
 			EffectLocation,
 			GetActorRotation());
+	}
 	
 	if (DestroyedSound)
 		UGameplayStatics::PlaySoundAtLocation(
@@ -1155,7 +1155,7 @@ void ASFBaseBuilding::SetBoxExtent()
 	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
-	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.7;
+	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.85f;
 	float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
 	
 	FVector CustomOrigin = BoundsInParent.Origin;

@@ -97,3 +97,13 @@ void ASFProductionBuilding::SetAssembleVectorPoint(const FVector& InAssemblePoin
 {
 	ProductComponent->SetAssemblePoint(InAssemblePoint);
 }
+
+void ASFProductionBuilding::ApplySpeedBuff(float InMultiflyValue) const
+{
+	ProductComponent->SetSpeedMultiplier(InMultiflyValue);
+}
+
+void ASFProductionBuilding::ResetSpeedMultiplier()
+{
+	ProductComponent->ResetSpeedMultiplier();
+}

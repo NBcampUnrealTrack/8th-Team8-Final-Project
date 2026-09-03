@@ -21,7 +21,7 @@ public:
 	ASFGameMode();
 	
 	virtual void PostLogin(APlayerController* NewPlayer) override;
-	
+	virtual void Logout(AController* Exiting) override;
 	// 스테이지 초기화가 끝난 후 게임 시작
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool StartStage();
@@ -63,7 +63,7 @@ private:
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
 	bool SpawnStageBuildingsFromAnchors();
 
-	/** 하나의 Anchor를 실제 건물로 변환한다. */
+	/** 하나의 BuildingSpawnAnchor를 실제 건물로 변환한다. */
 	bool SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor);
 private:
 	UPROPERTY()

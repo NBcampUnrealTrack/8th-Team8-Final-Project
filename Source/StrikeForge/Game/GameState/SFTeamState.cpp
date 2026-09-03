@@ -2,6 +2,7 @@
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 
 void USFTeamState::AddPopulation(int32 InDelta)
 {
@@ -86,6 +87,11 @@ bool USFTeamState::IsNexus(const ASFNexusBuilding* InNexus) const
 	return Nexus.Get() == InNexus;
 }
 
+void USFTeamState::SetPlayer(ASFInGamePlayerController* InPlayer)
+{
+	Player = InPlayer;
+}
+
 void USFTeamState::AddResource(EResourceType InType, int32 InAmount)
 {
 	switch (InType)
@@ -143,4 +149,10 @@ USFBuildingCatalog* USFTeamState::GetBuildingCatalog() const
 	return IsValid(BuildingCatalog)
 		? BuildingCatalog
 		: nullptr;
+}
+
+ASFInGamePlayerController* USFTeamState::GetPlayer() const
+{
+	ASFInGamePlayerController* PlayerC = Player.Get();
+	return IsValid(PlayerC) ? PlayerC : nullptr;
 }

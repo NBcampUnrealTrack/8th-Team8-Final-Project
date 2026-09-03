@@ -1,8 +1,13 @@
+// SettingWidget.cpp
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
 #include "Components/BackgroundBlur.h"
+#include "Components/Slider.h"
 #include "GameFramework/GameUserSettings.h"
+#include "Sound/SoundClass.h"
+
+static const TCHAR* BGMSoundClassPath = TEXT("/Game/Audio/SC_BGM.SC_BGM");
 
 void USettingWidget::NativeConstruct()
 {
@@ -24,6 +29,10 @@ void USettingWidget::NativeConstruct()
 	if (IsValid(FullScreenComboBox))
 	{
 		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &USettingWidget::OnFullscreenModeChanged);
+	}
+	if (IsValid(BGMVolumeSlider))
+	{
+		BGMVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnBGMVolumeChanged);
 	}
 
 	// Äµ¹ö½º¿¡ Á÷Á¢ ¹èÄ¡µÇ¹Ç·Î ½ÃÀÛÇÒ ¶© ¼û±è
@@ -108,6 +117,18 @@ void USettingWidget::InitializeSettingOptions()
 			break;
 		}
 	}
+
+	if (IsValid(BGMVolumeSlider))
+	{
+		float SavedVolume = 1.0f;
+		GConfig->GetFloat(TEXT("Audio"), TEXT("BGMVolume"), SavedVolume, GGameUserSettingsIni);
+		BGMVolumeSlider->SetValue(SavedVolume);
+
+		if (USoundClass* BGMSoundClass = LoadObject<USoundClass>(nullptr, BGMSoundClassPath))
+		{
+			BGMSoundClass->Properties.Volume = SavedVolume;
+		}
+	}
 }
 
 void USettingWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
@@ -166,4 +187,15 @@ void USettingWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::
 	Settings->SetFullscreenMode(NewMode);
 	Settings->ApplySettings(false);
 	Settings->SaveSettings();
+}
+
+void USettingWidget::OnBGMVolumeChanged(float Value)
+{
+	if (USoundClass* BGMSoundClass = LoadObject<USoundClass>(nullptr, BGMSoundClassPath))
+	{
+		BGMSoundClass->Properties.Volume = Value;
+	}
+
+	GConfig->SetFloat(TEXT("Audio"), TEXT("BGMVolume"), Value, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
 }

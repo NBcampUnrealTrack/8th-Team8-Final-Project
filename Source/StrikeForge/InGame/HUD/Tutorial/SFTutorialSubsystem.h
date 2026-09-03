@@ -20,6 +20,7 @@ UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
 
 class ASFTutorialGhostActor;
 class USFBuildingDefinition;
+class USoundBase;
 
 /** 목표 대기가 시작됐다. 목표 배너를 띄우는 쪽이 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -234,6 +235,62 @@ public:
         meta = (WorldContext = "InWorldContext"))
     static bool IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName);
 
+    /**
+     * 건물 선택 제한을 강제로 푼다.
+     *
+     * 정상 경로에서는 건물이 실제로 지어질 때 저절로 풀린다. 이 함수는
+     * 안내를 강제로 끊었을 때와 콘솔(sf.Tutorial.UnlockBuilding)용이다.
+     */
+    void UnlockBuildingSelection();
+
+    // ── 스테이지 단위 기능 잠금 ─────────────────────────
+    //
+    // "1스테이지에서는 업그레이드 금지" 처럼 한 스테이지 전체에 걸리는
+    // 규칙이다. 안내 칸이 아니라 행(FSFStageIntroDataRow)에 적는다.
+    //
+    // 잠그는 쪽과 잠기는 쪽을 태그로만 이어 둔다. 새 기능을 잠글 때
+    // 태그만 추가하면 되고, 튜토리얼이 그 기능을 알 필요가 없다.
+
+    /**
+     * 스테이지 인트로가 열릴 때 그 행의 잠금 목록으로 갈아끼운다.
+     *
+     * 더하지 않고 통째로 바꾼다. 스테이지가 바뀌면 앞 스테이지의 잠금은
+     * 남아 있으면 안 된다.
+     */
+    static void SetStageFeatureLocks(const UObject* InWorldContext, const FGameplayTagContainer& InLocks);
+
+    /**
+     * 이 기능이 지금 잠겨 있는가.
+     *
+     * 튜토리얼이 없는 판에서는 항상 false 다. 버튼의 IsEnabled 나
+     * Visibility 바인딩에 그대로 물려도 기존 동작이 바뀌지 않는다.
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Lock",
+        meta = (WorldContext = "InWorldContext"))
+    static bool IsFeatureLocked(const UObject* InWorldContext, FGameplayTag InFeatureTag);
+
+    /**
+     * 건물 티어 업그레이드가 잠겨 있는가.
+     *
+     * IsFeatureLocked 를 Tutorial.Lock.NexusUpgrade 와 함께 부르는 것과 같다.
+     * 부르는 쪽이 태그를 알 필요가 없도록 따로 둔다 — UI 코드의 변경 폭을
+     * 한 줄로 줄이기 위해서다.
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Lock",
+        meta = (WorldContext = "InWorldContext"))
+    static bool IsTierUpgradeLocked(const UObject* InWorldContext);
+
+    // ── 성공 효과음 ─────────────────────────────────────
+
+    /**
+     * 스테이지 인트로가 열릴 때 그 행의 기본 성공음을 걸어 둔다.
+     *
+     * 여기서 한 번만 로드한다. 목표를 달성하는 순간에 로드하면 그 프레임이
+     * 튀는데, 하필 그때가 플레이어가 화면을 보고 있는 순간이다.
+     */
+    static void SetStageObjectiveSuccessSound(
+        const UObject* InWorldContext, const TSoftObjectPtr<USoundBase>& InSound);
+
     // ── 목표 달성 신호 (게임플레이 쪽에서 호출) ─────────
 
     /**
@@ -346,6 +403,22 @@ private:
     /** 지금 진행 중인 안내 칸. 없으면 nullptr */
     const FSFStageIntroGuideStep* GetCurrentGuideStep() const;
 
+    /**
+     * 건물이 실제로 지어졌으면 요구 건물 잠금을 푼다.
+     *
+     * 고르기만 하고 취소한 경우에는 아무 목표도 기록되지 않으므로 잠금이
+     * 그대로 유지된다. 그게 목적이다.
+     */
+    void ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTag);
+
+    /**
+     * 목표를 달성한 순간에 성공음을 울린다.
+     *
+     * 안내 칸이 자기 소리를 지정했으면 그것을, 아니면 스테이지 기본음을 쓴다.
+     * 둘 다 없으면 조용히 지나간다 — 소리를 안 넣은 것은 오류가 아니다.
+     */
+    void PlayObjectiveSuccessSound(const UObject* InWorldContext) const;
+
     void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
     void DestroyPlacementGhost();
 
@@ -407,6 +480,29 @@ private:
     UPROPERTY(Transient)
     FGameplayTagContainer CompletedObjectives;
 
+    /**
+     * 이 스테이지 동안 잠긴 기능들.
+     *
+     * 스테이지 인트로가 열릴 때 채워지고 End 노드에서 비워진다.
+     * 목표 대기로 창이 닫혀 있는 동안에도 유지되어야 하므로 안내 상태와
+     * 함께 정리하지 않는다.
+     */
+    UPROPERTY(Transient)
+    FGameplayTagContainer LockedFeatures;
+
+    /**
+     * 이 스테이지의 기본 성공음. 인트로가 열릴 때 한 번 로드해 둔다.
+     *
+     * 목표 달성은 튜토리얼 창이 닫혀 있는 동안 일어나므로, 위젯이 아니라
+     * 서브시스템이 들고 있어야 한다.
+     */
+    UPROPERTY(Transient)
+    TObjectPtr<USoundBase> StageObjectiveSuccessSound = nullptr;
+
+    /** 지금 칸이 따로 지정한 성공음. EnterGuideStep 이 미리 로드한다 */
+    UPROPERTY(Transient)
+    TObjectPtr<USoundBase> CurrentStepSuccessSound = nullptr;
+
     // ── 단계별 안내 상태 ────────────────────────────────
 
     UPROPERTY(Transient)
@@ -414,6 +510,31 @@ private:
 
     /** INDEX_NONE 이면 안내 중이 아니다 */
     int32 GuideStepIndex = INDEX_NONE;
+
+    /**
+     * 튜토리얼이 지금 요구하는 건물의 행 이름. 비어 있으면 제한하지 않는다.
+     *
+     * 안내 칸이 아니라 서브시스템이 들고 있다. 선택 칸이 그 노드의 마지막
+     * 칸이면 건물을 고르는 즉시 EnterGuideStep 이 범위를 벗어나 FinishGuide
+     * 가 돌고, 안내가 끝나 버린다. 그 상태에서 배치를 취소하면 플레이어는
+     * 건설 메뉴 앞으로 돌아오는데, 칸에게 물어보면 요구 건물을 이미
+     * 잃어버린 뒤라 모든 건물이 열린다.
+     *
+     * 그래서 ClearGuideState 에서 비우지 않는다. 푸는 곳은 세 군데뿐이다.
+     *   - 건물이 실제로 지어졌을 때 (ReleaseBuildingLockIfBuilt)
+     *   - 안내를 강제로 끊었을 때 (CancelGuide)
+     *   - 월드가 내려갈 때 (Deinitialize)
+     */
+    FName LockedBuildingRowName = NAME_None;
+
+    /**
+     * 위 잠금을 건 안내 칸의 인덱스. 잠금이 없으면 INDEX_NONE.
+     *
+     * "이 칸이 건물 선택을 기다리는 칸인가" 를 가르는 데 쓴다. 잠금은 칸을
+     * 넘어서 유지되므로, 잠금만 보고 완료 신호를 보내면 배치 칸에서 건물을
+     * 다시 골랐을 때 배치가 끝난 것으로 처리된다.
+     */
+    int32 LockedBuildingStepIndex = INDEX_NONE;
 
     /** 배치 고스트. 칸이 바뀌거나 안내가 끝나면 파괴한다 */
     UPROPERTY(Transient)

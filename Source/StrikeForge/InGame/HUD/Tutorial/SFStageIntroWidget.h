@@ -16,6 +16,8 @@ class UImage;
 class UTextBlock;
 class UTexture2D;
 class USoundBase;
+class USoundClass;
+class USoundMix;
 class UWidgetSwitcher;
 
 UCLASS(Abstract, Blueprintable)
@@ -48,9 +50,31 @@ protected:
 
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
+
+    /**
+     * 튜토리얼 창이 뜨는 동안 배경음을 줄인다.
+     *
+     * 창을 열고 닫는 것은 CommonUI 의 활성/비활성이므로 여기에 건다.
+     * NativeConstruct 에 걸면 목표 대기로 창을 닫았다 여는 사이에
+     * 원래 볼륨으로 돌아오지 않는다.
+     */
+    virtual void NativeOnActivated() override;
+    virtual void NativeOnDeactivated() override;
     virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
+    /**
+     * 배경음 감쇠를 켜고 끈다.
+     *
+     * SoundMix 를 밀어 넣는 방식이라 재생 중인 소리를 끊지 않는다.
+     * Push 와 Pop 은 반드시 짝이 맞아야 한다 — 한 번 더 밀면 그만큼
+     * 더 눌려서 창을 여닫을수록 배경음이 점점 작아진다.
+     */
+    void ApplyMusicDuck(bool bInDuck);
+
+    /** Push 와 Pop 의 짝을 맞추기 위한 현재 상태 */
+    bool bMusicDucked = false;
+
     void ShowNode(int32 NodeIndex);
     void ShowDialogueNode(const FSFStageIntroNode& Node);
     void ShowChoiceNode(const FSFStageIntroNode& Node);
@@ -92,6 +116,31 @@ private:
      * 블루프린트 Tick 이 없으면 틱을 아예 안 돌린다.
      */
     bool HandleTypewriterTicker(float InDeltaTime);
+
+    // ── 화자 강조 ────────────────────────────────────────
+
+    /**
+     * 지금 말하는 쪽을 크고 밝게, 듣는 쪽을 작고 어둡게 만든다.
+     *
+     * @param bInInstant 참이면 보간 없이 즉시 적용한다. 노드가 아니라
+     *                   창이 처음 열릴 때 쓴다 — 첫 화자가 작은 상태에서
+     *                   커지면 등장 연출처럼 보인다.
+     */
+    void ApplySpeakerHighlight(ESFStageIntroSpeakerSide InSpeakerSide, bool bInInstant);
+
+    /** 한쪽 초상화에 현재 강조도를 반영한다. 1 = 말하는 중, 0 = 듣는 중 */
+    void ApplyHighlightToImage(UImage* InImage, float InAlpha) const;
+
+    /**
+     * 강조도를 목표값으로 보간한다.
+     *
+     * 월드 타이머가 아니라 FTSTicker 를 쓴다. 튜토리얼 창은 게임을
+     * 일시정지시키는데 일시정지 중에는 월드 타이머가 전혀 진행되지 않는다.
+     * 타자기 효과와 같은 이유다.
+     */
+    bool HandleSpeakerBlendTicker(float InDeltaTime);
+
+    void StopSpeakerBlendTicker();
 
     /** 티커를 떼어낸다. 여러 곳에서 불리므로 한 곳에 모은다 */
     void StopTypewriterTicker();
@@ -163,6 +212,109 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|Stage Intro", meta = (BindWidget))
     TObjectPtr<UButton> NextGuideButton = nullptr;
+
+    // ── 화자 강조 설정 ──────────────────────────────────
+    //
+    // 노드의 SpeakerSide 를 보고 말하는 쪽과 듣는 쪽을 다르게 그린다.
+    // SpeakerSide 가 None 이면 둘 다 말하는 쪽으로 취급한다 — 기존에
+    // 만들어 둔 행이 갑자기 어두워지지 않게 하기 위해서다.
+
+    /** 화자 강조를 쓸지. 끄면 둘 다 원래 크기·색으로 나온다 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker")
+    bool bUseSpeakerHighlight = true;
+
+    /** 말하는 쪽 크기 배수 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker",
+        meta = (ClampMin = "0.5", ClampMax = "2.0"))
+    float SpeakerScale = 1.f;
+
+    /**
+     * 듣는 쪽 크기 배수.
+     *
+     * 0.9 아래로 내리면 뒤로 물러난 게 아니라 다른 사람처럼 보인다.
+     * 크기 차이는 눈에 띄지 않아도 되고, 어느 쪽이 말하는지만 읽히면 된다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker",
+        meta = (ClampMin = "0.5", ClampMax = "2.0"))
+    float ListenerScale = 0.93f;
+
+    /** 말하는 쪽 색. 보통 흰색(원본 그대로) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker")
+    FLinearColor SpeakerTint = FLinearColor::White;
+
+    /**
+     * 듣는 쪽 색.
+     *
+     * 알파가 아니라 색을 어둡게 한다. 투명도를 낮추면 배경이 비쳐서
+     * "흐려졌다" 가 아니라 "사라지는 중" 으로 보인다.
+     *
+     * 파란기를 살짝 남기면 그늘로 읽힌다. 회색으로만 낮추면 빛바랜 종이처럼 보인다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker")
+    FLinearColor ListenerTint = FLinearColor(0.42f, 0.44f, 0.52f, 1.f);
+
+    /**
+     * 크기·색이 바뀌는 속도.
+     *
+     * 0 이면 즉시 바뀐다. 10 정도면 대사가 넘어갈 때 눈이 따라올 만큼
+     * 부드럽고, 다음 대사를 빨리 넘겨도 늘어지지 않는다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker",
+        meta = (ClampMin = "0.0"))
+    float SpeakerBlendSpeed = 10.f;
+
+    /**
+     * 크기를 키우고 줄이는 기준점. (0.5, 1) 이면 발밑 가운데.
+     *
+     * 기본값(0.5, 0.5)으로 두면 작아질 때 캐릭터가 공중으로 떠오른다.
+     * 서 있는 그림은 발이 바닥에 붙어 있어야 한다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Speaker")
+    FVector2D SpeakerScalePivot = FVector2D(0.5f, 1.f);
+
+    // ── 배경음 감쇠 설정 ────────────────────────────────
+    //
+    // 튜토리얼 창은 게임을 일시정지시킨다. 배경음이 UI 사운드가 아니면
+    // 일시정지와 함께 소리 자체가 멎으므로, 여기 값을 아무리 만져도
+    // 소용이 없다. BGM 을 재생하는 쪽에서 먼저 UI 사운드로 만들어야 한다.
+
+    /**
+     * 창이 떠 있는 동안 밀어 넣을 SoundMix. 비우면 감쇠하지 않는다.
+     *
+     * 소리를 멈췄다 다시 트는 것이 아니라 볼륨만 눌러 두는 방식이라
+     * 배경음의 재생 위치가 유지된다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Audio")
+    TObjectPtr<USoundMix> DuckSoundMix = nullptr;
+
+    /**
+     * 볼륨을 누를 대상 SoundClass. 보통 배경음 클래스를 넣는다.
+     *
+     * 비워두면 SoundMix 에이셋에 저장된 조정값을 그대로 쓴다. 채워두면
+     * 아래 DuckVolume 으로 런타임에 덮어쓰므로, 에셋을 열지 않고 값만
+     * 바꿔가며 맞출 수 있다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Audio")
+    TObjectPtr<USoundClass> DuckSoundClass = nullptr;
+
+    /**
+     * 창이 떠 있는 동안의 배경음 볼륨 배수.
+     *
+     * 0 으로 두지 마라. 완전히 죽이면 "멈췄다" 로 들려서 지금과 같아진다.
+     * 0.3 안팎이 "뒤로 물러났다" 로 들린다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Audio",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DuckVolume = 0.3f;
+
+    /**
+     * 볼륨이 내려가고 올라오는 데 걸리는 시간(초).
+     *
+     * 0 이면 뚝 끊기듯 들린다. 0.3~0.5 정도면 자연스럽게 물러났다 돌아온다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Audio",
+        meta = (ClampMin = "0.0"))
+    float DuckFadeSeconds = 0.4f;
 
     // ── 타자 효과 설정 ──────────────────────────────────
 
@@ -266,6 +418,26 @@ private:
     float NextCharacterDelay = 0.f;
 
     FTSTicker::FDelegateHandle TypewriterTickerHandle;
+
+    // ── 화자 강조 상태 ──────────────────────────────────
+    //
+    // 1 = 말하는 중, 0 = 듣는 중. 그 사이 값은 전환 중이다.
+
+    float LeftHighlightAlpha = 1.f;
+    float RightHighlightAlpha = 1.f;
+    float LeftHighlightTarget = 1.f;
+    float RightHighlightTarget = 1.f;
+
+    FTSTicker::FDelegateHandle SpeakerBlendTickerHandle;
+
+    /**
+     * 마지막으로 세운 초상화. 그림이 바뀌었는지 보려고 들고 있다.
+     *
+     * 인물이 교체되는 노드는 화면 전환에 가까우므로 보간 없이 즉시 맞춘다.
+     * 새 인물이 작은 상태에서 커지면 등장 연출처럼 읽힌다.
+     */
+    TSoftObjectPtr<UTexture2D> LastLeftCharacterImage;
+    TSoftObjectPtr<UTexture2D> LastRightCharacterImage;
 
     static constexpr int32 DialoguePanelIndex = 0;
     static constexpr int32 ChoicePanelIndex = 1;

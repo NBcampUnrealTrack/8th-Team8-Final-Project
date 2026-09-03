@@ -76,10 +76,14 @@ public:
     TSoftObjectPtr<USoundBase> CompletedSelectionSound;
     
     // * 건물 파괴 시 재생할 공통 사운드.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destroyed")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
     TSoftObjectPtr<USoundBase> DestroyedSound;
     
+    // * 건물 건설 시 재생할 공통 Niagara Effect.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> ConstructEffect;
+    
     // * 건물 파괴 시 재생할 공통 Niagara Effect.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destroyed")
-    TSoftObjectPtr<UNiagaraSystem> DestroyedEffect;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> DestroyEffect;
 };

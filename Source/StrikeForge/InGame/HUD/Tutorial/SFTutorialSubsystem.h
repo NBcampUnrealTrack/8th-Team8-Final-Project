@@ -199,6 +199,41 @@ public:
         meta = (WorldContext = "InWorldContext"))
     static void HidePlacementGhost(const UObject* InWorldContext);
 
+    // ── 건설 메뉴 ───────────────────────────────────────
+
+    /**
+     * 건설 메뉴에서 건물 하나를 골랐음을 알린다.
+     *
+     * 행 이름으로 태그를 조립한다.
+     *
+     *     House  ->  Tutorial.Select.Building.House
+     *
+     * 건물이 늘어나도 코드를 고칠 필요가 없다. 태그만 추가하면 된다.
+     * 그런 태그가 없으면 조용히 무시한다 — 튜토리얼이 그 건물을 다루지
+     * 않는다는 뜻이므로 오류가 아니다.
+     *
+     * bRecordWhenNotWaiting 은 false 다. 메뉴를 여닫으며 이것저것 눌러보는
+     * 것은 흔한 행동이라, 요구하지 않은 시점의 선택까지 기록하면 나중에
+     * 그 건물을 고르라는 단계가 통째로 건너뛰어진다.
+     */
+    UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Guide",
+        meta = (WorldContext = "InWorldContext"))
+    static void NotifyBuildingSelected(const UObject* InWorldContext, FName InBuildingRowName);
+
+    /**
+     * 지금 이 건물을 고를 수 있는가.
+     *
+     * 안내가 특정 건물을 요구하는 중이면 그 건물만 true 다.
+     * 안내가 없거나 건물을 지정하지 않은 칸이면 항상 true 를 돌려준다.
+     *
+     * 건설 메뉴 항목이 클릭됐을 때 이 값이 false 면 진행을 막으면 된다.
+     * 강조만 하고 막지 않으면 플레이어가 다른 건물을 골라 튜토리얼과
+     * 어긋난 상태로 들어간다.
+     */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Guide",
+        meta = (WorldContext = "InWorldContext"))
+    static bool IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName);
+
     // ── 목표 달성 신호 (게임플레이 쪽에서 호출) ─────────
 
     /**
@@ -304,6 +339,12 @@ private:
 
     /** 값이 바뀔 때만 알린다 */
     void SetBuildBlocked(bool bInBlocked);
+
+    /** 행 이름을 Tutorial.Select.Building.<행이름> 태그로 바꾼다 */
+    static FGameplayTag MakeBuildingSelectTag(FName InBuildingRowName);
+
+    /** 지금 진행 중인 안내 칸. 없으면 nullptr */
+    const FSFStageIntroGuideStep* GetCurrentGuideStep() const;
 
     void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
     void DestroyPlacementGhost();

@@ -23,6 +23,12 @@ class UGeometryCollection;
 class ASFBuildingDestructionActor;
 class USceneComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FSFOnBuildingTierActivated,
+	int32,
+	ActivatedTier
+);
+
 UENUM(BlueprintType)
 enum class EBuildingState : uint8
 {
@@ -152,6 +158,13 @@ public:
 	void SetMyTeamIndex(const int32 InTeamIndex);
 	
 	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
+
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "SF|Building"
+	)
+	FSFOnBuildingTierActivated OnBuildingTierActivated;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

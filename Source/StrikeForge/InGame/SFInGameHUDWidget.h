@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "SFSelectInfo/SFSelectableInfo.h"
+#include "Datas/Race/SFRaceType.h"
+#include "SFSelectInfo/SFSelectionUIDataRow.h"
 #include "SFInGameHUDWidget.generated.h"
 
 class AActor;
@@ -23,6 +25,9 @@ class ASFUnitPortraitActor;
 class USoundBase;
 class ASFProductionBuilding;
 class AUnitBase;
+class UTexture2D;
+struct FSFSelectionUIDataRow;
+class ASFBaseBuilding;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -131,7 +136,18 @@ private:
     );
 
 
+    ESFRace ResolveActorRace(
+        AActor* Actor
+    ) const;
+
+    UTexture2D* ResolvePortraitImage(
+        const FSFSelectionUIDataRow& UIData,
+        ESFRace Race,
+        int32 Tier
+    ) const;
+
     void ApplySelectionUIData(
+        AActor* SourceActor,
         FSFSelectableInfo& InOutSelectableInfo
     );
 
@@ -241,6 +257,9 @@ private:
     void SelectNearbyUnitsOfSameType(
         AUnitBase* CenterUnit
     );
+
+    UFUNCTION()
+    void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
 
     // ==================== Variables ====================
 
@@ -404,4 +423,8 @@ private:
 
     ESlateVisibility VisibilityBeforeStageIntro = ESlateVisibility::SelfHitTestInvisible;
     bool bWasGamePausedBeforeStageIntro = false;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFBaseBuilding>
+        SelectedBuildingForTierDelegate;
 };

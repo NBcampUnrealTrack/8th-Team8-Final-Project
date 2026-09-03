@@ -145,6 +145,8 @@ private:
 
     bool bInitialMarkerScanCompleted = false;
 
+    bool IsActorOnMainScreen(AActor* Actor) const;
+
     // 변수 영역
 protected:
     UPROPERTY(

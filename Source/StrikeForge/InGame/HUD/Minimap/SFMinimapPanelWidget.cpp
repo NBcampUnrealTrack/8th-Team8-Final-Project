@@ -1212,49 +1212,180 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
         return;
     }
 
-    FVector CameraLocation;
-    FRotator CameraRotation;
+    int32 ViewportWidth = 0;
+    int32 ViewportHeight = 0;
 
-    PlayerController->GetPlayerViewPoint(
-        CameraLocation,
-        CameraRotation
+    PlayerController->GetViewportSize(
+        ViewportWidth,
+        ViewportHeight
     );
 
-    const FVector ViewDirection =
-        CameraRotation.Vector();
-
-    if (FMath::IsNearlyZero(ViewDirection.Z))
+    if (
+        ViewportWidth <= 0 ||
+        ViewportHeight <= 0
+        )
     {
         return;
     }
+
+    const FVector2D ScreenCorners[4] =
+    {
+        FVector2D(0.0f, 0.0f),
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            0.0f
+        ),
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            static_cast<float>(ViewportHeight - 1)
+        ),
+        FVector2D(
+            0.0f,
+            static_cast<float>(ViewportHeight - 1)
+        )
+    };
 
     constexpr float GroundZ = 0.0f;
 
-    const float DistanceToGround =
-        (
-            GroundZ -
-            CameraLocation.Z
-            ) /
-        ViewDirection.Z;
+    FVector2D MinimapMin = FVector2D::ZeroVector;
+    FVector2D MinimapMax = FVector2D::ZeroVector;
 
-    if (DistanceToGround < 0.0f)
+    bool bHasValidCorner = false;
+
+    for (const FVector2D& ScreenPosition : ScreenCorners)
+    {
+        FVector WorldOrigin;
+        FVector WorldDirection;
+
+        if (
+            !PlayerController->DeprojectScreenPositionToWorld(
+                ScreenPosition.X,
+                ScreenPosition.Y,
+                WorldOrigin,
+                WorldDirection
+            )
+            )
+        {
+            continue;
+        }
+
+        if (FMath::IsNearlyZero(WorldDirection.Z))
+        {
+            continue;
+        }
+
+        const float DistanceToGround =
+            (GroundZ - WorldOrigin.Z) /
+            WorldDirection.Z;
+
+        if (DistanceToGround <= 0.0f)
+        {
+            continue;
+        }
+
+        const FVector GroundLocation =
+            WorldOrigin +
+            WorldDirection * DistanceToGround;
+
+        const FVector2D MinimapPosition =
+            WorldToMinimapPosition(
+                GroundLocation
+            );
+
+        if (!bHasValidCorner)
+        {
+            MinimapMin = MinimapPosition;
+            MinimapMax = MinimapPosition;
+            bHasValidCorner = true;
+        }
+        else
+        {
+            MinimapMin.X =
+                FMath::Min(
+                    MinimapMin.X,
+                    MinimapPosition.X
+                );
+
+            MinimapMin.Y =
+                FMath::Min(
+                    MinimapMin.Y,
+                    MinimapPosition.Y
+                );
+
+            MinimapMax.X =
+                FMath::Max(
+                    MinimapMax.X,
+                    MinimapPosition.X
+                );
+
+            MinimapMax.Y =
+                FMath::Max(
+                    MinimapMax.Y,
+                    MinimapPosition.Y
+                );
+        }
+    }
+
+    if (!bHasValidCorner)
     {
         return;
     }
 
-    const FVector CameraFocusLocation =
-        CameraLocation +
-        ViewDirection *
-        DistanceToGround;
-
-    const FVector2D MinimapPosition =
-        WorldToMinimapPosition(
-            CameraFocusLocation
+    UCanvasPanelSlot* IndicatorSlot =
+        Cast<UCanvasPanelSlot>(
+            PlayerViewIndicator->Slot
         );
+
+    if (!IsValid(IndicatorSlot))
+    {
+        return;
+    }
+
+    const FVector2D MinimapSize =
+        MinimapMarkerLayer
+        ->GetCachedGeometry()
+        .GetLocalSize();
+
+    if (
+        MinimapSize.X <= 0.0f ||
+        MinimapSize.Y <= 0.0f
+        )
+    {
+        return;
+    }
+
+    const FVector2D ViewIndicatorSize =
+        MinimapMax - MinimapMin;
+
+    const FVector2D ClampedSize(
+        FMath::Clamp(
+            ViewIndicatorSize.X,
+            2.0f,
+            MinimapSize.X
+        ),
+        FMath::Clamp(
+            ViewIndicatorSize.Y,
+            2.0f,
+            MinimapSize.Y
+        )
+    );
+
+    const FVector2D ViewIndicatorCenter =
+        (MinimapMin + MinimapMax) * 0.5f;
+
+    IndicatorSlot->SetAutoSize(false);
+
+    IndicatorSlot->SetAlignment(
+        FVector2D(0.5f, 0.5f)
+    );
+
+    IndicatorSlot->SetSize(
+        ClampedSize
+    );
 
     SetMarkerLayerPosition(
         PlayerViewIndicator,
-        MinimapPosition
+        ViewIndicatorCenter
     );
 }
 

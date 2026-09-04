@@ -38,11 +38,9 @@ public:
 	void ApplyFinalDestruction(int32 FinalStageIndex, const FBuildingDestruction& StageData);
 	
     UFUNCTION(BlueprintPure, Category = "SF|Building|Destruction")
-    UGeometryCollectionComponent* GetGeometryCollectionComponent() const
-    {
-        return GeometryCollectionComponent;
-    }
+    FORCEINLINE UGeometryCollectionComponent* GetGeometryCollectionComponent() const { return GeometryCollectionComponent; }
 
+	
 protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -52,6 +50,35 @@ private:
 	void SchedulePendingImpulse();
     void ApplyPendingImpulse();
 
+	// fire
+private:
+	/** [BURN-TEST] 조각 위에 붙일 불꽃. BP_DestructionActor에서 지정. */
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraSystem> SurfaceFireEffect;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (ClampMin = "1", AllowPrivateAccess = "true"))
+	int32 SurfaceFireMinCount = 3;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (ClampMin = "1", AllowPrivateAccess = "true"))
+	int32 SurfaceFireMaxCount = 6;
+
+	/** 바운드 높이의 이 비율보다 낮은 조각은 제외한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
+	float SurfaceFireMinHeightRatio = 0.25f;
+
+	/** rest 상태 바운드. 조각이 흩어져도 MinZ 기준이 흔들리지 않게 한다. */
+	FBox CachedRestBounds = FBox(ForceInit);
+	
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> SurfaceFires;
+
+	void SpawnSurfaceFires();
+	void ClearSurfaceFires();
+	
 private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
         Category = "Destruction",

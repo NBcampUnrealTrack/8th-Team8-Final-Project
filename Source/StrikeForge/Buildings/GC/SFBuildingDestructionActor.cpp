@@ -74,6 +74,7 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
         CachedLocalBoundsRadius = FMath::Max(
             LocalBounds.GetExtent().Size(),
             1.f);
+        CachedRestBounds = LocalBounds;              // ← 추가
     }
     
     
@@ -138,6 +139,7 @@ void ASFBuildingDestructionActor::ApplyDamageStage(int32 StageIndex, const FBuil
         TEXT("[%s] Destruction stage applied: %d"),
         *GetName(),
         StageIndex);
+
 }
 
 void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction& StageData, const int32 TargetClusterDepth)
@@ -261,9 +263,13 @@ void ASFBuildingDestructionActor::ApplyNextStrainHit()
 
 void ASFBuildingDestructionActor::SchedulePendingImpulse()
 {
+    
     GetWorldTimerManager().ClearTimer(
         ImpulseTimerHandle);
-
+    
+    // Strain 적용이 끝난 시점. 여기서 아직 붙어 있는 조각에 불을 붙인다.
+    SpawnSurfaceFires();
+    
     if (PendingImpulseStrength <= 0.f)
     {
         return;
@@ -309,6 +315,169 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
         true); // 질량과 관계없이 속도 변화 적용
 
     PendingImpulseStrength = 0.f;
+}
+
+void ASFBuildingDestructionActor::SpawnSurfaceFires()
+{
+    if (!IsValid(SurfaceFireEffect))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[BURN] SurfaceFireEffect 미지정 — BP_DestructionActor 확인"));
+        return;
+    }
+
+    if (!IsValid(GeometryCollectionComponent))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BURN] GC 컴포넌트 없음"));
+        return;
+    }
+
+    ClearSurfaceFires();
+
+    const TArray<FTransform3f>& PieceTransforms =
+        GeometryCollectionComponent->GetComponentSpaceTransforms3f();
+
+    const FBox LocalBounds = GeometryCollectionComponent->GetLocalBounds();
+    const float MinZ =
+            CachedRestBounds.Min.Z +
+            CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[BURN] 조각 %d개 / RestBounds Min=%s Max=%s / MinZ=%.1f"),
+        PieceTransforms.Num(),
+        *CachedRestBounds.Min.ToString(),
+        *CachedRestBounds.Max.ToString(),
+        MinZ);
+
+    if (PieceTransforms.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[BURN] 트랜스폼 배열이 비어 있음 — 물리 초기화 전"));
+        return;
+    }
+
+    // 앞 5개 조각의 로컬 위치를 실제로 찍어본다.
+    for (int32 i = 0; i < FMath::Min(5, PieceTransforms.Num()); ++i)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BURN]   piece[%d] local=%s"),
+            i, *FVector(PieceTransforms[i].GetTranslation()).ToString());
+    }
+
+   // ── 후보 수집 ────────────────────────────────────────────
+    const UGeometryCollection* Rest =
+        GeometryCollectionComponent->GetRestCollection();
+
+    if (!Rest || !Rest->GetGeometryCollection())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BURN] RestCollection 없음"));
+        return;
+    }
+
+    const FGeometryCollection& Collection = *Rest->GetGeometryCollection();
+
+    const TManagedArray<FBox>&        Boxes     = Collection.BoundingBox;
+    const TManagedArray<int32>&       XfIndices = Collection.TransformIndex;
+    const TManagedArray<TSet<int32>>& TChildren  = Collection.Children;
+
+    const TManagedArray<int32>& RestParents =
+        GeometryCollectionComponent->GetParentArrayRest();
+
+    TArray<FVector> CandidateLocals;
+    CandidateLocals.Reserve(Boxes.Num());
+
+    int32 RejectedDetached = 0;
+    int32 RejectedLow      = 0;
+
+    for (int32 GeoIdx = 0; GeoIdx < Boxes.Num(); ++GeoIdx)
+    {
+        const int32 XfIdx = XfIndices[GeoIdx];
+
+        if (!TChildren.IsValidIndex(XfIdx))        continue;
+        if (TChildren[XfIdx].Num() != 0)           continue;   // 리프 조각만
+        if (!PieceTransforms.IsValidIndex(XfIdx)) continue;
+
+        // 클러스터에서 분리된 조각 제외. 시간에 의존하지 않는다.
+        if (GeometryCollectionComponent->GetParent(XfIdx) != RestParents[XfIdx])
+        {
+            ++RejectedDetached;
+            continue;
+        }
+
+        // 조각 바운드의 중심을 현재 트랜스폼으로 옮긴 위치.
+        // 피벗이 전부 원점에 몰려 있어도 정확하다.
+        const FVector LocalCenter = FVector(
+            PieceTransforms[XfIdx].TransformPosition(
+                FVector3f(Boxes[GeoIdx].GetCenter())));
+        
+        if (LocalCenter.Z < MinZ)
+        {
+            ++RejectedLow;
+            continue;
+        }
+
+        CandidateLocals.Add(LocalCenter);
+    }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[BURN] 후보 %d개 (분리 제외 %d, 낮음 제외 %d)"),
+        CandidateLocals.Num(), RejectedDetached, RejectedLow);
+
+    if (CandidateLocals.IsEmpty())
+    {
+        return;
+    }
+
+    // ── 스폰 ────────────────────────────────────────────────
+    const FTransform ComponentTransform =
+        GeometryCollectionComponent->GetComponentTransform();
+
+    const int32 Count = FMath::Min(
+        FMath::RandRange(SurfaceFireMinCount, SurfaceFireMaxCount),
+        CandidateLocals.Num());
+
+    for (int32 i = 0; i < Count; ++i)
+    {
+        CandidateLocals.Swap(i, FMath::RandRange(i, CandidateLocals.Num() - 1));
+
+        const FVector WorldLocation =
+            ComponentTransform.TransformPosition(CandidateLocals[i]);
+        
+        UNiagaraComponent* Fire =
+            UNiagaraFunctionLibrary::SpawnSystemAttached(
+                SurfaceFireEffect,
+                GeometryCollectionComponent,
+                NAME_None,
+                WorldLocation,
+                FRotator::ZeroRotator,
+                EAttachLocation::KeepWorldPosition,
+                false,
+                true);
+
+        DrawDebugSphere(GetWorld(), WorldLocation, 40.f, 12,
+            FColor::Red, false, 10.f, 0, 2.f);
+
+        UE_LOG(LogTemp, Warning, TEXT("[BURN] spawn[%d] world=%s -> %s"),
+            i, *WorldLocation.ToString(),
+            IsValid(Fire) ? TEXT("OK") : TEXT("FAIL"));
+
+        if (IsValid(Fire))
+        {
+            SurfaceFires.Add(Fire);
+        }
+    }
+}
+
+void ASFBuildingDestructionActor::ClearSurfaceFires()
+{
+    for (const TObjectPtr<UNiagaraComponent>& Fire : SurfaceFires)
+    {
+        if (IsValid(Fire))
+        {
+            Fire->DestroyComponent();
+        }
+    }
+
+    SurfaceFires.Reset();
 }
 
 void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)

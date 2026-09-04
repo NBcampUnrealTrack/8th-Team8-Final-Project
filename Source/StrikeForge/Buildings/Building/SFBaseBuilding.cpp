@@ -202,7 +202,7 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 				*StageData);
 			
 			// 새로운 GC 손상 단계에 진입했을 때만 새 불꽃을 생성한다.
-			PlayBurningEffect(CurrentStage);
+			//PlayBurningEffect(CurrentStage);
 			
 			return;
 		}

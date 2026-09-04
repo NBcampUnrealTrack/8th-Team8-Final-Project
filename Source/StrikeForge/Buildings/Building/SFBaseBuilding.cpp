@@ -65,24 +65,29 @@ void ASFBaseBuilding::RefreshVisual()
 	}
 }
 
-void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
+void ASFBaseBuilding::TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo)
 {	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		// 손상 단계와 Field 위치 계산 전에 원위치 복구
 		StopHitReaction();
 
-		HealthComponent->ApplyDamage(InDamage);
+		HealthComponent->ApplyDamage(DamageInfo.Damage);
 
 		/*
 		 * 체력 0에서는 BaseBuilding이 제거되므로
 		 * 최종 파괴 연출이 HitReact를 대신한다.
 		 */
-		if (CurrentBuildingState !=
-			EBuildingState::Destroyed)
+		FVector HitDirection = FVector::ForwardVector;
+		if (CurrentBuildingState !=	EBuildingState::Destroyed)
 		{
-			PlayHitReaction(
-				FVector::ForwardVector);
+			if (DamageInfo.HitActor.IsValid())
+			{
+				HitDirection = GetActorLocation() - DamageInfo.HitActor->GetActorLocation();
+				HitDirection.Z = 0;
+				HitDirection.Normalize();
+			}
+			PlayHitReaction(HitDirection);
 		}
 	}
 }
@@ -195,7 +200,10 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 			DestructionActor->ApplyDamageStage(
 				CurrentStage,
 				*StageData);
-
+			
+			// 새로운 GC 손상 단계에 진입했을 때만 새 불꽃을 생성한다.
+			PlayBurningEffect(CurrentStage);
+			
 			return;
 		}
 		// GC 생성 실패 시 아래 DamageMesh 경로를 사용한다.
@@ -217,7 +225,7 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 
 	// ResolveDamageMesh가 현재 체력 비율에 맞는 메시를 선택한다.
 	RefreshVisual();
-
+	PlayBurningEffect(CurrentMeshStage);
 	if (CurrentMeshStage != INDEX_NONE)
 	{
 		SF_LOG(
@@ -406,6 +414,9 @@ void ASFBaseBuilding::EnterCompletedState()
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 	SetBoxExtent();
+	
+	UpdateDamageVisual(1.f,HealthComponent->GetHealthPercent());
+	
 	//성윤 미니맵 마커제작
 	Tags.AddUnique(
 		FName(TEXT("MinimapBuilding"))
@@ -417,6 +428,7 @@ void ASFBaseBuilding::EnterDestroyedState()
 	// 이동한 GC 위치에서 최종 Strain이 계산되는 것을 방지
 	StopHitReaction();
 	PlayVFXComponent->StopConstructionEffect();
+	PlayVFXComponent->StopBurningEffects();
 	
 	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
@@ -925,6 +937,7 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	// niagara
 	ConstructionEffect = BuildingDefinition->ConstructEffect.LoadSynchronous();
 	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
+	DamagedBurningEffect = BuildingDefinition->DamagedBurningEffect.LoadSynchronous();
 	// preview ghost
 	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
 
@@ -1287,7 +1300,7 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 }
 #pragma endregion 
 
-#pragma region GridSystem
+#pragma region GCDestroy
 
 bool ASFBaseBuilding::EnsureDestructionActor()
 {
@@ -1298,6 +1311,12 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 
 	UGeometryCollection* Collection =
 		ActiveTierAssets.DestructionCollection;
+	
+	// destroy assets.
+	// ActiveTierAssets.DestructionCollection;
+	// DestroyedSound
+	// DestroyedEffect
+	// DamagedBurningEffect
 	
 	if (!IsValid(Collection))
 	{
@@ -1312,12 +1331,20 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	
+	if (!IsValid(DestructionActorClass))
+	{
+		SF_LOG(Warning, "EnsureDestructionClass is null");
+		return false;
+	}
 
 	ASFBuildingDestructionActor* SpawnedActor =
-		GetWorld()->SpawnActor<ASFBuildingDestructionActor>(
-			ASFBuildingDestructionActor::StaticClass(),
+		GetWorld()->SpawnActorDeferred<ASFBuildingDestructionActor>(
+			DestructionActorClass,
 			VisualTransform,
-			SpawnParameters);
+			nullptr,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
 	if (!IsValid(SpawnedActor))
 	{
@@ -1330,6 +1357,8 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 		return false;
 	}
 
+	SpawnedActor->FinishSpawning(VisualTransform);
+	
 	DestructionActor = SpawnedActor;
 	StaticMeshComponent->SetVisibility(false, true);
 
@@ -1344,6 +1373,11 @@ void ASFBaseBuilding::ClearDestructionVisual()
 	 */
 	StopHitReaction();
 
+	if (IsValid(PlayVFXComponent))
+	{
+		PlayVFXComponent->StopBurningEffects(true);
+	}
+	
 	if (IsValid(DestructionActor))
 	{
 		DestructionActor->Destroy();
@@ -1366,6 +1400,53 @@ const FSFBuildingTierData* ASFBaseBuilding::GetCostTierInfo() const
 			: CurrentTier;
 
 	return GetTierInfo(CostTier);
+}
+
+void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
+{
+	if (DamageStageIndex < 0 ||
+		!IsValid(PlayVFXComponent) ||
+		!IsValid(DamagedBurningEffect) ||
+		!IsValid(StaticMeshComponent))
+	{
+		return;
+	}
+
+	FVector LocalMin;
+	FVector LocalMax;
+
+	StaticMeshComponent->GetLocalBounds(
+		LocalMin,
+		LocalMax);
+
+	const FVector LocalBottomCenter(
+		(LocalMin.X + LocalMax.X) * 0.5f,
+		(LocalMin.Y + LocalMax.Y) * 0.5f,
+		LocalMin.Z);
+
+	const FTransform MeshTransform =
+		StaticMeshComponent->GetComponentTransform();
+
+	const FVector ComponentScale =
+		MeshTransform.GetScale3D().GetAbs();
+
+	FVector SpawnBoxSize =
+		(LocalMax - LocalMin) * ComponentScale;
+
+	// 건물 바닥의 가로·세로 영역만 사용한다.
+	// SpawnBoxSize.Z = 0.f;
+
+	const FTransform SpawnTransform(
+		MeshTransform.GetRotation(),
+		MeshTransform.TransformPosition(
+			LocalBottomCenter),
+		FVector::OneVector);
+
+	PlayVFXComponent->PlayBurningEffect(
+		DamagedBurningEffect,
+		SpawnTransform,
+		SpawnBoxSize,
+		DamageStageIndex + 1);
 }
 
 USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const

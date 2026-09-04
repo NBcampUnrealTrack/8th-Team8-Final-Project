@@ -1,5 +1,8 @@
 ﻿#include "Buildings/GC/SFBuildingDestructionActor.h"
-
+#include "NiagaraSystem.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Physics/Experimental/ChaosEventType.h"
 #include "Field/FieldSystemObjects.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
@@ -56,7 +59,6 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
 
         return false;
     }
-
     
     GeometryCollectionComponent->SetRestCollection(
     InCollection,
@@ -94,8 +96,7 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
 
     // 마우스 선택도 잔해를 통과시킨다.
     GeometryCollectionComponent->SetCollisionResponseToChannel(
-        ECC_Visibility,
-        ECR_Ignore);
+        ECC_Visibility,ECR_Ignore);
 
     GeometryCollectionComponent->SetGenerateOverlapEvents(false);
     GeometryCollectionComponent->SetCanEverAffectNavigation(false);
@@ -129,28 +130,14 @@ void ASFBuildingDestructionActor::ApplyDamageStage(int32 StageIndex, const FBuil
     AppliedStageIndex = StageIndex;
 
     ApplyStageSettings(StageData,StageIndex + 1);
-
+    
+    
     UE_LOG(
         LogTemp,
         Log,
         TEXT("[%s] Destruction stage applied: %d"),
         *GetName(),
         StageIndex);
-}
-
-void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
-{
-    if (!bInitialized ||
-       bFinalDestructionApplied ||
-       FinalStageIndex < 0)
-    {
-        return;
-    }
-
-    bFinalDestructionApplied = true;
-
-    ApplyStageSettings(StageData,FinalStageIndex + 1);
-    SetLifeSpan(DebrisLifetime);
 }
 
 void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction& StageData, const int32 TargetClusterDepth)
@@ -324,14 +311,25 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
     PendingImpulseStrength = 0.f;
 }
 
-void ASFBuildingDestructionActor::EndPlay(
-    const EEndPlayReason::Type EndPlayReason)
+void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
 {
-    GetWorldTimerManager().ClearTimer(
-        StrainHitTimerHandle);
+    if (!bInitialized ||
+       bFinalDestructionApplied ||
+       FinalStageIndex < 0)
+    {
+        return;
+    }
 
-    GetWorldTimerManager().ClearTimer(
-        ImpulseTimerHandle);
+    bFinalDestructionApplied = true;
+    
+    ApplyStageSettings(StageData,FinalStageIndex + 1);
+    SetLifeSpan(DebrisLifetime);
+}
+
+void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
+    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
 
     Super::EndPlay(EndPlayReason);
 }

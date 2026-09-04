@@ -4,12 +4,14 @@
 #include "Blueprint/UserWidget.h"
 #include "Input/Reply.h"
 #include "SFMinimapMarkerInfo.h"
+#include "TimerManager.h"
 #include "SFMinimapPanelWidget.generated.h"
 
 class AActor;
 class ASceneCapture2D;
 class UBorder;
 class UCanvasPanel;
+class UCombatTargetComponent;
 class UTextureRenderTarget2D;
 class UWidget;
 struct FSFMinimapSettings;
@@ -72,6 +74,8 @@ private:
         float CaptureHeight
     );
 
+    void CaptureMinimapScene();
+
     void DestroyRuntimeMinimapCapture();
 
     void CreateMinimapBoundsMasks();
@@ -105,7 +109,16 @@ private:
 
     void UpdatePlayerViewIndicator();
 
-    void UpdateMinimapMarkers();
+    void UpdateMinimapMarkers(float InDeltaTime);
+
+    void UpdateCombatDangerOverlay(float InDeltaTime);
+
+    UFUNCTION()
+    void HandleCombatTargetDamaged(
+        UCombatTargetComponent* InTarget,
+        float InDamage,
+        AActor* InInstigator
+    );
 
     void MoveCameraToPointerPosition(const FPointerEvent& InMouseEvent);
 
@@ -123,6 +136,16 @@ private:
     FLinearColor GetMarkerColor(
         ESFMinimapMarkerType MarkerType
     ) const;
+
+    void UpdateBuildingEventOverlay(
+        float InDeltaTime
+    );
+
+    void StartBuildingEventFlash();
+
+    bool bInitialMarkerScanCompleted = false;
+
+    bool IsActorOnMainScreen(AActor* Actor) const;
 
     // 변수 영역
 protected:
@@ -178,6 +201,18 @@ protected:
     TObjectPtr<UTextureRenderTarget2D>
         MinimapRenderTarget = nullptr;
 
+    /**
+     * 레벨 시작 후 실제 미니맵 장면을 캡처하기까지 기다리는 시간.
+     * 스트리밍된 지형과 머티리얼이 준비될 시간을 준다.
+     */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Capture",
+        meta = (ClampMin = "0.0", Units = "s")
+    )
+    float MinimapCaptureDelay = 1.5f;
+
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -205,12 +240,20 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Tag"
+	)
+    FName CommanderMarkerActorTag =
+        TEXT("MinimapCommander");
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
     FVector2D AllyMarkerSize =
         FVector2D(
-            8.0f,
-            8.0f
+            4.0f,
+            4.0f
         );
 
     UPROPERTY(
@@ -218,23 +261,21 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D EnemyMarkerSize =
-        FVector2D(
-            8.0f,
-            8.0f
-        );
+    FVector2D EnemyMarkerSize = FVector2D(4.0f, 4.0f);
 
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
         Category = "SF|Minimap|Marker|Size"
     )
-    FVector2D BuildingMarkerSize =
-        FVector2D(
-            12.0f,
-            12.0f
-        );
+    FVector2D BuildingMarkerSize = FVector2D(7.0f, 7.0f);
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Size"
+    )
+    FVector2D CommanderMarkerSize = FVector2D(7.0f, 7.0f);
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -242,9 +283,9 @@ protected:
     )
     FLinearColor AllyMarkerColor =
         FLinearColor(
-            0.1f,
-            0.65f,
-            1.0f,
+            0.0f,
+            0.8f,
+            0.95f,
             1.0f
         );
 
@@ -256,8 +297,8 @@ protected:
     FLinearColor EnemyMarkerColor =
         FLinearColor(
             1.0f,
-            0.2f,
-            0.2f,
+            0.05f,
+            0.05f,
             1.0f
         );
 
@@ -273,6 +314,40 @@ protected:
             0.2f,
             1.0f
         );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Color"
+    )
+    FLinearColor CommanderMarkerColor =
+        FLinearColor(
+            1.0f, 
+            0.75f, 
+            0.05f, 
+            1.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Color"
+    )
+    FLinearColor DangerMarkerColor =
+        FLinearColor(
+            1.0f,
+            0.0f,
+            0.0f,
+            1.0f
+        );
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Effect",
+        meta = (ClampMin = "0.0", Units = "s")
+    )
+    float DangerMarkerDuration = 1.0f;
 
     UPROPERTY(
         BlueprintReadOnly,
@@ -291,6 +366,20 @@ protected:
             )
     )
     TObjectPtr<UBorder> PlayerViewIndicator = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Minimap",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UBorder> CombatDangerOverlay = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Minimap",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UBorder> BuildingEventOverlay = nullptr;
 
 private:
     UPROPERTY(Transient)
@@ -314,4 +403,40 @@ private:
 
     FVector2D CachedMinimapMaskSize =
         FVector2D::ZeroVector;
+
+    FTimerHandle MinimapCaptureTimerHandle;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        Category = "SF|Minimap|Combat Danger",
+        meta = (ClampMin = "0.01", Units = "s")
+    )
+    float CombatDangerFlashHalfPeriod = 0.15f;
+
+    float CombatDangerFlashElapsed = 0.0f;
+
+    int32 CombatDangerFlashToggleCount = 0;
+
+    bool bCombatDangerFlashActive = false;
+
+    bool bCombatDangerOverlayVisible = false;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        Category = "SF|Minimap|Building Event",
+        meta = (ClampMin = "0.01", Units = "s")
+    )
+    float BuildingEventFlashHalfPeriod = 0.15f;
+
+    float BuildingEventFlashElapsed = 0.0f;
+
+    int32 BuildingEventFlashToggleCount = 0;
+
+    bool bBuildingEventFlashActive = false;
+
+    bool bBuildingEventOverlayVisible = false;
+
+    void StartBuildingEventFlash(AActor* InBuilding);
+
+    TWeakObjectPtr<AActor> BuildingEventTarget;
 };

@@ -1,5 +1,6 @@
 #include "SFMinimapPanelWidget.h"
 
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Datas/Stage/SFStageData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
@@ -8,6 +9,7 @@
 #include "InGame/Controller/SFRTSCameraPawn.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -20,8 +22,10 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Interfaces/Units/Targetable.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
+#include "TimerManager.h"
 
 #include "Logging/SFLog.h"
 
@@ -107,13 +111,43 @@ void USFMinimapPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    if (IsValid(CombatDangerOverlay))
+    {
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+    }
+
+    if (IsValid(BuildingEventOverlay))
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+    }
+    else
+    {
+        SF_LOG(
+            Warning,
+            "[SFMinimapPanelWidget] "
+            "BuildingEventOverlay is invalid."
+        );
+    }
+
     InitializeMinimapCapture();
     CreateMinimapMarkers();
+    bInitialMarkerScanCompleted = true;
     CreateMinimapBoundsMasks();
 }
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     ClearMinimapBoundsMasks();
     DestroyRuntimeMinimapCapture();
     ClearMinimapMarkers();
@@ -470,31 +504,80 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
     CaptureComponent->OrthoWidth =
         OrthoWidth;
 
+    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
+    // 기존 미니맵 마커로 표시한다.
+    CaptureComponent->bCaptureEveryFrame = false;
+    CaptureComponent->bCaptureOnMovement = false;
+
     CaptureComponent->TextureTarget =
         MinimapRenderTarget;
 
     CaptureComponent->CaptureSource =
         ESceneCaptureSource::SCS_FinalColorLDR;
 
-    // 지형은 한 번만 찍고, 움직이는 유닛과 건물은
-    // 기존 미니맵 마커로 표시한다.
-    CaptureComponent->bCaptureEveryFrame = false;
-    CaptureComponent->bCaptureOnMovement = false;
+    World->GetTimerManager().ClearTimer(
+        MinimapCaptureTimerHandle
+    );
+
+    if (MinimapCaptureDelay <= KINDA_SMALL_NUMBER)
+    {
+        CaptureMinimapScene();
+    }
+    else
+    {
+        World->GetTimerManager().SetTimer(
+            MinimapCaptureTimerHandle,
+            this,
+            &USFMinimapPanelWidget::CaptureMinimapScene,
+            MinimapCaptureDelay,
+            false
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFMinimapPanelWidget] "
+        "Runtime minimap capture prepared | "
+        "Center: %s | OrthoWidth: %.1f | Delay: %.2f",
+        *MapCenter.ToString(),
+        OrthoWidth,
+        MinimapCaptureDelay
+    );
+}
+
+void USFMinimapPanelWidget::CaptureMinimapScene()
+{
+    if (!IsValid(RuntimeMinimapCaptureActor))
+    {
+        return;
+    }
+
+    USceneCaptureComponent2D* CaptureComponent =
+        RuntimeMinimapCaptureActor->GetCaptureComponent2D();
+
+    if (!IsValid(CaptureComponent) ||
+        !IsValid(CaptureComponent->TextureTarget))
+    {
+        return;
+    }
 
     CaptureComponent->CaptureScene();
 
     SF_LOG(
         Log,
-        "[SFMinimapPanelWidget] "
-        "Runtime minimap capture created | "
-        "Center: %s | OrthoWidth: %.1f",
-        *MapCenter.ToString(),
-        OrthoWidth
+        "[SFMinimapPanelWidget] Delayed minimap capture completed."
     );
 }
 
 void USFMinimapPanelWidget::DestroyRuntimeMinimapCapture()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(
+            MinimapCaptureTimerHandle
+        );
+    }
+
     if (IsValid(RuntimeMinimapCaptureActor))
     {
         RuntimeMinimapCaptureActor->Destroy();
@@ -809,7 +892,9 @@ void USFMinimapPanelWidget::NativeTick(
 
     UpdateMinimapBoundsMasks();
     UpdatePlayerViewIndicator();
-    UpdateMinimapMarkers();
+    UpdateMinimapMarkers(InDeltaTime);
+    UpdateCombatDangerOverlay(InDeltaTime);
+    UpdateBuildingEventOverlay(InDeltaTime);
 }
 
 void USFMinimapPanelWidget::CreateMinimapMarkers()
@@ -823,6 +908,11 @@ void USFMinimapPanelWidget::CreateMinimapMarkers()
     {
         return;
     }
+
+    CreateMarkersForTag(
+        CommanderMarkerActorTag,
+        ESFMinimapMarkerType::Commander
+    );
 
     CreateMarkersForTag(
         AllyMarkerActorTag,
@@ -882,9 +972,45 @@ void USFMinimapPanelWidget::CreateMarkersForTag(
             continue;
         }
 
+        ESFMinimapMarkerType ResolvedMarkerType = MarkerType;
+
+        if (MarkerType == ESFMinimapMarkerType::Building)
+        {
+            const ASFBaseBuilding* Building =
+                Cast<ASFBaseBuilding>(FoundActor);
+
+            ASFInGamePlayerController* PlayerController =
+                Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+            if (
+                IsValid(Building) &&
+                IsValid(PlayerController)
+                )
+            {
+                const int32 BuildingTeam =
+                    Building->GetTeamIndex();
+
+                const int32 LocalTeam =
+                    PlayerController->GetMyTeamIndex();
+
+                if (BuildingTeam == LocalTeam)
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::AllyBuilding;
+                }
+                else if (
+                    BuildingTeam != Targetable::NeutralTeam
+                    )
+                {
+                    ResolvedMarkerType =
+                        ESFMinimapMarkerType::EnemyBuilding;
+                }
+            }
+        }
+
         CreateMarkerForActor(
             FoundActor,
-            MarkerType
+            ResolvedMarkerType
         );
     }
 }
@@ -981,9 +1107,57 @@ void USFMinimapPanelWidget::CreateMarkerForActor(
     MarkerEntry.MarkerType =
         MarkerType;
 
+    ASFBaseBuilding* Building =
+        Cast<ASFBaseBuilding>(TargetActor);
+
+    if (IsValid(Building))
+    {
+        MarkerEntry.bWasTierActivated =
+            Building->IsTierActivated();
+
+        MarkerEntry.LastKnownTier =
+            Building->GetCurrentTier();
+    }
+
     MinimapMarkerEntries.Add(
         MarkerEntry
     );
+
+    if (
+        bInitialMarkerScanCompleted &&
+        IsValid(Building) &&
+        Building->IsTierActivated()
+        )
+    {
+        if (ASFInGamePlayerController* PlayerController =
+            Cast<ASFInGamePlayerController>(
+                GetOwningPlayer()
+            ))
+        {
+            if (
+                Building->GetTeamIndex() ==
+                PlayerController->GetMyTeamIndex()
+                )
+            {
+                SF_LOG(
+                    Log,
+                    "[Minimap] Newly completed building detected | Actor: %s",
+                    *Building->GetName()
+                );
+
+                StartBuildingEventFlash(Building);
+            }
+        }
+    }
+
+    if (UCombatTargetComponent* CombatTarget =
+        TargetActor->FindComponentByClass<UCombatTargetComponent>())
+    {
+        CombatTarget->OnCombatDamaged.AddUniqueDynamic(
+            this,
+            &USFMinimapPanelWidget::HandleCombatTargetDamaged
+        );
+    }
 }
 
 void USFMinimapPanelWidget::ClearMinimapMarkers()
@@ -993,6 +1167,21 @@ void USFMinimapPanelWidget::ClearMinimapMarkers()
         MinimapMarkerEntries
         )
     {
+        AActor* TargetActor =
+            MarkerEntry.TargetActor.Get();
+
+        if (IsValid(TargetActor))
+        {
+            if (UCombatTargetComponent* CombatTarget =
+                TargetActor->FindComponentByClass<UCombatTargetComponent>())
+            {
+                CombatTarget->OnCombatDamaged.RemoveDynamic(
+                    this,
+                    &USFMinimapPanelWidget::HandleCombatTargetDamaged
+                );
+            }
+        }
+
         UBorder* MarkerWidget =
             MarkerEntry.MarkerWidget.Get();
 
@@ -1023,53 +1212,186 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
         return;
     }
 
-    FVector CameraLocation;
-    FRotator CameraRotation;
+    int32 ViewportWidth = 0;
+    int32 ViewportHeight = 0;
 
-    PlayerController->GetPlayerViewPoint(
-        CameraLocation,
-        CameraRotation
+    PlayerController->GetViewportSize(
+        ViewportWidth,
+        ViewportHeight
     );
 
-    const FVector ViewDirection =
-        CameraRotation.Vector();
-
-    if (FMath::IsNearlyZero(ViewDirection.Z))
+    if (
+        ViewportWidth <= 0 ||
+        ViewportHeight <= 0
+        )
     {
         return;
     }
+
+    const FVector2D ScreenCorners[4] =
+    {
+        FVector2D(0.0f, 0.0f),
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            0.0f
+        ),
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            static_cast<float>(ViewportHeight - 1)
+        ),
+        FVector2D(
+            0.0f,
+            static_cast<float>(ViewportHeight - 1)
+        )
+    };
 
     constexpr float GroundZ = 0.0f;
 
-    const float DistanceToGround =
-        (
-            GroundZ -
-            CameraLocation.Z
-            ) /
-        ViewDirection.Z;
+    FVector2D MinimapMin = FVector2D::ZeroVector;
+    FVector2D MinimapMax = FVector2D::ZeroVector;
 
-    if (DistanceToGround < 0.0f)
+    bool bHasValidCorner = false;
+
+    for (const FVector2D& ScreenPosition : ScreenCorners)
+    {
+        FVector WorldOrigin;
+        FVector WorldDirection;
+
+        if (
+            !PlayerController->DeprojectScreenPositionToWorld(
+                ScreenPosition.X,
+                ScreenPosition.Y,
+                WorldOrigin,
+                WorldDirection
+            )
+            )
+        {
+            continue;
+        }
+
+        if (FMath::IsNearlyZero(WorldDirection.Z))
+        {
+            continue;
+        }
+
+        const float DistanceToGround =
+            (GroundZ - WorldOrigin.Z) /
+            WorldDirection.Z;
+
+        if (DistanceToGround <= 0.0f)
+        {
+            continue;
+        }
+
+        const FVector GroundLocation =
+            WorldOrigin +
+            WorldDirection * DistanceToGround;
+
+        const FVector2D MinimapPosition =
+            WorldToMinimapPosition(
+                GroundLocation
+            );
+
+        if (!bHasValidCorner)
+        {
+            MinimapMin = MinimapPosition;
+            MinimapMax = MinimapPosition;
+            bHasValidCorner = true;
+        }
+        else
+        {
+            MinimapMin.X =
+                FMath::Min(
+                    MinimapMin.X,
+                    MinimapPosition.X
+                );
+
+            MinimapMin.Y =
+                FMath::Min(
+                    MinimapMin.Y,
+                    MinimapPosition.Y
+                );
+
+            MinimapMax.X =
+                FMath::Max(
+                    MinimapMax.X,
+                    MinimapPosition.X
+                );
+
+            MinimapMax.Y =
+                FMath::Max(
+                    MinimapMax.Y,
+                    MinimapPosition.Y
+                );
+        }
+    }
+
+    if (!bHasValidCorner)
     {
         return;
     }
 
-    const FVector CameraFocusLocation =
-        CameraLocation +
-        ViewDirection *
-        DistanceToGround;
-
-    const FVector2D MinimapPosition =
-        WorldToMinimapPosition(
-            CameraFocusLocation
+    UCanvasPanelSlot* IndicatorSlot =
+        Cast<UCanvasPanelSlot>(
+            PlayerViewIndicator->Slot
         );
+
+    if (!IsValid(IndicatorSlot))
+    {
+        return;
+    }
+
+    const FVector2D MinimapSize =
+        MinimapMarkerLayer
+        ->GetCachedGeometry()
+        .GetLocalSize();
+
+    if (
+        MinimapSize.X <= 0.0f ||
+        MinimapSize.Y <= 0.0f
+        )
+    {
+        return;
+    }
+
+    const FVector2D ViewIndicatorSize =
+        MinimapMax - MinimapMin;
+
+    const FVector2D ClampedSize(
+        FMath::Clamp(
+            ViewIndicatorSize.X,
+            2.0f,
+            MinimapSize.X
+        ),
+        FMath::Clamp(
+            ViewIndicatorSize.Y,
+            2.0f,
+            MinimapSize.Y
+        )
+    );
+
+    const FVector2D ViewIndicatorCenter =
+        (MinimapMin + MinimapMax) * 0.5f;
+
+    IndicatorSlot->SetAutoSize(false);
+
+    IndicatorSlot->SetAlignment(
+        FVector2D(0.5f, 0.5f)
+    );
+
+    IndicatorSlot->SetSize(
+        ClampedSize
+    );
 
     SetMarkerLayerPosition(
         PlayerViewIndicator,
-        MinimapPosition
+        ViewIndicatorCenter
     );
 }
 
-void USFMinimapPanelWidget::UpdateMinimapMarkers()
+void USFMinimapPanelWidget::UpdateMinimapMarkers(
+    float InDeltaTime
+)
 {
     for (
         int32 Index =
@@ -1115,7 +1437,110 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers()
             MarkerWidget,
             MinimapPosition
         );
+
+        if (MarkerEntry.DangerTimeRemaining > 0.0f)
+        {
+            MarkerEntry.DangerTimeRemaining =
+                FMath::Max(
+                    0.0f,
+                    MarkerEntry.DangerTimeRemaining - InDeltaTime
+                );
+
+            if (MarkerEntry.DangerTimeRemaining > 0.0f)
+            {
+                MarkerWidget->SetBrushColor(
+                    DangerMarkerColor
+                );
+            }
+            else
+            {
+                MarkerWidget->SetBrushColor(
+                    GetMarkerColor(
+                        MarkerEntry.MarkerType
+                    )
+                );
+            }
+        }
+
+        if (
+            bBuildingEventFlashActive &&
+            BuildingEventTarget.Get() == MarkerEntry.TargetActor.Get() &&
+            (
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::Building ||
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::AllyBuilding ||
+                MarkerEntry.MarkerType == ESFMinimapMarkerType::EnemyBuilding
+                ) &&
+            MarkerEntry.DangerTimeRemaining <= 0.0f
+            )
+        {
+            MarkerWidget->SetBrushColor(
+                bBuildingEventOverlayVisible
+                ? FLinearColor(0.05f, 1.0f, 0.15f, 1.0f)
+                : GetMarkerColor(MarkerEntry.MarkerType)
+            );
+        }
+
+        if (ASFBaseBuilding* Building =
+            Cast<ASFBaseBuilding>(TargetActor))
+        {
+            const bool bNowTierActivated =
+                Building->IsTierActivated();
+
+            const int32 NowTier =
+                Building->GetCurrentTier();
+
+            const bool bConstructionCompleted =
+                !MarkerEntry.bWasTierActivated &&
+                bNowTierActivated;
+
+            const bool bUpgradeCompleted =
+                MarkerEntry.bWasTierActivated &&
+                bNowTierActivated &&
+                MarkerEntry.LastKnownTier != NowTier;
+
+            if (
+                bConstructionCompleted ||
+                bUpgradeCompleted
+                )
+            {
+                if (ASFInGamePlayerController* PlayerController =
+                    Cast<ASFInGamePlayerController>(
+                        GetOwningPlayer()
+                    ))
+                {
+                    if (
+                        Building->GetTeamIndex() ==
+                        PlayerController->GetMyTeamIndex()
+                        )
+                    {
+                        StartBuildingEventFlash(Building);
+                    }
+                }
+            }
+
+            MarkerEntry.bWasTierActivated =
+                bNowTierActivated;
+
+            MarkerEntry.LastKnownTier =
+                NowTier;
+        }
+
     }
+
+    CreateMarkersForTag(
+        AllyMarkerActorTag,
+        ESFMinimapMarkerType::Ally
+    );
+
+    CreateMarkersForTag(
+        EnemyMarkerActorTag,
+        ESFMinimapMarkerType::Enemy
+    );
+
+    CreateMarkersForTag(
+        BuildingMarkerActorTag,
+        ESFMinimapMarkerType::Building
+    );
 }
 
 void USFMinimapPanelWidget::SetMarkerLayerPosition(
@@ -1234,6 +1659,14 @@ FVector2D USFMinimapPanelWidget::GetMarkerSize(
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerSize;
 
+    case ESFMinimapMarkerType::AllyBuilding:
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return BuildingMarkerSize;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerSize;
+
     case ESFMinimapMarkerType::None:
     default:
         return FVector2D::ZeroVector;
@@ -1254,6 +1687,15 @@ FLinearColor USFMinimapPanelWidget::GetMarkerColor(
 
     case ESFMinimapMarkerType::Building:
         return BuildingMarkerColor;
+
+    case ESFMinimapMarkerType::AllyBuilding:
+        return AllyMarkerColor;
+
+    case ESFMinimapMarkerType::EnemyBuilding:
+        return EnemyMarkerColor;
+
+    case ESFMinimapMarkerType::Commander:
+        return CommanderMarkerColor;
 
     case ESFMinimapMarkerType::None:
     default:
@@ -1415,4 +1857,238 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
     }
 
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void USFMinimapPanelWidget::HandleCombatTargetDamaged(
+    UCombatTargetComponent* InTarget,
+    float InDamage,
+    AActor* InInstigator
+)
+{
+    if (!IsValid(InTarget))
+    {
+        return;
+    }
+
+    AActor* DamagedActor = InTarget->GetOwner();
+
+    if (!IsValid(DamagedActor))
+    {
+        return;
+    }
+ 
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    if (
+        InTarget->GetTeamIndex() !=
+        PlayerController->GetMyTeamIndex()
+        )
+    {
+        return;
+    }
+
+    if (IsActorOnMainScreen(DamagedActor))
+    {
+        return;
+    }
+
+    for (FSFMinimapMarkerEntry& MarkerEntry :
+        MinimapMarkerEntries)
+    {
+        if (MarkerEntry.TargetActor.Get() != DamagedActor)
+        {
+            continue;
+        }
+
+        MarkerEntry.DangerTimeRemaining =
+            DangerMarkerDuration;
+
+        if (UBorder* MarkerWidget =
+            MarkerEntry.MarkerWidget.Get())
+        {
+            MarkerWidget->SetBrushColor(
+                DangerMarkerColor
+            );
+        }
+
+        break;
+    }
+
+    if (IsValid(CombatDangerOverlay))
+    {
+        CombatDangerFlashElapsed = 0.0f;
+        CombatDangerFlashToggleCount = 0;
+        bCombatDangerFlashActive = true;
+        bCombatDangerOverlayVisible = true;
+
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Visible
+        );
+    }
+}
+
+void USFMinimapPanelWidget::UpdateCombatDangerOverlay(
+    float InDeltaTime
+)
+{
+    if (
+        !bCombatDangerFlashActive ||
+        !IsValid(CombatDangerOverlay)
+        )
+    {
+        return;
+    }
+
+    CombatDangerFlashElapsed += InDeltaTime;
+
+    while (
+        CombatDangerFlashElapsed >=
+        CombatDangerFlashHalfPeriod &&
+        CombatDangerFlashToggleCount < 4
+        )
+    {
+        CombatDangerFlashElapsed -=
+            CombatDangerFlashHalfPeriod;
+
+        ++CombatDangerFlashToggleCount;
+
+        bCombatDangerOverlayVisible =
+            !bCombatDangerOverlayVisible;
+
+        CombatDangerOverlay->SetVisibility(
+            bCombatDangerOverlayVisible
+            ? ESlateVisibility::Visible
+            : ESlateVisibility::Hidden
+        );
+    }
+
+    if (CombatDangerFlashToggleCount >= 4)
+    {
+        CombatDangerOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+
+        bCombatDangerFlashActive = false;
+        bCombatDangerOverlayVisible = false;
+        CombatDangerFlashElapsed = 0.0f;
+        CombatDangerFlashToggleCount = 0;
+    }
+}
+
+void USFMinimapPanelWidget::StartBuildingEventFlash(
+    AActor* InBuilding
+)
+{
+    BuildingEventTarget = InBuilding;
+
+    bBuildingEventFlashActive = true;
+    BuildingEventFlashElapsed = 0.0f;
+    BuildingEventFlashToggleCount = 0;
+    bBuildingEventOverlayVisible = true;
+
+    if (IsValid(BuildingEventOverlay))
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Visible
+        );
+    }
+}
+
+void USFMinimapPanelWidget::UpdateBuildingEventOverlay(
+    float InDeltaTime
+)
+{
+    if (
+        !bBuildingEventFlashActive ||
+        !IsValid(BuildingEventOverlay)
+        )
+    {
+        return;
+    }
+
+    BuildingEventFlashElapsed += InDeltaTime;
+
+    while (
+        BuildingEventFlashElapsed >=
+        BuildingEventFlashHalfPeriod &&
+        BuildingEventFlashToggleCount < 4
+        )
+    {
+        BuildingEventFlashElapsed -=
+            BuildingEventFlashHalfPeriod;
+
+        ++BuildingEventFlashToggleCount;
+
+        bBuildingEventOverlayVisible =
+            !bBuildingEventOverlayVisible;
+
+        BuildingEventOverlay->SetVisibility(
+            bBuildingEventOverlayVisible
+            ? ESlateVisibility::Visible
+            : ESlateVisibility::Hidden
+        );
+    }
+
+    if (BuildingEventFlashToggleCount >= 4)
+    {
+        BuildingEventOverlay->SetVisibility(
+            ESlateVisibility::Hidden
+        );
+
+        bBuildingEventFlashActive = false;
+        bBuildingEventOverlayVisible = false;
+        BuildingEventFlashElapsed = 0.0f;
+        BuildingEventFlashToggleCount = 0;
+    }
+}
+
+bool USFMinimapPanelWidget::IsActorOnMainScreen(
+    AActor* Actor
+) const
+{
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    if (
+        !IsValid(PlayerController) ||
+        !IsValid(Actor)
+        )
+    {
+        return false;
+    }
+
+    FVector2D ScreenPosition;
+
+    if (
+        !PlayerController->ProjectWorldLocationToScreen(
+            Actor->GetActorLocation(),
+            ScreenPosition,
+            true
+        )
+        )
+    {
+        return false;
+    }
+
+    int32 ViewportSizeX = 0;
+    int32 ViewportSizeY = 0;
+
+    PlayerController->GetViewportSize(
+        ViewportSizeX,
+        ViewportSizeY
+    );
+
+    return
+        ScreenPosition.X >= 0.0f &&
+        ScreenPosition.X <= ViewportSizeX &&
+        ScreenPosition.Y >= 0.0f &&
+        ScreenPosition.Y <= ViewportSizeY;
 }

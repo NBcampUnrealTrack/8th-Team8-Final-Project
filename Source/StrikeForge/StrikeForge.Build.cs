@@ -17,13 +17,15 @@ public class StrikeForge : ModuleRules
 			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore", "CommonUI","MediaAssets",
+			"UMG", "Slate", "SlateCore", "CommonUI", "GameplayTags",
 
 			// effect
 			"Niagara",
+			
+			// gc
+			"GeometryCollectionEngine",
+			"FieldSystemEngine",
         });
-
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
 		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
 

@@ -11,6 +11,13 @@ class USFProductionUnitEntryWidget;
 class UImage;
 class UProductComponent;
 class UProgressBar;
+class USoundBase;
+class UButton;
+class ASFProductionBuilding;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(
+    FProductionResourceWarningRequested
+);
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFProductionBuildingPanelWidget
@@ -80,6 +87,21 @@ public:
     )
     TObjectPtr<UImage> QueueIcon05 = nullptr;
 
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton01 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton02 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton03 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton04 = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+    TObjectPtr<UButton> QueueButton05 = nullptr;
+
     UFUNCTION()
     void HandleProductRatioChanged(
         float ProductRatio
@@ -91,6 +113,13 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|Production")
     bool RequestProductionBySlot(int32 SlotIndex);
+
+    UPROPERTY(
+        BlueprintAssignable,
+        Category = "SF|Production|Sound"
+    )
+    FProductionResourceWarningRequested
+        OnProductionResourceWarningRequested;
 
 protected:
     virtual void NativeConstruct() override;
@@ -120,6 +149,30 @@ private:
         const TArray<FProductInfo>& ProductLine
     );
 
+    UFUNCTION()
+    void HandleQueueButton01Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton02Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton03Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton04Clicked();
+
+    UFUNCTION()
+    void HandleQueueButton05Clicked();
+
+    void CancelProductionAtQueueIndex(int32 QueueIndex);
+
+    UFUNCTION()
+    void HandleSpawnableUnitsChanged(const TArray<FName>& SpawnableRowNames);
+
+    void BindProductionBuilding(ASFProductionBuilding* InProductionBuilding);
+
+    void UnbindProductionBuilding();
+
 protected:
     UPROPERTY(
         BlueprintReadOnly,
@@ -143,6 +196,13 @@ protected:
     )
     TObjectPtr<UProgressBar> ProductionProgressBar = nullptr;
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Production|Sound"
+    )
+    TObjectPtr<USoundBase> UnitProductionClickSound = nullptr;
+
 private:
     UPROPERTY(Transient)
     TWeakObjectPtr<AActor> CurrentProductionBuilding;
@@ -154,4 +214,8 @@ private:
 
     UPROPERTY(Transient)
     TArray<FName> CurrentProductableUnitRowNames;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFProductionBuilding>
+        BoundProductionBuilding;
 };

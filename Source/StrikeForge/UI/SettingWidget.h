@@ -1,7 +1,7 @@
 // SettingWidget.h
 #pragma once
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "CommonActivatableWidget.h"
 #include "Input/Reply.h"
 #include "SettingWidget.generated.h"
 class UButton;
@@ -10,7 +10,7 @@ class UBackgroundBlur;
 class USlider;
 
 UCLASS()
-class STRIKEFORGE_API USettingWidget : public UUserWidget
+class STRIKEFORGE_API USettingWidget : public UCommonActivatableWidget
 {
 	GENERATED_BODY()
 public:

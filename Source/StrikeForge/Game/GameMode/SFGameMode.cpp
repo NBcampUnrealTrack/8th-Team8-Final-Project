@@ -1,15 +1,16 @@
 ﻿// SFGameMode.cpp
-
-
 #include "SFGameMode.h"
 #include "Logging/SFLog.h"
 #include "Game/GameInstance/SFGameInstance.h"
-#include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
-#include "Datas/Building/BuildingAppearance.h"
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "EngineUtils.h"
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
+#include "Game/Spawn/SFBuildingSpawnAnchor.h"
+#include "Game/Spawn/SFBuildingSpawnLibrary.h"
 
 ASFGameMode::ASFGameMode()
 {
@@ -22,10 +23,42 @@ void ASFGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	
-	if (ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(NewPlayer))
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(NewPlayer);
+	if (!IsValid(SFPC))	return;
+
+	const int32 AssignedTeamIndex =	PlayerTeamIndex;
+	// Controller 자신에게 팀 번호 저장
+	SFPC->SetMyTeamIndex(AssignedTeamIndex);
+	
+	ASFGameState* CurrentGameState = GetGameState<ASFGameState>();
+	if (!IsValid(CurrentGameState))	return;
+
+	// 이미 생성된 TeamState에 Controller 연결
+	if (!CurrentGameState->RegisterPlayer(AssignedTeamIndex, SFPC))
 	{
-		SFPC->SetMyTeamIndex(PlayerTeamIndex);
+		SF_LOG(
+			Error,
+			"[SFGameMode] Player 팀 등록 실패. "
+			"Team=%d, Player=%s",
+			AssignedTeamIndex,
+			*GetNameSafe(SFPC));
 	}
+}
+
+void ASFGameMode::Logout(AController* Exiting)
+{
+	// 싱글이라 할필요가없긴함. 나가면 바로 종료라서
+	// 애초에 컨트롤러가 나가면 Team정보의 Map 정보도 다 지워져야함
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(Exiting);
+	if (IsValid(SFPC))
+	{
+		if (ASFGameState* CurrentGameState = GetGameState<ASFGameState>())
+		{
+			CurrentGameState->UnregisterPlayer(SFPC->GetMyTeamIndex(), SFPC);
+		}
+	}
+	
+	Super::Logout(Exiting);
 }
 
 void ASFGameMode::InitGameState()
@@ -56,29 +89,122 @@ void ASFGameMode::InitGameState()
 		return;
 	}
 
-	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadPlayerBuildingCatalog();
-
+	// 1. 플레이어는 GameInstance가 보관한 선택 종족 사용
+	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
+	//
+	if (PlayerRace == ESFRace::None)
+	{
+		SF_LOG(Error, "[SFGameMode] 플레이어 종족이 선택되지 않았습니다.");
+		return;
+	}
+	
+	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadBuildingCatalog(PlayerRace);
 	if (!IsValid(PlayerCatalog))
 	{
 		SF_LOG(
 			Error,
-			"[SFGameMode] InitGameState: "
-			"플레이어 건물 카탈로그를 준비할 수 없습니다.");
-
+			"[SFGameMode] 플레이어 Catalog 로드 실패. Race=%s",
+			*UEnum::GetValueAsString(PlayerRace));
 		return;
 	}
 
-	if (!SFGameState->SetTeamBuildingCatalog(PlayerTeamIndex, PlayerCatalog))
+	if (!SFGameState->RegisterTeam(PlayerTeamIndex, PlayerRace, PlayerCatalog))
 	{
 		SF_LOG(
 			Error,
-			"[SFGameMode] InitGameState: "
-			"Team %d에 카탈로그를 설정하지 못했습니다.",
+			"[SFGameMode] 플레이어 팀 등록 실패. Team=%d",
 			PlayerTeamIndex);
-
+		return;
+	}
+	
+	// 2. 선택된 스테이지 데이터 조회
+	const FName StageRowName = SFGameInstance->GetSelectedStageRowName();
+	if (StageRowName.IsNone())
+	{
+		SF_LOG(Error, "[SFGameMode] 선택된 Stage가 없습니다.");
 		return;
 	}
 
+	USFDataTableManager* DataManager = SFGameInstance->GetSubsystem<USFDataTableManager>();
+	if (!IsValid(DataManager))
+	{
+		return;
+	}
+
+	const FSFStageData* StageData =
+		DataManager->GetDataRow<FSFStageData>(
+			EDataTableType::Stage,
+			StageRowName,
+			TEXT("ASFGameMode::InitGameState"));
+
+	if (!StageData)
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] StageData 조회 실패. Stage=%s",
+			*StageRowName.ToString());
+		return;
+	}
+	
+	// 3. AI 팀 등록
+	TSet<int32> RegisteredComputerTeams;
+
+	for (const FSFStageTeamSetup& ComputerTeam : StageData->TeamSetups)
+	{
+		if (ComputerTeam.TeamIndex == PlayerTeamIndex)
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI가 플레이어 TeamIndex를 사용합니다: %d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+
+		if (RegisteredComputerTeams.Contains(ComputerTeam.TeamIndex))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI TeamIndex가 중복됐습니다: %d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+
+		RegisteredComputerTeams.Add(ComputerTeam.TeamIndex);
+
+		USFBuildingCatalog* ComputerCatalog =
+			SFGameInstance->LoadBuildingCatalog(
+				ComputerTeam.Race);
+
+		if (!IsValid(ComputerCatalog))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI Catalog 로드 실패. Team=%d, Race=%s",
+				ComputerTeam.TeamIndex,
+				*UEnum::GetValueAsString(ComputerTeam.Race));
+			return;
+		}
+
+		if (!SFGameState->RegisterTeam(ComputerTeam.TeamIndex, ComputerTeam.Race, ComputerCatalog))
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] AI 팀 등록 실패. Team=%d",
+				ComputerTeam.TeamIndex);
+			return;
+		}
+	}
+	
+	if (!SFGameState->InitializeStage(StageRowName))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Stage 초기화 실패. Stage=%s",
+			*StageRowName.ToString());
+
+		return;
+	}
+	
 	SF_LOG(
 		Log,
 		"[SFGameMode] Team %d BuildingCatalog 설정 완료: %s",
@@ -114,13 +240,206 @@ void ASFGameMode::BeginPlay()
 		return;
 	}
 	
-	SF_LOG(
-		Log,
-		"[SFGameMode] Stage initialization started.");
+	if (SFGameState->GetCurrentStageRowName().IsNone())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 팀 또는 스테이지 초기화가 완료되지 않았습니다.");
+
+		return;
+	}
 	
+	if (!SpawnStageBuildingsFromAnchors())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 스테이지 시작 건물 생성에 실패했습니다.");
+
+		return;
+	}
 	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
 
 	StartStage();
+}
+
+bool ASFGameMode::SpawnStageBuildingsFromAnchors()
+{
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World) ||
+		!IsValid(SFGameState))
+	{
+		return false;
+	}
+	
+	TArray<ASFBuildingSpawnAnchor*> Anchors;
+
+	for (TActorIterator<ASFBuildingSpawnAnchor> It(World); It; ++It)
+	{
+		ASFBuildingSpawnAnchor* Anchor = *It;
+
+		if (IsValid(Anchor))
+		{
+			Anchors.Add(Anchor);
+		}
+	}
+
+	if (Anchors.IsEmpty())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 레벨에 BuildingSpawnAnchor가 없습니다.");
+
+		return false;
+	}
+
+	// 생성 전에 데이터 오류를 먼저 확인한다.
+	TSet<int32> NexusTeams;
+
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() ==
+			ESFBuildingType::None)
+		{
+			SF_LOG(
+				Error,
+				"[SFGameMode] BuildingType이 None인 Anchor가 있습니다. "
+				"Anchor=%s",
+				*GetNameSafe(Anchor));
+
+			return false;
+		}
+
+		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
+		{
+			const int32 TeamIndex =	Anchor->GetTeamIndex();
+
+			if (NexusTeams.Contains(TeamIndex))
+			{
+				SF_LOG(
+					Error,
+					"[SFGameMode] Team %d의 Nexus Anchor가 중복됐습니다.",
+					TeamIndex);
+
+				return false;
+			}
+
+			NexusTeams.Add(TeamIndex);
+		}
+	}
+
+	// Nexus를 우선 생성한다.
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() != ESFBuildingType::Nexus)
+		{
+			continue;
+		}
+
+		if (!SpawnBuildingAtAnchor(Anchor))
+		{
+			return false;
+		}
+	}
+
+	// House, Mine, Production 등을 생성한다.
+	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
+		{
+			continue;
+		}
+
+		if (!SpawnBuildingAtAnchor(Anchor))
+		{
+			return false;
+		}
+	}
+	
+	// 완료하면 destory한다
+	for (ASFBuildingSpawnAnchor* Anchor : Anchors)
+	{
+		Anchor->Destroy();
+	}
+	return true;
+}
+
+bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
+{
+	if (!IsValid(InAnchor) || !IsValid(SFGameState)) return false;
+
+	const int32 TeamIndex = InAnchor->GetTeamIndex();
+	const ESFBuildingType BuildingType = InAnchor->GetBuildingType();
+	
+	if (BuildingType == ESFBuildingType::None)
+	{
+		SF_LOG(Error, "[SFGameMode] SpawnAnchor의 BuildingType이 None입니다. " "Anchor=%s",*GetNameSafe(InAnchor));
+		return false;
+	}
+	
+	USFBuildingCatalog* Catalog = SFGameState->GetTeamBuildingCatalog(TeamIndex);
+	if (!IsValid(Catalog))
+	{
+		SF_LOG(Error,"[SFGameMode] Team %d의 BuildingCatalog가 없습니다. "	"Anchor=%s",TeamIndex,*GetNameSafe(InAnchor));
+		return false;
+	}
+	
+	USFBuildingDefinition* Definition =	Catalog->FindDefinitionByBuildingType(BuildingType);
+	if (!IsValid(Definition))
+	{
+		SF_LOG(Error,"[SFGameMode] BuildingType에 맞는 Definition이 없습니다. "
+			"Team=%d, Type=%s, Catalog=%s",
+			TeamIndex,
+			*UEnum::GetValueAsString(BuildingType),
+			*GetNameSafe(Catalog));
+
+		return false;
+	}
+	
+	FTransform SpawnTransform = InAnchor->GetActorTransform();
+	/*
+	 * Anchor Scale이 GridSize와 실제 메시 크기를 어긋나게 하지 않도록
+	 * 런타임 건물은 항상 원래 Scale로 생성한다.
+	 */
+	SpawnTransform.SetScale3D(FVector::OneVector);
+	
+	ASFBaseBuilding* SpawnedBuilding =
+		USFBuildingSpawnLibrary::
+			SpawnBuildingFromDefinition(
+				this,
+				Definition,
+				TeamIndex,
+				SpawnTransform,
+				ESFBuildingSpawnMode::ViewPortPlacedMode);
+	if (!IsValid(SpawnedBuilding) ||
+		SpawnedBuilding->IsActorBeingDestroyed())
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] Anchor 건물 생성 실패. "
+			"Anchor=%s, Team=%d, Type=%s",
+			*GetNameSafe(InAnchor),
+			TeamIndex,
+			*UEnum::GetValueAsString(BuildingType));
+
+		return false;
+	}
+	if (BuildingType == ESFBuildingType::Nexus &&
+	!IsValid(SFGameState->GetNexus(TeamIndex)))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 생성된 Nexus가 GameState에 등록되지 않았습니다. "
+			"Team=%d, Definition=%s",
+			TeamIndex,
+			*GetNameSafe(Definition));
+
+		SpawnedBuilding->Destroy();
+		return false;
+	}
+	
+	
+	return true;
 }
 
 bool ASFGameMode::StartStage()

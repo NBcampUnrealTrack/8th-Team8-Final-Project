@@ -9,6 +9,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductLineChanged, TArray<FProductInfo>, OutProductLineNames);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductRatioChanged, float, OutProductRatio);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductCompleted, FName, OutCompletedRowName);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UProductComponent : public UActorComponent
@@ -28,7 +29,15 @@ public:
 
 	/** speed changer */
 	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void SetSpeedMultiplier(float InMultiplier) { Tracker.WorkRateMultiplier = InMultiplier; }
+	void SetSpeedMultiplier(float InMultiplier);
+	UFUNCTION(BlueprintCallable, Category = "SF|Product")
+	void ResetSpeedMultiplier();
+	// 집결지 setter
+	void SetAssemblePoint(const FVector& InAssemblePoint);
+	void CancleAssemblePoint();
+	
+	// getter
+	FORCEINLINE float GetSpeedMultiplier() const { return Tracker.WorkRateMultiplier; }
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
@@ -37,6 +46,9 @@ public:
 	FORCEINLINE const TArray<FProductInfo>& GetProductLine() const { return ProductLine; }
 	// current product value
 	FORCEINLINE const FSFProgressTracker& GetProductValues() const { return Tracker; }
+	// 집결지 getter - 나중에 vector가져와서 집결지랑 building위치벡터랑 연결해서 집결지표시용
+	FORCEINLINE const FVector& GetAssemblePoint() const { return AssemblePoint; } 
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
@@ -47,10 +59,16 @@ private:
 	void ProcessProductionToNow();
 	void TickProduction();
 	
-	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
-	bool CanAffordPopulation(const FName& InRowName) const;
-	int32 GetOwnerTeam() const;
 	void SpawnAndAdvance(FName InRowName);
+	
+	// getter
+	int32 GetOwnerTeam() const;
+	
+	// 조회도우미 함수
+	const FUnitStatData* FindUnitRow(const FName& InRowName) const;
+	// 최대 인구 검증
+	bool CanAffordPopulation(const FName& InRowName) const;
+	
 	// population function
 	// bind
 	void BindFunctionOnMaxPopulation();
@@ -75,6 +93,10 @@ private:
 	
 	bool bProductionPaused = false;
 	bool bWaitingForPopulation = false;
+	
+	// 컨트롤러에서 값을 받으면 building이 여기로 저장
+	FVector AssemblePoint;
+	bool bSetAssemblePoint = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)
@@ -82,4 +104,15 @@ public:
 	// product ratio changed
 	UPROPERTY(BlueprintAssignable)
 	FProductRatioChanged OnProductRatioChanged;
+	/**
+	 * 유닛 한 기가 실제로 생성된 직후.
+	 *
+	 * OnProductLineChanged 와 구분된다. 저쪽은 큐에 넣을 때·취소할 때·완료될 때가
+	 * 모두 같은 신호로 오지만, 이쪽은 유닛이 월드에 나온 경우에만 온다.
+	 *
+	 * 인구가 가득 차 대기 중이면 CompletedProduct 가 스폰까지 가지 않으므로
+	 * 이 신호도 오지 않는다 — 인구가 풀려 실제로 생성될 때 한 번 온다.
+	 */
+	UPROPERTY(BlueprintAssignable)
+	FProductCompleted OnProductCompleted;
 };

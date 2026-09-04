@@ -2,31 +2,36 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystemInterface.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/EngineTypes.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "Units/Commander/SFCommander.h"
+#include "Units/Unit/UnitBase.h"
 #include "Units/Interfaces/Movable.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "SFRTSCameraPawn.h"
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
+#include "Game/Spawn/SFBuildingSpawnLibrary.h"
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
+#include "Kismet/GameplayStatics.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
     bShowMouseCursor = true;
     bEnableClickEvents = true;
     bEnableMouseOverEvents = true;
-    
+
     DefaultMouseCursor = EMouseCursor::Default;
-    
-    PlacementComponent= CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
+
+    PlacementComponent = CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
 }
 
 bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
@@ -34,6 +39,10 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
     // 자원이 충분한가 아닌가 검사 로직. 가능구역2
     if (IsValid(SpawnedBuildingRef))
     {
+        if (IsValid(InGameHUDWidget))
+        {
+            InGameHUDWidget->PlayResourceWarningSound();
+        }
         UE_LOG(LogTemp, Error, TEXT("Exist Spawned Building Ref"));
         return false;
     }
@@ -72,13 +81,13 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
 
         return false;
     }
-    
+
 #pragma region CheckResources 
     // FName의 첫번째 티어의 정보 불러오기
     // 나중에 2티어부터 건설할수있게되면 수정이 필요한지점이다
     const FSFBuildingTierData* FirstTier = Definition->FindTier(0);
     if (!FirstTier) return false;
-    
+
     if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
     {
         SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *Definition->BuildingId.ToString());
@@ -86,71 +95,45 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
     }
 
 #pragma endregion 
-    
+
     FTransform Trans;
     Trans.SetLocation(GetPawn()->GetActorLocation());
     Trans.SetRotation(FRotator(0.f, 90.f, 0.f).Quaternion());
-    
-    UClass* SpawnClass = Definition->BuildingClass.LoadSynchronous();     // ★ADD
-    if (!SpawnClass)
+
+    ASFBaseBuilding* NewBuilding =
+        USFBuildingSpawnLibrary::
+        SpawnBuildingFromDefinition(
+            this,
+            Definition,
+            GetMyTeamIndex(),
+            Trans,
+            ESFBuildingSpawnMode::PlayerPlacedMode);
+
+    if (!IsValid(NewBuilding))
     {
-        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: BuildingClass is None. Row=%s"),
-            *Definition->BuildingId.ToString());
+        SF_LOG(
+            Error,
+            "[SFPC] 건물 생성 실패. BuildingId=%s",
+            *InBuildingId.ToString());
+
         return false;
     }
-    
-    ASFBaseBuilding* DeferredActor = GetWorld()->SpawnActorDeferred<ASFBaseBuilding>(
-        SpawnClass,
-        Trans,
-        nullptr,
-        nullptr,
-        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
-        );
-    
-    if (!IsValid(DeferredActor))                                   // ★ADD
-    {
-        UE_LOG(LogTemp, Error, TEXT("SpawnBuildingFunction: SpawnActorDeferred failed."));
-        return false;
-    }
-    /*
-     * RowName은 현재 선택 UI 테이블을 조회하기 위한 임시 브리지다.
-     * Selection UI가 DA로 전환되면 제거할 수 있다.
-     */
-    if (!DeferredActor->SetBuildingDefinition(Definition))
-    {
-        DeferredActor->Destroy();
-        return false;
-    }
-    const FName SelectionRowName =
-    Definition->SelectionUIRowName.IsNone()
-        ? Definition->BuildingId
-        : Definition->SelectionUIRowName;
-    
-    DeferredActor->SetRowName(SelectionRowName);
-    DeferredActor->SetMyTeamIndex(MyTeamIndex);
-    
-    if (UCombatTargetComponent* Combat = DeferredActor->FindComponentByClass<UCombatTargetComponent>())
-    {
-        Combat->SetTeamIndex(MyTeamIndex);
-    }
-    // deferred spawn finished
-    DeferredActor->FinishSpawning(Trans);
 
     // gird init
     // 배치가능여부 return
-    if (!PlacementComponent->StartPlacementMode(DeferredActor))
+    if (!PlacementComponent->StartPlacementMode(NewBuilding))
     {   // 배치불가한데 배치하려하면 destroy
-        DeferredActor->Destroy();
+        NewBuilding->Destroy();
         return false;
     }
-    SpawnedBuildingRef = DeferredActor;
+    SpawnedBuildingRef = NewBuilding;
     return true;
 }
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 {
     PlacementComponent->EndPlacementSession();
-    
+
     if (IsValid(SpawnedBuildingRef))
     {
         SpawnedBuildingRef->Destroy();
@@ -163,32 +146,45 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
 {
     if (!IsValid(PendingSpawnedBuildingRef)) return;
     
-    const FResources NeedConstructCost = PendingSpawnedBuildingRef->GetConstructCost();
-    ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
-    
+    ASFBaseBuilding* const Building = PendingSpawnedBuildingRef;
+    const FResources ConstructCost = Building->GetConstructCost();
+
+    ASFGameState* const SFGS = GetWorld()->GetGameState<ASFGameState>();
     if (!IsValid(SFGS))
-    {   // SFGS 게임스테이트 없을때
-        SF_LOG(Error, "[SFPC] SFGameState 를 찾을 수 없어 건설할 수 없습니다.");
+    {
+        SF_LOG(Error, "[SFPC] SFGameState를 찾을 수 없어 건설할 수 없습니다.");
         ClearPendingBuildingRef();
         return;
     }
 
-    if (!SFGS->CanAffordResource(GetMyTeamIndex(), NeedConstructCost))
-    {   // 자원 없을때
-        SF_LOG(Warning, "[SFPC] 지휘관이 도착했으나 자원이 부족해 건설이 취소되었습니다: %s", *PendingSpawnedBuildingRef->GetName());
+    const int32 TeamIndex = GetMyTeamIndex();
+
+    // 실제 비용 차감에 성공해야 건설을 시작한다.
+    if (!SFGS->TrySpendCost(TeamIndex, ConstructCost))
+    {
+        SF_LOG(Warning, "[SFPC] 자원이 부족해 건설을 취소합니다: %s",
+            *Building->GetName());
+
+        if (IsValid(InGameHUDWidget))
+        {
+            InGameHUDWidget->PlayResourceWarningSound();
+        }
         ClearPendingBuildingRef();
         return;
     }
 
-    if (!PendingSpawnedBuildingRef->TryStartConstruction())
-    {   // 다른 외부 조건
-        SF_LOG(Error, "[SFPC] 건설 시작 실패: %s", *PendingSpawnedBuildingRef->GetName());
+    // 비용 차감 후 건설 시작에 실패하면 비용을 복구한다.
+    if (!Building->TryStartConstruction())
+    {
+        SFGS->RefundCost(TeamIndex, ConstructCost);
+
+        SF_LOG(Error, "[SFPC] 건설 시작에 실패하여 비용을 환불했습니다: %s",
+            *Building->GetName());
+
         ClearPendingBuildingRef();
         return;
     }
-    
-    // 모든 조건 통과시 - 차감
-    SFGS->TrySpendCost(GetMyTeamIndex(), NeedConstructCost);
+
     PendingSpawnedBuildingRef = nullptr;
 }
 
@@ -209,6 +205,13 @@ void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 {
     SelectedActor = InActor;
 
+    // 적/중립 액터가 선택된 상태로 이전 명령 모드가 남지 않도록 정리한다.
+    if (PendingUnitCommandMode != ESFUnitCommandMode::None &&
+        !IsLocallyControllableActor(InActor))
+    {
+        PendingUnitCommandMode = ESFUnitCommandMode::None;
+    }
+
     SF_LOG(
         Log,
         "[SFInGamePlayerController] Command target changed: %s",
@@ -219,6 +222,9 @@ void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
 void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
 {
     MyCommander = InCommander;
+
+    OnSkillInput.Clear();
+    OnSkillInput.AddUniqueDynamic(InCommander, &ASFCommander::ActiveCommanderSkill);
 }
 
 void ASFInGamePlayerController::BeginPlay()
@@ -244,7 +250,7 @@ void ASFInGamePlayerController::SetupInputComponent()
         Cast<UEnhancedInputComponent>(
             InputComponent
         );
-    
+
     if (!IsValid(EnhancedInputComponent))
     {
         return;
@@ -313,13 +319,13 @@ void ASFInGamePlayerController::SetupInputComponent()
     if (IsValid(ToggleSettingsAction))
     {
         EnhancedInputComponent->BindAction(
-            ToggleSettingsAction, 
-            ETriggerEvent::Started, 
-            this, 
+            ToggleSettingsAction,
+            ETriggerEvent::Started,
+            this,
             &ASFInGamePlayerController::
             HandleToggleSettingsInput);
     }
-    
+
     if (IsValid(ToggleBuildModeAction))
     {
         EnhancedInputComponent->BindAction(
@@ -388,6 +394,31 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::HandleMoveCommandModeInput
         );
+    }
+
+    if (IsValid(RallyPointAction))
+    {
+        EnhancedInputComponent->BindAction(
+            RallyPointAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleRallyPointInput
+        );
+    }
+
+    TArray<TWeakObjectPtr<UInputAction>> SkillArray = { CommanderSkillAction1,CommanderSkillAction2 ,CommanderSkillAction3 };
+    for (int32 i = 0; i < SkillArray.Num(); i++)
+    {
+        if (SkillArray[i].IsValid())
+        {
+            EnhancedInputComponent->BindAction(
+                SkillArray[i].Get(),
+                ETriggerEvent::Started,
+                this,
+                &ASFInGamePlayerController::HandleSkillCommandInput,
+                i + 1
+            );
+        }
     }
 }
 
@@ -468,6 +499,14 @@ void ASFInGamePlayerController::SetSFControlMode(
         ModifyOptions
     );
 
+    if (NewControlMode != ESFControlMode::Gameplay)
+    {
+        // 건설 모드에서는 유닛 명령의 대기 클릭이 남아 있으면 안 된다.
+        PendingUnitCommandMode = ESFUnitCommandMode::None;
+        bCommandClickConsumed = false;
+        bSelectionPressActive = false;
+    }
+
     CurrentControlMode = NewControlMode;
     bControlModeInitialized = true;
 }
@@ -537,7 +576,14 @@ void ASFInGamePlayerController::RegisterBaseMappingContext()
 
 void ASFInGamePlayerController::HandleSelectionDragStarted()
 {
-    bCommandClickConsumed = ExecutePendingUnitCommandUnderCursor();
+    bCommandClickConsumed =
+        ExecutePendingRallyPointUnderCursor();
+
+    if (!bCommandClickConsumed)
+    {
+        bCommandClickConsumed =
+            ExecutePendingUnitCommandUnderCursor();
+    }
 
     if (bCommandClickConsumed)
     {
@@ -660,7 +706,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
         SetSFControlMode(ESFControlMode::Gameplay);
         return;
     }
-    
+
     if (!PlacementComponent->TryConfirmPlacementMode())
     {
         return;
@@ -670,8 +716,13 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
     PendingSpawnedBuildingRef = SpawnedBuildingRef;
     SpawnedBuildingRef = nullptr;
 
-    OnConfirmBuildInput.Broadcast();
-    
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->PlayBuildStartSound();
+    }
+
+    //OnConfirmBuildInput.Broadcast();
+
     // ★CHANGED: SpawnedBuildingRef → PendingConstructionBuilding
     Commander->MoveToBuild(
         PendingSpawnedBuildingRef->GetActorLocation(),
@@ -683,7 +734,7 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
 
 void ASFInGamePlayerController::HandleCancelBuildInput()
 {
-    OnCancelBuildInput.Broadcast();
+    //OnCancelBuildInput.Broadcast();
 
     if (IsValid(InGameHUDWidget))
     {
@@ -848,39 +899,22 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         return;
     }
 
-    OnMoveInput.Broadcast(Destination);
-
-    // 명령 대상 수집.
-    // 다중 선택은 HUD 가 관리하므로 거기서 가져오고,
-    // 비어 있으면 기존 단일 선택으로 넘어간다(건물·커맨더 흐름 유지).
+    // 명령 대상 수집은 이동·공격·정지에서 같은 함수를 사용한다.
+    // HUD 다중 선택과 기존 단일 선택을 합치되, 적/중립 액터는 제외한다.
     TArray<AActor*> Commandables;
-
-    if (IsValid(InGameHUDWidget))
-    {
-        for (const TObjectPtr<AActor>& Actor : InGameHUDWidget->GetSelectedActors())
-        {
-            if (!IsValid(Actor)) continue;
-            if (!Actor->GetClass()->ImplementsInterface(UMovable::StaticClass())) continue;
-
-            Commandables.AddUnique(Actor.Get());
-        }
-    }
+    CollectLocallyControllableActors(Commandables);
 
     if (Commandables.Num() == 0)
     {
-        AActor* Single = SelectedActor.Get();
-
-        if (IsValid(Single)
-            && Single->GetClass()->ImplementsInterface(UMovable::StaticClass()))
-        {
-            Commandables.Add(Single);
-        }
-    }
-
-    if (Commandables.Num() == 0)
-    {
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] Move command ignored: no locally controlled movable selected."
+        );
         return;
     }
+
+    // 실제로 조종할 대상이 확인된 뒤에만 UI/BP 쪽 이동 이벤트를 알린다.
+    //OnMoveInput.Broadcast(Destination);
 
     // 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
     // MoveAcceptanceRadius 가 50cm 라 도착 판정이 겹치기 때문이다.
@@ -905,16 +939,19 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
             ) * Radius;
         }
 
-        IMovable::Execute_MoveToLocation(
+        ExecuteUnitCommandForActor(
             Commandables[Index],
-            Goal
+            ESFUnitCommandMode::Move,
+            Goal,
+            nullptr
         );
     }
 
     if (IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->ShowMoveDestinationIndicator(
-            Destination
+            Destination,
+            false
         );
     }
 
@@ -926,6 +963,16 @@ void ASFInGamePlayerController::BeginAttackCommand()
 {
     if (CurrentControlMode != ESFControlMode::Gameplay)
     {
+        return;
+    }
+
+    if (!HasLocallyControllableSelection())
+    {
+        PendingUnitCommandMode = ESFUnitCommandMode::None;
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] Attack command ignored: no locally controlled movable selected."
+        );
         return;
     }
 
@@ -944,11 +991,46 @@ void ASFInGamePlayerController::StopSelectedUnits()
         return;
     }
 
+    TArray<AActor*> Commandables;
+    CollectLocallyControllableActors(Commandables);
+
+    if (Commandables.Num() == 0)
+    {
+        PendingUnitCommandMode = ESFUnitCommandMode::None;
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] Stop command ignored: no locally controlled movable selected."
+        );
+        return;
+    }
+
     PendingUnitCommandMode = ESFUnitCommandMode::None;
+
+    for (AActor* Actor : Commandables)
+    {
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        if (AUnitBase* Unit = Cast<AUnitBase>(Actor))
+        {
+            Unit->ExecuteCommand(
+                ESFUnitCommand::Stop,
+                Actor->GetActorLocation(),
+                nullptr
+            );
+        }
+        else
+        {
+            IMovable::Execute_StopMove(Actor);
+        }
+    }
 
     SF_LOG(
         Log,
-        "[SFInGamePlayerController] Stop command requested."
+        "[SFInGamePlayerController] Stop command executed | Count: %d",
+        Commandables.Num()
     );
 }
 
@@ -956,6 +1038,16 @@ void ASFInGamePlayerController::BeginMoveCommand()
 {
     if (CurrentControlMode != ESFControlMode::Gameplay)
     {
+        return;
+    }
+
+    if (!HasLocallyControllableSelection())
+    {
+        PendingUnitCommandMode = ESFUnitCommandMode::None;
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] Move command ignored: no locally controlled movable selected."
+        );
         return;
     }
 
@@ -1020,6 +1112,13 @@ void ASFInGamePlayerController::HandleMoveCommandModeInput()
     BeginMoveCommand();
 }
 
+void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
+{
+    SF_LOG(Log, "Commander Skill: Tier%d", Tier);
+    
+    OnSkillInput.Broadcast(Tier);
+}
+
 void ASFInGamePlayerController::RequestProductionBySlot(int32 SlotIndex)
 {
     if (CurrentControlMode != ESFControlMode::Gameplay)
@@ -1042,33 +1141,364 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
         return false;
     }
 
+    const ESFUnitCommandMode CommandMode = PendingUnitCommandMode;
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+
+    FHitResult Hit;
+    AActor* AttackTarget = nullptr;
+
+    if (CommandMode == ESFUnitCommandMode::Attack)
+    {
+        // 공격은 먼저 액터를 찾고, 액터가 없으면 지형을 공격 이동 목적지로 쓴다.
+        // 선택 trace와 동일하게 Visibility 채널을 사용해 유닛·건물 메시를 잡는다.
+        const ETraceTypeQuery VisibilityTraceType =
+            UEngineTypes::ConvertToTraceType(ECC_Visibility);
+
+        if (GetHitResultUnderCursorByChannel(
+            VisibilityTraceType,
+            false,
+            Hit
+        ))
+        {
+            AActor* Candidate = Hit.GetActor();
+
+            if (IsValidAttackTarget(Candidate))
+            {
+                AttackTarget = Candidate;
+            }
+        }
+
+        // 적 대상이 아니면 클릭 지점을 공격 이동 목적지로 처리한다.
+        if (!IsValid(AttackTarget) &&
+            !GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+        {
+            SF_LOG(
+                Log,
+                "[SFInGamePlayerController] Attack command canceled: no valid target or ground."
+            );
+            return true;
+        }
+    }
+    else if (CommandMode == ESFUnitCommandMode::Move)
+    {
+        if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
+        {
+            SF_LOG(
+                Log,
+                "[SFInGamePlayerController] Move command canceled: no ground under cursor."
+            );
+            return true;
+        }
+
+        // 일반 우클릭과 같은 이동 경로를 사용해 FormationSpacing,
+        // OnMoveInput, 목적지 표시를 중복 구현하지 않는다.
+        IssueMoveCommand(Hit.Location);
+        return true;
+    }
+    else
+    {
+        return true;
+    }
+
+    TArray<AActor*> Commandables;
+    CollectLocallyControllableActors(Commandables);
+
+    if (Commandables.Num() == 0)
+    {
+        return true;
+    }
+
+    for (AActor* Actor : Commandables)
+    {
+        ExecuteUnitCommandForActor(
+            Actor,
+            CommandMode,
+            Hit.Location,
+            AttackTarget
+        );
+    }
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->ShowMoveDestinationIndicator(
+            Hit.Location,
+            true
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] %s command executed | Count: %d | Target: %s | Location: %s",
+        CommandMode == ESFUnitCommandMode::Attack ? TEXT("Attack") : TEXT("Move"),
+        Commandables.Num(),
+        IsValid(AttackTarget) ? *AttackTarget->GetName() : TEXT("Ground"),
+        *Hit.Location.ToString()
+    );
+
+    return true;
+}
+
+bool ASFInGamePlayerController::HasLocallyControllableSelection() const
+{
+    TArray<AActor*> Commandables;
+    CollectLocallyControllableActors(Commandables);
+    return Commandables.Num() > 0;
+}
+
+void ASFInGamePlayerController::CollectLocallyControllableActors(
+    TArray<AActor*>& OutActors
+) const
+{
+    OutActors.Reset();
+
+    if (IsValid(InGameHUDWidget))
+    {
+        for (const TObjectPtr<AActor>& Actor : InGameHUDWidget->GetSelectedActors())
+        {
+            AActor* Selected = Actor.Get();
+
+            if (IsLocallyControllableActor(Selected))
+            {
+                OutActors.AddUnique(Selected);
+            }
+        }
+    }
+
+    // HUD 다중 선택이 비어 있는 일반 단일 선택도 같은 명령 경로로 처리한다.
+    AActor* Single = SelectedActor.Get();
+
+    if (OutActors.Num() == 0 && IsLocallyControllableActor(Single))
+    {
+        OutActors.Add(Single);
+    }
+}
+
+void ASFInGamePlayerController::ExecuteUnitCommandForActor(
+    AActor* Actor,
+    ESFUnitCommandMode CommandMode,
+    const FVector& Location,
+    AActor* Target
+) const
+{
+    if (!IsValid(Actor) || !IsLocallyControllableActor(Actor))
+    {
+        return;
+    }
+
+    if (AUnitBase* Unit = Cast<AUnitBase>(Actor))
+    {
+        ESFUnitCommand UnitCommand = ESFUnitCommand::Move;
+
+        switch (CommandMode)
+        {
+        case ESFUnitCommandMode::Attack:
+            UnitCommand = ESFUnitCommand::Attack;
+            break;
+
+        case ESFUnitCommandMode::Move:
+            UnitCommand = ESFUnitCommand::Move;
+            break;
+
+        default:
+            return;
+        }
+
+        // 유닛의 사거리·시야·강제 타겟·정지 상태는 UnitBase가 책임진다.
+        Unit->ExecuteCommand(UnitCommand, Location, Target);
+        return;
+    }
+
+    // 지휘관 등 UnitBase가 아닌 기존 IMovable 액터의 하위 호환 경로.
+    switch (CommandMode)
+    {
+    case ESFUnitCommandMode::Move:
+        IMovable::Execute_MoveToLocation(Actor, Location);
+        break;
+
+    case ESFUnitCommandMode::Attack:
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] Attack command ignored: %s is not an AUnitBase.",
+            *Actor->GetName()
+        );
+        break;
+
+    default:
+        break;
+    }
+}
+
+bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
+{
+    if (!IsValid(Actor) || IsLocallyControllableActor(Actor))
+    {
+        return false;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        Actor->FindComponentByClass<UCombatTargetComponent>();
+
+    return IsValid(CombatTarget) &&
+        CombatTarget->IsAlive() &&
+        CombatTarget->GetTeamIndex() != MyTeamIndex;
+}
+
+bool ASFInGamePlayerController::IsLocallyControllableActor(const AActor* Actor) const
+{
+    if (!IsValid(Actor) ||
+        !Actor->GetClass()->ImplementsInterface(UMovable::StaticClass()))
+    {
+        return false;
+    }
+
+    // 커맨더는 별도 등록 포인터로도 소유권을 확정할 수 있다.
+    if (Actor == MyCommander.Get())
+    {
+        return true;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        Actor->FindComponentByClass<UCombatTargetComponent>();
+
+    return IsValid(CombatTarget) &&
+        CombatTarget->GetTeamIndex() == MyTeamIndex;
+}
+
+void ASFInGamePlayerController::HandleRallyPointInput()
+{
+    BeginRallyPointCommand();
+}
+
+void ASFInGamePlayerController::BeginRallyPointCommand()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Rally point requires a production building."
+        );
+        return;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        ProductionBuilding->FindComponentByClass<
+        UCombatTargetComponent
+        >();
+
+    if (!IsValid(CombatTarget) ||
+        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGamePlayerController] "
+            "Cannot set rally point on enemy building."
+        );
+        return;
+    }
+
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+    bRallyPointPending = true;
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Rally point mode started."
+    );
+}
+
+bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
+{
+    if (!bRallyPointPending)
+    {
+        return false;
+    }
+
+    bRallyPointPending = false;
+
     FHitResult Hit;
 
     if (!GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
     {
-        return true;
-    }
-
-    const ESFUnitCommandMode CommandMode = PendingUnitCommandMode;
-    PendingUnitCommandMode = ESFUnitCommandMode::None;
-
-    if (CommandMode == ESFUnitCommandMode::Move)
-    {
-        IssueMoveCommand(Hit.Location);
-        return true;
-    }
-
-    if (CommandMode == ESFUnitCommandMode::Attack)
-    {
         SF_LOG(
-            Log,
+            Warning,
             "[SFInGamePlayerController] "
-            "Attack destination received: %s",
-            *Hit.Location.ToString()
+            "Rally point canceled: no ground."
         );
-
         return true;
     }
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return true;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        ProductionBuilding->FindComponentByClass<
+        UCombatTargetComponent
+        >();
+
+    if (!IsValid(CombatTarget) ||
+        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    {
+        return true;
+    }
+
+    ProductionBuilding->SetAssembleVectorPoint(
+        Hit.Location
+    );
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->ShowMoveDestinationIndicator(
+            Hit.Location,
+            false
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Rally point set: %s",
+        *Hit.Location.ToString()
+    );
 
     return true;
+}
+
+void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
+{
+    // 소리는 내 컴퓨터에서만 들려야함. 멀티가 아니라서 상관없지만 논리상 IsLocalController 조건추가
+    if (!IsLocalController() ||
+       !IsValid(SelectedTarget) ||
+       !SelectedTarget->Implements<USFSelectable>())
+    {
+        return;
+    }
+
+    USoundBase* SelectionSound =
+        ISFSelectable::Execute_GetSelectionSound(
+            SelectedTarget);
+
+    if (!IsValid(SelectionSound))
+    {
+        return;
+    }
+
+    UGameplayStatics::PlaySoundAtLocation(
+        this,
+        SelectionSound,
+        SelectedTarget->GetActorLocation()
+    );
 }

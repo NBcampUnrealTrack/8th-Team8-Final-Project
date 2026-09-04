@@ -2,6 +2,7 @@
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 
 void USFTeamState::AddPopulation(int32 InDelta)
 {
@@ -21,7 +22,7 @@ void USFTeamState::AddMaxPopulation(int32 InDelta)
 	OnPopulationChanged.Broadcast(CurrentPopulation, MaximumPopulation);
 }
 
-bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
+bool USFTeamState::InitializeTeamData(ESFRace InRace, USFBuildingCatalog* InBuildingCatalog)
 {
 	if (!IsValid(InBuildingCatalog))
 	{
@@ -31,7 +32,8 @@ bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
 
 		return false;
 	}
-
+	if (InRace == ESFRace::None) return false;
+	
 	if (IsValid(BuildingCatalog) &&
 		BuildingCatalog != InBuildingCatalog)
 	{
@@ -43,6 +45,7 @@ bool USFTeamState::SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog)
 			*GetNameSafe(InBuildingCatalog));
 	}
 
+	Race = InRace;
 	BuildingCatalog = InBuildingCatalog;
 	return true;
 }
@@ -82,6 +85,11 @@ void USFTeamState::SetNexus(ASFNexusBuilding* InNexus)
 bool USFTeamState::IsNexus(const ASFNexusBuilding* InNexus) const
 {
 	return Nexus.Get() == InNexus;
+}
+
+void USFTeamState::SetPlayer(ASFInGamePlayerController* InPlayer)
+{
+	Player = InPlayer;
 }
 
 void USFTeamState::AddResource(EResourceType InType, int32 InAmount)
@@ -141,4 +149,10 @@ USFBuildingCatalog* USFTeamState::GetBuildingCatalog() const
 	return IsValid(BuildingCatalog)
 		? BuildingCatalog
 		: nullptr;
+}
+
+ASFInGamePlayerController* USFTeamState::GetPlayer() const
+{
+	ASFInGamePlayerController* PlayerC = Player.Get();
+	return IsValid(PlayerC) ? PlayerC : nullptr;
 }

@@ -4,27 +4,32 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
+#include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
-#include "NiagaraFunctionLibrary.h"
+#include "ActorComponent/Niagara/PlayVFXComponent.h"
+#include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "Buildings/UI/BuildingHealthBar.h"
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
+#include "GeometryCollection/GeometryCollectionObject.h" //gc
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
 
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
 	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
 	//CombatTargetComponent->SetTargetingEnabled(false);
+
+	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	
 	WidgetComponent->SetupAttachment(GetRootComponent());
 	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
@@ -38,6 +43,8 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetVisibility(false);
 	
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
+	
+	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -62,8 +69,21 @@ void ASFBaseBuilding::TakeDamaged_Implementation(float InDamage)
 {	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
+		// 손상 단계와 Field 위치 계산 전에 원위치 복구
+		StopHitReaction();
+
 		HealthComponent->ApplyDamage(InDamage);
-		PlayHitReaction(FVector::ForwardVector);
+
+		/*
+		 * 체력 0에서는 BaseBuilding이 제거되므로
+		 * 최종 파괴 연출이 HitReact를 대신한다.
+		 */
+		if (CurrentBuildingState !=
+			EBuildingState::Destroyed)
+		{
+			PlayHitReaction(
+				FVector::ForwardVector);
+		}
 	}
 }
 
@@ -87,53 +107,125 @@ const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
 	Data.DisplayName = DisplayName;
 	Data.CurrentTier = CurrentTier;
 	Data.HealthComponent = HealthComponent;
-	Data.ConstructCost = CurrentConstructBuildCost;
-	Data.UpgradeCost = CurrentUpgradeBuildCost;
+	Data.ConstructCost = GetConstructCost();
+	Data.UpgradeCost = GetUpgradeCost();
 	return Data;
 }
+
+USoundBase* ASFBaseBuilding::GetSelectionSound_Implementation()
+{
+	switch (CurrentBuildingState)
+	{
+	case EBuildingState::UnderConstruction:
+		return UnderConstructionSelectionSound;
+
+	case EBuildingState::Completed:
+		return CompletedSelectionSound;
+
+	case EBuildingState::None:
+	case EBuildingState::Preview:
+	case EBuildingState::Destroyed:
+	default:
+		return nullptr;
+	}
+}
+
 // Damagable 인터페이스 -> CanbeDamaged조건(underconstruct, completed : pass) ->
 // HealthComp이동 데미지적용 -> broadcast -> 이함수 실행 -> 이 함수는 체력별 비율을 인덱스로변환하고 인덱스를 메쉬적용함수에 전달한다
 // called by 죽기전까지 - 체력은 바뀔때마다 UI에 갱신해줘야함 > 바뀔때마다 broadcast필요
 void ASFBaseBuilding::HandleHealthChanged // 이델리게이트는 체력이 0일때도 호출된다
 (float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
-	if (CurrentBuildingState == EBuildingState::Completed)
+	if (InCurrentHP <= 0.f || InMaxHP <= 0.f)
 	{
-		if (InCurrentHP <= 0.f)
-		{
-			return; // 최종 파괴는 HandleHealthZero가 담당	
-					// 이 함수와 OnDeath함수가 같이 불림 return으로 OnDeath만 불리게함
-		}
-		
-		const FSFBuildingTierData* Tier = GetCurrentTierInfo();
-		if (!Tier)
-		{
-			SF_LOG(Error, "ASFBaseBuilding::HandleHealthChanged: Tier is INVALID");
-			return;
-		}
-		
-		const float BeforeRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InBeforeHP, InMaxHP), 0.f, 1.f);
-		const float AfterRatio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.f, 1.f);
-		// 비율을 집어넣으면 인덱스를 반환함
-		const int32 PreviousStage =	Tier->Visual.FindDamageStageIndex(BeforeRatio);
-		const int32 CurrentStage =	Tier->Visual.FindDamageStageIndex(AfterRatio);
-		// 똑같은 인덱스면 FX를 플레이 하지않는다
-		// 다만 이구조로 갈때 회복시 FX가 플레이되어비린다 나중에 회복이 도입되면 수정이 필요한 지점
-		if (PreviousStage == CurrentStage) return;
-		
-		ChangeDamageStage(CurrentStage);
+		return;
 	}
+
+	UpdateDamageVisual(
+		FMath::Clamp(InBeforeHP / InMaxHP, 0.f, 1.f),
+		FMath::Clamp(InCurrentHP / InMaxHP, 0.f, 1.f));
 }
 
-void ASFBaseBuilding::ChangeDamageStage(int32 InDamageStageIndex)
+void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float CurrentHealthRatio)
 {
-	// HealthComponent의 현재 체력 비율을 기준으로 손상 메시 적용
+	if (CurrentBuildingState != EBuildingState::Completed)
+	{
+		return;
+	}
+
+	const FSFBuildingTierData* Tier = GetCurrentTierInfo();
+	if (!Tier)
+	{
+		SF_LOG(
+			Error,
+			"[%s] Current Tier가 없습니다.",
+			*GetName());
+		return;
+	}
+	//
+	// PreviousHealthRatio =
+	// 	FMath::Clamp(PreviousHealthRatio, 0.f, 1.f);
+	//
+	// CurrentHealthRatio =
+	// 	FMath::Clamp(CurrentHealthRatio, 0.f, 1.f);
+
+	// GC가 설정된 건물은 GC 손상 단계를 사용한다.
+	if (IsValid(ActiveTierAssets.DestructionCollection))
+	{
+		const int32 PreviousStage =
+			Tier->Visual.FindDestructionStageIndex(
+				PreviousHealthRatio);
+
+		const int32 CurrentStage =
+			Tier->Visual.FindDestructionStageIndex(
+				CurrentHealthRatio);
+
+		// 새로운 손상 단계에 진입하지 않았다.
+		if (CurrentStage == INDEX_NONE ||
+			CurrentStage <= PreviousStage)
+		{
+			return;
+		}
+
+		const FBuildingDestruction* StageData =
+			Tier->Visual.GetDestructionStage(CurrentStage);
+
+		if (StageData && EnsureDestructionActor())
+		{
+			DestructionActor->ApplyDamageStage(
+				CurrentStage,
+				*StageData);
+
+			return;
+		}
+		// GC 생성 실패 시 아래 DamageMesh 경로를 사용한다.
+	}
+
+	// GC가 없는 건물은 기존 DamageMesh를 사용한다.
+	const int32 PreviousMeshStage =
+		Tier->Visual.FindDamageStageIndex(
+			PreviousHealthRatio);
+
+	const int32 CurrentMeshStage =
+		Tier->Visual.FindDamageStageIndex(
+			CurrentHealthRatio);
+
+	if (PreviousMeshStage == CurrentMeshStage)
+	{
+		return;
+	}
+
+	// ResolveDamageMesh가 현재 체력 비율에 맞는 메시를 선택한다.
 	RefreshVisual();
-	// TODO:: 손상 Effect 적용
-	
-	if (InDamageStageIndex == INDEX_NONE) return; // 풀피-나중에회복관련로직이생긴다면
-	
-	SF_LOG(Warning, "[%s] Damage stage entered: %d",*GetName(),InDamageStageIndex);
+
+	if (CurrentMeshStage != INDEX_NONE)
+	{
+		SF_LOG(
+			Warning,
+			"[%s] Damage mesh stage entered: %d",
+			*GetName(),
+			CurrentMeshStage);
+	}
 }
 
 // 체력이 0일시 broadcast되는 델리게이트와 연결됨
@@ -202,7 +294,6 @@ void ASFBaseBuilding::ApplySpawnMode()
 					Error,
 					"[%s] 초기 티어 활성화 실패",
 					*GetName());
-				
 				Destroy();
 				return;
 			}
@@ -252,6 +343,8 @@ void ASFBaseBuilding::BeginConstruction()
 		return;
 	}
 	
+	ClearDestructionVisual();
+	
 	const FSFBuildingTierData* PendingTierData = GetTierInfo(PendingTier);
 	if (!PendingTierData) return;
 	// 최초 건설은 1/1에서 시작
@@ -293,21 +386,38 @@ void ASFBaseBuilding::BeginConstruction()
 		DeactivateActiveTier();
 		OnUpgradeStarted();
 	}
+
+	Tags.AddUnique(
+		FName(TEXT("MinimapBuilding"))
+	);
+
 	//CombatTargetComponent->SetTargetingEnabled(true);
+	
+	PlayVFXComponent->PlayConstructionEffect(ConstructionEffect, StaticMeshComponent);
+	
 	ProgressComponent->StartProgress();
 }
 
 void ASFBaseBuilding::EnterCompletedState()
 {
 	//CombatTargetComponent->SetTargetingEnabled(true);
+	PlayVFXComponent->StopConstructionEffect();
 	StaticMeshComponent->SetMaterial(0, nullptr);
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 	SetBoxExtent();
+	//성윤 미니맵 마커제작
+	Tags.AddUnique(
+		FName(TEXT("MinimapBuilding"))
+	);
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
 {
+	// 이동한 GC 위치에서 최종 Strain이 계산되는 것을 방지
+	StopHitReaction();
+	PlayVFXComponent->StopConstructionEffect();
+	
 	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
 
@@ -315,17 +425,76 @@ void ASFBaseBuilding::EnterDestroyedState()
 	{
 		ProgressComponent->StopProgress();
 	}
-	// Deactivate Ability
+	// 반드시 DeactivateActiveTier() 전에 저장
+	// 완료 상태=true, 건설/업그레이드 중=false
+	const bool bCanPlayCompletedGC = bIsTierActivated;
+
 	DeactivateActiveTier();
-	
-	// mesh
-	RefreshVisual();
-	BoxComponent->SetCollisionProfileName("DestroyedBuilding");
-	SetBoxExtent();
-	// when destroy must execute 공통연출/ 티어마다다른연출시 onbuildingdestroyed내부로 이동
+
+	bool bUseGeometryCollection = false;
+
+	// 완성된 상태에서 파괴될 때만 GC 처리
+	if (bCanPlayCompletedGC)
+	{
+		const FSFBuildingTierData* DestructionTier =
+			GetCurrentTierInfo();
+
+		const FBuildingDestruction* FinalStage =
+			DestructionTier
+				? DestructionTier->Visual.GetFinalDestructionStage()
+				: nullptr;
+
+		const int32 FinalStageIndex =
+			DestructionTier
+				? DestructionTier->Visual.DestructionStages.Num() - 1
+				: INDEX_NONE;
+
+		bUseGeometryCollection =
+			FinalStage &&
+			IsValid(ActiveTierAssets.DestructionCollection) &&
+			EnsureDestructionActor();
+
+		if (bUseGeometryCollection)
+		{
+			ASFBuildingDestructionActor* DebrisActor = DestructionActor;
+			
+			DebrisActor->ApplyFinalDestruction(
+				FinalStageIndex,
+				*FinalStage);
+			
+			// 이후 DebrisActor는 자신의 LifeSpan으로 제거된다.
+			DestructionActor = nullptr;
+		}
+	}
+
+	if (bUseGeometryCollection)
+	{
+		BoxComponent->SetCollisionEnabled(
+			ECollisionEnabled::NoCollision);
+	}
+	else if (bCanPlayCompletedGC)
+	{
+		// 완성 건물이지만 GC가 없을 때만 파괴 메시 사용
+		RefreshVisual();
+		BoxComponent->SetCollisionProfileName(
+			TEXT("DestroyedBuilding"));
+		SetBoxExtent();
+	}
+	else
+	{
+		// 건설 중 파괴: 완성 GC와 파괴 완료 메시 모두 사용하지 않는다.
+		BoxComponent->SetCollisionEnabled(
+			ECollisionEnabled::NoCollision);
+	}
+
 	PlayDestroyEffect();
+	//성윤 미니맵 마커제작
+	Tags.Remove(
+		FName(TEXT("MinimapBuilding"))
+	);
 	// sound effect
 	OnBuildingDestroyed();
+	Destroy();
 }
 
 void ASFBaseBuilding::ApplyPreviewMaterial(bool bCanPlace)
@@ -546,9 +715,9 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		}
 	}
 	// 업그레이드비용 저장
-	const FResources SpendCost = CurrentUpgradeBuildCost;
+	const FResources SpendCost = GetUpgradeCost();
 	
-	if (!SFGS->CanAffordResource(GetTeamIndex(), SpendCost))
+	if (!SFGS->TrySpendCost(GetTeamIndex(),	SpendCost))
 	{
 		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
 			*GetName(), SpendCost.Mineral, SpendCost.Ether);
@@ -558,11 +727,15 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	// 다음티어 있는지확인하고 다음티어정보로 치환 ( 티어정보 교체시점 )
 	if (!PrepareTier(NextTier))
 	{
+		// 준비 실패 시 차감한 비용을 원상 복구한다.
+		SFGS->RefundCost(GetTeamIndex(), SpendCost);
+
+		SF_LOG(Error, "[%s] Tier %d 준비 실패. 업그레이드 비용을 환불했습니다.",
+			*GetName(),
+			NextTier);
 		return;
 	}
-	// 이시점에서는 건설비용이 업그레이된티어의 값으로 바뀐상태
-	
-	SFGS->TrySpendCost(GetTeamIndex(), SpendCost);
+
 	SetBuildingState(EBuildingState::UnderConstruction);
 }
 
@@ -577,6 +750,12 @@ void ASFBaseBuilding::HandleCompleteConstruction()
 	}
 
 	PlayConstructionCompleteSound();
+}
+
+void ASFBaseBuilding::SetMyTeamIndex(const int32 InTeamIndex)
+{
+	TeamIndex = InTeamIndex;
+	CombatTargetComponent->SetTeamIndex(TeamIndex);
 }
 
 bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
@@ -601,17 +780,20 @@ void ASFBaseBuilding::BeginPlay()
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition()) return; // 디폴트값 로딩 실패시
-	
+	if (!LoadBuildingDefinition())
+	{
+		Destroy();
+		return; // 디폴트값 로딩 실패시
+	}
 	OnBuildingDefinitionLoaded();
 	// if load failed return
-	if (!PrepareTier(CurrentTier)) return; // 메쉬준비 실패시
+	if (!PrepareTier(CurrentTier))
+	{
+		Destroy();
+		return; // 메쉬준비 실패시
+	}
 	// set viewport mode or controller construct mode
 	ApplySpawnMode();
-	
-	// cached staticmesh location, before hit react
-	OriginalMeshLocation = StaticMeshComponent->GetRelativeLocation();
-	OriginalMeshRotation = StaticMeshComponent->GetRelativeRotation();
 
 	if (IsValid(HitReactionCurve))
 	{
@@ -647,6 +829,14 @@ void ASFBaseBuilding::BeginPlay()
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopHitReaction();
+	
+	if (IsValid(DestructionActor))
+	{
+		DestructionActor->Destroy();
+		DestructionActor = nullptr;
+	}
+	
 	if (bGridRegistered)
 	{
 		if (USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
@@ -686,6 +876,9 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 
 	CachedCommonTiers.Reset(TierCount);
 
+	// ? for문으로 찾아야만하는 이유가 있나?
+	// definition에 현재티어의 tierdata를 반환하는 함수를만들고
+	// 그걸 호출만해서 데이터를 받아오면되는거아닌가?
 	for (int32 TierIndex = 0; TierIndex < TierCount; ++TierIndex)
 	{
 		const FSFBuildingTierData* SourceTier =	BuildingDefinition->FindTier(TierIndex);
@@ -712,17 +905,27 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 			{
 				return Left.Threshold < Right.Threshold;
 			});
-
 		CachedTier.Visual.DamageStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
 			{
 				return Left.Threshold > Right.Threshold;
 			});
+		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
+			{
+				return Left.HealthThreshold >  Right.HealthThreshold;
+			});
 	}
-
+	
 	DisplayName = BuildingDefinition->DisplayName;
+	// grid
 	ConfiguredGridSize = BuildingDefinition->GridSize;
+	// sound
+	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
+	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
 	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
-	DestroyedEffect = BuildingDefinition->DestroyedEffect.LoadSynchronous();
+	// niagara
+	ConstructionEffect = BuildingDefinition->ConstructEffect.LoadSynchronous();
+	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
+	// preview ghost
 	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
 
 	return true;
@@ -741,9 +944,6 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 			CachedCommonTiers.Num());
 		return false;
 	}
-	
-	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
-	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
 	
 	// CACHED LoadAsset by currentTier
 	FBuildingTierRuntimeAssets NewAssets;
@@ -808,6 +1008,12 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
 	NewAssets.DestroyedMesh = Visual.DestroyedMesh.LoadSynchronous();
 	
+	
+	if (!Visual.DestructionCollection.IsNull())
+	{
+		NewAssets.DestructionCollection = Visual.DestructionCollection.LoadSynchronous();
+	}
+	
 	// CACHED failed return false
 	if (!bConstructionMeshesLoaded ||
 		!bDamageMeshesLoaded ||
@@ -821,7 +1027,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	// CACHED sounds
 	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.LoadSynchronous();
 	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.LoadSynchronous();
-	
+
 	// CACHED load assets
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
@@ -863,8 +1069,6 @@ bool ASFBaseBuilding::CommitPreparedTier()
 	PendingTier = INDEX_NONE;
 
 	CurrentTier = CommittedTier;
-	CurrentConstructBuildCost = Tier->Construction.ConstructCost;
-	CurrentUpgradeBuildCost = Tier->Construction.UpgradeCost;
 
 	return true;
 }
@@ -886,6 +1090,10 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	// 가상 함수 실행 전에 내부 상태 확정
 	bIsTierActivated = true;
 	OnTierActivated();
+
+	OnBuildingTierActivated.Broadcast(
+		CurrentTier
+	);
 
 	return true;
 }
@@ -924,12 +1132,13 @@ void ASFBaseBuilding::PlayDestroyEffect()
 			? StaticMeshComponent->Bounds.Origin
 			: GetActorLocation();
 	
-	if (DestroyedEffect)
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
+	if (IsValid(PlayVFXComponent))
+	{
+		PlayVFXComponent->PlayOneShotAtLocation(
 			DestroyedEffect,
 			EffectLocation,
 			GetActorRotation());
+	}
 	
 	if (DestroyedSound)
 		UGameplayStatics::PlaySoundAtLocation(
@@ -950,19 +1159,21 @@ void ASFBaseBuilding::SetBoxExtent()
 	FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
 			StaticMeshComponent->GetRelativeTransform());
 	
-	BoxComponent->SetBoxExtent(BoundsInParent.BoxExtent * 0.6f);
-	BoundsInParent.Origin.Z = BoundsInParent.BoxExtent.Z;
-	BoxComponent->SetRelativeLocation(BoundsInParent.Origin);
-	// FVector Extent = BoundsInParent.BoxExtent;
-	// Extent.X *= 0.8f;
-	// Extent.Y *= 0.8f;
+	FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.85f;
+	float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
+	
+	FVector CustomOrigin = BoundsInParent.Origin;
+	CustomOrigin.Z -= SubBoxExtentZ;
+	
+	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
+	BoxComponent->SetRelativeLocation(CustomOrigin);
 }
 
 #pragma region Getter
 FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
-	const UStaticMesh* Mesh = StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr;
-	return Mesh ? Mesh->GetBounds() : FBoxSphereBounds(ForceInit);
+	return StaticMeshComponent->CalcBounds(
+		StaticMeshComponent->GetRelativeTransform());
 }
 
 
@@ -987,54 +1198,196 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 #pragma region HitReact
 void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 {
-	const FVector Offset =
+	USceneComponent* Target =
+		ActiveHitReactionTarget.Get();
+
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	const FVector LocalOffset =
 		HitLocalDirection *
 		HitMoveDistance *
 		CurveValue;
 
-	const FRotator RotationOffset(
+	const FRotator LocalRotationOffset(
 		HitRotationAmount * CurveValue,
-		0.0f,
-		-HitRotationAmount * CurveValue
-	);
+		0.f,
+		-HitRotationAmount * CurveValue);
 
-	StaticMeshComponent->SetRelativeLocation(
-		OriginalMeshLocation + Offset
-	);
+	const FQuat BaseRotation =
+		OriginalHitReactionTransform.GetRotation();
 
-	StaticMeshComponent->SetRelativeRotation(
-		OriginalMeshRotation + RotationOffset
-	);
+	FTransform TargetTransform =
+		OriginalHitReactionTransform;
+
+	TargetTransform.SetLocation(
+		OriginalHitReactionTransform.GetLocation() +
+		BaseRotation.RotateVector(LocalOffset));
+
+	TargetTransform.SetRotation(
+		(BaseRotation *
+		 LocalRotationOffset.Quaternion())
+		.GetNormalized());
+
+	/*
+	 * GC의 기존 파편 속도는 변경하지 않고
+	 * Collection 전체 Transform만 움직인다.
+	 */
+	Target->SetWorldTransform(
+		TargetTransform,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
 }
 
 void ASFBaseBuilding::FinishHitReaction()
 {
-	// Root로 원상복귀
-	StaticMeshComponent->SetRelativeLocation(OriginalMeshLocation);
-	StaticMeshComponent->SetRelativeRotation(OriginalMeshRotation);
+	USceneComponent* Target =
+		ActiveHitReactionTarget.Get();
+
+	if (IsValid(Target))
+	{
+		Target->SetWorldTransform(
+			OriginalHitReactionTransform,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+
+	ActiveHitReactionTarget.Reset();
 }
 
 
 void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 {
 	if (!IsValid(HitReactionTimeline) ||
-		!IsValid(HitReactionCurve))
+	   !IsValid(HitReactionCurve))
 	{
 		return;
 	}
-	// 때린 방향 캐싱 - 타임라인은 인자가없다
-	HitLocalDirection = LocalDirection.GetSafeNormal();
-	// 타임라인은 인자가 없다
+	
+	USceneComponent* Target =
+		ResolveHitReactionTarget();
+
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	ActiveHitReactionTarget = Target;
+	OriginalHitReactionTransform =
+		Target->GetComponentTransform();
+
+	HitLocalDirection =
+		LocalDirection.GetSafeNormal();
+
 	HitReactionTimeline->PlayFromStart();
 }
 #pragma endregion 
 
 #pragma region GridSystem
-void ASFBaseBuilding::SetRegisteredGridInfo(const FBuildingGridInfo& InGridInfo)
+
+bool ASFBaseBuilding::EnsureDestructionActor()
 {
-	//RegisteredGridInfo.OriginCell = InGridInfo.OriginCell;
-	RegisteredGridInfo = InGridInfo;
-	bGridRegistered = true;
+	if (IsValid(DestructionActor))
+	{
+		return true;
+	}
+
+	UGeometryCollection* Collection =
+		ActiveTierAssets.DestructionCollection;
+	
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+
+	StopHitReaction();
+	
+	const FTransform VisualTransform =
+		StaticMeshComponent->GetComponentTransform();
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	ASFBuildingDestructionActor* SpawnedActor =
+		GetWorld()->SpawnActor<ASFBuildingDestructionActor>(
+			ASFBuildingDestructionActor::StaticClass(),
+			VisualTransform,
+			SpawnParameters);
+
+	if (!IsValid(SpawnedActor))
+	{
+		return false;
+	}
+
+	if (!SpawnedActor->InitializeDestruction(Collection))
+	{
+		SpawnedActor->Destroy();
+		return false;
+	}
+
+	DestructionActor = SpawnedActor;
+	StaticMeshComponent->SetVisibility(false, true);
+
+	return true;
+}
+
+void ASFBaseBuilding::ClearDestructionVisual()
+{
+	/*
+	 * HitReact 대상이 GC일 수 있으므로
+	 * GC를 제거하기 전에 Timeline과 Transform을 정리한다.
+	 */
+	StopHitReaction();
+
+	if (IsValid(DestructionActor))
+	{
+		DestructionActor->Destroy();
+		DestructionActor = nullptr;
+	}
+
+	if (IsValid(StaticMeshComponent))
+	{
+		StaticMeshComponent->SetVisibility(
+			true,
+			true);
+	}
+}
+
+const FSFBuildingTierData* ASFBaseBuilding::GetCostTierInfo() const
+{
+	const int32 CostTier =
+		PendingTier != INDEX_NONE
+			? PendingTier
+			: CurrentTier;
+
+	return GetTierInfo(CostTier);
+}
+
+USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const
+{
+	if (IsValid(DestructionActor))
+	{
+		return DestructionActor
+			->GetGeometryCollectionComponent();
+	}
+
+	return StaticMeshComponent;
+}
+
+void ASFBaseBuilding::StopHitReaction()
+{
+	if (IsValid(HitReactionTimeline) &&
+	HitReactionTimeline->IsPlaying())
+	{
+		HitReactionTimeline->Stop();
+	}
+
+	FinishHitReaction();
 }
 
 bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
@@ -1050,8 +1403,27 @@ bool ASFBaseBuilding::TryRegisterGrid(const FBuildingGridInfo& GridInfo)
 		return false;
 	}
 	// 등록성공하면 건물이 정보를 저장
-	SetRegisteredGridInfo(GridInfo);
+	RegisteredGridInfo = GridInfo;
+	bGridRegistered = true;
 	return true;
+}
+
+FResources ASFBaseBuilding::GetConstructCost() const
+{
+	const FSFBuildingTierData* Tier = GetCostTierInfo();
+
+	return Tier
+		? Tier->Construction.ConstructCost
+		: FResources{};
+}
+
+FResources ASFBaseBuilding::GetUpgradeCost() const
+{
+	const FSFBuildingTierData* Tier = GetCostTierInfo();
+
+	return Tier
+		? Tier->Construction.UpgradeCost
+		: FResources{};
 }
 
 bool ASFBaseBuilding::TryRegistInitialGrid()
@@ -1064,6 +1436,10 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
 		return false;
 	}
+	
+	const FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
+	SetActorLocation(WorldCenterVector);
+	
 	return true;
 }
 #pragma endregion 

@@ -17,11 +17,20 @@ void UMiningComponent::StartMining()
 {
 	const AResourceBase* Resource = LinkedResource.Get();
 	if (!IsValid(Resource) || Resource->IsDepleted()) return;
+	
+	FTimerManager& TimerManager =
+		GetWorld()->GetTimerManager();
+	// 두번활성화 금지
+	if (TimerManager.IsTimerActive(MiningTimerHandle))
+	{
+		return;
+	}
+	
 	// 타이머 시작시간 저장
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
 	OnExtractProgressRatioChanged.Broadcast(MineResourceType, Tracker.GetRatio());
 
-	GetWorld()->GetTimerManager().SetTimer(
+	TimerManager.SetTimer(
 		MiningTimerHandle,
 		this,
 		&ThisClass::TickMining,
@@ -63,7 +72,6 @@ void UMiningComponent::TickMining()
 	//SF_LOG(Warning, "%s:: Ratio: %f", *UEnum::GetValueAsString(MineResourceType), Tracker.GetRatio());
 }
 
-
 void UMiningComponent::StopMining()
 {
 	GetWorld()->GetTimerManager().ClearTimer(MiningTimerHandle);
@@ -74,6 +82,8 @@ bool UMiningComponent::TryLinkResource(AResourceBase* InResource)
 	if (!IsValid(InResource)) return false;
 	if (InResource->GetResourceType() != MineResourceType) return false;
 	if (InResource->IsDepleted()) return false;          // ★ 고갈된 광맥은 거부
+	// 같은 자원이 이미 연결돼 있으면 구독을 다시 만들지 않는다.
+	if (LinkedResource.Get() == InResource) return true;
 
 	UnlinkResource();                                     // 기존 구독 해제
 
@@ -82,6 +92,20 @@ bool UMiningComponent::TryLinkResource(AResourceBase* InResource)
 	InResource->OnDepleted.AddUniqueDynamic(this, &ThisClass::HandleResourceDepleted);
 	return true;
 }
+
+bool UMiningComponent::HasUsableLinkedResource() const
+{
+	const AResourceBase* Resource = LinkedResource.Get();
+
+	return IsValid(Resource) &&
+		!Resource->IsDepleted();
+}
+
+bool UMiningComponent::IsLinkedResource(const AResourceBase* InResource) const
+{
+	return LinkedResource.Get() == InResource;
+}
+
 void UMiningComponent::UnlinkResource()
 {
 	if (AResourceBase* Old = LinkedResource.Get())

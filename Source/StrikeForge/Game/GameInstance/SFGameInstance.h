@@ -5,9 +5,9 @@
 
 // 추가부분 26.08.10
 #include "Datas/Stage/SFStageData.h"
+#include "Datas/Race/SFRaceType.h"
 
 #include "SFGameInstance.generated.h"
-
 // 수정부분
 class UWorld;
 class USFBuildingCatalog;
@@ -53,8 +53,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
 	
-	// 종족별 카탈로그
-	USFBuildingCatalog* LoadPlayerBuildingCatalog() const;
+	// Race
+	// 종족 선택 함수 
+	// 종족Enum만 선택해놓으면 GM이 시작할때 Load함수를 부르고 종족에 맞는 Catalog를 가져간다
+	UFUNCTION(BlueprintCallable, Category = "SF|Race")
+	bool SelectRace(ESFRace InRace);
+	// TMap에서 종족에 맞는 카탈로그 반환
+	USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	
+	// 플레이어 종족 getter
+	UFUNCTION(BlueprintPure, Category = "SF|Race")
+	FORCEINLINE ESFRace GetSelectedRace() const { return SelectedRace; }
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;
@@ -76,20 +85,17 @@ private:
 	TSoftObjectPtr<UWorld> LobbyLevel;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	FName SelectedStageRowName = NAME_None;
+	FName SelectedStageRowName = "Stage01";
 
 	// 추가 부분 26.08.10
 	// 가장 높은 순서의 클리어 스테이지
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 HighestClearedStageOrder = 0;
 	
-	// 플레이어 종족
-	/**
-	 * 플레이어가 선택한 종족의 건물 카탈로그.
-	 *
-	 * 현재는 BP_SFGameInstance 기본값으로 Human 카탈로그를 사용한다.
-	 * 추후 종족 선택 기능이 생기면 선택 결과로 교체한다.
-	 */
+	// 모든 종족 리스트
 	UPROPERTY(EditDefaultsOnly,	BlueprintReadOnly, Category = "SF|Race", meta = (AllowPrivateAccess = "true"))
-	TSoftObjectPtr<USFBuildingCatalog> PlayerBuildingCatalog;
+	TMap<ESFRace, TSoftObjectPtr<USFBuildingCatalog>> CatalogsByRace;
+	// 플레이어 종족 : 기본값 = human
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SF|Race",	meta = (AllowPrivateAccess = "true"))
+	ESFRace SelectedRace = ESFRace::Human;
 };

@@ -3,8 +3,10 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Race/SFRaceType.h"
 #include "SFTeamState.generated.h"
 
+class ASFInGamePlayerController;
 class ASFNexusBuilding;
 class USFBuildingCatalog;
 
@@ -29,6 +31,7 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	FSFOnPopulationChanged OnPopulationChanged;
 
 	// 조회
+	UFUNCTION(BlueprintPure) FORCEINLINE ESFRace GetRace() const { return Race; }
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetMineral() const { return Mineral; }
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetEther() const { return Ether; }
 	UFUNCTION(BlueprintPure) FORCEINLINE float GetMineralIncomeRate() const { return MineralIncomeRate; }
@@ -37,13 +40,14 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	UFUNCTION(BlueprintPure) FORCEINLINE int32 GetMaximumPopulation() const { return MaximumPopulation; }
 	UFUNCTION(BlueprintPure) ASFNexusBuilding* GetNexus() const;
 	UFUNCTION(BlueprintPure) USFBuildingCatalog* GetBuildingCatalog() const;
+	UFUNCTION(BlueprintPure) ASFInGamePlayerController* GetPlayer() const;
 	
 	// 변경
 	void AddResource(EResourceType InType, int32 InAmount);
 	void AddResourceIncomeRate(EResourceType InType, float InRate);
 	void AddPopulation(int32 InDelta);
 	void AddMaxPopulation(int32 InDelta);
-	bool SetBuildingCatalog(USFBuildingCatalog* InBuildingCatalog);
+	bool InitializeTeamData(ESFRace InRace, USFBuildingCatalog* InBuildingCatalog);
 
 	// 판정 · 소비
 	bool CanAffordResource(const FResources& InCost) const;
@@ -54,6 +58,7 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	void SetNexus(ASFNexusBuilding* InNexus);
 	bool IsNexus(const ASFNexusBuilding* InNexus) const;
 
+	void SetPlayer(ASFInGamePlayerController* InPlayer);
 private:
 	void SetMineral(int32 NewMineral);
 	void SetEther(int32 NewEther);
@@ -67,12 +72,20 @@ private:
 	UPROPERTY(VisibleAnywhere) int32 CurrentPopulation = 0;
 	UPROPERTY(VisibleAnywhere) int32 MaximumPopulation = 0;
 	UPROPERTY(VisibleAnywhere) TWeakObjectPtr<ASFNexusBuilding> Nexus;
+	UPROPERTY(VisibleAnywhere) TWeakObjectPtr<ASFInGamePlayerController> Player;
+	
+	UPROPERTY(
+	VisibleAnywhere,
+	BlueprintReadOnly,
+	Category = "SF|Team",
+	meta = (AllowPrivateAccess = "true"))
+	ESFRace Race = ESFRace::None;
 	/**
  * 해당 팀이 사용하는 종족별 건물 카탈로그.
  *
  * 예:
  * Human 팀 → DA_HumanBuildingCatalog
- * Fox 팀   → DA_FoxBuildingCatalog
+ * Animal 팀 → DA_AnimalBuildingCatalog
  */
 	UPROPERTY(
 		VisibleAnywhere,

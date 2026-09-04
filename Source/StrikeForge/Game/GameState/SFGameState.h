@@ -87,8 +87,10 @@ public:
     int32 GetCurrentPopulation(int32 TeamIndex) const;
     UFUNCTION(BlueprintPure, Category = "SF|Population")
     int32 GetMaximumPopulation(int32 TeamIndex) const;
-    /* 지정한 팀에 종족별 건물 카탈로그를 설정한다. */
-    bool SetTeamBuildingCatalog(int32 TeamIndex, USFBuildingCatalog* InBuildingCatalog);
+    /** TeamIndex에 Race와 BuildingCatalog를 등록한다. */
+    bool RegisterTeam(int32 TeamIndex, ESFRace InRace, USFBuildingCatalog* InBuildingCatalog);
+    /** 이미 등록된 팀에 플레이어 컨트롤러를 연결한다. */
+    bool RegisterPlayer(int32 TeamIndex, ASFInGamePlayerController* InPlayer);
     /* 지정한 팀의 건물 카탈로그를 반환한다. */
     UFUNCTION(BlueprintPure, Category = "SF|Building")
     USFBuildingCatalog* GetTeamBuildingCatalog(int32 TeamIndex) const;
@@ -125,11 +127,15 @@ public:
     // 등록된 넥서스 포인터 제거
     UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
     bool UnregisterNexus(int32 TeamIndex, ASFNexusBuilding* Nexus);
-
-    // 팀 번호를 이용해 넥서스 조회
+    /** 해당 팀에 등록된 컨트롤러를 제거한다. */
+    bool UnregisterPlayer(int32 TeamIndex, ASFInGamePlayerController* InPlayer);
+    
+    // 팀 번호를 이용해 넥서스, 플레이어컨트롤러 조회
     UFUNCTION(BlueprintPure, Category = "SF|Nexus")
     ASFNexusBuilding* GetNexus(int32 TeamIndex) const;
-
+    UFUNCTION(BlueprintPure, Category = "SF|Player")
+    ASFInGamePlayerController* GetPlayer(int32 TeamIndex) const;
+    
     UFUNCTION(BlueprintPure, Category = "SF|Team")
     USFTeamState* GetTeamState(int32 TeamIndex) const;
     USFTeamState* FindOrAddTeam(int32 TeamIndex);

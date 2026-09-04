@@ -6,6 +6,7 @@
 
 class ASFGameState;
 class UTextBlock;
+class UWidgetAnimation;
 
 UCLASS()
 class STRIKEFORGE_API USFResourcePanelWidget
@@ -97,9 +98,31 @@ protected:
 	)
 	TObjectPtr<UTextBlock> PopulationValueText = nullptr;
 
+	UPROPERTY(
+		Transient,
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidgetAnim)
+	)
+	TObjectPtr<UWidgetAnimation> MineralGainPop = nullptr;
+
+	UPROPERTY(
+		Transient,
+		BlueprintReadOnly,
+		Category = "SF|HUD|Resource",
+		meta = (BindWidgetAnim)
+	)
+	TObjectPtr<UWidgetAnimation> EtherGainPop = nullptr;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<ASFGameState> BoundGameState = nullptr;
 	// MyTeamindex
 	int32 CachedPlayerTeamIndex = 0;
+
+	int32 PreviousMineralValue = 0;
+	int32 PreviousEtherValue = 0;
+
+	bool bHasPreviousMineralValue = false;
+	bool bHasPreviousEtherValue = false;
 };

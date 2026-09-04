@@ -19,7 +19,7 @@ void USettingWidget::NativeConstruct()
 		BackUi_Btn->OnClicked.AddDynamic(this, &USettingWidget::OnBackUiButtonClicked);
 	}
 
-	// ¿É¼Ç ÃÊ±âÈ­ (ÀÌº¥Æ® ¹ÙÀÎµù Àü¿¡ È£ÃâÇØ¾ß ºÒÇÊ¿äÇÑ OnSelectionChanged ¹æÁö)
+	// ï¿½É¼ï¿½ ï¿½Ê±ï¿½È­ (ï¿½Ìºï¿½Æ® ï¿½ï¿½ï¿½Îµï¿½ ï¿½ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½Ø¾ï¿½ ï¿½ï¿½ï¿½Ê¿ï¿½ï¿½ï¿½ OnSelectionChanged ï¿½ï¿½ï¿½ï¿½)
 	InitializeSettingOptions();
 
 	if (IsValid(DisplayComboBox))
@@ -35,7 +35,7 @@ void USettingWidget::NativeConstruct()
 		BGMVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnBGMVolumeChanged);
 	}
 
-	// Äµ¹ö½º¿¡ Á÷Á¢ ¹èÄ¡µÇ¹Ç·Î ½ÃÀÛÇÒ ¶© ¼û±è
+	// Äµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½Ç¹Ç·ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 

@@ -87,10 +87,18 @@ void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 		return;
 	}
 
-	if (GameInstance->SelectStage(StageRowNames[StageIndex]))
+	if (!GameInstance->SelectStage(StageRowNames[StageIndex]))
 	{
-		GameInstance->MoveToStage();
+		return;
 	}
+
+	if (GameInstance->GetSelectedRace() == ESFRace::None)
+	{
+		// 종족 선택 UI를 여는 함수 작성자리
+		return;
+	}
+
+	GameInstance->MoveToStage();
 }
 
 // 26.08.11 추가

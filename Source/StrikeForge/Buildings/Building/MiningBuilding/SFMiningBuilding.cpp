@@ -7,14 +7,17 @@
 
 ASFMiningBuilding::ASFMiningBuilding()
 {
-	PrimaryActorTick.bCanEverTick = false;
-	
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
 }
 
 void ASFMiningBuilding::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (IsActorBeingDestroyed())
+	{
+		return;
+	}
 	
 	BindDelegateFunction();
 }
@@ -100,30 +103,53 @@ void ASFMiningBuilding::OnTierActivated()
 	}
 
 	MiningComponent->InitMineProperties(ActivatedTier->ExtractBaseWorkAmount, ActivatedTier->ExtractAmount);
-	MiningComponent->StartMining();
-	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
+	
+	RefreshMiningState();
 }
 
 void ASFMiningBuilding::OnTierDeactivated()
 {
 	Super::OnTierDeactivated();
 	
-	MiningComponent->StopMining();
-	
-	ApplyIncomeRate(0.f);
+	RefreshMiningState();
 }
 
-void ASFMiningBuilding::OnBuildingDestroyed()
+bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const
 {
-	Super::OnBuildingDestroyed();
-	
-	Destroy();
+	return IsValid(MiningComponent) &&
+		IsValid(InResource) &&
+		!InResource->IsDepleted() &&
+		MiningComponent->GetMineResourceType() ==
+			InResource->GetResourceType();
 }
 
 bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
 {
-	ensureMsgf(MiningComponent, TEXT("MineBuilding-TryLinkResource::InValid MiningComponent"));
-	return MiningComponent->TryLinkResource(InResourceRef);
+	if (!CanAcceptResource(InResourceRef))
+	{
+		return false;
+	}
+	
+	const bool bLinked =
+		MiningComponent->TryLinkResource(InResourceRef);
+
+	if (bLinked)
+	{
+		RefreshMiningState();
+	}
+
+	return bLinked;
+}
+
+void ASFMiningBuilding::UnlinkResource(const AResourceBase* InResource)
+{
+	if (!IsValid(MiningComponent) || !MiningComponent->IsLinkedResource(InResource))
+	{
+		return;
+	}
+
+	MiningComponent->UnlinkResource();
+	RefreshMiningState();
 }
 
 // update gamestate UI
@@ -136,6 +162,27 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 		GS->AddResourceIncomeRate(GetTeamIndex(), GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
 	}
 	CurrentIncomeRatePerSecond = NewRate; 
+}
+
+void ASFMiningBuilding::RefreshMiningState()
+{
+	if (!IsValid(MiningComponent)) return;
+	
+	const bool bCanMine =
+		IsTierActivated() &&
+		MiningComponent->HasUsableLinkedResource();
+
+	if (!bCanMine)
+	{
+		MiningComponent->StopMining();
+		ApplyIncomeRate(0.f);
+		return;
+	}
+
+	MiningComponent->StartMining();
+
+	ApplyIncomeRate(
+		MiningComponent->GetIncomeRatePerSeconds());
 }
 
 //getter
@@ -151,7 +198,6 @@ int32 ASFMiningBuilding::GetExtractAmount() const
 	return MiningComponent->GetExtractAmount();
 }
 
-
 // delegates
 void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 InAmount)
 {
@@ -163,5 +209,5 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 
 void ASFMiningBuilding::OnResourceDepletedReceived()
 {
-	ApplyIncomeRate(0.f);
+	RefreshMiningState();
 }

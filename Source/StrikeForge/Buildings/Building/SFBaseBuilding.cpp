@@ -65,25 +65,28 @@ void ASFBaseBuilding::RefreshVisual()
 	}
 }
 
-void ASFBaseBuilding::TakeDamaged(float InDamage, TWeakObjectPtr<AActor> HitActor)
+void ASFBaseBuilding::TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo)
 {	// HP있고 건설중, 건설완료상태이면 대미지 적용
 	if (IsValid(HealthComponent) && CanReceiveDamage())
 	{
 		// 손상 단계와 Field 위치 계산 전에 원위치 복구
 		StopHitReaction();
 
-		HealthComponent->ApplyDamage(InDamage);
+		HealthComponent->ApplyDamage(DamageInfo.Damage);
 
 		/*
 		 * 체력 0에서는 BaseBuilding이 제거되므로
 		 * 최종 파괴 연출이 HitReact를 대신한다.
 		 */
-		if (CurrentBuildingState !=	EBuildingState::Destroyed && HitActor.IsValid())
+		FVector HitDirection = FVector::ForwardVector;
+		if (CurrentBuildingState !=	EBuildingState::Destroyed)
 		{
-			FVector HitDirection = GetActorLocation() - HitActor->GetActorLocation();
-			HitDirection.Z = 0;
-			HitDirection.Normalize();
-			
+			if (DamageInfo.HitActor.IsValid())
+			{
+				HitDirection = GetActorLocation() - DamageInfo.HitActor->GetActorLocation();
+				HitDirection.Z = 0;
+				HitDirection.Normalize();
+			}
 			PlayHitReaction(HitDirection);
 		}
 	}
@@ -222,7 +225,7 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 
 	// ResolveDamageMesh가 현재 체력 비율에 맞는 메시를 선택한다.
 	RefreshVisual();
-
+	PlayBurningEffect(CurrentMeshStage);
 	if (CurrentMeshStage != INDEX_NONE)
 	{
 		SF_LOG(
@@ -1431,7 +1434,7 @@ void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
 		(LocalMax - LocalMin) * ComponentScale;
 
 	// 건물 바닥의 가로·세로 영역만 사용한다.
-	SpawnBoxSize.Z = 0.f;
+	// SpawnBoxSize.Z = 0.f;
 
 	const FTransform SpawnTransform(
 		MeshTransform.GetRotation(),

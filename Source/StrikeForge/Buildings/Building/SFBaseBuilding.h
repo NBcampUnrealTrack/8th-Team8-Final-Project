@@ -105,7 +105,7 @@ public:
 	// 생성될때 BaseBuilding의 StaticComponent크기를 그대로 복사해서 스폰됨.
 	ASFBaseBuilding(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	virtual void TakeDamaged(float InDamage, TWeakObjectPtr<AActor> HitActor) override;
+	virtual void TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
 	virtual USoundBase* GetSelectionSound_Implementation() override;
@@ -160,10 +160,7 @@ public:
 	
 	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
 
-	UPROPERTY(
-		BlueprintAssignable,
-		Category = "SF|Building"
-	)
+	UPROPERTY(BlueprintAssignable,Category = "SF|Building")
 	FSFOnBuildingTierActivated OnBuildingTierActivated;
 
 protected:

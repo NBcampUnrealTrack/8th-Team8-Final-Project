@@ -184,10 +184,13 @@ void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InIn
 
 	// 액터가 자체 피해 처리를 갖고 있으면 그쪽을 존중한다.
 	// 없으면 체력 컴포넌트에 직접 적용한다.
-	if (IDamagable* Damageable = Cast<IDamagable>(Owner))
+	if (Owner->Implements<UDamagable>())
 	{
-		Damageable->TakeDamaged(InFinalDamage, InInstigator);
+		FSFDamageInfo DamageInfo;
+		DamageInfo.Damage = InFinalDamage;
+		DamageInfo.HitActor = InInstigator;
 
+		IDamagable::Execute_TakeDamaged(Owner, DamageInfo);
 		return;
 	}
 

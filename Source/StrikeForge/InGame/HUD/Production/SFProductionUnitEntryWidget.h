@@ -64,6 +64,19 @@ protected:
     )
     FName UnitRowName = NAME_None;
 
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Production",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UTextBlock> UnitNeedGold = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Production",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UTextBlock> UnitNeedEther = nullptr;
 public:
     UPROPERTY(
         BlueprintAssignable,

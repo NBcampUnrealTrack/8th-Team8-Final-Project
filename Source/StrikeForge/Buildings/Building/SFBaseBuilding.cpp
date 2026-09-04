@@ -1101,6 +1101,10 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	bIsTierActivated = true;
 	OnTierActivated();
 
+	OnBuildingTierActivated.Broadcast(
+		CurrentTier
+	);
+
 	return true;
 }
 // enterdestorystate call this function

@@ -20,6 +20,9 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
+// TSoftObjectPtr<USoundBase>::LoadSynchronous 가 완전한 타입을 요구한다.
+// 전방 선언만으로는 C2027 이 난다.
+#include "Sound/SoundBase.h"
 #include "Logging/SFLog.h"
 #include "Blueprint/UserWidget.h"
 #include "Slate/SObjectWidget.h"
@@ -33,6 +36,13 @@ void USFTutorialSubsystem::Deinitialize()
 {
     // ClearGuideState 가 고스트·타이머·대기 상태를 모두 정리한다.
     // 정리 대상이 늘어나도 이쪽을 고칠 필요가 없도록 그대로 재사용한다.
+    //
+    // 건물 잠금과 기능 잠금은 ClearGuideState 가 건드리지 않는다.
+    // 안내가 끝나는 것과 스테이지가 끝나는 것은 다르기 때문이다.
+    UnlockBuildingSelection();
+    LockedFeatures.Reset();
+    StageObjectiveSuccessSound = nullptr;
+
     ClearGuideState();
 
     Super::Deinitialize();
@@ -184,6 +194,10 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
     // 튜토리얼이 그 목표를 말하기 전에 이미 해버린 플레이어를 위해서다.
     Tutorial->CompletedObjectives.AddTag(InObjectiveTag);
 
+    // 건물이 실제로 올라갔으면 요구 건물 잠금을 푼다.
+    // 고르기만 하고 취소한 경우에는 여기까지 오지 않으므로 잠금이 유지된다.
+    Tutorial->ReleaseBuildingLockIfBuilt(InObjectiveTag);
+
     // 대기 여부와 무관하게 먼저 알린다.
     // 적 스포너처럼 튜토리얼 진행과 별개로 반응해야 하는 쪽이 이걸 듣는다.
     Tutorial->OnObjectiveRecorded.Broadcast(InObjectiveTag);
@@ -217,6 +231,11 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
     Tutorial->PendingResumeNodeIndex = INDEX_NONE;
 
     Tutorial->OnObjectiveCompleted.Broadcast(CompletedTag);
+
+    // 미션 하나를 해냈다는 신호. 다음 칸으로 넘어가기 전에 울린다 —
+    // EnterGuideStep 이 CurrentStepSuccessSound 를 다음 칸 것으로 바꾸기
+    // 때문에 순서를 바꾸면 엉뚱한 소리가 난다.
+    Tutorial->PlayObjectiveSuccessSound(InWorldContext);
 
     // 안내 중이라면 튜토리얼로 돌아가지 않는다. 아직 남은 칸이 있을 수 있고,
     // 마지막 칸이었는지는 EnterGuideStep 이 판단한다.
@@ -275,6 +294,10 @@ bool USFTutorialSubsystem::BeginGuide(
     GuideSteps = InSteps;
     GuideStepIndex = INDEX_NONE;
 
+    // 잠긴 건물 이름은 남겨두되, "어느 칸이 선택을 기다리는가" 는 다시 잡는다.
+    // 같은 안내를 다시 열었을 때 첫 칸이 선택 칸으로 인식되어야 한다.
+    LockedBuildingStepIndex = INDEX_NONE;
+
     PendingDataTable = InDataTable;
     PendingRowName = InRowName;
     PendingResumeNodeIndex = InResumeNodeIndex;
@@ -321,6 +344,42 @@ void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
 
     GuideStepIndex = InStepIndex;
     const FSFStageIntroGuideStep& Step = GuideSteps[GuideStepIndex];
+
+    // 요구 건물은 칸을 넘어서, 안내가 끝난 뒤에도 유지된다.
+    //
+    // 새 값이 들어올 때만 덮어쓴다. 비어 있는 칸은 앞 칸의 요구를 그대로
+    // 물려받는다 — 칸마다 같은 값을 다시 적게 하면 반드시 한 칸을 빠뜨리고,
+    // 그 칸에서 모든 건물이 열린다.
+    if (!Step.RequiredBuildingRowName.IsNone())
+    {
+        if (Step.RequiredBuildingRowName != LockedBuildingRowName)
+        {
+            SF_LOG(Log, "[SFTutorialSubsystem] 요구 건물 잠금 | %s -> %s",
+                LockedBuildingRowName.IsNone() ? TEXT("(none)") : *LockedBuildingRowName.ToString(),
+                *Step.RequiredBuildingRowName.ToString());
+
+            LockedBuildingRowName = Step.RequiredBuildingRowName;
+            LockedBuildingStepIndex = INDEX_NONE;
+        }
+
+        // 건물 선택으로 넘어가는 칸은 그 요구를 처음 선언한 칸 하나뿐이다.
+        //
+        // 뒤따르는 배치 칸이 같은 값을 다시 적어둔 DT 가 있는데, 거기서도
+        // 선택을 완료로 처리하면 건물을 다시 고르는 것만으로 배치가 끝난
+        // 것으로 처리된다.
+        if (LockedBuildingStepIndex == INDEX_NONE)
+        {
+            LockedBuildingStepIndex = GuideStepIndex;
+        }
+    }
+
+    // 이 칸의 성공음을 미리 로드한다.
+    //
+    // 달성하는 순간에 로드하면 그 프레임이 튄다. 하필 플레이어가 화면을
+    // 보고 있는 순간이라 눈에 띈다.
+    CurrentStepSuccessSound = Step.CompletionSound.IsNull()
+        ? nullptr
+        : Step.CompletionSound.LoadSynchronous();
 
     // 신호를 기다리는 칸만 대기 태그를 건다.
     // Click / Timer 칸은 스포트라이트나 타이머가 직접 넘기므로 대기가 없다.
@@ -443,6 +502,10 @@ void USFTutorialSubsystem::CancelGuide()
 
     SF_LOG(Log, "[SFTutorialSubsystem] Guide cancelled at step %d", GuideStepIndex);
 
+    // 안내를 강제로 접었으면 건설 제한도 같이 푼다.
+    // 안 그러면 안내가 없는데 건설 메뉴만 잠긴 상태로 남는다.
+    UnlockBuildingSelection();
+
     ClearGuideState();
 
     OnGuideFinished.Broadcast();
@@ -462,6 +525,10 @@ void USFTutorialSubsystem::ClearGuideState()
 
     GuideSteps.Empty();
     GuideStepIndex = INDEX_NONE;
+
+    // 칸에 딸린 소리다. 스테이지 기본음(StageObjectiveSuccessSound)은 건드리지
+    // 않는다 — 안내가 끝나도 남은 목표들이 계속 그 소리를 써야 한다.
+    CurrentStepSuccessSound = nullptr;
 
     PendingObjectiveTag = FGameplayTag();
     PendingBannerText = FText::GetEmpty();
@@ -523,6 +590,162 @@ const FSFStageIntroGuideStep* USFTutorialSubsystem::GetCurrentGuideStep() const
     return GuideSteps.IsValidIndex(GuideStepIndex) ? &GuideSteps[GuideStepIndex] : nullptr;
 }
 
+void USFTutorialSubsystem::UnlockBuildingSelection()
+{
+    if (LockedBuildingRowName.IsNone())
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 요구 건물 잠금 해제 | Row: %s",
+        *LockedBuildingRowName.ToString());
+
+    LockedBuildingRowName = NAME_None;
+    LockedBuildingStepIndex = INDEX_NONE;
+}
+
+void USFTutorialSubsystem::ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTag)
+{
+    if (LockedBuildingRowName.IsNone())
+    {
+        return;
+    }
+
+    // "건물이 지어졌다" 는 신호만 잠금을 푼다.
+    //
+    // 선택(Tutorial.Select.Building.*)으로는 풀리지 않는다. 고르기만 하고
+    // 배치를 취소한 상태에서 풀어주면, 플레이어가 건설 메뉴로 돌아왔을 때
+    // 다시 모든 건물이 열린다 — 고치려던 그 버그가 그대로 재현된다.
+    //
+    // 건물의 완료 태그를 Tutorial.Build 아래에 두지 않았다면 잠금이 풀리지
+    // 않는다. 그때는 sf.Tutorial.DumpState 의 Completed 목록에서 실제 이름을
+    // 확인하고 아래 루트 태그를 그 부모로 바꾸면 된다.
+    static const FGameplayTag BuildRoot =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build"), false);
+
+    if (!BuildRoot.IsValid())
+    {
+        SF_LOG(Warning,
+            "[SFTutorialSubsystem] 'Tutorial.Build' 태그가 없어 건물 잠금을 풀 수 없다. "
+            "Project Settings > GameplayTags 에 부모 태그를 추가하라.");
+        return;
+    }
+
+    if (!InObjectiveTag.MatchesTag(BuildRoot))
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 건설 완료로 잠금 해제 | 신호: %s", *InObjectiveTag.ToString());
+
+    UnlockBuildingSelection();
+}
+
+// ─────────────────────────────────────────────────────────
+// 스테이지 단위 기능 잠금
+//
+// "1스테이지에서는 업그레이드 금지" 처럼 안내 칸 하나가 아니라 스테이지
+// 전체에 걸리는 규칙이다. 잠그는 쪽(DT)과 잠기는 쪽(UI)을 태그로만 이어
+// 두어, 새 기능을 잠글 때 코드를 고치지 않아도 되게 한다.
+// ─────────────────────────────────────────────────────────
+void USFTutorialSubsystem::SetStageFeatureLocks(
+    const UObject* InWorldContext, const FGameplayTagContainer& InLocks)
+{
+    USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial))
+    {
+        return;
+    }
+
+    // 더하지 않고 갈아끼운다. 스테이지가 바뀌면 앞 스테이지의 잠금은
+    // 남아 있으면 안 된다.
+    Tutorial->LockedFeatures = InLocks;
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 스테이지 기능 잠금 %d개 | %s",
+        InLocks.Num(),
+        InLocks.IsEmpty() ? TEXT("(none)") : *InLocks.ToStringSimple());
+}
+
+bool USFTutorialSubsystem::IsFeatureLocked(
+    const UObject* InWorldContext, FGameplayTag InFeatureTag)
+{
+    if (!InFeatureTag.IsValid())
+    {
+        return false;
+    }
+
+    const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    // 튜토리얼이 없는 판에서는 아무것도 잠기지 않는다.
+    // 부르는 쪽이 튜토리얼의 유무를 따지지 않아도 되게 한다.
+    return IsValid(Tutorial) && Tutorial->LockedFeatures.HasTag(InFeatureTag);
+}
+
+bool USFTutorialSubsystem::IsTierUpgradeLocked(const UObject* InWorldContext)
+{
+    static const FGameplayTag UpgradeTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Lock.NexusUpgrade"), false);
+
+    // 태그가 없으면 빈 태그가 오고, IsFeatureLocked 가 false 를 돌려준다.
+    // 태그를 아직 등록하지 않은 브랜치에서도 기존 동작이 그대로다.
+    return IsFeatureLocked(InWorldContext, UpgradeTag);
+}
+
+// ─────────────────────────────────────────────────────────
+// 성공 효과음
+//
+// 목표가 풀리는 순간은 NotifyObjective 한 곳뿐이다. 건설이든 생산이든
+// 이동이든 전부 그리로 들어오므로, 소리도 거기서 한 번만 울리면 된다.
+// 신호를 보내는 쪽(건물 BP, 유닛)은 소리를 몰라도 된다.
+// ─────────────────────────────────────────────────────────
+void USFTutorialSubsystem::SetStageObjectiveSuccessSound(
+    const UObject* InWorldContext, const TSoftObjectPtr<USoundBase>& InSound)
+{
+    USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial))
+    {
+        return;
+    }
+
+    Tutorial->StageObjectiveSuccessSound = InSound.IsNull() ? nullptr : InSound.LoadSynchronous();
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 스테이지 성공음 | %s",
+        IsValid(Tutorial->StageObjectiveSuccessSound)
+            ? *Tutorial->StageObjectiveSuccessSound->GetName()
+            : TEXT("(none)"));
+}
+
+void USFTutorialSubsystem::PlayObjectiveSuccessSound(const UObject* InWorldContext) const
+{
+    // 칸이 자기 소리를 지정했으면 그것이 이긴다.
+    USoundBase* Sound = IsValid(CurrentStepSuccessSound.Get())
+        ? CurrentStepSuccessSound.Get()
+        : StageObjectiveSuccessSound.Get();
+
+    if (!IsValid(Sound))
+    {
+        return;
+    }
+
+    // bIsUISound = true.
+    //
+    // 목표가 풀리는 순간 튜토리얼 창이 곧바로 다시 열리면서 게임이
+    // 일시정지된다. UI 사운드가 아니면 소리가 그 자리에서 잘린다.
+    UGameplayStatics::PlaySound2D(
+        InWorldContext,
+        Sound,
+        1.f,        // VolumeMultiplier
+        1.f,        // PitchMultiplier
+        0.f,        // StartTime
+        nullptr,    // ConcurrencySettings
+        nullptr,    // OwningActor
+        true);      // bIsUISound
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 성공음 재생 | %s", *Sound->GetName());
+}
+
 FGameplayTag USFTutorialSubsystem::MakeBuildingSelectTag(FName InBuildingRowName)
 {
     if (InBuildingRowName.IsNone())
@@ -546,23 +769,39 @@ void USFTutorialSubsystem::NotifyBuildingSelected(const UObject* InWorldContext,
         return;
     }
 
-    // 1순위 — 안내 칸이 요구 건물을 직접 지정한 경우.
+    // 1순위 — 요구 건물이 잠겨 있는 경우.
     //
     // 이쪽이면 태그 이름과 행 이름이 달라도 된다. 태그는 DT 작성자가
     // Tutorial.Select.Building.Product 처럼 의미대로 지으면 되고, 어떤 건물을
-    // 요구하는지는 RequiredBuildingRowName 이 따로 들고 있다.
-    if (const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep())
+    // 요구하는지는 잠금이 따로 들고 있다.
+    if (!Tutorial->LockedBuildingRowName.IsNone())
     {
-        if (!Step->RequiredBuildingRowName.IsNone())
-        {
-            if (Step->RequiredBuildingRowName == InBuildingRowName &&
-                Step->CompletionTag.IsValid())
-            {
-                NotifyObjective(InWorldContext, Step->CompletionTag, false);
-            }
+        // 완료 신호는 "잠금을 건 그 칸" 에 있을 때만 보낸다.
+        //
+        // 잠금은 칸을 넘어서, 안내가 끝난 뒤에도 유지된다. 잠금만 보고
+        // 신호를 보내면 배치 칸에서 건물을 다시 골랐을 때 그 칸의 완료
+        // 태그(Tutorial.Build.*)가 나가 배치가 끝난 것으로 처리된다.
+        const bool bOnLockingStep =
+            Tutorial->LockedBuildingStepIndex != INDEX_NONE &&
+            Tutorial->LockedBuildingStepIndex == Tutorial->GuideStepIndex;
 
-            return;
+        if (bOnLockingStep && Tutorial->LockedBuildingRowName == InBuildingRowName)
+        {
+            if (const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep())
+            {
+                if (Step->CompletionTag.IsValid())
+                {
+                    NotifyObjective(InWorldContext, Step->CompletionTag, false);
+                }
+            }
         }
+
+        // 요구 건물이 정해져 있는 동안에는 이름 규칙 태그로 새지 않는다.
+        //
+        // 안내가 끝났는데 잠금만 남은 상태(선택 칸이 마지막 칸이었고 배치를
+        // 취소한 경우)에서 Tutorial.Select.Building.<행> 을 쏘면, 뒤에 오는
+        // 선택 단계가 미리 달성된 것으로 기록된다.
+        return;
     }
 
     // 2순위 — 이름 규칙으로 조립한 태그.
@@ -591,29 +830,26 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
         return true;
     }
 
-    // 1순위 — 안내 칸이 요구 건물을 지정했으면 그것만 통과시킨다.
-    const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep();
-
-    if (Step == nullptr)
+    // 1순위 — 요구 건물이 잠겨 있으면 그것만 통과시킨다.
+    //
+    // 안내 칸이 아니라 잠금을 본다. 선택 칸이 그 노드의 마지막 칸이면
+    // 건물을 고르는 즉시 안내가 끝나는데, 그 뒤에 배치를 취소하면
+    // 플레이어는 건설 메뉴 앞으로 돌아온다. 그때 칸에게 물어보면 이미
+    // 요구 건물을 잃어버린 뒤라 모든 건물이 열린다.
+    if (!Tutorial->LockedBuildingRowName.IsNone())
     {
-        SF_LOG(Log, "[SFTutorialSubsystem] 진행 중인 안내 칸이 없다 | GuideStepIndex: %d",
-            Tutorial->GuideStepIndex);
-    }
-    else if (Step->RequiredBuildingRowName.IsNone())
-    {
-        SF_LOG(Log, "[SFTutorialSubsystem] 안내 칸에 RequiredBuildingRowName 이 비어 있다");
-    }
-    else
-    {
-        const bool bMatches = (Step->RequiredBuildingRowName == InBuildingRowName);
+        const bool bMatches = (Tutorial->LockedBuildingRowName == InBuildingRowName);
 
         SF_LOG(Log, "[SFTutorialSubsystem] Selection %s | Required: %s | Clicked: %s",
             bMatches ? TEXT("ALLOWED") : TEXT("BLOCKED"),
-            *Step->RequiredBuildingRowName.ToString(),
+            *Tutorial->LockedBuildingRowName.ToString(),
             *InBuildingRowName.ToString());
 
         return bMatches;
     }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 요구 건물 잠금이 없다 | GuideStepIndex: %d",
+        Tutorial->GuideStepIndex);
 
     // 2순위 — 이름 규칙 태그를 기다리는 중인지 본다.
     static const FGameplayTag SelectRoot =
@@ -1044,6 +1280,15 @@ void USFTutorialSubsystem::DumpState() const
     {
         SF_LOG(Warning, "  Not waiting for any objective.");
     }
+
+    // 잠금은 안내가 끝난 뒤에도 살아 있으므로 안내 정보 밖에 찍는다.
+    // 갇혔을 때 가장 먼저 봐야 하는 값이다.
+    SF_LOG(Warning, "  Build lock  : %s | armed by step %d",
+        LockedBuildingRowName.IsNone() ? TEXT("(none)") : *LockedBuildingRowName.ToString(),
+        LockedBuildingStepIndex);
+
+    SF_LOG(Warning, "  Feature lock: %s",
+        LockedFeatures.IsEmpty() ? TEXT("(none)") : *LockedFeatures.ToStringSimple());
 
     if (GuideStepIndex != INDEX_NONE)
     {
@@ -1488,6 +1733,28 @@ static FAutoConsoleCommandWithWorldAndArgs GSFTutorialCancelGuide(
     TEXT("sf.Tutorial.CancelGuide"),
     TEXT("진행 중인 단계별 안내를 강제로 끝낸다. 입력이 막히는 원인을 가를 때 쓴다."),
     FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(SFTutorialCancelGuide));
+
+// 잠금이 안 풀려 건설 메뉴에 갇히는 사고에서 빠져나오는 용도다.
+// 완료 태그가 Tutorial.Build 아래에 없으면 실제로 갇힐 수 있다.
+static void SFTutorialUnlockBuilding(const TArray<FString>& Args, UWorld* World)
+{
+    USFTutorialSubsystem* Tutorial = IsValid(World) ? World->GetSubsystem<USFTutorialSubsystem>() : nullptr;
+
+    if (!IsValid(Tutorial))
+    {
+        SF_LOG(Error, "[SFTutorialSubsystem] Subsystem was not found. Are you in play mode?");
+        return;
+    }
+
+    Tutorial->UnlockBuildingSelection();
+
+    SF_LOG(Warning, "[SFTutorialSubsystem] The building lock was released by console command.");
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSFTutorialUnlockBuilding(
+    TEXT("sf.Tutorial.UnlockBuilding"),
+    TEXT("튜토리얼의 건물 선택 제한을 강제로 푼다. 잠금이 안 풀려 갇혔을 때 쓴다."),
+    FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(SFTutorialUnlockBuilding));
 
 static FAutoConsoleCommandWithWorldAndArgs GSFTutorialDumpState(
     TEXT("sf.Tutorial.DumpState"),

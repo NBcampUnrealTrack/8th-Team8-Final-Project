@@ -479,9 +479,9 @@ void USFInGameHUDWidget::ApplySelection(
 }
 
 void USFInGameHUDWidget::ApplySelectionUIData(
+    AActor* SourceActor,
     FSFSelectableInfo& InOutSelectableInfo
-)
-{
+) {
     if (InOutSelectableInfo.DataRowName.IsNone())
     {
         return;
@@ -518,8 +518,15 @@ void USFInGameHUDWidget::ApplySelectionUIData(
     InOutSelectableInfo.DisplayName =
         UIData->DisplayName;
 
+    const ESFRace ActorRace =
+        ResolveActorRace(SourceActor);
+
     InOutSelectableInfo.PortraitImage =
-        UIData->PortraitImage.LoadSynchronous();
+        ResolvePortraitImage(
+            *UIData,
+            ActorRace,
+            InOutSelectableInfo.Tier
+        );
 
     InOutSelectableInfo.SelectionIcon =
         UIData->SelectionIcon.LoadSynchronous();
@@ -538,6 +545,87 @@ void USFInGameHUDWidget::ApplySelectionUIData(
 
     InOutSelectableInfo.bShowSkillIcons =
         UIData->bShowSkillIcons;
+}
+
+ESFRace USFInGameHUDWidget::ResolveActorRace(
+    AActor* Actor
+) const
+{
+    if (!IsValid(Actor))
+    {
+        return ESFRace::None;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        Actor->FindComponentByClass<UCombatTargetComponent>();
+
+    if (!IsValid(CombatTarget))
+    {
+        return ESFRace::None;
+    }
+
+    const ASFGameState* GameState =
+        GetWorld()->GetGameState<ASFGameState>();
+
+    if (!IsValid(GameState))
+    {
+        return ESFRace::None;
+    }
+
+    const USFTeamState* TeamState =
+        GameState->GetTeamState(
+            CombatTarget->GetTeamIndex()
+        );
+
+    if (!IsValid(TeamState))
+    {
+        return ESFRace::None;
+    }
+
+    return TeamState->GetRace();
+}
+
+UTexture2D* USFInGameHUDWidget::ResolvePortraitImage(
+    const FSFSelectionUIDataRow& UIData,
+    ESFRace Race,
+    int32 Tier
+) const
+{
+    const int32 SafeTier =
+        FMath::Max(1, Tier);
+
+    // 종족과 티어가 모두 일치하는 이미지
+    for (const FSFSelectionPortraitVariant& Variant :
+        UIData.PortraitVariants)
+    {
+        if (
+            Variant.Race == Race &&
+            Variant.Tier == SafeTier &&
+            !Variant.PortraitImage.IsNull()
+            )
+        {
+            return Variant.PortraitImage.LoadSynchronous();
+        }
+    }
+
+    // 해당 티어가 없으면 같은 종족의 1티어 이미지
+    for (const FSFSelectionPortraitVariant& Variant :
+        UIData.PortraitVariants)
+    {
+        if (
+            Variant.Race == Race &&
+            Variant.Tier == 1 &&
+            !Variant.PortraitImage.IsNull()
+            )
+        {
+            return Variant.PortraitImage.LoadSynchronous();
+        }
+    }
+
+    // 최종 fallback
+    return UIData.PortraitImage.IsNull()
+        ? nullptr
+        : UIData.PortraitImage.LoadSynchronous();
 }
 
 void USFInGameHUDWidget::RefreshSelectionPanels()
@@ -974,7 +1062,7 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
         SelectableInfo.Tier = HealthData.CurrentTier + 1;
     }
 
-    ApplySelectionUIData(SelectableInfo);
+    ApplySelectionUIData(Actor,SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
 }
 
@@ -1901,7 +1989,7 @@ void USFInGameHUDWidget::RefreshMultiSelectionPanel()
         FSFSelectableInfo SelectableInfo =
             ISFSelectable::Execute_GetSelectableInfo(Actor);
 
-        ApplySelectionUIData(SelectableInfo);
+        ApplySelectionUIData(Actor,SelectableInfo);
 
         ValidActors.Add(Actor);
         SelectableInfos.Add(SelectableInfo);
@@ -1974,7 +2062,10 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
         NewSelectedInfo.Tier = HealthData.CurrentTier + 1;
     }
 
-    ApplySelectionUIData(NewSelectedInfo);
+    ApplySelectionUIData(
+        Actor,
+        NewSelectedInfo
+    );
     SelectedInfo = NewSelectedInfo;
 
     SelectedActor->OnDestroyed.AddUniqueDynamic(
@@ -2437,49 +2528,53 @@ void USFInGameHUDWidget::BindSelectedProductionBuilding(
     AActor* Actor
 )
 {
-    SF_LOG(
-        Log,
-        "[HUD] Production building delegate bound: %s",
-        *Actor->GetName()
-    );
-
     UnbindSelectedProductionBuilding();
 
-    ASFProductionBuilding* ProductionBuilding =
-        Cast<ASFProductionBuilding>(Actor);
-
-    if (!IsValid(ProductionBuilding))
+    if (!IsValid(Actor))
     {
         return;
     }
 
-    SelectedProductionBuilding =
-        ProductionBuilding;
+    // 모든 건물 공통 티어 델리게이트 연결
+    ASFBaseBuilding* BaseBuilding =
+        Cast<ASFBaseBuilding>(Actor);
 
-    SelectedProductionBuilding->OnSpawnableUnitsChanged
-        .AddUniqueDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
-        );
+    if (IsValid(BaseBuilding))
+    {
+        SelectedBuildingForTierDelegate =
+            BaseBuilding;
+
+        SelectedBuildingForTierDelegate->OnBuildingTierActivated.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
+    }
+
+    // 생산 건물 전용 델리게이트 연결
+    ASFProductionBuilding* ProductionBuilding = Cast<ASFProductionBuilding>(Actor);
+
+    if (IsValid(ProductionBuilding))
+    {
+        SelectedProductionBuilding = ProductionBuilding;
+
+        SelectedProductionBuilding->OnSpawnableUnitsChanged.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
+    }
 }
 
 void USFInGameHUDWidget::UnbindSelectedProductionBuilding()
 {
-    if (!SelectedProductionBuilding.IsValid())
+    if (SelectedBuildingForTierDelegate.IsValid())
     {
-        SelectedProductionBuilding = nullptr;
-        return;
+        SelectedBuildingForTierDelegate->OnBuildingTierActivated.RemoveDynamic(this,&USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
     }
 
-    SelectedProductionBuilding->OnSpawnableUnitsChanged
-        .RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated
-        );
+    SelectedBuildingForTierDelegate = nullptr;
+
+
+    if (SelectedProductionBuilding.IsValid())
+    {
+        SelectedProductionBuilding->OnSpawnableUnitsChanged.RemoveDynamic(this,&USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
+    }
 
     SelectedProductionBuilding = nullptr;
 }
-
 void USFInGameHUDWidget::
 HandleSelectedProductionBuildingTierActivated(
     const TArray<FName>& SpawnableRowNames
@@ -2507,7 +2602,10 @@ HandleSelectedProductionBuildingTierActivated(
     UpdatedInfo.Tier =
         HealthData.CurrentTier + 1;
 
-    ApplySelectionUIData(UpdatedInfo);
+    ApplySelectionUIData(
+        Actor,
+        UpdatedInfo
+    );
 
     SelectedInfo = UpdatedInfo;
 
@@ -2521,6 +2619,39 @@ HandleSelectedProductionBuildingTierActivated(
             IsOwnedByLocalPlayer(Actor) &&
             SelectedInfo.SelectableType ==
             ESFSelectableType::ProductionBuilding
+        );
+    }
+}
+
+void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier)
+{
+    AActor* Actor =SelectedActor.Get();
+
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    FSFSelectableInfo UpdatedInfo =
+        ISFSelectable::Execute_GetSelectableInfo(
+            Actor
+        );
+
+    UpdatedInfo.Tier =
+        ActivatedTier + 1;
+
+    ApplySelectionUIData(
+        Actor,
+        UpdatedInfo
+    );
+
+    SelectedInfo =
+        UpdatedInfo;
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
         );
     }
 }

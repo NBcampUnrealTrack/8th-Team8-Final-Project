@@ -29,7 +29,7 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn;
 
-	// WBP_Start Äµ¹ö½º¿¡ Á÷Á¢ ¹èÄ¡µÈ WBP_Setting ÀÎ½ºÅÏ½º (Visibility Åä±Û·Î ¿­°í ´ÝÀ½)
+	// WBP_Start Äµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡ï¿½ï¿½ WBP_Setting ï¿½Î½ï¿½ï¿½Ï½ï¿½ (Visibility ï¿½ï¿½Û·ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
 	UPROPERTY(meta = (BindWidget))
 	USettingWidget* SettingWidget;
 };

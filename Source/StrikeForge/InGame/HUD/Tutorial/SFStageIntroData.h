@@ -7,6 +7,7 @@
 
 class ASFTutorialGhostActor;
 class USFBuildingDefinition;
+class USoundBase;
 class UStaticMesh;
 class UTexture2D;
 
@@ -165,6 +166,19 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
     FName RequiredBuildingRowName = NAME_None;
+
+    /**
+     * 이 칸을 마쳤을 때 재생할 소리. 비우면 행의 기본 성공음을 쓴다.
+     *
+     * 단계마다 다른 소리를 주고 싶을 때만 채운다. 대부분은 비워두고
+     * FSFStageIntroDataRow::ObjectiveSuccessSound 하나로 통일하는 편이 낫다 —
+     * 소리가 제각각이면 "성공했다" 라는 신호로 읽히지 않는다.
+     *
+     * 신호를 기다리는 칸(Completion == ObjectiveTag)에서만 울린다.
+     * 클릭이나 타이머로 넘어가는 칸은 미션이 아니라 그냥 다음 장이다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Completion")
+    TSoftObjectPtr<USoundBase> CompletionSound;
 
     /**
      * 신호를 기다리는 단계라도 이 시간이 지나면 넘어간다. 0 이면 무한 대기.
@@ -376,4 +390,35 @@ struct STRIKEFORGE_API FSFStageIntroDataRow : public FTableRowBase
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro")
     TArray<FSFStageIntroNode> Nodes;
+
+    /**
+     * 이 스테이지 동안 잠글 기능들.
+     *
+     *     Tutorial.Lock.NexusUpgrade  ->  티어 업그레이드 버튼이 뜨지 않는다
+     *
+     * 노드가 아니라 행에 둔다. "1스테이지에서는 업그레이드 금지" 처럼
+     * 스테이지 전체에 걸리는 규칙이기 때문이다. 특정 구간에서만 막고 싶다면
+     * 안내 칸이 아니라 별도 노드를 두는 편이 낫다.
+     *
+     * 인트로가 열릴 때 걸리고 End 노드에서 풀린다. 목표 대기로 창이 닫혀
+     * 있는 동안에도 유지된다.
+     *
+     * 비워두면 아무것도 잠기지 않는다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro")
+    FGameplayTagContainer LockedFeatures;
+
+    /**
+     * 목표 하나를 달성할 때마다 울릴 기본 성공음.
+     *
+     * 건설·생산·이동명령처럼 "미션을 해냈다" 는 순간마다 울린다. 안내 칸이
+     * CompletionSound 를 따로 지정했으면 그쪽이 이긴다.
+     *
+     * 대기 없이 지나가는 대사·선택지 노드에서는 울리지 않는다. 아무 데서나
+     * 울리면 성공 신호로 안 들린다.
+     *
+     * 비워두면 아무 소리도 나지 않는다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Audio")
+    TSoftObjectPtr<USoundBase> ObjectiveSuccessSound;
 };

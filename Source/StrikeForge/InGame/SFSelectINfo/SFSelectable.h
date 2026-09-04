@@ -7,6 +7,7 @@
 #include "SFSelectable.generated.h"
 
 class UHealthComponent;
+class USoundBase;
 
 UINTERFACE(BlueprintType)
 class STRIKEFORGE_API USFSelectable : public UInterface
@@ -54,4 +55,11 @@ public:
         BlueprintCallable,
         Category = "SF|Selection|Building")
     void RequestTierUpgrade();
+    
+    // 선택 사운드 getter
+    UFUNCTION(
+        BlueprintNativeEvent,
+        BlueprintCallable,
+        Category = "SF|Selection|Audio")
+    USoundBase* GetSelectionSound();
 };

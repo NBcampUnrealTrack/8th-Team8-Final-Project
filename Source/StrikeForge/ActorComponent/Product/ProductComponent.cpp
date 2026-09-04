@@ -7,6 +7,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Units/Unit/SFUnitSpawnLibrary.h"
+#include "Units/Unit/UnitBase.h"
 
 UProductComponent::UProductComponent()
 {
@@ -38,12 +39,6 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 	if (!IsValid(SFGS)) return;
 	
 	const int32 OwnerTeam = GetOwnerTeam();
-	if (!SFGS->CanAffordResource(OwnerTeam, UnitStatsRow->UnitProductionCost))
-	{
-		SF_LOG(Warning, "[Product]자원이 부족해 [%s]을 생산하지못합니다. 현재유닛의 Cost: M: %d, E: %d",
-			*InProductName.ToString(), UnitStatsRow->UnitProductionCost.Mineral, UnitStatsRow->UnitProductionCost.Ether);
-		return;
-	}
 	
 	if (!SFGS->CanAffordPopulation(OwnerTeam, UnitStatsRow->PopulationCost))
 	{
@@ -52,7 +47,12 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 		return;
 	}
 #pragma endregion 
-	SFGS->TrySpendCost(OwnerTeam, UnitStatsRow->UnitProductionCost);
+	if (!SFGS->TrySpendCost(OwnerTeam,	UnitStatsRow->UnitProductionCost))
+	{
+		SF_LOG(Warning, "생산 자원이 부족합니다.");
+		return;
+	}
+	
 	ProductLine.Add({InProductName, UnitStatsRow->UnitProductionDuration});
 	OnProductLineChanged.Broadcast(ProductLine);
 	UE_LOG(LogTemp, Warning, TEXT("Insert ProductLine: %s / Currentindex: %d"), *InProductName.ToString(), ProductLine.Num() - 1);
@@ -156,6 +156,59 @@ void UProductComponent::ResumeProductLine()
 	{
 		StartProductLine();
 	}
+}
+
+void UProductComponent::SetSpeedMultiplier(float InMultiplier)
+{
+	const float NewMultiplier =	FMath::Max(0.f, InMultiplier);
+
+	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	NewMultiplier))
+	{
+		return;
+	}
+
+	/*
+	 * 마지막 갱신부터 현재까지는 기존 배율로 처리한다.
+	 * 이후 경과 시간부터 새로운 배율이 적용된다.
+	 */
+	// 이전 배율로 현재 시점까지 먼저 계산
+	if (!ProductLine.IsEmpty() &&
+		!bProductionPaused &&
+		!bWaitingForPopulation)
+	{
+		ProcessProductionToNow();
+	}
+	
+	Tracker.WorkRateMultiplier = NewMultiplier;
+}
+
+void UProductComponent::ResetSpeedMultiplier()
+{
+	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	1.f))
+	{
+		return;
+	}
+	
+	if (!ProductLine.IsEmpty() &&
+	!bProductionPaused &&
+	!bWaitingForPopulation)
+	{
+		ProcessProductionToNow();
+	}
+	
+	Tracker.WorkRateMultiplier = 1.f;
+}
+
+void UProductComponent::SetAssemblePoint(const FVector& InAssemblePoint)
+{
+	AssemblePoint = InAssemblePoint;
+	bSetAssemblePoint = true; 
+}
+
+void UProductComponent::CancleAssemblePoint()
+{
+	AssemblePoint = FVector();
+	bSetAssemblePoint = false;
 }
 
 void UProductComponent::StartProductLine()
@@ -296,17 +349,37 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 
 	// 생성 절차(NavMesh 위치 탐색·팀 계승·능력치 주입)는 스포너와 동일하므로
 	// USFUnitSpawnLibrary 로 공통화했다.
-	USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
+	//
+	// ========== 건물의 렐리포인트를 유닛에 전달 하는 지점.===========
+	// AssemblePoint == 현재 할당된 집결지 벡터
+	AUnitBase* UnitRef = USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
+	
+	if (bSetAssemblePoint && UnitRef->Implements<UMovable>())
+	{
+		UnitRef->MoveToLocation_Implementation(AssemblePoint);
+	}
+	
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());
 
 	if (ProductLine.Num() > 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Product Restart: %d / %d"), ProductLine.Num(), MaxLineCount);
 		StartProductLine();
-		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
-	ResetProductProgress();
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Product Ended: %d / %d"), ProductLine.Num(), MaxLineCount);
+		ResetProductProgress();
+	}
+
+	// 다음 생산까지 정리한 뒤에 알린다.
+	//
+	// 스폰 직후에 알리면, 구독자가 그 자리에서 AddProductInLine 을 부를 경우
+	// 그쪽에서 StartProductLine 이 한 번 돌고 아래 분기에서 또 한 번 돌게 된다.
+	// 이 위치에서는 큐 상태가 이미 확정돼 있어 그런 일이 없다.
+	//
+	// 조기 return 을 else 로 바꾼 이유가 이것이다. 위 두 분기의 동작은 그대로다.
+	OnProductCompleted.Broadcast(InRowName);
 }
 
 // 바인딩

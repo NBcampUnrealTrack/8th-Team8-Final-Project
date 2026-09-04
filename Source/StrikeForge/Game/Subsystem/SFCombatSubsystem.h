@@ -36,6 +36,38 @@ struct FSFAttackSlotRing
 	 * 짧은 변 쪽 슬롯이 사거리 밖에 놓인다.
 	 */
 	FVector2D BoxExtent = FVector2D::ZeroVector;
+
+	/**
+	 * 이 링의 세대. 링이 새로 만들어질 때마다 1씩 늘어난다. 0 은 "링 없음".
+	 *
+	 * 자리를 잡은 유닛은 인덱스와 함께 이 값을 들고 있는다.
+	 * 대상의 팀이 바뀌면 UnregisterTarget 이 링을 통째로 버리는데, 그때
+	 * 공격자들은 여전히 유효한 인덱스를 쥔 채로 남는다. 세대를 비교하지 않으면
+	 * UpdateAttackSlot 의 "이미 자리가 있다" 조기 탈출에 영원히 걸려
+	 * 그 대상에 대한 포위가 죽는다. 세대가 달라지면 스스로 다시 잡는다.
+	 */
+	uint32 Generation = 0;
+};
+
+/**
+ * 공간 격자 한 칸에 들어가는 항목.
+ *
+ * 컴포넌트 약참조만 담지 않고 액터·위치·팀·분류를 함께 복사해 둔다.
+ * 질의마다 ResolveTarget(유효성 + 생존 + GetOwner)을 다시 도는 비용이
+ * 실제 부하의 대부분이었기 때문이다. 프레임당 한 번만 확인하고,
+ * 그 프레임 동안은 이 복사본을 읽는다.
+ *
+ * 위치는 최대 한 프레임 낡을 수 있다. 분리력·교전 반경 판정에는 문제가 없고,
+ * 실제 사거리 판정은 AUnitBase 가 액터에서 직접 다시 잰다.
+ */
+struct FSFGridEntry
+{
+	/** 프레임 도중 파괴될 수 있으므로 약참조로 들고, 읽을 때 한 번 더 확인한다 */
+	TWeakObjectPtr<AActor> Actor;
+
+	FVector2D Location = FVector2D::ZeroVector;
+	int32 TeamIndex = INDEX_NONE;
+	ETargetType TargetType = ETargetType::CombatUnit;
 };
 
 /**
@@ -161,6 +193,28 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	static bool IsHostileTeam(int32 InTeamA, int32 InTeamB);
 
+	/**
+	 * 아무 액터의 팀 번호를 얻는 단일 창구.
+	 *
+	 * 팀 값이 어디에 저장되는지를 호출하는 쪽이 알 필요가 없게 한다.
+	 * 유닛·건물·스포너가 각자 다른 곳에서 팀을 읽던 것이 "팀 값 불일치" 라는
+	 * 가장 흔한 사고의 원인이었다.
+	 *
+	 * 찾지 못하면 중립(-1)을 돌려주고 경고를 남긴다. 예전 ResolveTeamIndex 는
+	 * 0(플레이어 팀)을 돌려줘서, 팀 주입을 빠뜨린 액터가 조용히 아군이 됐다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	static int32 GetTeamOf(const AActor* InActor);
+
+	/**
+	 * 이 클라이언트가 조작하는 팀 번호. 찾지 못하면 중립(-1).
+	 *
+	 * 소유권 판정(플레이어가 이 유닛에 명령할 수 있는가)에 쓴다.
+	 * 진격 정책(AdvanceMode)과는 별개 개념이므로 따로 둔다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	int32 GetLocalPlayerTeam() const;
+
 	// ── 공격 슬롯 ───────────────────────────────────────
 	//
 	// 대상 주위 각도를 나눠 갖게 해서 포위 대형이 저절로 생기게 한다.
@@ -195,6 +249,14 @@ public:
 	int32 GetAttackerCount(const AActor* InTarget) const;
 
 	/**
+	 * 이 대상의 링 세대. 링이 없으면 0.
+	 *
+	 * 자리를 잡은 쪽이 함께 보관했다가, 값이 달라지면 링이 새로 만들어진 것으로
+	 * 보고 다시 잡는다.
+	 */
+	uint32 GetRingGeneration(const AActor* InTarget) const;
+
+	/**
 	 * 이 대상이 실제로 받아줄 수 있는 공격자 수.
 	 *
 	 * 슬롯 개수와 다르다. 링에 9칸이 있어도 실제로 도달 가능한 자리는 훨씬 적다.
@@ -205,6 +267,12 @@ public:
 
 	/** 팀별 등록 현황을 로그로 출력한다. 콘솔 명령 sf.DumpCombatTargets 에서 호출 */
 	void DumpTargets() const;
+
+	/**
+	 * 전투 시스템 계측값을 출력하고 측정 창을 초기화한다.
+	 * 콘솔 명령 sf.CombatStats 에서 호출.
+	 */
+	void DumpStats() const;
 
 private:
 	/** 팀 인덱스별 버킷. 약참조라 파괴된 컴포넌트는 자동으로 무효화된다 */
@@ -229,6 +297,85 @@ private:
 
 	/** 대상별 공격 슬롯 링. 약참조만 담으므로 리플렉션에 올리지 않는다 */
 	TMap<TWeakObjectPtr<AActor>, FSFAttackSlotRing> SlotRings;
+
+	/** 다음에 만들 링에 붙일 세대 번호. 0 은 "링 없음" 이므로 1 부터 시작한다 */
+	uint32 NextRingGeneration = 1;
+
+	// ── 공간 격자 ───────────────────────────────────────
+	//
+	// 반경 질의가 전부 등록 목록 전체를 선형으로 훑고 있었다.
+	// 특히 근접 조향의 이웃 탐색은 유닛당 매 틱이라 프레임당 O(T²) 였다.
+	//
+	// 프레임당 한 번만 격자를 다시 채우고, 질의는 겹치는 칸만 본다.
+	// 리플렉션에 올리지 않는다 — 약참조만 담아 GC 앵커가 필요 없다.
+
+	/**
+	 * 격자 칸 크기(cm).
+	 *
+	 * 가장 좁은 질의인 분리력 반경(90)이 3x3 칸 안에 들어가야 한다.
+	 * 너무 작으면 칸 수가 늘어 재구성이 비싸지고, 너무 크면 칸마다
+	 * 걸러내는 후보가 늘어 격자 효과가 줄어든다.
+	 */
+	static constexpr float GridCellSize = 200.f;
+
+	mutable TMap<FIntPoint, TArray<FSFGridEntry>> Grid;
+
+	/** 이 프레임에 이미 채웠는가. GFrameCounter 와 비교한다 */
+	mutable uint64 GridBuiltFrame = 0;
+
+	mutable int32 GridEntryCount = 0;
+
+	/** 필요하면 이 프레임 기준으로 격자를 다시 채운다 */
+	void EnsureGridCurrent() const;
+
+	void RebuildGrid() const;
+
+	static FIntPoint ToCell(const FVector& InLocation);
+
+	/**
+	 * 반경에 겹치는 칸의 항목을 전부 훑는다.
+	 *
+	 * 칸 단위로만 거르므로 실제 거리 판정은 방문자가 한다.
+	 * 방문자는 항목의 유효성도 직접 확인해야 한다.
+	 */
+	template<typename FuncType>
+	void ForEachEntryInRadius(const FVector& InOrigin, float InRadius, FuncType&& InFunc) const
+	{
+		EnsureGridCurrent();
+
+		++StatRadiusQueries;
+
+		const FVector Extent(InRadius, InRadius, 0.f);
+		const FIntPoint Min = ToCell(InOrigin - Extent);
+		const FIntPoint Max = ToCell(InOrigin + Extent);
+
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			for (int32 Y = Min.Y; Y <= Max.Y; ++Y)
+			{
+				const TArray<FSFGridEntry>* Cell = Grid.Find(FIntPoint(X, Y));
+				if (!Cell) continue;
+
+				StatEntriesVisited += Cell->Num();
+
+				for (const FSFGridEntry& Entry : *Cell)
+				{
+					InFunc(Entry);
+				}
+			}
+		}
+	}
+
+	// ── 계측 ────────────────────────────────────────────
+	//
+	// 격자의 효과는 "질의가 훑은 후보 수" 로만 눈에 보인다.
+	// 프레임 수치가 아니라 창(window) 누적을 재고 sf.CombatStats 에서 비운다.
+
+	mutable int32 StatRadiusQueries = 0;
+	mutable int32 StatEntriesVisited = 0;
+	mutable int32 StatGridRebuilds = 0;
+	mutable int32 StatSlotClaims = 0;
+	mutable double StatWindowStart = 0.0;
 
 	// 슬롯 사이 최소 간격은 콘솔 변수 sf.SlotSpacing 이 갖는다(cpp 상단).
 	// PIE 에서 밀집도를 바로 바꿔볼 수 있어야 해서 멤버로 두지 않는다.

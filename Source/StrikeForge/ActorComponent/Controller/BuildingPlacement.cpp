@@ -1,10 +1,10 @@
 ﻿#include "BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Buildings/Resource/ResourceBase.h"
 #include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
-#include "Logging/SFLog.h"
+#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
 
 UBuildingPlacement::UBuildingPlacement()
 {
@@ -88,18 +88,21 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
 		
-		//SF_LOG(Error, "bCanPlaceOnGrid : %d", bCanPlaceOnGrid);
-		
-		const bool bIsMiningBuilding =
-			TargetBuilding->IsA<ASFMiningBuilding>();
+		const bool bUsesResourceGrid =
+			Cast<ISFGridResourceConsumer>(
+		TargetBuilding.Get()) != nullptr;
 
 		const bool bCanPlaceOnNavigation =
-			bIsMiningBuilding ||
+			bUsesResourceGrid ||
 			CanPlaceOnNavMeshXY(BuildingLocation);
 
+		// 튜토리얼이 자리를 제한하는 중이면 그것도 조건에 넣는다.
+		// 별도 문장으로 부르면 반환값이 버려져서, 경고만 뜨고 배치는 그대로
+		// 허용되는 상태가 된다.
 		bCanPlaceCurrentLocation =
 			bCanPlaceOnGrid &&
-			bCanPlaceOnNavigation;
+			bCanPlaceOnNavigation &&
+			USFTutorialSubsystem::IsBuildLocationAllowed(this, BuildingLocation);
 		
 		CachedGridSubsystem->DebugDrawGridInfo(
 		TargetBuildingGridInfo,
@@ -121,34 +124,17 @@ void UBuildingPlacement::UpdatePlacementMode()
 bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
 {
 	ASFBaseBuilding* Building = TargetBuilding.Get();
-	
-	if (!IsValid(Building) || !IsValid(CachedGridSubsystem) || !TargetBuildingGridInfo.IsValid())
-		return false;
-	
-	if (Building->IsA<ASFMiningBuilding>())
+
+	if (!IsValid(Building) ||
+		!IsValid(CachedGridSubsystem) ||
+		!TargetBuildingGridInfo.IsValid())
 	{
-		const bool bBuildingGridEmpty = 
-			CachedGridSubsystem->CanPlaceBuildingGrid
-				(Building, TargetBuildingGridInfo);
-		
-		AResourceBase* Resource = 
-			CachedGridSubsystem->FindResourceInGrid
-				(Building, TargetBuildingGridInfo);
-		
-		bool IsResourceTypeMatch = false;
-		
-		if (IsValid(Resource))
-		{
-			IsResourceTypeMatch = 
-				Cast<ASFMiningBuilding>(Building)->GetMineResourceType() 
-					== Resource->GetResourceType();
-		}
-		
-		return bBuildingGridEmpty && IsValid(Resource) && IsResourceTypeMatch;
+		return false;
 	}
-	
-	return CachedGridSubsystem->CanPlaceNormalBuildingGrid
-		(Building, TargetBuildingGridInfo);
+
+	return CachedGridSubsystem->CanPlacePlayerBuildingGrid(
+		Building,
+		TargetBuildingGridInfo);
 }
 
 void UBuildingPlacement::EndPlacementSession()
@@ -174,7 +160,7 @@ void UBuildingPlacement::TickComponent(float DeltaTime, ELevelTick TickType,
 bool UBuildingPlacement::TryConfirmPlacementMode()
 {
 	ASFBaseBuilding* Building =
-	TargetBuilding.Get();
+		TargetBuilding.Get();
 
 	if (!IsValid(Building) ||
 		!IsValid(CachedGridSubsystem) ||
@@ -182,15 +168,14 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	{
 		return false;
 	}
-	// MineBuilding 이라면
-	ASFMiningBuilding* MiningBuilding =
-		Cast<ASFMiningBuilding>(Building);
-	
-	// NavMesh 범위 판단
+
+	const bool bUsesResourceGrid =
+		Cast<ISFGridResourceConsumer>(Building) != nullptr;
 
 	const bool bCanPlaceOnNavigation =
-		IsValid(MiningBuilding) ||
-		CanPlaceOnNavMeshXY(Building->GetActorLocation());
+		bUsesResourceGrid ||
+		CanPlaceOnNavMeshXY(
+			Building->GetActorLocation());
 
 	if (!CanPlaceOnCurrentGrid() ||
 		!bCanPlaceOnNavigation)
@@ -199,45 +184,34 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
-	// 광산이라면 자원조회
-	
-	AResourceBase* ResourceToLink = nullptr;
-	if (IsValid(MiningBuilding))
-	{
-		ResourceToLink = CachedGridSubsystem->FindResourceInGrid
-			(Building, TargetBuildingGridInfo);
-		// 발견되는 자원없을때
-		if (!IsValid(ResourceToLink))
-		{
-			bCanPlaceCurrentLocation = false;
-			Building->ApplyPreviewMaterial(false);
-			return false;
-		} // 자원 있을때 + 일치하지않을때
-		if (MiningBuilding->GetMineResourceType() != ResourceToLink->GetResourceType())
-		{
-			bCanPlaceCurrentLocation = false;
-			Building->ApplyPreviewMaterial(false);
-			return false;
-		}
 
-	}
-	// building안에서 grid subsystem을 부르고 등록가능한지 판단
-	// 가능하면 set TargetBuildingGridInfo
-	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))
+	// 튜토리얼 자리 제한은 여기서도 본다.
+	//
+	// 위쪽 틱 판정만 믿으면 판정과 클릭 사이 한 프레임에 자리가 바뀐 경우를
+	// 놓친다. 실제로 짓는 문은 이 함수 하나뿐이므로 여기서 막는 것이 확실하다.
+	if (!USFTutorialSubsystem::IsBuildLocationAllowed(
+			this,
+			Building->GetActorLocation()))
 	{
 		bCanPlaceCurrentLocation = false;
 		Building->ApplyPreviewMaterial(false);
 		return false;
 	}
-	
-	// grid 등록 성공시
-	
-	// 광산건물일때
-	if (IsValid(MiningBuilding))
+
+	// 등록과 자원 연결 모두 GridSubsystem이 처리한다.
+	if (!Building->TryRegisterGrid(
+		TargetBuildingGridInfo))
 	{
-		MiningBuilding->TryLinkResource(ResourceToLink);
+		bCanPlaceCurrentLocation = false;
+		Building->ApplyPreviewMaterial(false);
+		return false;
 	}
-	// tick off
+
+	// 짓겠다고 확정한 순간 안내용 모형을 치운다.
+	// 건설이 끝날 때까지 두면 실제 건물과 겹쳐 서 있어서 무엇이 진짜인지
+	// 알 수 없다.
+	USFTutorialSubsystem::HidePlacementGhost(this);
+
 	EndPlacementSession();
 	return true;
 }

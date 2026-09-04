@@ -11,6 +11,18 @@ class UCombatTargetComponent;	// 아래 델리게이트가 자기 타입을 참�
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatTargetDestroyed, UCombatTargetComponent*, InTarget);
 
 /**
+ * 전투 피해를 받은 순간. 가해자를 함께 넘긴다.
+ *
+ * IDamagable::TakeDamaged 는 피해량만 받으므로 가해자 정보가 그 경로에서
+ * 사라진다. 인터페이스는 전투 AI 담당 파일이 아니라 넓힐 수 없어서,
+ * 가해자를 아는 유일한 지점인 ApplyCombatDamage 에서 따로 알린다.
+ *
+ * 이것이 없으면 반격·킬 크레딧·위협도 판정이 전부 불가능하다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCombatTargetDamaged,
+	UCombatTargetComponent*, InTarget, float, InDamage, AActor*, InInstigator);
+
+/**
  * 이 컴포넌트를 붙이면 어떤 액터든 전투 대상이 된다.
  *
  * 액터 클래스를 수정하지 않는 것이 목적이다.
@@ -75,6 +87,15 @@ public:
 	/** 소유 액터가 파괴된 순간 */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Combat")
 	FCombatTargetDestroyed OnTargetDestroyed;
+
+	/**
+	 * 전투 피해를 받은 순간. 피해가 실제로 적용되기 직전에 울린다.
+	 *
+	 * 적용 전에 알리는 이유는, 이 타격으로 쓰러지는 경우에도 가해자를
+	 * 알 수 있어야 하기 때문이다(킬 크레딧·마지막 타격 추적).
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "SF|Combat")
+	FCombatTargetDamaged OnCombatDamaged;
 
 protected:
 	virtual void BeginPlay() override;

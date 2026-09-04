@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "SFBuildingType.h"
 #include "Engine/DataAsset.h"
 #include "SFBuildingDefinition.generated.h"
 
@@ -38,6 +39,10 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
     FText DisplayName;
     
+    // 모든 종족의 건물 카테고리 분류
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+    ESFBuildingType BuildingType;
+    
     // * 건설 UI 등에 표시되는 건물 아이콘.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
     TSoftObjectPtr<UTexture2D> Icon;
@@ -62,11 +67,23 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Requirement", meta = (ClampMin = "1"))
     int32 RequiredNexusTier = 1;
     
+    // 건설중 상태 sound
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio|Selection")
+    TSoftObjectPtr<USoundBase> UnderConstructionSelectionSound;
+
+    // 건설완료 상태 sound
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio|Selection")
+    TSoftObjectPtr<USoundBase> CompletedSelectionSound;
+    
     // * 건물 파괴 시 재생할 공통 사운드.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destroyed")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
     TSoftObjectPtr<USoundBase> DestroyedSound;
     
+    // * 건물 건설 시 재생할 공통 Niagara Effect.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> ConstructEffect;
+    
     // * 건물 파괴 시 재생할 공통 Niagara Effect.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destroyed")
-    TSoftObjectPtr<UNiagaraSystem> DestroyedEffect;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> DestroyEffect;
 };

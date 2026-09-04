@@ -5,8 +5,6 @@
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
-
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
 }
 
@@ -59,8 +57,7 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 	// 환불이 필요하면 로직을 여기 작성해야하나
 	// 환불이 되지않는것이 자연스럽다
 	ProductComponent->AllClearProductLine();
-	
-	Destroy();
+
 }
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
@@ -73,7 +70,7 @@ FProductableData ASFProductionBuilding::GetProductableData_Implementation()
 	ProductData.ProductableUnitFNames = StoredSpawnableUnitDatas;
 	ProductData.CurrentProductingFNames = ProductComponent->GetProductLine();
 	ProductData.ProductComponent = ProductComponent;
-	ProductData.UpgradeCost = CurrentUpgradeBuildCost;
+	ProductData.UpgradeCost = GetUpgradeCost();
 	return ProductData;
 }
 
@@ -94,4 +91,19 @@ FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
 
 	Info.SelectableType = ESFSelectableType::ProductionBuilding;
 	return Info;
+}
+
+void ASFProductionBuilding::SetAssembleVectorPoint(const FVector& InAssemblePoint)
+{
+	ProductComponent->SetAssemblePoint(InAssemblePoint);
+}
+
+void ASFProductionBuilding::ApplySpeedBuff(float InMultiflyValue) const
+{
+	ProductComponent->SetSpeedMultiplier(InMultiflyValue);
+}
+
+void ASFProductionBuilding::ResetSpeedMultiplier()
+{
+	ProductComponent->ResetSpeedMultiplier();
 }

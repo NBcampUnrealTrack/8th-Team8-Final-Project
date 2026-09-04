@@ -2,14 +2,17 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFMiningBuilding.generated.h"
 
 class UMiningComponent;
 class AResourceBase;
-enum class EResourceType : uint8;
 
 UCLASS()
-class STRIKEFORGE_API ASFMiningBuilding : public ASFBaseBuilding
+class STRIKEFORGE_API ASFMiningBuilding 
+	: public ASFBaseBuilding
+	, public ISFGridResourceConsumer
 {
 	GENERATED_BODY()
 
@@ -26,20 +29,28 @@ public:
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
-	// when construct destroyed, play effects
-	virtual void OnBuildingDestroyed() override;
-	
-	bool TryLinkResource(AResourceBase* InResourceRef);
+
+	// ISFGridResourceConsumer
+	virtual bool CanAcceptResource(
+		const AResourceBase* InResource) const override;
+
+	virtual bool TryLinkResource(
+		AResourceBase* InResource) override;
+
+	virtual void UnlinkResource(
+		const AResourceBase* InResource) override;
 
 	// getter
 	EResourceType GetMineResourceType() const;
 	int32 GetExtractAmount() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void ApplyIncomeRate(float NewRate);
-
+	void RefreshMiningState();
+	
 	UFUNCTION()
 	void OnResourceDepletedReceived();
 	UFUNCTION()

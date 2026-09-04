@@ -23,7 +23,11 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Production")
 	FProductUnitArrayChanged OnSpawnableUnitsChanged;
-
+	
+	// setter
+	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
+	void ApplySpeedBuff(float InMultiflyValue) const;
+	void ResetSpeedMultiplier();
 protected:
 	virtual void OnTierActivated() override;
 	virtual void OnUpgradeStarted() override;
@@ -39,4 +43,7 @@ protected:
 	TObjectPtr<UProductComponent> ProductComponent;
 
 	TArray<FName> StoredSpawnableUnitDatas;
+	
+	// 집결지 위치벡터
+	//FVector AssemblePoint;
 };

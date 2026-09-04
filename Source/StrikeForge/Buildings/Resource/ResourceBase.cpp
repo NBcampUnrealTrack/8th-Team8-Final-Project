@@ -49,12 +49,16 @@ void AResourceBase::BeginPlay()
 		GetActorLocation(),
 		ResourceGridSize);
 	
+	const FVector WorldCenterVector = GridSubsystem->GridInfoToWorldCenter(RegisteredResourceGridInfo);
+	SetActorLocation(WorldCenterVector);
+	
 	bResourceGridRegistered  = 
 	GridSubsystem->TryRegisterResourceGrid(this, RegisteredResourceGridInfo);
 	
 	if (!bResourceGridRegistered )
 	{
 		SF_LOG(Warning, "Resource: %s Failed to Register GridSystem", *GetName());
+		Destroy();
 	}
 }
 

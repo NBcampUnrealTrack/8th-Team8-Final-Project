@@ -1,4 +1,5 @@
 #include "SFResourcePanelWidget.h"
+#include "Animation/WidgetAnimation.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "Game/GameState/SFGameState.h"
@@ -24,6 +25,10 @@ void USFResourcePanelWidget::UpdateMineral(
     float NewMineralRate
 )
 {
+    const bool bMineralIncreased =
+        bHasPreviousMineralValue &&
+        NewMineralValue > PreviousMineralValue;
+
     if (IsValid(MineralValueText))
     {
         MineralValueText->SetText(
@@ -41,6 +46,22 @@ void USFResourcePanelWidget::UpdateMineral(
             )
         );
     }
+
+    if (
+        bMineralIncreased &&
+        IsValid(MineralGainPop)
+        )
+    {
+        PlayAnimation(
+            MineralGainPop
+        );
+    }
+
+    PreviousMineralValue =
+        NewMineralValue;
+
+    bHasPreviousMineralValue =
+        true;
 }
 
 void USFResourcePanelWidget::UpdateEther(
@@ -48,6 +69,10 @@ void USFResourcePanelWidget::UpdateEther(
     float NewEtherRate
 )
 {
+    const bool bEtherIncreased =
+        bHasPreviousEtherValue &&
+        NewEtherValue > PreviousEtherValue;
+
     if (IsValid(EtherValueText))
     {
         EtherValueText->SetText(
@@ -65,6 +90,22 @@ void USFResourcePanelWidget::UpdateEther(
             )
         );
     }
+
+    if (
+        bEtherIncreased &&
+        IsValid(EtherGainPop)
+        )
+    {
+        PlayAnimation(
+            EtherGainPop
+        );
+    }
+
+    PreviousEtherValue =
+        NewEtherValue;
+
+    bHasPreviousEtherValue =
+        true;
 }
 
 void USFResourcePanelWidget::UpdatePopulation(

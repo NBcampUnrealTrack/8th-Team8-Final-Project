@@ -2,10 +2,15 @@
 
 #include "SFProductionUnitEntryWidget.h"
 
+#include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
+#include "Buildings/SFRootBase.h"
 #include "Components/VerticalBox.h"
+#include "Datas/Unit/UnitStatData.h"
 #include "GameFramework/Actor.h"
 #include "Logging/SFLog.h"
 #include "Components/ProgressBar.h"
+#include "Components/Button.h"
+#include "Game/GameState/SFGameState.h"
 
 #include "Components/VerticalBoxSlot.h"
 #include "ActorComponent/Product/ProductComponent.h"
@@ -16,6 +21,7 @@
 #include "SFProductionUIDataRow.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Game/GameInstance/SFGameInstance.h"
+#include "Kismet/GameplayStatics.h"
 
 void USFProductionBuildingPanelWidget::NativeConstruct()
 {
@@ -29,6 +35,31 @@ void USFProductionBuildingPanelWidget::NativeConstruct()
         QueueIcon04,
         QueueIcon05
     };
+
+    QueueButton01->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton01Clicked
+    );
+
+    QueueButton02->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton02Clicked
+    );
+
+    QueueButton03->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton03Clicked
+    );
+
+    QueueButton04->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton04Clicked   
+    );
+
+    QueueButton05->OnClicked.AddUniqueDynamic(
+        this,
+        &USFProductionBuildingPanelWidget::HandleQueueButton05Clicked
+    );
 
     HideProductionBuilding();
 }
@@ -61,6 +92,12 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
 
     CurrentProductionBuilding =
         InProductionBuilding;
+
+    BindProductionBuilding(
+        Cast<ASFProductionBuilding>(
+            InProductionBuilding
+        )
+    );
 
     const FProductableData ProductableData =
         IProductable::Execute_GetProductableData(InProductionBuilding);
@@ -101,6 +138,7 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
 
 void USFProductionBuildingPanelWidget::HideProductionBuilding()
 {
+    UnbindProductionBuilding();
     UnbindProductComponent();
 
     CurrentProductionBuilding.Reset();
@@ -257,12 +295,67 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         return;
     }
 
+    ASFRootBase* RootBuilding =
+        Cast<ASFRootBase>(ProductionBuilding);
+
+    UGameInstance* GameInstance =
+        GetGameInstance();
+
+    USFDataTableManager* DataTableManager =
+        IsValid(GameInstance)
+        ? GameInstance->GetSubsystem<USFDataTableManager>()
+        : nullptr;
+
+    const FUnitStatData* UnitStatsRow =
+        IsValid(DataTableManager)
+        ? DataTableManager->GetDataRow<FUnitStatData>(
+            EDataTableType::Unit,
+            UnitRowName,
+            TEXT("HandleProductionUnitClicked")
+        )
+        : nullptr;
+
+    ASFGameState* GameState =
+        GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (
+        IsValid(RootBuilding) &&
+        UnitStatsRow &&
+        IsValid(GameState)
+        )
+    {
+        const int32 TeamIndex =
+            RootBuilding->GetTeamIndex();
+
+        const bool bCanAfford =
+            GameState->CanAffordResource(
+                TeamIndex,
+                UnitStatsRow->UnitProductionCost
+            );
+
+        if (!bCanAfford)
+        {
+            OnProductionResourceWarningRequested.Broadcast();
+            return;
+        }
+    }
+
     SF_LOG(
         Log,
         "[SFProductionBuildingPanelWidget] "
         "Production Requested: %s",
         *UnitRowName.ToString()
     );
+
+    if (IsValid(UnitProductionClickSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            UnitProductionClickSound
+        );
+    }
 
     IProductable::Execute_ProductUnits(
         ProductionBuilding,
@@ -315,6 +408,44 @@ void USFProductionBuildingPanelWidget::UnbindProductComponent()
     );
 
     CurrentProductComponent = nullptr;
+}
+
+void USFProductionBuildingPanelWidget::BindProductionBuilding(
+    ASFProductionBuilding* InProductionBuilding
+)
+{
+    UnbindProductionBuilding();
+
+    if (!IsValid(InProductionBuilding))
+    {
+        return;
+    }
+
+    BoundProductionBuilding =
+        InProductionBuilding;
+
+    BoundProductionBuilding->OnSpawnableUnitsChanged
+        .AddUniqueDynamic(
+            this,
+            &USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged
+        );
+}
+
+void USFProductionBuildingPanelWidget::UnbindProductionBuilding()
+{
+    if (!BoundProductionBuilding.IsValid())
+    {
+        BoundProductionBuilding = nullptr;
+        return;
+    }
+
+    BoundProductionBuilding->OnSpawnableUnitsChanged
+        .RemoveDynamic(
+            this,
+            &USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged
+        );
+
+    BoundProductionBuilding = nullptr;
 }
 
 void USFProductionBuildingPanelWidget::HandleProductLineChanged(
@@ -439,5 +570,78 @@ void USFProductionBuildingPanelWidget::RefreshProductionProgress(
             0.0f,
             1.0f
         )
+    );
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton01Clicked()
+{
+    CancelProductionAtQueueIndex(0);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton02Clicked()
+{
+    CancelProductionAtQueueIndex(1);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton03Clicked()
+{
+    CancelProductionAtQueueIndex(2);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton04Clicked()
+{
+    CancelProductionAtQueueIndex(3);
+}
+
+void USFProductionBuildingPanelWidget::HandleQueueButton05Clicked()
+{
+    CancelProductionAtQueueIndex(4);
+}   
+
+void USFProductionBuildingPanelWidget::CancelProductionAtQueueIndex(
+    int32 QueueIndex
+)
+{
+    if (!IsValid(CurrentProductComponent))
+    {
+        return;
+    }
+
+    if (!CurrentProductComponent->GetProductLine().IsValidIndex(QueueIndex))
+    {
+        return;
+    }
+
+    CurrentProductComponent->RemoveProductInLine(QueueIndex);
+}
+
+void USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged(
+    const TArray<FName>& SpawnableRowNames
+)
+{
+    AActor* ProductionBuilding =
+        CurrentProductionBuilding.Get();
+
+    if (!IsValid(ProductionBuilding))
+    {
+        return;
+    }
+
+    const FProductableData ProductableData =
+        IProductable::Execute_GetProductableData(
+            ProductionBuilding
+        );
+
+    FProductableData UpdatedData =
+        ProductableData;
+
+    UpdatedData.ProductableUnitFNames =
+        SpawnableRowNames;
+
+    CurrentProductableUnitRowNames =
+        SpawnableRowNames;
+
+    RefreshProductionUnitEntries(
+        UpdatedData
     );
 }

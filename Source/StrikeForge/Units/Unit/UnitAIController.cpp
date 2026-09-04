@@ -58,8 +58,12 @@ void AUnitAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFollo
 {
 	Super::OnMoveCompleted(RequestID, Result);
 
-	// NavMesh 밖이거나 경로가 막혀서 이동이 실패/중단되었는지를 인수로 전달.
-	OnCompleteMoving.Broadcast(!Result.IsFailure());
+	// 도착했는지를 전달한다.
+	//
+	// 예전에는 !IsFailure() 를 넘겼는데, Aborted 는 실패가 아니라서 true 가 나갔다.
+	// ClearMoveRequest 의 StopMovement 나 새 요청으로 덮이는 것까지 "도착" 으로
+	// 보고돼, 구독자가 도착 처리를 잘못 실행할 수 있었다.
+	OnCompleteMoving.Broadcast(Result.IsSuccess());
 }
 
 bool AUnitAIController::IsMoving() const
@@ -124,7 +128,12 @@ void AUnitAIController::RequestMoveToActor(AActor* InGoal, float InAcceptanceRad
 				ToPawn.Normalize();
 
 				// 건물 크기를 모르므로 바운딩 박스 반경에서 시작해 점점 넓힌다
-				const FBox GoalBox = InGoal->GetComponentsBoundingBox(true);
+				// false = 콜리전 없는 컴포넌트 제외.
+				//
+				// true 로 두면 체력바 위젯 같은 것이 박스를 부풀려 접근 지점이
+				// 필요 이상으로 밖으로 밀린다. USFCombatSubsystem::MeasureTargetBounds
+				// 도 false 를 쓰므로, 같은 액터에 두 개의 반경이 생기지 않게 맞춘다.
+				const FBox GoalBox = InGoal->GetComponentsBoundingBox(false);
 				const float BaseRadius = GoalBox.IsValid
 					? GoalBox.GetExtent().Size2D()
 					: 300.f;
@@ -213,7 +222,23 @@ void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float I
 	LastRequestTime = Now;
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
-	if (!NavSys || !NavSys->GetDefaultNavDataInstance()) return;
+
+	if (!NavSys || !NavSys->GetDefaultNavDataInstance())
+	{
+		// 여기서 조용히 나가면 위쪽 기록만 갱신된 채 MoveTo 는 나가지 않는다.
+		// 그러면 다음 MinRequestInterval 동안 같은 지점 재시도까지 막혀,
+		// "명령을 줬는데 아무 일도 안 일어난다" 로만 나타났다.
+		//
+		// 기록을 되돌려 다음 프레임에 다시 시도하게 하고, 한 번은 알린다.
+		LastRequestTime = -1000.f;
+
+		SF_LOG(Error,
+			"[%s] NavigationSystem 또는 NavMesh 가 없어 이동 요청을 낼 수 없습니다. "
+			"레벨에 NavMeshBoundsVolume 이 있고 Build Paths 가 되어 있는지 확인하세요.",
+			GetPawn() ? *GetPawn()->GetName() : TEXT("NoPawn"));
+
+		return;
+	}
 	
 	FNavLocation OutLoc;
 	FVector QueryExt(1000.f, 1000.f, 1000.f);
@@ -230,9 +255,30 @@ void AUnitAIController::RequestMoveToLocation(const FVector& InLocation, float I
 	Request.SetUsePathfinding(true);
 	Request.SetAllowPartialPath(true);
 	Request.SetReachTestIncludesAgentRadius(false);
+
+	// 액터 추적 경로와 같은 규칙으로 맞춘다.
+	// 큰 목표의 중심까지 파고들지 않게 하려면 목표 반지름이 필요하다.
+	Request.SetReachTestIncludesGoalRadius(true);
 	Request.SetCanStrafe(false);
 
-	MoveTo(Request);
+	const FPathFollowingRequestResult Result = MoveTo(Request);
+
+	// 디버그 스위치가 액터 추적만 찍고 지점 이동은 침묵하고 있었다.
+	// 슬롯 추적이 이 경로를 쓰므로 여기가 오히려 더 자주 돈다.
+	if (bLogMoveRequests || CVarLogMoveRequests.GetValueOnGameThread() > 0)
+	{
+		const UPathFollowingComponent* PFC = GetPathFollowingComponent();
+		const bool bPartial = PFC && PFC->GetPath().IsValid() && PFC->GetPath()->IsPartial();
+
+		SF_LOG(Warning, "[%s] MoveTo(지점 %s) -> %s / PathValid %d / Partial %d",
+			GetPawn() ? *GetPawn()->GetName() : TEXT("NoPawn"),
+			*InLocation.ToCompactString(),
+			Result.Code == EPathFollowingRequestResult::RequestSuccessful ? TEXT("Success")
+				: Result.Code == EPathFollowingRequestResult::AlreadyAtGoal ? TEXT("AlreadyAtGoal")
+				: TEXT("Failed"),
+			PFC && PFC->HasValidPath() ? 1 : 0,
+			bPartial ? 1 : 0);
+	}
 }
 
 void AUnitAIController::ClearMoveRequest()

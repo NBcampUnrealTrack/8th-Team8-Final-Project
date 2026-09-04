@@ -65,6 +65,10 @@ private:
 		TObjectPtr<UNiagaraComponent>>
 	ActiveEffects;
 
+	/** 손상 단계별로 생성된 불꽃 효과들. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> ActiveBurningEffects;
+	
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

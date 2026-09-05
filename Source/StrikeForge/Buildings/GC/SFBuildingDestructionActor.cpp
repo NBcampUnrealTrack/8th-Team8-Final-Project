@@ -2,11 +2,11 @@
 #include "NiagaraSystem.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
-#include "Physics/Experimental/ChaosEventType.h"
 #include "Field/FieldSystemObjects.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
 #include "TimerManager.h"
+#include "DrawDebugHelpers.h"
 
 ASFBuildingDestructionActor::ASFBuildingDestructionActor()
 {
@@ -42,6 +42,7 @@ ASFBuildingDestructionActor::ASFBuildingDestructionActor()
 bool ASFBuildingDestructionActor::InitializeDestruction(
     const UGeometryCollection* InCollection)
 {
+
     if (bInitialized)
     {
         return true;
@@ -70,15 +71,9 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
 
     if (LocalBounds.IsValid)
     {
-        CachedLocalBoundsCenter = LocalBounds.GetCenter();
-        CachedLocalBoundsRadius = FMath::Max(
-            LocalBounds.GetExtent().Size(),
-            1.f);
-        CachedRestBounds = LocalBounds;              // ← 추가
+        // 파괴 전 원본 바운드. Strain 필드 위치·반경과 불꽃 배치 기준을 모두 여기서 유도한다.
+        CachedRestBounds = LocalBounds;
     }
-    
-    
-    GeometryCollectionComponent->bAllowRemovalOnBreak = true;
     
     // 단계별 파괴 실험 중에는 Damage 전파 차단
     FGeometryCollectionDamagePropagationData NoPropagation;
@@ -113,8 +108,9 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
     GeometryCollectionComponent->bIgnoreRadialImpulse = false;
     GeometryCollectionComponent->bIgnoreRadialForce = false;
 
-    bInitialized = true;
+    // 잔해 receive event
 
+    bInitialized = true;
     return true;
 }
 
@@ -154,8 +150,7 @@ void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction&
         GeometryCollectionComponent->GetComponentTransform();
 
     const FVector LocalFieldCenter =
-    CachedLocalBoundsCenter +
-    StageData.LocalOffset;
+        CachedRestBounds.GetCenter() + StageData.LocalOffset;
 
     const FVector WorldCenter =
         ComponentTransform.TransformPosition(
@@ -171,7 +166,7 @@ void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction&
         KINDA_SMALL_NUMBER);
 
     const float WorldRadius =
-        CachedLocalBoundsRadius *
+        FMath::Max(CachedRestBounds.GetExtent().Size(), 1.f) *
         StageData.RadiusScale *
         ComponentScale;
 
@@ -267,8 +262,8 @@ void ASFBuildingDestructionActor::SchedulePendingImpulse()
     GetWorldTimerManager().ClearTimer(
         ImpulseTimerHandle);
     
-    // Strain 적용이 끝난 시점. 여기서 아직 붙어 있는 조각에 불을 붙인다.
-    SpawnSurfaceFires();
+    // Strain 적용이 끝난 시점. 여기서부터 불 유지 루프가 돈다.
+    StartFireTick();
     
     if (PendingImpulseStrength <= 0.f)
     {
@@ -317,59 +312,163 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
     PendingImpulseStrength = 0.f;
 }
 
-void ASFBuildingDestructionActor::SpawnSurfaceFires()
+int32 ASFBuildingDestructionActor::GetTargetSurfaceFireCount() const
 {
-    if (!IsValid(SurfaceFireEffect))
+    if (!IsValid(GeometryCollectionComponent))
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[BURN] SurfaceFireEffect 미지정 — BP_DestructionActor 확인"));
-        return;
+        return SurfaceFireMinCount;
     }
+
+    // ApplyStageSettings(:171)의 반경 계산과 같은 방식으로 스케일을 반영한다.
+    const float ComponentScale = FMath::Max(
+        GeometryCollectionComponent->GetComponentTransform().GetScale3D().GetAbsMax(),
+        KINDA_SMALL_NUMBER);
+
+    const float WorldDiagonal =
+        CachedRestBounds.GetSize().Size2D() * ComponentScale;
+
+    return FMath::Clamp(
+        FMath::RoundToInt(WorldDiagonal / FMath::Max(SurfaceFireSpacing, 1.f)),
+        SurfaceFireMinCount,
+        SurfaceFireMaxCount);
+}
+
+int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount)
+{
+    if (DesiredCount <= 0 ||
+        !IsValid(SurfaceFireEffect) ||
+        !IsValid(GeometryCollectionComponent))
+    {
+        return 0;
+    }
+
+    TArray<FSFPieceSpot> Spots;
+    CollectAttachedPieceSpots(Spots);
+
+    if (Spots.IsEmpty())
+    {
+        return 0;
+    }
+
+    // 후보 전체를 한 번 섞어둔다. 이후에는 앞에서부터 훑기만 한다.
+    for (int32 i = 0; i < Spots.Num() - 1; ++i)
+    {
+        Spots.Swap(i, FMath::RandRange(i, Spots.Num() - 1));
+    }
+
+    const float MinDistSq = FMath::Square(
+        CachedRestBounds.GetSize().Size2D() * SurfaceFireMinDistanceRatio);
+
+    const FTransform ComponentTransform =
+        GeometryCollectionComponent->GetComponentTransform();
+
+    int32 Added = 0;
+
+    // 1차는 간격을 지켜서, 자리가 모자라면 2차에서 간격을 풀고 개수를 채운다.
+    for (int32 Pass = 0; Pass < 2 && Added < DesiredCount; ++Pass)
+    {
+        const float PassMinDistSq = (Pass == 0) ? MinDistSq : 0.f;
+
+        for (const FSFPieceSpot& Spot : Spots)
+        {
+            if (Added >= DesiredCount)
+            {
+                break;
+            }
+
+            // 같은 조각이거나, 이미 붙은 불과 너무 가까우면 건너뛴다.
+            const bool bReject =
+                SurfaceFires.ContainsByPredicate(
+                    [&Spot, PassMinDistSq](
+                        const FSFSurfaceFire& Fire)
+                    {
+                        if (Fire.bDetached)
+                        {
+                            return false;
+                        }
+
+                        return
+                            Fire.PieceIndex == Spot.PieceIndex ||
+                            FVector::DistSquared(
+                                Fire.LocalLocation,
+                                Spot.LocalLocation) <
+                            PassMinDistSq;
+                    });
+
+            if (bReject)
+            {
+                continue;
+            }
+
+            FVector WorldLocation =
+                ComponentTransform.TransformPosition(Spot.LocalLocation);
+            
+            UNiagaraComponent* Fire =
+                UNiagaraFunctionLibrary::SpawnSystemAttached(
+                    SurfaceFireEffect,
+                    GeometryCollectionComponent,
+                    Spot.BoneName,
+                    WorldLocation,
+                    FRotator::ZeroRotator,
+                    EAttachLocation::KeepWorldPosition,
+                    false,
+                    true);
+
+            // 교체
+            #if !UE_BUILD_SHIPPING
+            DrawDebugSphere(GetWorld(), WorldLocation, 40.f, 12,
+                FColor::Red, false, 10.f, 0, 2.f);
+            #endif
+            
+            if (IsValid(Fire))
+            {
+                // 조각의 축소·0 스케일을 상속하면 컴포넌트 바운드가 0으로 붕괴해
+                // 파티클이 살아 있어도 컬링된다. 위치·회전만 따라가게 한다.
+                Fire->SetUsingAbsoluteScale(true);
+
+                // SpawnSystemAttached가 KeepWorldPosition 보정으로 상대 스케일에
+                // 1/부모스케일을 넣어둔다. 절대 스케일에서는 그 값이 그대로
+                // 월드 스케일이 되어버리므로 1로 되돌린다.
+                Fire->SetRelativeScale3D(FVector::OneVector);
+
+                FSFSurfaceFire& NewFire =
+                    SurfaceFires.AddDefaulted_GetRef();
+
+                NewFire.Component = Fire;
+                NewFire.PieceIndex = Spot.PieceIndex;
+                NewFire.bDetached = false;
+                NewFire.LocalLocation = Spot.LocalLocation;
+
+                ++Added;
+            }
+        }
+    }
+
+    return Added;
+}
+
+void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>& OutSpots)
+{
+    OutSpots.Reset();
 
     if (!IsValid(GeometryCollectionComponent))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[BURN] GC 컴포넌트 없음"));
         return;
     }
-
-    ClearSurfaceFires();
 
     const TArray<FTransform3f>& PieceTransforms =
         GeometryCollectionComponent->GetComponentSpaceTransforms3f();
 
-    const FBox LocalBounds = GeometryCollectionComponent->GetLocalBounds();
-    const float MinZ =
-            CachedRestBounds.Min.Z +
-            CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("[BURN] 조각 %d개 / RestBounds Min=%s Max=%s / MinZ=%.1f"),
-        PieceTransforms.Num(),
-        *CachedRestBounds.Min.ToString(),
-        *CachedRestBounds.Max.ToString(),
-        MinZ);
-
     if (PieceTransforms.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[BURN] 트랜스폼 배열이 비어 있음 — 물리 초기화 전"));
         return;
     }
 
-    // 앞 5개 조각의 로컬 위치를 실제로 찍어본다.
-    for (int32 i = 0; i < FMath::Min(5, PieceTransforms.Num()); ++i)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[BURN]   piece[%d] local=%s"),
-            i, *FVector(PieceTransforms[i].GetTranslation()).ToString());
-    }
-
-   // ── 후보 수집 ────────────────────────────────────────────
     const UGeometryCollection* Rest =
         GeometryCollectionComponent->GetRestCollection();
 
     if (!Rest || !Rest->GetGeometryCollection())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[BURN] RestCollection 없음"));
         return;
     }
 
@@ -377,16 +476,14 @@ void ASFBuildingDestructionActor::SpawnSurfaceFires()
 
     const TManagedArray<FBox>&        Boxes     = Collection.BoundingBox;
     const TManagedArray<int32>&       XfIndices = Collection.TransformIndex;
-    const TManagedArray<TSet<int32>>& TChildren  = Collection.Children;
-
+    const TManagedArray<TSet<int32>>& TChildren = Collection.Children;
+    const TManagedArray<FString>&     BoneNames = Collection.BoneName; 
     const TManagedArray<int32>& RestParents =
         GeometryCollectionComponent->GetParentArrayRest();
 
-    TArray<FVector> CandidateLocals;
-    CandidateLocals.Reserve(Boxes.Num());
-
-    int32 RejectedDetached = 0;
-    int32 RejectedLow      = 0;
+    const float MinZ =
+        CachedRestBounds.Min.Z +
+        CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
 
     for (int32 GeoIdx = 0; GeoIdx < Boxes.Num(); ++GeoIdx)
     {
@@ -395,89 +492,185 @@ void ASFBuildingDestructionActor::SpawnSurfaceFires()
         if (!TChildren.IsValidIndex(XfIdx))        continue;
         if (TChildren[XfIdx].Num() != 0)           continue;   // 리프 조각만
         if (!PieceTransforms.IsValidIndex(XfIdx)) continue;
+        
+        if (!BoneNames.IsValidIndex(XfIdx))
+        {
+            continue;
+        }
 
-        // 클러스터에서 분리된 조각 제외. 시간에 의존하지 않는다.
+        const FName BoneName(*BoneNames[XfIdx]);
+
+        if (BoneName.IsNone())
+        {
+            continue;
+        }
+        // 클러스터에서 분리된 조각 제외
         if (GeometryCollectionComponent->GetParent(XfIdx) != RestParents[XfIdx])
         {
-            ++RejectedDetached;
             continue;
         }
 
-        // 조각 바운드의 중심을 현재 트랜스폼으로 옮긴 위치.
-        // 피벗이 전부 원점에 몰려 있어도 정확하다.
-        const FVector LocalCenter = FVector(
-            PieceTransforms[XfIdx].TransformPosition(
-                FVector3f(Boxes[GeoIdx].GetCenter())));
+        // 이미 불이 붙어 있는 조각 제외
+        const bool bAlreadyBurning = SurfaceFires.ContainsByPredicate(
+            [XfIdx](const FSFSurfaceFire& Fire)
+            {
+                return Fire.PieceIndex == XfIdx;
+            });
+
+        if (bAlreadyBurning)
+        {
+            continue;
+        }
         
+        // Spawn Location
+        // 조각 AABB를 컴포넌트 공간으로 옮긴다. 회전이 반영된 축정렬 박스가 나온다.
+        const FBox PieceBox =
+            Boxes[GeoIdx].TransformBy(FTransform(PieceTransforms[XfIdx]));
+
+        FVector LocalCenter = PieceBox.GetCenter();
+
         if (LocalCenter.Z < MinZ)
         {
-            ++RejectedLow;
             continue;
         }
 
-        CandidateLocals.Add(LocalCenter);
+        // 건물 중심에서 이 조각을 향하는 수평 방향 = 바깥쪽
+        FVector Outward = LocalCenter - CachedRestBounds.GetCenter();
+        Outward.Z = 0.f;
+        Outward = Outward.GetSafeNormal();
+
+        // 방향이 나오지 않는 조각 = 건물 한가운데.
+        // 표면을 특정할 수 없고 밖에서 보이지도 않으므로 후보에서 제외한다.
+        if (Outward.IsNearlyZero())
+        {
+            continue;
+        }
+
+        // Outward 방향으로 중심에서 표면까지의 거리(AABB 지원 함수).
+        // 조각 크기에서 직접 나오므로 건물 스케일에 자동으로 따라간다.
+        const FVector Extent = PieceBox.GetExtent() * 0.5f;
+
+        LocalCenter += Outward *
+            (FMath::Abs(Outward.X) * Extent.X +
+             FMath::Abs(Outward.Y) * Extent.Y);
+
+        FSFPieceSpot& NewSpot =
+            OutSpots.AddDefaulted_GetRef();
+
+        NewSpot.LocalLocation = LocalCenter;
+        NewSpot.PieceIndex = XfIdx;
+        NewSpot.BoneName = BoneName;
     }
+}
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[BURN] 후보 %d개 (분리 제외 %d, 낮음 제외 %d)"),
-        CandidateLocals.Num(), RejectedDetached, RejectedLow);
-
-    if (CandidateLocals.IsEmpty())
+void ASFBuildingDestructionActor::StartFireTick()
+{
+    if (GetWorldTimerManager().IsTimerActive(FireTickTimerHandle))
     {
         return;
     }
 
-    // ── 스폰 ────────────────────────────────────────────────
-    const FTransform ComponentTransform =
-        GeometryCollectionComponent->GetComponentTransform();
+    // 단계 진입 즉시 한 번 돌려 첫 불을 지연 없이 붙인다.
+    TickSurfaceFires();
 
-    const int32 Count = FMath::Min(
-        FMath::RandRange(SurfaceFireMinCount, SurfaceFireMaxCount),
-        CandidateLocals.Num());
+    GetWorldTimerManager().SetTimer(
+        FireTickTimerHandle,
+        this,
+        &ThisClass::TickSurfaceFires,
+        FireTickInterval,
+        true);
+}
 
-    for (int32 i = 0; i < Count; ++i)
+void ASFBuildingDestructionActor::TickSurfaceFires()
+{
+    if (!IsValid(GeometryCollectionComponent))
     {
-        CandidateLocals.Swap(i, FMath::RandRange(i, CandidateLocals.Num() - 1));
+        GetWorldTimerManager().ClearTimer(FireTickTimerHandle);
+        return;
+    }
 
-        const FVector WorldLocation =
-            ComponentTransform.TransformPosition(CandidateLocals[i]);
-        
-        UNiagaraComponent* Fire =
-            UNiagaraFunctionLibrary::SpawnSystemAttached(
-                SurfaceFireEffect,
-                GeometryCollectionComponent,
-                NAME_None,
-                WorldLocation,
-                FRotator::ZeroRotator,
-                EAttachLocation::KeepWorldPosition,
-                false,
-                true);
+    const TArray<FTransform3f>& PieceTransforms =
+        GeometryCollectionComponent->GetComponentSpaceTransforms3f();
 
-        DrawDebugSphere(GetWorld(), WorldLocation, 40.f, 12,
-            FColor::Red, false, 10.f, 0, 2.f);
+    const TManagedArray<int32>& RestParents =
+        GeometryCollectionComponent->GetParentArrayRest();
 
-        UE_LOG(LogTemp, Warning, TEXT("[BURN] spawn[%d] world=%s -> %s"),
-            i, *WorldLocation.ToString(),
-            IsValid(Fire) ? TEXT("OK") : TEXT("FAIL"));
+    int32 AttachedCount = 0;
 
-        if (IsValid(Fire))
+    for (int32 Index = SurfaceFires.Num() - 1; Index >= 0; --Index)
+    {
+        FSFSurfaceFire& Fire = SurfaceFires[Index];
+
+        // ① 컴포넌트가 사라졌으면 추적만 끊는다.
+        if (!IsValid(Fire.Component))
         {
-            SurfaceFires.Add(Fire);
+            SurfaceFires.RemoveAtSwap(Index);
+            continue;
         }
+
+        // ② 인덱스가 무효해졌으면 즉시 페이드.
+        if (!PieceTransforms.IsValidIndex(Fire.PieceIndex) ||
+            !RestParents.IsValidIndex(Fire.PieceIndex))
+        {
+            StartFireFade(Fire);
+            SurfaceFires.RemoveAtSwap(Index);
+            continue;
+        }
+
+        // ③ 부모가 바뀌었으면 클러스터에서 떨어진 것. (구 RefreshDetachedStates)
+        if (!Fire.bDetached &&
+            GeometryCollectionComponent->GetParent(Fire.PieceIndex) !=
+                RestParents[Fire.PieceIndex])
+        {
+            Fire.bDetached = true;
+        }
+
+        // ④ 떨어진 조각이 줄어들기 시작하면 페이드.
+        //    스케일 0(제거 완료)도 이 조건에 포함된다. (구 CleanupRemovedSurfaceFires)
+        //    스케일은 항상 균등이라 X만 본다.
+        if (Fire.bDetached &&
+            PieceTransforms[Fire.PieceIndex].GetScale3D().X < SurfaceFireShrinkThreshold)
+        {
+            StartFireFade(Fire);
+            SurfaceFires.RemoveAtSwap(Index);
+            continue;
+        }
+
+        if (!Fire.bDetached)
+        {
+            ++AttachedCount;   // (구 GetAttachedSurfaceFireCount)
+        }
+    }
+
+    // 교체
+    // ⑤ 부족분 보충.
+    //    최종 파괴 후에는 붙어 있는 조각이 없으므로 CollectAttachedPieceSpots가
+    //    빈 배열을 돌려준다. 별도 게이트가 필요 없다.
+    const int32 MissingCount = GetTargetSurfaceFireCount() - AttachedCount;
+
+    if (MissingCount > 0)
+    {
+        const int32 Added = AddSurfaceFires(MissingCount);
+        UE_LOG(LogTemp, Warning, TEXT("[BURN] target=%d attached=%d missing=%d added=%d"),
+            GetTargetSurfaceFireCount(), AttachedCount, MissingCount, Added);
+    }
+
+    // ⑥ 추적할 불이 없으면 루프를 멈춘다.
+    if (SurfaceFires.IsEmpty())
+    {
+        GetWorldTimerManager().ClearTimer(FireTickTimerHandle);
     }
 }
 
-void ASFBuildingDestructionActor::ClearSurfaceFires()
+void ASFBuildingDestructionActor::StartFireFade(FSFSurfaceFire& Fire)
 {
-    for (const TObjectPtr<UNiagaraComponent>& Fire : SurfaceFires)
+    if (IsValid(Fire.Component))
     {
-        if (IsValid(Fire))
-        {
-            Fire->DestroyComponent();
-        }
+        // Deactivate는 스폰만 멈춘다. 남은 파티클은 수명을 다 채우고,
+        // 시스템이 완료되면 bAutoDestroy가 컴포넌트를 정리한다.
+        Fire.Component->SetAutoDestroy(true);
+        Fire.Component->Deactivate();
     }
-
-    SurfaceFires.Reset();
 }
 
 void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
@@ -497,8 +690,14 @@ void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIn
 
 void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
-    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
+    GetWorldTimerManager().ClearTimer(
+        FireTickTimerHandle);
+    GetWorldTimerManager().ClearTimer(
+        StrainHitTimerHandle);
+    GetWorldTimerManager().ClearTimer(
+        ImpulseTimerHandle);
+    
+    SurfaceFires.Reset();
 
     Super::EndPlay(EndPlayReason);
 }

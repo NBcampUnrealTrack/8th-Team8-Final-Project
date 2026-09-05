@@ -666,8 +666,11 @@ void ASFBuildingDestructionActor::StartFireFade(FSFSurfaceFire& Fire)
 {
     if (IsValid(Fire.Component))
     {
-        // Deactivate는 스폰만 멈춘다. 남은 파티클은 수명을 다 채우고,
-        // 시스템이 완료되면 bAutoDestroy가 컴포넌트를 정리한다.
+        // 축소 중인 조각을 계속 따라가면 오프셋이 피벗으로 수렴해 빨려 들어간다.
+        // 마지막 월드 위치에 고정한 뒤 꺼지게 한다.
+        Fire.Component->DetachFromComponent(
+            FDetachmentTransformRules::KeepWorldTransform);
+
         Fire.Component->SetAutoDestroy(true);
         Fire.Component->Deactivate();
     }

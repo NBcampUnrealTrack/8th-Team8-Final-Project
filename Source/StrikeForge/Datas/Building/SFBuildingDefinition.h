@@ -86,4 +86,8 @@ public:
     // * 건물 파괴 시 재생할 공통 Niagara Effect.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
     TSoftObjectPtr<UNiagaraSystem> DestroyEffect;
+    
+    /** 손상 단계에서 파단면에 붙일 불꽃 Effect.* Infinite 루프 시스템이어야 한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> DamagedBurningEffect;
 };

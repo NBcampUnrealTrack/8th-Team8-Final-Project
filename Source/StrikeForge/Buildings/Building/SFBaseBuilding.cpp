@@ -1360,7 +1360,15 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 	SpawnedActor->FinishSpawning(VisualTransform);
 	
 	DestructionActor = SpawnedActor;
-	StaticMeshComponent->SetVisibility(false, true);
+	
+	GetWorldTimerManager().SetTimerForNextTick(
+	[WeakThis = TWeakObjectPtr<ASFBaseBuilding>(this)]()
+	{
+		if (WeakThis.IsValid() && IsValid(WeakThis->StaticMeshComponent))
+		{
+			WeakThis->StaticMeshComponent->SetVisibility(false, true);
+		}
+	});
 
 	return true;
 }

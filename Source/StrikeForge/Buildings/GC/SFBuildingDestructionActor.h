@@ -120,12 +120,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
 	// 1.f는 조각메쉬 크기가 변함없을때(처음) 0.2는 떨어진후 크기가 작아지고 비율이 0.2일때
-	float SurfaceFireShrinkThreshold = 0.5f;
+	float SurfaceFireShrinkThreshold = 0.65f;
 
 	/** 불 유지 루프 주기(초). 불이 하나도 없으면 루프가 멈춘다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.02", AllowPrivateAccess = "true"))
-	float FireTickInterval = 0.1f;
+	float FireTickInterval = 1.f;
 	
 	/** 바닥 대각선에 비례한 목표 개수. Min/Max로 잘라낸다. */
 	int32 GetTargetSurfaceFireCount() const;

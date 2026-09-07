@@ -108,8 +108,6 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
     GeometryCollectionComponent->bIgnoreRadialImpulse = false;
     GeometryCollectionComponent->bIgnoreRadialForce = false;
 
-    // 잔해 receive event
-
     bInitialized = true;
     return true;
 }
@@ -548,7 +546,7 @@ void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>
 
         // Outward 방향으로 중심에서 표면까지의 거리(AABB 지원 함수).
         // 조각 크기에서 직접 나오므로 건물 스케일에 자동으로 따라간다.
-        const FVector Extent = PieceBox.GetExtent() * 0.5f;
+        const FVector Extent = PieceBox.GetExtent() * 0.65f;
 
         LocalCenter += Outward *
             (FMath::Abs(Outward.X) * Extent.X +
@@ -617,7 +615,7 @@ void ASFBuildingDestructionActor::TickSurfaceFires()
             continue;
         }
 
-        // ③ 부모가 바뀌었으면 클러스터에서 떨어진 것. (구 RefreshDetachedStates)
+        // ③ 부모가 바뀌었으면 클러스터에서 떨어진 것.
         if (!Fire.bDetached &&
             GeometryCollectionComponent->GetParent(Fire.PieceIndex) !=
                 RestParents[Fire.PieceIndex])
@@ -626,7 +624,7 @@ void ASFBuildingDestructionActor::TickSurfaceFires()
         }
 
         // ④ 떨어진 조각이 줄어들기 시작하면 페이드.
-        //    스케일 0(제거 완료)도 이 조건에 포함된다. (구 CleanupRemovedSurfaceFires)
+        //    스케일 0(제거 완료)도 이 조건에 포함된다.
         //    스케일은 항상 균등이라 X만 본다.
         if (Fire.bDetached &&
             PieceTransforms[Fire.PieceIndex].GetScale3D().X < SurfaceFireShrinkThreshold)
@@ -638,7 +636,7 @@ void ASFBuildingDestructionActor::TickSurfaceFires()
 
         if (!Fire.bDetached)
         {
-            ++AttachedCount;   // (구 GetAttachedSurfaceFireCount)
+            ++AttachedCount;
         }
     }
 
@@ -651,8 +649,6 @@ void ASFBuildingDestructionActor::TickSurfaceFires()
     if (MissingCount > 0)
     {
         const int32 Added = AddSurfaceFires(MissingCount);
-        UE_LOG(LogTemp, Warning, TEXT("[BURN] target=%d attached=%d missing=%d added=%d"),
-            GetTargetSurfaceFireCount(), AttachedCount, MissingCount, Added);
     }
 
     // ⑥ 추적할 불이 없으면 루프를 멈춘다.
@@ -688,7 +684,7 @@ void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIn
     bFinalDestructionApplied = true;
     
     ApplyStageSettings(StageData,FinalStageIndex + 1);
-    SetLifeSpan(DebrisLifetime);
+    //SetLifeSpan(DebrisLifetime);
 }
 
 void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)

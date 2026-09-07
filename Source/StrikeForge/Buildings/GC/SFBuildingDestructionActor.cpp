@@ -53,21 +53,13 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
         !IsValid(StrainField) ||
         !IsValid(InCollection))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[%s] Building destruction initialization failed."),
+        UE_LOG(LogTemp, Error, TEXT("[%s] Building destruction initialization failed."),
             *GetName());
 
         return false;
     }
     
-    GeometryCollectionComponent->SetRestCollection(
-    InCollection,
-    true);
-    
-    GeometryCollectionComponent->bAllowRemovalOnBreak = true;
-    GeometryCollectionComponent->bAllowRemovalOnSleep = true;
+    GeometryCollectionComponent->SetRestCollection(InCollection,true);
     
     // 최종 파괴 시 활성 클러스터를 계속 해체하기 위해 유지
     GeometryCollectionComponent->SetNotifyBreaks(true);
@@ -75,8 +67,7 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
         this, &ThisClass::HandleChaosBreak);
     
     // 파괴 radius의 위치와 크기
-    const FBox LocalBounds =
-    GeometryCollectionComponent->GetLocalBounds();
+    const FBox LocalBounds = GeometryCollectionComponent->GetLocalBounds();
 
     if (LocalBounds.IsValid)
     {
@@ -90,14 +81,12 @@ bool ASFBuildingDestructionActor::InitializeDestruction(
     NoPropagation.BreakDamagePropagationFactor = 0.f;
     NoPropagation.ShockDamagePropagationFactor = 0.f;
 
-    GeometryCollectionComponent->SetDamagePropagationData(
-        NoPropagation);
+    GeometryCollectionComponent->SetDamagePropagationData(NoPropagation);
 
     // 떨어지거나 서로 충돌하면서 다음 단계가 깨지는 것 방지
     GeometryCollectionComponent->SetEnableDamageFromCollision(false);
     GeometryCollectionComponent->SetCollisionResponseToChannel(
-    ECC_Pawn,
-    ECR_Ignore);
+        ECC_Pawn,ECR_Ignore);
 
     // 마우스 선택도 잔해를 통과시킨다.
     GeometryCollectionComponent->SetCollisionResponseToChannel(
@@ -136,12 +125,8 @@ void ASFBuildingDestructionActor::ApplyDamageStage(int32 StageIndex, const FBuil
     ApplyStageSettings(StageData,StageIndex + 1);
     
     
-    UE_LOG(
-        LogTemp,
-        Log,
-        TEXT("[%s] Destruction stage applied: %d"),
-        *GetName(),
-        StageIndex);
+    UE_LOG(LogTemp, Log, TEXT("[%s] Destruction stage applied: %d"),
+        *GetName(), StageIndex);
 
 }
 
@@ -160,22 +145,19 @@ void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction&
         CachedRestBounds.GetCenter() + StageData.LocalOffset;
 
     const FVector WorldCenter =
-        ComponentTransform.TransformPosition(
-            LocalFieldCenter);
+        ComponentTransform.TransformPosition(LocalFieldCenter);
 
     /**
      * BP StaticMeshComponent가 2,2,2 Scale이면
      * 파괴 반경도 그에 맞춰 증가시킨다.
      */
     const float ComponentScale =
-    FMath::Max(
-        ComponentTransform.GetScale3D().GetAbsMax(),
-        KINDA_SMALL_NUMBER);
+        FMath::Max(ComponentTransform.GetScale3D().GetAbsMax(),
+                KINDA_SMALL_NUMBER);
 
     const float WorldRadius =
         FMath::Max(CachedRestBounds.GetExtent().Size(), 1.f) *
-        StageData.RadiusScale *
-        ComponentScale;
+            StageData.RadiusScale * ComponentScale;
 
     /**
      * Falloff None:
@@ -192,21 +174,16 @@ void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction&
         EFieldFalloffType::Field_FallOff_None);
     
     // 이전 단계의 예약 작업이 남아 있다면 새 목표로 교체한다.
-    GetWorldTimerManager().ClearTimer(
-        StrainHitTimerHandle);
+    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
 
-    GetWorldTimerManager().ClearTimer(
-        ImpulseTimerHandle);
+    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
 
-    PendingTargetClusterDepth =
-        FMath::Max(TargetClusterDepth, 1);
+    PendingTargetClusterDepth = FMath::Max(TargetClusterDepth, 1);
 
     PendingImpulseOrigin = WorldCenter;
     PendingImpulseRadius = WorldRadius;
-    PendingImpulseStrength =
-        StageData.ImpulseStrength;
-    PendingImpulseDelay =
-        StageData.ImpulseDelay;
+    PendingImpulseStrength = StageData.ImpulseStrength;
+    PendingImpulseDelay = StageData.ImpulseDelay;
 
     ApplyNextStrainHit();
 }
@@ -220,8 +197,7 @@ void ASFBuildingDestructionActor::ApplyNextStrainHit()
         return;
     }
 
-    if (AppliedClusterDepth >=
-        PendingTargetClusterDepth)
+    if (AppliedClusterDepth >= PendingTargetClusterDepth)
     {
         SchedulePendingImpulse();
         return;
@@ -238,16 +214,10 @@ void ASFBuildingDestructionActor::ApplyNextStrainHit()
 
     ++AppliedClusterDepth;
 
-    UE_LOG(
-        LogTemp,
-        Log,
-        TEXT("[%s] Strain hit: %d / %d"),
-        *GetName(),
-        AppliedClusterDepth,
-        PendingTargetClusterDepth);
+    UE_LOG(LogTemp, Log, TEXT("[%s] Strain hit: %d / %d"),
+        *GetName(), AppliedClusterDepth, PendingTargetClusterDepth);
 
-    if (AppliedClusterDepth <
-        PendingTargetClusterDepth)
+    if (AppliedClusterDepth < PendingTargetClusterDepth)
     {
         // 같은 타이머 핸들을 다음 평가에 재사용한다.
         GetWorldTimerManager().SetTimer(
@@ -304,14 +274,8 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
         return;
     }
     
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("[%s] Radial impulse fired: Strength=%.1f Radius=%.1f Origin=%s"),
-        *GetName(),
-        PendingImpulseStrength,
-        PendingImpulseRadius,
-        *PendingImpulseOrigin.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("[%s] Radial impulse fired: Strength=%.1f Radius=%.1f Origin=%s"),
+        *GetName(), PendingImpulseStrength, PendingImpulseRadius, *PendingImpulseOrigin.ToString());
     
     GeometryCollectionComponent->AddRadialImpulse(
         PendingImpulseOrigin,
@@ -322,12 +286,6 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
 
     PendingImpulseStrength = 0.f;
 }
-
-// void ASFBuildingDestructionActor::HandleFullyDecayed()
-// {
-//     UE_LOG(LogTemp, Warning, TEXT("HandleFullyDecayed has been called."));
-//     Destroy();
-// }
 
 void ASFBuildingDestructionActor::HandleChaosBreak(const FChaosBreakEvent& BreakEvent)
 {
@@ -372,9 +330,7 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 {
     if (!IsValid(GeometryCollectionComponent))
     {
-        GetWorldTimerManager().ClearTimer(
-            SurfaceFireTimerHandle);
-
+        GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
         SurfaceFires.Reset();
         return;
     }
@@ -384,9 +340,7 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 
     int32 AttachedFireCount = 0;
 
-    for (int32 Index = SurfaceFires.Num() - 1;
-         Index >= 0;
-         --Index)
+    for (int32 Index = SurfaceFires.Num() - 1; Index >= 0; --Index)
     {
         FSFSurfaceFire& Fire = SurfaceFires[Index];
 
@@ -398,38 +352,44 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 
         if (!PieceTransforms.IsValidIndex(Fire.PieceIndex))
         {
-            StartFireFade(Fire);
+            RemoveSurfaceFire(Fire);
             SurfaceFires.RemoveAtSwap(Index);
             continue;
         }
 
-        // 떨어진 상태는 되돌아오지 않으므로 처음 한 번만 판정한다.
-        if (!Fire.bDetached)
-        {
-            Fire.bDetached =
-                !IsPieceAttached(Fire.PieceIndex);
-        }
-
-        if (!Fire.bDetached)
-        {
-            ++AttachedFireCount;
-            continue;
-        }
-
+        /*
+         * 계층 분리 판정보다 먼저 검사한다.
+         * 빠른 파괴로 분리 상태를 놓쳐도 조각 축소는 감지할 수 있다.
+         */
         const float PieceScale =
             PieceTransforms[Fire.PieceIndex]
                 .GetScale3D()
                 .GetAbsMax();
 
-        // 날아가는 동안 유지하고 조각 축소가 시작될 때 종료한다.
         if (PieceScale < SurfaceFireShrinkThreshold)
         {
-            StartFireFade(Fire);
+            UE_LOG(LogTemp, Warning, TEXT("[%s] Surface fire removed: Piece=%d Scale=%.3f Final=%s"),
+                *GetName(), Fire.PieceIndex, PieceScale,
+                    bFinalDestructionApplied
+                    ? TEXT("true")
+                    : TEXT("false"));
+
+            RemoveSurfaceFire(Fire);
             SurfaceFires.RemoveAtSwap(Index);
+            continue;
+        }
+
+        if (!Fire.bDetached)
+        {
+            Fire.bDetached = !IsPieceAttached(Fire.PieceIndex);
+        }
+
+        if (!Fire.bDetached)
+        {
+            ++AttachedFireCount;
         }
     }
 
-    // 최종 파괴 전까지만 건물 본체의 부족한 불꽃을 채운다.
     if (!bFinalDestructionApplied)
     {
         const int32 MissingCount =
@@ -437,14 +397,24 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 
         if (MissingCount > 0)
         {
-            AddSurfaceFires(MissingCount);
+            const int32 AddedCount = AddSurfaceFires(MissingCount);
+
+            /*
+             * 불꽃도 없고 유효한 조각도 없다면
+             * 계속 전체 GC를 순회하지 않는다.
+             *
+             * 다음 손상 단계가 적용되면
+             * StartSurfaceFireMaintenance()에서 다시 시작된다.
+             */
+            if (AddedCount == 0 && SurfaceFires.IsEmpty())
+            {
+                GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
+            }
         }
     }
     else if (SurfaceFires.IsEmpty())
     {
-        // 최종 파괴 후 모든 불꽃이 사라지면 순회를 끝낸다.
-        GetWorldTimerManager().ClearTimer(
-            SurfaceFireTimerHandle);
+        GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
     }
 }
 
@@ -471,8 +441,7 @@ bool ASFBuildingDestructionActor::IsPieceAttached(int32 PieceIndex) const
         return true;
     }
 
-    FGeometryCollectionDynamicStateFacade DynamicState(
-        *DynamicCollection);
+    FGeometryCollectionDynamicStateFacade DynamicState(*DynamicCollection);
 
     if (!DynamicState.IsValid())
     {
@@ -482,9 +451,7 @@ bool ASFBuildingDestructionActor::IsPieceAttached(int32 PieceIndex) const
     // 현재 물리 계층의 가장 위쪽 부모를 찾는다.
     int32 TopIndex = PieceIndex;
 
-    for (int32 Guard = 0;
-         Guard < DynamicCollection->GetNumTransforms();
-         ++Guard)
+    for (int32 Guard = 0; Guard < DynamicCollection->GetNumTransforms(); ++Guard)
     {
         const int32 ParentIndex =
             GeometryCollectionComponent->GetParent(TopIndex);
@@ -629,8 +596,7 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount)
                 // 월드 스케일이 되어버리므로 1로 되돌린다.
                 Fire->SetRelativeScale3D(FVector::OneVector);
 
-                FSFSurfaceFire& NewFire =
-                    SurfaceFires.AddDefaulted_GetRef();
+                FSFSurfaceFire& NewFire = SurfaceFires.AddDefaulted_GetRef();
 
                 NewFire.Component = Fire;
                 NewFire.PieceIndex = Spot.PieceIndex;
@@ -689,6 +655,20 @@ void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>
         if (TChildren[XfIdx].Num() != 0)           continue;   // 리프 조각만
         if (!PieceTransforms.IsValidIndex(XfIdx)) continue;
         
+        /*
+     * Remove On Break로 축소 중이거나 이미 사라진 조각은
+     * 새로운 불꽃 후보로 다시 사용하지 않는다.
+     */
+        const float PieceScale =
+            PieceTransforms[XfIdx]
+                .GetScale3D()
+                .GetAbsMax();
+
+        if (PieceScale < SurfaceFireShrinkThreshold)
+        {
+            continue;
+        }
+        
         if (!BoneNames.IsValidIndex(XfIdx))
         {
             continue;
@@ -744,14 +724,13 @@ void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>
 
         // Outward 방향으로 중심에서 표면까지의 거리(AABB 지원 함수).
         // 조각 크기에서 직접 나오므로 건물 스케일에 자동으로 따라간다.
-        const FVector Extent = PieceBox.GetExtent() * 0.65f;
+        const FVector Extent = PieceBox.GetExtent() * 0.6f;
 
         LocalCenter += Outward *
             (FMath::Abs(Outward.X) * Extent.X +
              FMath::Abs(Outward.Y) * Extent.Y);
 
-        FSFPieceSpot& NewSpot =
-            OutSpots.AddDefaulted_GetRef();
+        FSFPieceSpot& NewSpot = OutSpots.AddDefaulted_GetRef();
 
         NewSpot.LocalLocation = LocalCenter;
         NewSpot.PieceIndex = XfIdx;
@@ -759,18 +738,16 @@ void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>
     }
 }
 
-void ASFBuildingDestructionActor::StartFireFade(FSFSurfaceFire& Fire)
+void ASFBuildingDestructionActor::RemoveSurfaceFire(FSFSurfaceFire& Fire)
 {
-    if (IsValid(Fire.Component))
+    if (!IsValid(Fire.Component))
     {
-        // 축소 중인 조각을 계속 따라가면 오프셋이 피벗으로 수렴해 빨려 들어간다.
-        // 마지막 월드 위치에 고정한 뒤 꺼지게 한다.
-        Fire.Component->DetachFromComponent(
-            FDetachmentTransformRules::KeepWorldTransform);
-
-        Fire.Component->SetAutoDestroy(true);
-        Fire.Component->Deactivate();
+        return;
     }
+
+    // 조각에서 분리하지 않고 신규 불꽃 생성만 중단한다.
+    Fire.Component->SetAutoDestroy(true);
+    Fire.Component->Deactivate();
 }
 
 void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
@@ -793,14 +770,11 @@ void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIn
 
 void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(
-        SurfaceFireTimerHandle);
+    GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
 
-    GetWorldTimerManager().ClearTimer(
-        StrainHitTimerHandle);
+    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
 
-    GetWorldTimerManager().ClearTimer(
-        ImpulseTimerHandle);
+    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
 
     if (IsValid(GeometryCollectionComponent))
     {

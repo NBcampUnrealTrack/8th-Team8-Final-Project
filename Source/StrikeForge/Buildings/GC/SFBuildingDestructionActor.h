@@ -108,7 +108,7 @@ private:
 	/** 바운드 높이의 이 비율보다 낮은 조각은 제외한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
-	float SurfaceFireMinHeightRatio = 0.25f;
+	float SurfaceFireMinHeightRatio = 0.f;
 
 	/**
 	 * 불 사이 최소 간격. 건물 바닥 대각선 대비 비율.
@@ -116,7 +116,7 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
-	float SurfaceFireMinDistanceRatio = 0.15f;
+	float SurfaceFireMinDistanceRatio = 0.2f;
 	
 	/** rest 상태 바운드. 조각이 흩어져도 MinZ 기준이 흔들리지 않게 한다. */
 	FBox CachedRestBounds = FBox(ForceInit);
@@ -151,7 +151,7 @@ private:
 	void CollectAttachedPieceSpots(TArray<FSFPieceSpot>& OutSpots);
 
 	/** 페이드를 시작한다. 파티클은 수명을 다 채우고 컴포넌트는 스스로 소멸한다. */
-	static void StartFireFade(FSFSurfaceFire& Fire);
+	static void RemoveSurfaceFire(FSFSurfaceFire& Fire);
 	
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
         Category = "Destruction",

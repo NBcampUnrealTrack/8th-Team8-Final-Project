@@ -5,10 +5,14 @@
 #include "Components/StaticMeshComponent.h"
 #include "Logging/SFLog.h"
 
-namespace SFConstructionVFX
+namespace SFVFXParameters
 {
 	const FName BuildingScale(
 		TEXT("User.BuildingScale"));
+	const FName BurnStage(
+		TEXT("User.BurnStage"));
+	const FName SpawnBoxSize(
+		TEXT("User.SpawnBoxSize"));
 }
 
 UPlayVFXComponent::UPlayVFXComponent()
@@ -21,65 +25,113 @@ void UPlayVFXComponent::PlayConstructionEffect(
 	UNiagaraSystem* NiagaraSystem,
 	UStaticMeshComponent* TargetMesh)
 {
-	if (!IsValid(TargetMesh))
-	{
-		SF_LOG(
-			Error,
-			"PlayConstructionEffect: TargetMesh가 유효하지 않습니다.");
-		return;
-	}
-
-	if (!IsValid(NiagaraSystem))
+	if (!IsValid(NiagaraSystem) ||
+		!IsValid(TargetMesh))
 	{
 		return;
 	}
 
-	// 기존 건설 이펙트만 제거한다.
-	// 생산 등 다른 채널에는 영향을 주지 않는다.
-	StopManagedEffect(
-		ESFBuildingVFXChannel::Construction,
-		true);
+	FVector SpawnLocation = TargetMesh->Bounds.Origin;
+	SpawnLocation.Z += AdjustZLocationValue;
 
-	FVector SpawnLocation =
-		TargetMesh->Bounds.Origin;
-
-	SpawnLocation.Z +=
-		AdjustZLocationValue;
-
-	const FVector MeshScale =
-		TargetMesh->GetRelativeScale3D();
-	const FRotator MeshRotation =
-		TargetMesh->GetComponentRotation();
-	
 	UNiagaraComponent* NewEffect =
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 			this,
 			NiagaraSystem,
 			SpawnLocation,
-			MeshRotation,
+			TargetMesh->GetComponentRotation(),
 			FVector::OneVector,
-			true,  // 재생 완료 시 자동 제거
-			false  // 파라미터 설정 후 활성화
-		);
+			true,   // 완료 후 자동 제거
+			false); // 파라미터 설정 후 활성화
 
 	if (!IsValid(NewEffect))
 	{
 		return;
 	}
 
+	NewEffect->SetVariableVec3(
+		SFVFXParameters::BuildingScale,
+		TargetMesh->GetRelativeScale3D());
+
+	// 새 효과 생성에 성공한 경우에만 기존 효과를 교체한다.
+	StopManagedEffect(
+		ESFBuildingVFXChannel::Construction,
+		true);
+
 	ActiveEffects.Add(
 		ESFBuildingVFXChannel::Construction,
 		NewEffect);
 
+	NewEffect->Activate(true);
+}
+
+void UPlayVFXComponent::PlayBurningEffect(UNiagaraSystem* NiagaraSystem, const FTransform& SpawnTransform,
+	const FVector& SpawnBoxSize, int32 BurnStage)
+{
+	if (!IsValid(NiagaraSystem) ||
+	   BurnStage <= 0 ||
+	   SpawnBoxSize.X <= 0.f ||
+	   SpawnBoxSize.Y <= 0.f)
+	{
+		return;
+	}
+
+	UNiagaraComponent* NewEffect =
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			NiagaraSystem,
+			SpawnTransform.GetLocation(),
+			SpawnTransform.Rotator(),
+			FVector::OneVector,
+			true,   // 완료 후 자동 제거
+			false); // 파라미터 설정 후 활성화
+
+	if (!IsValid(NewEffect))
+	{
+		return;
+	}
+
+	NewEffect->SetVariableInt(
+		SFVFXParameters::BurnStage,
+		BurnStage);
+
 	NewEffect->SetVariableVec3(
-		SFConstructionVFX::BuildingScale,
-		MeshScale);
+		SFVFXParameters::SpawnBoxSize,
+		SpawnBoxSize);
+
+	ActiveBurningEffects.Add(NewEffect);
 
 	NewEffect->Activate(true);
 }
 
+void UPlayVFXComponent::StopBurningEffects(bool bImmediate)
+{
+	for (TObjectPtr<UNiagaraComponent>& Effect :
+		ActiveBurningEffects)
+	{
+		UNiagaraComponent* EffectComponent =
+			Effect.Get();
+
+		if (!IsValid(EffectComponent))
+		{
+			continue;
+		}
+
+		if (bImmediate || !EffectComponent->IsActive())
+		{
+			EffectComponent->DestroyComponent();
+		}
+		else
+		{
+			EffectComponent->Deactivate();
+		}
+	}
+
+	ActiveBurningEffects.Reset();
+}
+
 void UPlayVFXComponent::PlayOneShotAtLocation(UNiagaraSystem* NiagaraSystem, const FVector& Location,
-	const FRotator& Rotation) const
+                                              const FRotator& Rotation) const
 {
 	if (!IsValid(NiagaraSystem))
 	{
@@ -105,47 +157,46 @@ void UPlayVFXComponent::StopConstructionEffect()
 
 void UPlayVFXComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	DestroyAllManagedEffects();
+	TArray<ESFBuildingVFXChannel> Channels;
+	ActiveEffects.GetKeys(Channels);
+
+	const bool bImmediate =
+		EndPlayReason != EEndPlayReason::Destroyed;
+
+	for (ESFBuildingVFXChannel Channel : Channels)
+	{
+		StopManagedEffect(Channel, bImmediate);
+	}
+
+	StopBurningEffects(bImmediate);
 
 	Super::EndPlay(EndPlayReason);
 }
 
 void UPlayVFXComponent::StopManagedEffect(ESFBuildingVFXChannel Channel, bool bImmediate)
 {
-	TObjectPtr<UNiagaraComponent>* FoundEffect =
-		ActiveEffects.Find(Channel);
+	TObjectPtr<UNiagaraComponent> Effect = nullptr;
 
-	if (!FoundEffect)
+	// 종료 전에 관리 목록에서 제거한다.
+	// 자연 종료 중인 효과가 EndPlay에서 다시 즉시 삭제되는 것을 방지한다.
+	if (!ActiveEffects.RemoveAndCopyValue(Channel, Effect))
 	{
 		return;
 	}
 
-	if (!IsValid(*FoundEffect))
+	UNiagaraComponent* EffectComponent = Effect.Get();
+
+	if (!IsValid(EffectComponent))
 	{
-		ActiveEffects.Remove(Channel);
 		return;
 	}
 
-	if (bImmediate)
+	if (bImmediate || !EffectComponent->IsActive())
 	{
-		(*FoundEffect)->DestroyComponent();
-		ActiveEffects.Remove(Channel);
+		EffectComponent->DestroyComponent();
 		return;
 	}
 
-	// 방출을 정지하고 남은 파티클이 끝나면 AutoDestroy
-	(*FoundEffect)->Deactivate();
-}
-
-void UPlayVFXComponent::DestroyAllManagedEffects()
-{
-	for (TPair<ESFBuildingVFXChannel, TObjectPtr<UNiagaraComponent>>& Pair: ActiveEffects)
-	{
-		if (IsValid(Pair.Value))
-		{
-			Pair.Value->DestroyComponent();
-		}
-	}
-
-	ActiveEffects.Empty();
+	// 새로운 방출을 막고 기존 파티클은 마무리한다.
+	EffectComponent->Deactivate();
 }

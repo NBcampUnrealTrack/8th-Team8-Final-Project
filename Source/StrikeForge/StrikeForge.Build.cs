@@ -23,6 +23,7 @@ public class StrikeForge : ModuleRules
 			"Niagara",
 			
 			// gc
+			"Chaos",
 			"GeometryCollectionEngine",
 			"FieldSystemEngine",
         });

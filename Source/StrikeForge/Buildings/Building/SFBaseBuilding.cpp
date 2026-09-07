@@ -18,6 +18,7 @@
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
+#include "InGame/Controller/SFInGamePlayerController.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -1197,6 +1198,15 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 {
 	Super::NotifyActorBeginCursorOver();
 	if (CurrentBuildingState == EBuildingState::Preview) return;
+	
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC) return;
+	
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(PC);
+	if (!SFPC) return;
+	
+	if (SFPC->GetMyTeamIndex() != GetTeamIndex()) return;
+	
 	WidgetComponent->SetVisibility(true);
 	SF_LOG(Warning, "NotifyActorBeginOverlap");
 }

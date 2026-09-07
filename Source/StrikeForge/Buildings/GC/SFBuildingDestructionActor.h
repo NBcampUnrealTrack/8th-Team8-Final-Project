@@ -9,6 +9,10 @@ class UGeometryCollection;
 class UGeometryCollectionComponent;
 class URadialFalloff;
 
+class UNiagaraComponent;
+class UNiagaraSystem;
+struct FChaosBreakEvent;
+
 UCLASS()
 class STRIKEFORGE_API ASFBuildingDestructionActor : public AActor
 {
@@ -19,9 +23,7 @@ public:
 	ASFBuildingDestructionActor();
 	
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
-    bool InitializeDestruction(
-        const UGeometryCollection* InCollection);
-
+    bool InitializeDestruction(const UGeometryCollection* InCollection);
     /**
      * 동일하거나 이전 단계는 다시 적용하지 않는다.
      */
@@ -100,8 +102,7 @@ private:
 
     UPROPERTY(Transient)
     bool bFinalDestructionApplied = false;
-	
-	
+
 	FTimerHandle StrainHitTimerHandle;
 	FTimerHandle ImpulseTimerHandle;
 };

@@ -186,7 +186,11 @@ void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InIn
 	// 없으면 체력 컴포넌트에 직접 적용한다.
 	if (Owner->Implements<UDamagable>())
 	{
-		IDamagable::Execute_TakeDamaged(Owner, InFinalDamage);
+		FSFDamageInfo DamageInfo;
+		DamageInfo.Damage = InFinalDamage;
+		DamageInfo.HitActor = InInstigator;
+
+		IDamagable::Execute_TakeDamaged(Owner, DamageInfo);
 		return;
 	}
 

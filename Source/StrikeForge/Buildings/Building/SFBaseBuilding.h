@@ -102,9 +102,10 @@ class STRIKEFORGE_API ASFBaseBuilding
 	GENERATED_BODY()
 
 public:
+	// 생성될때 BaseBuilding의 StaticComponent크기를 그대로 복사해서 스폰됨.
 	ASFBaseBuilding(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	virtual void TakeDamaged_Implementation(float InDamage) override;
+	virtual void TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual const FHealthData GetHealthData_Implementation() override;
 	virtual USoundBase* GetSelectionSound_Implementation() override;
@@ -159,10 +160,7 @@ public:
 	
 	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
 
-	UPROPERTY(
-		BlueprintAssignable,
-		Category = "SF|Building"
-	)
+	UPROPERTY(BlueprintAssignable,Category = "SF|Building")
 	FSFOnBuildingTierActivated OnBuildingTierActivated;
 
 protected:
@@ -265,9 +263,11 @@ private:
 	/** 기존 GC를 제거하고 StaticMesh를 다시 표시한다. */
 	void ClearDestructionVisual();
 	
-	
 	/** 건설 준비 중이면 PendingTier, 아니면 CurrentTier의 데이터를 반환한다. */
 	const FSFBuildingTierData* GetCostTierInfo() const;
+	
+	/** 완성 메시의 바닥 영역을 기준으로 단계별 불꽃을 생성한다. */
+	void PlayBurningEffect(int32 DamageStageIndex);
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
@@ -371,6 +371,8 @@ protected:
 	TObjectPtr<UNiagaraSystem> ConstructionEffect;
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraSystem> DestroyedEffect;
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> DamagedBurningEffect;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "State", meta=(ExposeOnSpawn="true", AllowPrivateAccess=true))
 	ESFBuildingSpawnMode SpawnMode = ESFBuildingSpawnMode::PlayerPlacedMode;
@@ -385,4 +387,7 @@ private:
 	// gc
 	UPROPERTY(Transient)
 	TObjectPtr<ASFBuildingDestructionActor> DestructionActor;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Destruction",
+	meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<ASFBuildingDestructionActor> DestructionActorClass;
 };

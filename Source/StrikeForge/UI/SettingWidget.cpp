@@ -5,9 +5,12 @@
 #include "Components/BackgroundBlur.h"
 #include "Components/Slider.h"
 #include "GameFramework/GameUserSettings.h"
+#include "Sound/SoundMix.h"
 #include "Sound/SoundClass.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
-static const TCHAR* BGMSoundClassPath = TEXT("/Game/Audio/SC_BGM.SC_BGM");
+static const TCHAR* ClickSoundPath = TEXT("/Game/Audio/T_SFClick.T_SFClick");
 
 void USettingWidget::NativeConstruct()
 {
@@ -19,7 +22,9 @@ void USettingWidget::NativeConstruct()
 		BackUi_Btn->OnClicked.AddDynamic(this, &USettingWidget::OnBackUiButtonClicked);
 	}
 
-	// �ɼ� �ʱ�ȭ (�̺�Ʈ ���ε� ���� ȣ���ؾ� ���ʿ��� OnSelectionChanged ����)
+	// 저장된 볼륨 불러오기
+	GConfig->GetFloat(TEXT("Audio"), TEXT("MasterVolume"), CurrentVolume, GGameUserSettingsIni);
+
 	InitializeSettingOptions();
 
 	if (IsValid(DisplayComboBox))
@@ -33,9 +38,21 @@ void USettingWidget::NativeConstruct()
 	if (IsValid(BGMVolumeSlider))
 	{
 		BGMVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnBGMVolumeChanged);
+		BGMVolumeSlider->SetValue(CurrentVolume);
 	}
 
-	// ĵ������ ���� ��ġ�ǹǷ� ������ �� ����
+	// 사운드 믹스를 게임 시작 시 한 번 push 해둬야 override가 먹음
+	if (MasterSoundMix)
+	{
+		UGameplayStatics::PushSoundMixModifier(GetWorld(), MasterSoundMix);
+	}
+
+	// 저장된 볼륨을 즉시 반영
+	if (MasterSoundMix && MasterSoundClass)
+	{
+		UGameplayStatics::SetSoundMixClassOverride(GetWorld(), MasterSoundMix, MasterSoundClass, CurrentVolume, 1.0f, 0.0f, true);
+	}
+
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -47,6 +64,11 @@ void USettingWidget::OpenSetting()
 
 void USettingWidget::OnBackUiButtonClicked()
 {
+	if (USoundBase* ClickSound = LoadObject<USoundBase>(nullptr, ClickSoundPath))
+	{
+		UGameplayStatics::PlaySound2D(this, ClickSound);
+	}
+
 	CloseSetting();
 }
 
@@ -117,18 +139,6 @@ void USettingWidget::InitializeSettingOptions()
 			break;
 		}
 	}
-
-	if (IsValid(BGMVolumeSlider))
-	{
-		float SavedVolume = 1.0f;
-		GConfig->GetFloat(TEXT("Audio"), TEXT("BGMVolume"), SavedVolume, GGameUserSettingsIni);
-		BGMVolumeSlider->SetValue(SavedVolume);
-
-		if (USoundClass* BGMSoundClass = LoadObject<USoundClass>(nullptr, BGMSoundClassPath))
-		{
-			BGMSoundClass->Properties.Volume = SavedVolume;
-		}
-	}
 }
 
 void USettingWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
@@ -191,11 +201,13 @@ void USettingWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::
 
 void USettingWidget::OnBGMVolumeChanged(float Value)
 {
-	if (USoundClass* BGMSoundClass = LoadObject<USoundClass>(nullptr, BGMSoundClassPath))
+	CurrentVolume = Value;
+
+	if (MasterSoundMix && MasterSoundClass)
 	{
-		BGMSoundClass->Properties.Volume = Value;
+		UGameplayStatics::SetSoundMixClassOverride(GetWorld(), MasterSoundMix, MasterSoundClass, Value, 1.0f, 0.0f, true);
 	}
 
-	GConfig->SetFloat(TEXT("Audio"), TEXT("BGMVolume"), Value, GGameUserSettingsIni);
+	GConfig->SetFloat(TEXT("Audio"), TEXT("MasterVolume"), Value, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 }

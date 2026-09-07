@@ -8,7 +8,8 @@ class UButton;
 class UComboBoxString;
 class UBackgroundBlur;
 class USlider;
-
+class USoundMix;
+class USoundClass;
 UCLASS()
 class STRIKEFORGE_API USettingWidget : public UCommonActivatableWidget
 {
@@ -39,4 +40,13 @@ protected:
 	UBackgroundBlur* BackgroundBlur;
 	UPROPERTY(meta = (BindWidget))
 	USlider* BGMVolumeSlider;
+
+	// 마스터 볼륨 조절용 - 에디터에서 지정 (예: SC_Master 사운드 클래스, 해당 SoundMix)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	USoundMix* MasterSoundMix;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
+	USoundClass* MasterSoundClass;
+
+	float CurrentVolume = 1.0f;
 };

@@ -117,6 +117,7 @@ public:
 	bool TryStartConstruction();
 	
 	// 업그레이드 함수
+	/** 다음 Tier 리소스를 비동기로 요청한다. 업그레이드 UI나 Blueprint에서 호출되며 HandleUpgradeAssetsReady로 이어진다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	void UpgradeBuilding(int32 UpgradeValue = 1);
 	
@@ -205,8 +206,10 @@ protected:
 	bool TryRegistInitialGrid();
 	bool bGridRegistered = false;
 private:
-	bool LoadBuildingDefinition();
-	bool PrepareTier(int32 TierIndex);
+	/** 로드된 Definition의 공통 데이터를 건물에 캐시한다. BeginPlay에서 호출되며 PrepareLoadedTier로 이어진다. */
+	bool CacheLoadedDefinitionData();
+	/** 로드된 Tier 리소스를 Pending 캐시에 준비한다. BeginPlay와 업그레이드 완료에서 호출되며 건설 상태 적용으로 이어진다. */
+	bool PrepareLoadedTier(int32 TierIndex);
 	bool CanStartPreparedConstruction() const;
 	bool CommitPreparedTier();
 	bool FinalizeTierActivation();
@@ -268,6 +271,15 @@ private:
 	
 	/** 완성 메시의 바닥 영역을 기준으로 단계별 불꽃을 생성한다. */
 	void PlayBurningEffect(int32 DamageStageIndex);
+	
+	// async
+	/** 업그레이드 리소스 로드 결과를 검증하고 비용을 차감한다. Subsystem 콜백으로 호출되며 PrepareLoadedTier와 BeginConstruction으로 이어진다. */
+	void HandleUpgradeAssetsReady(
+	USFBuildingDefinition* InDefinition,
+	int32 InTierIndex,
+	bool bSuccess);
+
+	int32 RequestedUpgradeTier = INDEX_NONE;
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")

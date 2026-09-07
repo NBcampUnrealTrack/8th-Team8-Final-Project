@@ -11,6 +11,17 @@
 
 class ASFNexusBuilding;
 class ASFBuildingSpawnAnchor;
+class USFBuildingDefinition;
+class USFBuildingAssetSubsystem;
+
+enum class ESFStageBootstrapState : uint8
+{
+	None,
+	LoadingRaceData,
+	LoadingAnchorAssets,
+	Ready,
+	Failed
+};
 
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
@@ -65,6 +76,40 @@ private:
 
 	/** 하나의 BuildingSpawnAnchor를 실제 건물로 변환한다. */
 	bool SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor);
+	
+	// Async
+	/** 스테이지 비동기 초기화를 시작한다. BeginPlay에서 호출되며 RequestRequiredRaceData로 이어진다. */
+	void BeginStageBootstrap();
+	/** 스테이지에 필요한 종족 데이터를 모두 요청한다. BeginStageBootstrap에서 호출되며 HandleRaceDataReady로 이어진다. */
+	void RequestRequiredRaceData();
+	/** 종족 로드 결과를 모아 팀과 스테이지 데이터를 초기화한다. Subsystem 콜백으로 호출되며 RequestAnchorBuildingAssets로 이어진다. */
+	void HandleRaceDataReady(ESFRace InRace, bool bSuccess);
+	/** Anchor에 필요한 건물 Tier 0 리소스를 요청한다. HandleRaceDataReady에서 호출되며 HandleAnchorAssetsReady로 이어진다. */
+	void RequestAnchorBuildingAssets();
+	/** Anchor 리소스 로드 결과를 모은다. Subsystem 콜백으로 호출되며 모든 요청 완료 시 CompleteStageBootstrap으로 이어진다. */
+	void HandleAnchorAssetsReady(
+		USFBuildingDefinition* InDefinition,
+		int32 InTierIndex,
+		bool bSuccess);
+	/** Anchor 건물을 생성하고 스테이지를 시작한다. HandleAnchorAssetsReady에서 호출되며 SpawnStageBuildingsFromAnchors와 StartStage로 이어진다. */
+	void CompleteStageBootstrap();
+	/** 비동기 스테이지 초기화를 실패 상태로 종료한다. 각 검증·로드 단계에서 호출되며 이후 초기화 진행을 중단한다. */
+	void FailStageBootstrap();
+	
+	UPROPERTY(Transient)
+	TObjectPtr<USFBuildingAssetSubsystem>
+		BuildingAssetSubsystem;
+
+	ESFStageBootstrapState StageBootstrapState =
+		ESFStageBootstrapState::None;
+
+	FName BootstrapStageRowName = NAME_None;
+
+	TMap<int32, ESFRace> BootstrapTeamRaces;
+
+	int32 PendingRaceRequestCount = 0;
+	int32 PendingAnchorAssetRequestCount = 0;
+	
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;

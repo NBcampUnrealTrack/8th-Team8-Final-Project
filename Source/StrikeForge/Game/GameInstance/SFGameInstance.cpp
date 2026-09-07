@@ -6,6 +6,7 @@
 #include "Logging/SFLog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Datas/Stage/SFStageData.h"
+#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 
 UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 {
@@ -37,11 +38,23 @@ UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 // 추가된 부분
 bool USFGameInstance::MoveToTitle()
 {
+    if (USFBuildingAssetSubsystem* AssetSubsystem =
+    GetSubsystem<USFBuildingAssetSubsystem>())
+    {
+        AssetSubsystem->ReleaseStageAssets();
+    }
+    
 	return TravelToLevel(TitleLevel);
 }
 
 bool USFGameInstance::MoveToLobby()
 {
+    if (USFBuildingAssetSubsystem* AssetSubsystem =
+    GetSubsystem<USFBuildingAssetSubsystem>())
+    {
+        AssetSubsystem->ReleaseStageAssets();
+    }
+    
 	return TravelToLevel(LobbyLevel);
 }
 
@@ -305,31 +318,41 @@ bool USFGameInstance::SelectRace(ESFRace InRace)
     return true;
 }
 
-USFBuildingCatalog* USFGameInstance::LoadBuildingCatalog(ESFRace InRace) const
+TSoftObjectPtr<USFBuildingCatalog> USFGameInstance::GetBuildingCatalogAsset(ESFRace InRace) const
 {
-    // map에서 종족으로 카테고리 가져오기
-    const TSoftObjectPtr<USFBuildingCatalog>* CatalogAsset =
+    const TSoftObjectPtr<USFBuildingCatalog>* Found =
         CatalogsByRace.Find(InRace);
-    if (!CatalogAsset || CatalogAsset->IsNull())
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] 종족에 해당하는 카탈로그가 없습니다. Race=%s",
-            *UEnum::GetValueAsString(InRace));
-        return nullptr;
-    } // 못가져오면 리턴
-    
-    // 종족 카테고리 로드하고 반환 -> 게임모드가 종족카테고리를 저장할거임
-    USFBuildingCatalog* LoadedCatalog =  CatalogAsset->LoadSynchronous();
-    if (!IsValid(LoadedCatalog))
-    {
-        SF_LOG(
-            Error,
-            "[SFGameInstance] 카탈로그 로드에 실패했습니다. Race=%d",
-            static_cast<int32>(InRace));
 
-        return nullptr;
-    }
-
-    return LoadedCatalog;
+    return Found
+        ? *Found
+        : TSoftObjectPtr<USFBuildingCatalog>();
 }
+
+// USFBuildingCatalog* USFGameInstance::LoadBuildingCatalog(ESFRace InRace) const
+// {
+//     // map에서 종족으로 카테고리 가져오기
+//     const TSoftObjectPtr<USFBuildingCatalog>* CatalogAsset =
+//         CatalogsByRace.Find(InRace);
+//     if (!CatalogAsset || CatalogAsset->IsNull())
+//     {
+//         SF_LOG(
+//             Error,
+//             "[SFGameInstance] 종족에 해당하는 카탈로그가 없습니다. Race=%s",
+//             *UEnum::GetValueAsString(InRace));
+//         return nullptr;
+//     } // 못가져오면 리턴
+//     
+//     // 종족 카테고리 로드하고 반환 -> 게임모드가 종족카테고리를 저장할거임
+//     USFBuildingCatalog* LoadedCatalog =  CatalogAsset->LoadSynchronous();
+//     if (!IsValid(LoadedCatalog))
+//     {
+//         SF_LOG(
+//             Error,
+//             "[SFGameInstance] 카탈로그 로드에 실패했습니다. Race=%d",
+//             static_cast<int32>(InRace));
+//
+//         return nullptr;
+//     }
+//
+//     return LoadedCatalog;
+// }

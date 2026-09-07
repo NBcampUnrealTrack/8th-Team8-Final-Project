@@ -19,6 +19,8 @@
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "Engine/GameInstance.h"
+#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -697,59 +699,73 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
-	if (CurrentBuildingState != EBuildingState::Completed ||
+	if (CurrentBuildingState !=
+			EBuildingState::Completed ||
 		UpgradeValue <= 0 ||
-		PendingTier != INDEX_NONE)
+		PendingTier != INDEX_NONE ||
+		RequestedUpgradeTier != INDEX_NONE ||
+		!IsValid(BuildingDefinition))
 	{
 		return;
 	}
-	const int32 NextTier = CurrentTier + UpgradeValue;
+
+	const int32 NextTier =
+		CurrentTier + UpgradeValue;
+
 	if (!GetTierInfo(NextTier))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] 업그레이드 티어가 유효하지 않습니다. Tier=%d, Count=%d"),
-			*GetName(),
-			NextTier, CachedCommonTiers.Num());
 		return;
 	}
-	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+
+	ASFGameState* SFGS =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
 	if (!IsValid(SFGS))
 	{
-		SF_LOG(Error, "SFGameState가 없습니다.");
-		return;
-	}
-	
-	if (false == IsA<ASFNexusBuilding>())
-	{	// nexus가 아닐때는 업그레이드할때 넥서스티어비교
-		const int32 NexusTier = SFGS->GetNexusTier(GetTeamIndex());
-		if (NextTier > NexusTier)
-		{
-			SF_LOG(Warning, "현재건물의 티어: %d / Nexus의 티어: %d 업글할수있는티어의 최대입니다. 업글불가", CurrentTier, NexusTier);
-			return;
-		}
-	}
-	// 업그레이드비용 저장
-	const FResources SpendCost = GetUpgradeCost();
-	
-	if (!SFGS->TrySpendCost(GetTeamIndex(),	SpendCost))
-	{
-		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
-			*GetName(), SpendCost.Mineral, SpendCost.Ether);
-		return;
-	}
-	
-	// 다음티어 있는지확인하고 다음티어정보로 치환 ( 티어정보 교체시점 )
-	if (!PrepareTier(NextTier))
-	{
-		// 준비 실패 시 차감한 비용을 원상 복구한다.
-		SFGS->RefundCost(GetTeamIndex(), SpendCost);
-
-		SF_LOG(Error, "[%s] Tier %d 준비 실패. 업그레이드 비용을 환불했습니다.",
-			*GetName(),
-			NextTier);
 		return;
 	}
 
-	SetBuildingState(EBuildingState::UnderConstruction);
+	if (!IsA<ASFNexusBuilding>() &&
+		NextTier >
+			SFGS->GetNexusTier(GetTeamIndex()))
+	{
+		return;
+	}
+
+	const FResources UpgradeCost =
+		GetUpgradeCost();
+
+	if (!SFGS->CanAffordResource(
+		GetTeamIndex(),
+		UpgradeCost))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance =
+		GetGameInstance();
+
+	USFBuildingAssetSubsystem* AssetSubsystem =
+		IsValid(GameInstance)
+			? GameInstance
+				->GetSubsystem<USFBuildingAssetSubsystem>()
+			: nullptr;
+
+	if (!IsValid(AssetSubsystem))
+	{
+		return;
+	}
+
+	RequestedUpgradeTier = NextTier;
+
+	AssetSubsystem->RequestBuildingAssetsAsync(
+		BuildingDefinition,
+		NextTier,
+		FSFOnBuildingAssetsReady::CreateUObject(
+			this,
+			&ThisClass::HandleUpgradeAssetsReady));
 }
 
 void ASFBaseBuilding::HandleCompleteConstruction()
@@ -793,14 +809,14 @@ void ASFBaseBuilding::BeginPlay()
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition())
+	if (!CacheLoadedDefinitionData())
 	{
 		Destroy();
 		return; // 디폴트값 로딩 실패시
 	}
 	OnBuildingDefinitionLoaded();
 	// if load failed return
-	if (!PrepareTier(CurrentTier))
+	if (!PrepareLoadedTier(CurrentTier))
 	{
 		Destroy();
 		return; // 메쉬준비 실패시
@@ -863,7 +879,7 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-bool ASFBaseBuilding::LoadBuildingDefinition()
+bool ASFBaseBuilding::CacheLoadedDefinitionData()
 {
 	if (!IsValid(BuildingDefinition))
 	{
@@ -932,20 +948,20 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 	// grid
 	ConfiguredGridSize = BuildingDefinition->GridSize;
 	// sound
-	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
-	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
-	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
+	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.Get();
+	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.Get();
+	DestroyedSound = BuildingDefinition->DestroyedSound.Get();
 	// niagara
-	ConstructionEffect = BuildingDefinition->ConstructEffect.LoadSynchronous();
-	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
-	DamagedBurningEffect = BuildingDefinition->DamagedBurningEffect.LoadSynchronous();
+	ConstructionEffect = BuildingDefinition->ConstructEffect.Get();
+	DestroyedEffect = BuildingDefinition->DestroyEffect.Get();
+	DamagedBurningEffect = BuildingDefinition->DamagedBurningEffect.Get();
 	// preview ghost
-	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
+	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.Get();
 
 	return true;
 }
 
-bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
+bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 {
 	// appear -> tier[0,1,2] -> tier[0] -> construct[0,1,2], dmg[0,1,2]
 	// Getter TierInfo by currentTier
@@ -992,7 +1008,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 
 		for (int32 Index = 0; Index < Stages.Num(); ++Index)
 		{
-			UStaticMesh* const Mesh = Stages[Index].Mesh.LoadSynchronous();
+			UStaticMesh* const Mesh = Stages[Index].Mesh.Get();
 			OutMeshes.Add(Mesh);
 
 			if (!IsValid(Mesh))
@@ -1019,13 +1035,13 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 		TEXT("DamageStage"));
 	
 	// CACHED completed_mesh
-	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
-	NewAssets.DestroyedMesh = Visual.DestroyedMesh.LoadSynchronous();
+	NewAssets.CompletedMesh = Visual.CompletedMesh.Get();
+	NewAssets.DestroyedMesh = Visual.DestroyedMesh.Get();
 	
 	
 	if (!Visual.DestructionCollection.IsNull())
 	{
-		NewAssets.DestructionCollection = Visual.DestructionCollection.LoadSynchronous();
+		NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
 	}
 	
 	// CACHED failed return false
@@ -1039,8 +1055,8 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	}
 
 	// CACHED sounds
-	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.LoadSynchronous();
-	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.LoadSynchronous();
+	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.Get();
+	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.Get();
 
 	// CACHED load assets
 	PendingTierAssets = MoveTemp(NewAssets);
@@ -1465,6 +1481,64 @@ void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
 		SpawnTransform,
 		SpawnBoxSize,
 		DamageStageIndex + 1);
+}
+
+void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+{
+	if (RequestedUpgradeTier != InTierIndex)
+	{
+		return;
+	}
+
+	RequestedUpgradeTier = INDEX_NONE;
+
+	if (!bSuccess ||
+		InDefinition != BuildingDefinition ||
+		CurrentBuildingState !=
+			EBuildingState::Completed ||
+		PendingTier != INDEX_NONE)
+	{
+		return;
+	}
+
+	ASFGameState* SFGS =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
+	if (!IsValid(SFGS))
+	{
+		return;
+	}
+
+	if (!IsA<ASFNexusBuilding>() &&
+		InTierIndex >
+			SFGS->GetNexusTier(GetTeamIndex()))
+	{
+		return;
+	}
+
+	const FResources UpgradeCost =
+		GetUpgradeCost();
+
+	if (!SFGS->TrySpendCost(
+		GetTeamIndex(),
+		UpgradeCost))
+	{
+		return;
+	}
+
+	if (!PrepareLoadedTier(InTierIndex))
+	{
+		SFGS->RefundCost(
+			GetTeamIndex(),
+			UpgradeCost);
+
+		return;
+	}
+
+	SetBuildingState(
+		EBuildingState::UnderConstruction);
 }
 
 USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const

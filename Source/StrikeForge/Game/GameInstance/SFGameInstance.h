@@ -59,7 +59,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Race")
 	bool SelectRace(ESFRace InRace);
 	// TMap에서 종족에 맞는 카탈로그 반환
-	USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	// 비동기로 비활성화
+	//USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	TSoftObjectPtr<USFBuildingCatalog>
+			GetBuildingCatalogAsset(ESFRace InRace) const;
 	
 	// 플레이어 종족 getter
 	UFUNCTION(BlueprintPure, Category = "SF|Race")

@@ -12,7 +12,50 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	RefreshBuildingEntries();
+	CachedGameState =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
+	if (!IsValid(CachedGameState))
+	{
+		return;
+	}
+
+	CachedGameState->OnStageStateChanged.RemoveDynamic(
+		this,
+		&ThisClass::HandleStageStateChanged);
+
+	CachedGameState->OnStageStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleStageStateChanged);
+
+	if (CachedGameState->IsStagePlaying())
+	{
+		RefreshBuildingEntries();
+	}
+}
+
+void USFBuildCatalogPanelWidget::NativeDestruct()
+{
+	if (IsValid(CachedGameState))
+	{
+		CachedGameState->OnStageStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleStageStateChanged);
+	}
+
+	CachedGameState = nullptr;
+	
+	Super::NativeDestruct();
+}
+
+void USFBuildCatalogPanelWidget::HandleStageStateChanged(ESFStageState NewState)
+{
+	if (NewState == ESFStageState::Playing)
+	{
+		RefreshBuildingEntries();
+	}
 }
 
 void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
@@ -76,7 +119,7 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 		}
 
 		USFBuildingDefinition* Definition =
-			DefinitionRef.LoadSynchronous();
+			DefinitionRef.Get();
 
 		if (!IsValid(Definition))
 		{

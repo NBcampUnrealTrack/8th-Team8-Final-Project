@@ -29,13 +29,13 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
     }
 
     UClass* SpawnClass =
-        InDefinition->BuildingClass.LoadSynchronous();
+    InDefinition->BuildingClass.Get();
 
     if (!IsValid(SpawnClass))
     {
         SF_LOG(
             Error,
-            "[BuildingSpawn] BuildingClass가 없습니다. "
+            "[BuildingSpawn] BuildingClass가 비동기 준비되지 않았습니다. "
             "Definition=%s",
             *GetNameSafe(InDefinition));
 
@@ -62,20 +62,43 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
         return nullptr;
     }
     
-    const ASFBaseBuilding* BuildingCDO = SpawnClass->GetDefaultObject<ASFBaseBuilding>();
-    const UStaticMeshComponent* DefaultMeshComponent = BuildingCDO->FindComponentByClass<UStaticMeshComponent>();
-    const FVector DefaultMeshScale = DefaultMeshComponent->GetRelativeScale3D();
-    
+    const ASFBaseBuilding* BuildingCDO =
+        SpawnClass->GetDefaultObject<ASFBaseBuilding>();
+
+    const UStaticMeshComponent* DefaultMeshComponent =
+        IsValid(BuildingCDO)
+            ? BuildingCDO->FindComponentByClass<UStaticMeshComponent>()
+            : nullptr;
+
     UStaticMeshComponent* SpawnedMeshComponent =
-    SpawnedBuilding->FindComponentByClass<UStaticMeshComponent>();
-    SpawnedMeshComponent->SetRelativeScale3D(DefaultMeshScale);
-    
-    if (!SpawnedBuilding->SetBuildingDefinition(InDefinition))
+        SpawnedBuilding->FindComponentByClass<UStaticMeshComponent>();
+
+    if (!IsValid(DefaultMeshComponent) ||
+        !IsValid(SpawnedMeshComponent))
     {
+        SF_LOG(
+            Error,
+            "[BuildingSpawn] StaticMeshComponent가 없습니다. Class=%s",
+            *GetNameSafe(SpawnClass));
+
         SpawnedBuilding->Destroy();
         return nullptr;
     }
+    
+    SpawnedMeshComponent->SetRelativeScale3D(
+    DefaultMeshComponent->GetRelativeScale3D());
 
+    if (!SpawnedBuilding->SetBuildingDefinition(InDefinition))
+    {
+        SF_LOG(
+        Error,
+        "[BuildingSpawn] BuildingDefinition 주입 실패. Definition=%s",
+        *GetNameSafe(InDefinition));
+        
+        SpawnedBuilding->Destroy();
+        return nullptr;
+    }
+    
     SpawnedBuilding->SetSpawnMode(InSpawnMode);
     SpawnedBuilding->SetMyTeamIndex(InTeamIndex);
 

@@ -29,6 +29,7 @@ class UTexture2D;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
 class UStaticMeshComponent;
+class UStaticMesh;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -419,6 +420,10 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Rally")
+    TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;

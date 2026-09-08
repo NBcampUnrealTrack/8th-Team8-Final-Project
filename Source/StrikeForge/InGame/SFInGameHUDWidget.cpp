@@ -37,7 +37,6 @@
 #include "Engine/EngineTypes.h"
 #include "EngineUtils.h"
 #include "Engine/DataTable.h"
-#include "Engine/StaticMesh.h"
 
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
@@ -2690,16 +2689,13 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
     }
 
     UStaticMesh* PlaneMesh =
-        LoadObject<UStaticMesh>(
-            nullptr,
-            TEXT("/Engine/BasicShapes/Plane.Plane")
-        );
+        RallyIndicatorMesh.Get();
 
     if (!IsValid(PlaneMesh))
     {
         SF_LOG(
             Error,
-            "[SFInGameHUDWidget] Plane mesh is invalid."
+            "[SFInGameHUDWidget] RallyIndicatorMesh is invalid."
         );
 
         return;

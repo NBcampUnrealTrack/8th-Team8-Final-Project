@@ -121,6 +121,8 @@ public:
     FProductionResourceWarningRequested
         OnProductionResourceWarningRequested;
 
+    bool IsPointerOverProductionPanel() const;
+
 protected:
     virtual void NativeConstruct() override;
 

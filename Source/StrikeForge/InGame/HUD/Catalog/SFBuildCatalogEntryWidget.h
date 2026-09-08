@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonButtonBase.h"
+#include "Datas/Resource/SFResourceTypes.h"
 
 #include "InGame/HUD/Catalog/SFBuildCatalogUIData.h"
 
@@ -13,7 +14,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	BuildingRowName
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildResourceWarningRequested);
+
 class USFBuildingDefinition;
+class USoundBase;
 
 UCLASS()
 class STRIKEFORGE_API USFBuildCatalogEntryWidget
@@ -36,6 +40,32 @@ public:
 	
 	FSFOnBuildCatalogEntryClicked OnBuildCatalogEntryClicked;
 
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "SF|Build Catalog|Sound"
+	)
+	FSFOnBuildResourceWarningRequested OnBuildResourceWarningRequested;
+
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "SF|Build Catalog"
+	)
+	void SetCanAfford(
+		bool bNewCanAfford
+	);
+
+	UFUNCTION(BlueprintPure,Category = "SF|Build Catalog")
+	bool CanAfford() const
+	{
+		return bCanAfford;
+	}
+
+	UFUNCTION(
+		BlueprintPure,
+		Category = "SF|Build Catalog"
+	)
+	FResources GetConstructionCost() const;
+
 protected:
 	virtual void NativeConstruct() override;
 
@@ -50,6 +80,14 @@ protected:
 		const FSFBuildCatalogUIDataRow& InCatalogData
 	);
 
+	UFUNCTION(
+		BlueprintImplementableEvent,
+		Category = "SF|Build Catalog"
+	)
+	void BP_OnAffordabilityChanged(
+		bool bNewCanAfford
+	);
+
 private:
 	void HandleEntryClicked();
 
@@ -58,4 +96,15 @@ private:
 	// 현재종족의 건물 종합 카테고리
 	UPROPERTY(Transient)
 	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
+
+	UPROPERTY(Transient)
+	bool bCanAfford = true;
+
+protected:
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SF|Build Catalog|Sound"
+	)
+	TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 };

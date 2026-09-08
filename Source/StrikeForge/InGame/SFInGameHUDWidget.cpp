@@ -18,6 +18,7 @@
 #include "HUD/Portrait/SFUnitPortraitActor.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/Widget.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -288,7 +289,21 @@ void USFInGameHUDWidget::NativeDestruct()
 
 void USFInGameHUDWidget::HandleSelectInput()
 {
-    SF_LOG(Log, "[SFInGameHUDWidget] Select input received.");
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Select input received."
+    );
+
+    if (IsPointerOverHUDPanel())
+    {
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "Selection ignored because cursor is over HUD panel."
+        );
+
+        return;
+    }
 
     CloseBuildingMode();
     PerformSelectionTrace();
@@ -663,6 +678,37 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
             bCanTierUp
         );
 
+        FResources UpgradeCost{};
+        bool bCanAffordUpgrade = false;
+
+        if (bCanTierUp)
+        {
+            if (ASFBaseBuilding* SelectedBuilding =
+                Cast<ASFBaseBuilding>(SelectedActor.Get()))
+            {
+                UpgradeCost =
+                    SelectedBuilding->GetUpgradeCost();
+
+                if (ASFGameState* GameState =
+                    GetWorld()->GetGameState<ASFGameState>())
+                {
+                    bCanAffordUpgrade =
+                        GameState->CanAffordResource(
+                            SelectedBuilding->GetTeamIndex(),
+                            UpgradeCost
+                        );
+                }
+            }
+        }
+
+        SelectionPanel->SetUpgradeCost(
+            UpgradeCost
+        );
+
+        SelectionPanel->SetUpgradeAffordability(
+            bCanAffordUpgrade
+        );
+
         const bool bCanSetRallyPoint =
             bHasValidSelection &&
             SelectedInfo.SelectableType ==
@@ -671,6 +717,22 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 
         SelectionPanel->SetRallyPointButtonVisible(
             bCanSetRallyPoint
+        );
+    }
+
+    FResources UpgradeCost{};
+
+    if (ASFBaseBuilding* SelectedBuilding =
+        Cast<ASFBaseBuilding>(SelectedActor.Get()))
+    {
+        UpgradeCost =
+            SelectedBuilding->GetUpgradeCost();
+    }
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->SetUpgradeCost(
+            UpgradeCost
         );
     }
 
@@ -1204,12 +1266,6 @@ void USFInGameHUDWidget::SelectNearbyUnitsOfSameType(
     );
 }
 
-bool USFInGameHUDWidget::IsPointerOverSelectionAction() const
-{
-    return
-        IsValid(SelectionPanel) &&
-        SelectionPanel->IsTierUpButtonHovered();
-}
 
 void USFInGameHUDWidget::HandleTierUpgradeRequested()
 {
@@ -1257,6 +1313,43 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         return;
     }
 
+    ASFGameState* GameState =
+        GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (!IsValid(GameState))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] "
+            "Upgrade failed: GameState is invalid."
+        );
+
+        return;
+    }
+
+    const FResources UpgradeCost =
+        SelectedBuilding->GetUpgradeCost();
+
+    const bool bCanAffordUpgrade =
+        GameState->CanAffordResource(
+            SelectedBuilding->GetTeamIndex(),
+            UpgradeCost
+        );
+
+    if (!bCanAffordUpgrade)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "Upgrade failed: insufficient resources."
+        );
+
+        PlayResourceWarningSound();
+        return;
+    }
+
     SF_LOG(
         Log,
         "[SFInGameHUDWidget] "
@@ -1264,7 +1357,6 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         *SelectedBuilding->GetName()
     );
 
-    // 건물 담당자가 이미 구현한 기존 함수 사용
     SelectedBuilding->UpgradeBuilding(1);
 }
 
@@ -2923,3 +3015,154 @@ void USFInGameHUDWidget::HideRallyPointIndicator()
         RallyPathIndicator = nullptr;
     }
 }
+
+bool USFInGameHUDWidget::IsPointerOverHUDPanel()
+{
+    const FGeometry ViewportGeometry =
+        UWidgetLayoutLibrary::GetViewportWidgetGeometry(
+            this
+        );
+
+    const FVector2D MouseViewportPosition =
+        UWidgetLayoutLibrary::GetMousePositionOnViewport(
+            this
+        );
+
+    if (MouseViewportPosition.X < 0.f ||
+        MouseViewportPosition.Y < 0.f)
+    {
+        return false;
+    }
+
+    /*
+     * GetMousePositionOnViewport()는 뷰포트 로컬 좌표이고,
+     * CachedGeometry().IsUnderLocation()은 절대 좌표를 사용한다.
+     * 따라서 절대 좌표로 변환해서 비교한다.
+     */
+    const FVector2D MouseAbsolutePosition =
+        ViewportGeometry.LocalToAbsolute(
+            MouseViewportPosition
+        );
+
+    /*
+     * 람다:
+     * 이 함수 안에서만 잠깐 사용하는 작은 검사 함수다.
+     *
+     * Widget이 유효하고 화면에 보이며,
+     * 현재 마우스 위치가 위젯 영역 안에 있으면 true를 반환한다.
+     */
+    auto IsWidgetUnderMouse =
+        [&MouseAbsolutePosition](
+            const UWidget* Widget
+        ) -> bool
+        {
+            if (!IsValid(Widget))
+            {
+                return false;
+            }
+
+            if (!Widget->IsVisible())
+            {
+                return false;
+            }
+
+            return Widget->GetCachedGeometry()
+                .IsUnderLocation(
+                    MouseAbsolutePosition
+                );
+        };
+
+    // 선택 정보 패널
+    if (IsWidgetUnderMouse(SelectionPanel))
+    {
+        return true;
+    }
+
+    if (UWidget* SelectedInfoWidget =
+        GetWidgetFromName(
+            TEXT("SelectedInfoPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(SelectedInfoWidget))
+        {
+            return true;
+        }
+    }
+
+    if (UWidget* SelectionWidget =
+        GetWidgetFromName(
+            TEXT("SelectionPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(SelectionWidget))
+        {
+            return true;
+        }
+    }
+
+    // 다중 선택 패널
+    if (IsWidgetUnderMouse(MultiSelectionPanel))
+    {
+        return true;
+    }
+
+    // 생산 건물 패널
+    // ProductionUnitEntry는 이 패널 안에서 동적으로 생성되므로
+    // 부모 패널 영역을 검사하면 함께 처리된다.
+    if (IsWidgetUnderMouse(ProductionBuildingPanel))
+    {
+        return true;
+    }
+
+    // 자원 패널
+    if (UWidget* ResourceWidget =
+        GetWidgetFromName(
+            TEXT("ResourcePanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(ResourceWidget))
+        {
+            return true;
+        }
+    }
+
+    // 미니맵 패널
+    if (UWidget* MinimapWidget =
+        GetWidgetFromName(
+            TEXT("MinimapPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(MinimapWidget))
+        {
+            return true;
+        }
+    }
+
+    if (UWidget* MinimapWidget =
+        GetWidgetFromName(
+            TEXT("WBP_SFMinimapPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(MinimapWidget))
+        {
+            return true;
+        }
+    }
+
+    // 빌드 카탈로그의 실제 패널만 검사한다.
+    // ActiveBuildingModeWidget 전체를 검사하면 안 된다.
+    if (IsValid(ActiveBuildingModeWidget))
+    {
+        UWidget* BuildCatalogWidget =
+            ActiveBuildingModeWidget->GetWidgetFromName(
+                TEXT("BuildCatalogPanel")
+            );
+
+        if (IsWidgetUnderMouse(BuildCatalogWidget))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}       

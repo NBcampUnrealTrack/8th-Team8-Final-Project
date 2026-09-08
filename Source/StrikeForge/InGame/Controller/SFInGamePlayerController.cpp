@@ -88,9 +88,19 @@ bool ASFInGamePlayerController::SpawnBuildingFunction(const FName& InBuildingId)
     const FSFBuildingTierData* FirstTier = Definition->FindTier(0);
     if (!FirstTier) return false;
 
-    if (!SFGS->CanAffordResource(GetMyTeamIndex(), FirstTier->Construction.ConstructCost))
+    if (!SFGS->CanAffordResource(GetMyTeamIndex(),FirstTier->Construction.ConstructCost))
     {
-        SF_LOG(Warning, "[SFPC]: 자원 부족: %s", *Definition->BuildingId.ToString());
+        SF_LOG(
+            Warning,
+            "[SFPC]: 자원 부족: %s",
+            *Definition->BuildingId.ToString()
+        );
+
+        if (IsValid(InGameHUDWidget))
+        {
+            InGameHUDWidget->PlayResourceWarningSound();
+        }
+
         return false;
     }
 
@@ -576,6 +586,23 @@ void ASFInGamePlayerController::RegisterBaseMappingContext()
 
 void ASFInGamePlayerController::HandleSelectionDragStarted()
 {
+    if (
+        IsValid(InGameHUDWidget) &&
+        InGameHUDWidget->IsPointerOverHUDPanel()
+        )
+    {
+        bCommandClickConsumed = false;
+        bSelectionPressActive = false;
+
+        SF_LOG(
+            Log,
+            "[SFInGamePlayerController] "
+            "Selection ignored because cursor is over HUD panel."
+        );
+
+        return;
+    }
+
     bCommandClickConsumed =
         ExecutePendingRallyPointUnderCursor();
 
@@ -607,7 +634,8 @@ void ASFInGamePlayerController::HandleSelectionDragStarted()
 
     SF_LOG(
         Log,
-        "[SFInGamePlayerController] Selection drag started | Position: %s",
+        "[SFInGamePlayerController] "
+        "Selection drag started | Position: %s",
         *SelectionPressPosition.ToString()
     );
 }

@@ -119,8 +119,7 @@ private:
      * 같은 종족에 대한 중복 요청의 완료 콜백.
      */
     // Catalog 비동기로딩시 저장 TMap
-    TMap<ESFRace, TArray<FSFOnRaceBuildingDataReady>>
-        PendingRaceCallbacks;
+    TMap<ESFRace, TArray<FSFOnRaceBuildingDataReady>> PendingRaceCallbacks;
 
     /**
      * 건물의 메시, 클래스, 사운드 등을 유지하는 핸들.

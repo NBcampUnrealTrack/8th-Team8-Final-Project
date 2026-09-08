@@ -43,9 +43,7 @@ void USFBuildingAssetSubsystem::RequestRaceDataAsync(ESFRace InRace, FSFOnRaceBu
 		return;
 	}
 
-	PendingRaceCallbacks
-		.FindOrAdd(InRace)
-		.Add(MoveTemp(OnComplete));
+	PendingRaceCallbacks.FindOrAdd(InRace).Add(MoveTemp(OnComplete));
 
 	if (ActiveRaceHandles.Contains(InRace))
 	{
@@ -322,9 +320,7 @@ void USFBuildingAssetSubsystem::HandleCatalogLoaded(ESFRace InRace)
 		return;
 	}
 
-	ActiveRaceHandles.Add(
-		InRace,
-		MoveTemp(Handle));
+	ActiveRaceHandles.Add(InRace, MoveTemp(Handle));
 }
 
 void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
@@ -409,9 +405,7 @@ void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
         return;
     }
 
-    ActiveRaceHandles.Add(
-        InRace,
-        MoveTemp(Handle));
+    ActiveRaceHandles.Add(InRace, MoveTemp(Handle));
 }
 
 void USFBuildingAssetSubsystem::CompleteRaceRequest(ESFRace InRace, bool bSuccess)
@@ -448,8 +442,7 @@ void USFBuildingAssetSubsystem::CompleteRaceRequest(ESFRace InRace, bool bSucces
 		LoadedRaceData.Remove(InRace);
 	}
 
-	for (FSFOnRaceBuildingDataReady& Callback
-		: Callbacks)
+	for (FSFOnRaceBuildingDataReady& Callback : Callbacks)
 	{
 		Callback.ExecuteIfBound(InRace,	bSuccess);
 	}
@@ -482,8 +475,7 @@ void USFBuildingAssetSubsystem::HandleUIAssetsLoaded(ESFRace InRace)
 			continue;
 		}
 
-		UTexture2D* LoadedIcon =
-			Definition->Icon.Get();
+		UTexture2D* LoadedIcon = Definition->Icon.Get();
 
 		if (!IsValid(LoadedIcon))
 		{

@@ -331,13 +331,11 @@ void ASFGameMode::BeginStageBootstrap()
 	BootstrapTeamRaces.Reset();
 	BootstrapTeamRaces.Add(PlayerTeamIndex,	PlayerRace);
 
-	for (const FSFStageTeamSetup& TeamSetup
-		: StageData->TeamSetups)
+	for (const FSFStageTeamSetup& TeamSetup : StageData->TeamSetups)
 	{
 		if (TeamSetup.TeamIndex == PlayerTeamIndex ||
 			TeamSetup.Race == ESFRace::None ||
-			BootstrapTeamRaces.Contains(
-				TeamSetup.TeamIndex))
+			BootstrapTeamRaces.Contains(TeamSetup.TeamIndex))
 		{
 			FailStageBootstrap();
 			return;
@@ -360,8 +358,7 @@ void ASFGameMode::RequestRequiredRaceData()
 
 	// 공통 종족 필터
 	TSet<ESFRace> RequiredRaces;
-	for (const TPair<int32, ESFRace>& Team
-		: BootstrapTeamRaces)
+	for (const TPair<int32, ESFRace>& Team : BootstrapTeamRaces)
 	{
 		RequiredRaces.Add(Team.Value);
 	}
@@ -376,9 +373,9 @@ void ASFGameMode::RequestRequiredRaceData()
 	StageBootstrapState = ESFStageBootstrapState::LoadingRaceData;
 	// 로딩 갯수
 	TotalRaceRequestCount = RequiredRaces.Num();
-	// 임시저장
+	// 임시저장 ( 완료될때마다 줄어들거임 )
 	PendingRaceRequestCount = TotalRaceRequestCount;
-
+	// 로딩 UI 진행도
 	SFGameState->SetStageLoadingProgress(0.f);
 
 	for (ESFRace Race : RequiredRaces)

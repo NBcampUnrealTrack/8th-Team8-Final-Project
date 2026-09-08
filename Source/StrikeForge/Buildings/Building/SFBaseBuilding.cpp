@@ -405,7 +405,8 @@ void ASFBaseBuilding::BeginConstruction()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	
 	PlayVFXComponent->PlayConstructionEffect(ConstructionEffect, StaticMeshComponent);
-	
+	// 다음티어 비동기 Request
+	RequestNextTierAssetsAsync();
 	ProgressComponent->StartProgress();
 }
 
@@ -800,6 +801,21 @@ bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
 	}
 	
 	BuildingDefinition = InDefinition;
+	return true;
+}
+
+bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
+{
+	// BeginPlay가 실행된 뒤에는 초기 Tier를 변경할 수 없다.
+	if (HasActorBegunPlay() ||
+		!IsValid(BuildingDefinition) ||
+		InTierIndex < 0 ||
+		!BuildingDefinition->FindTier(InTierIndex))
+	{
+		return false;
+	}
+
+	CurrentTier = InTierIndex;
 	return true;
 }
 
@@ -1539,6 +1555,65 @@ void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefiniti
 
 	SetBuildingState(
 		EBuildingState::UnderConstruction);
+}
+
+void ASFBaseBuilding::RequestNextTierAssetsAsync()
+{
+	if (!IsValid(BuildingDefinition) ||
+		PendingTier == INDEX_NONE)
+	{
+		return;
+	}
+
+	/*
+	 * 최초 건설 중:
+	 * PendingTier 0 → Tier 1 준비
+	 *
+	 * Tier 1 업그레이드 중:
+	 * PendingTier 1 → Tier 2 준비
+	 */
+	const int32 NextTier = PendingTier + 1;
+
+	// 마지막 Tier라면 요청하지 않는다.
+	if (!BuildingDefinition->FindTier(NextTier))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+
+	USFBuildingAssetSubsystem* AssetSubsystem =
+		IsValid(GameInstance)
+			? GameInstance
+				->GetSubsystem<USFBuildingAssetSubsystem>()
+			: nullptr;
+
+	if (!IsValid(AssetSubsystem))
+	{
+		return;
+	}
+
+	AssetSubsystem->RequestBuildingAssetsAsync(
+		BuildingDefinition,
+		NextTier,
+		FSFOnBuildingAssetsReady::CreateUObject(
+			this,
+			&ThisClass::HandleNextTierAssetsReady));
+}
+
+void ASFBaseBuilding::HandleNextTierAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+{
+	if (!bSuccess ||
+		InDefinition != BuildingDefinition)
+	{
+		SF_LOG(
+			Warning,
+			"[%s] 다음 Tier 선로딩 실패. "
+			"Definition=%s, Tier=%d",
+			*GetName(),
+			*GetNameSafe(InDefinition),
+			InTierIndex);
+	}
 }
 
 USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const

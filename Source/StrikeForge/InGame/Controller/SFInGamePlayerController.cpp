@@ -1535,7 +1535,8 @@ void ASFInGamePlayerController::HandleBuildingPlacementAssetsReady(USFBuildingDe
             InDefinition,
             GetMyTeamIndex(),
             SpawnTransform,
-            ESFBuildingSpawnMode::PlayerPlacedMode);
+            ESFBuildingSpawnMode::PlayerPlacedMode,
+            0);
 
     if (!IsValid(NewBuilding) ||
         !PlacementComponent

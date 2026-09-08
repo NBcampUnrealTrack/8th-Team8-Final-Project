@@ -22,6 +22,7 @@ class STRIKEFORGE_API USFBuildingDefinition
 public:
     static const FPrimaryAssetType BuildingAssetType;
     
+    // UPrimaryDataAsset내부 API
     /** Asset Manager 스캔 시 Building Primary Asset ID를 만든다. 엔진에서 호출되며 등록·조회에 사용된다. */
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
     
@@ -37,6 +38,7 @@ public:
     void GetUIAssetPaths(TArray<FSoftObjectPath>& OutPaths) const;
 
     /** 지정 Tier의 클래스·메시·효과·사운드 경로를 수집한다. RequestBuildingAssetsAsync에서 호출되며 런타임 비동기 로드로 이어진다. */
+    // 현재Tier의 softRef 경로수집
     bool GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoftObjectPath>& OutPaths) const;
 
     /** 지정 Tier의 필수 리소스가 모두 메모리에 있는지 검사한다. 비동기 완료 시 호출되며 CompleteBuildingRequest로 이어진다. */

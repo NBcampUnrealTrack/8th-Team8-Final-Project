@@ -28,5 +28,6 @@ public:
 		USFBuildingDefinition* InDefinition,
 		int32 InTeamIndex,
 		const FTransform& InSpawnTransform,
-		ESFBuildingSpawnMode InSpawnMode);
+		ESFBuildingSpawnMode InSpawnMode,
+		int32 InInitialTierIndex = 0);
 };

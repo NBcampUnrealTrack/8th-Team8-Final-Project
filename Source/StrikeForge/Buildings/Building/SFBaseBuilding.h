@@ -160,7 +160,12 @@ public:
 	void SetMyTeamIndex(const int32 InTeamIndex);
 	
 	bool SetBuildingDefinition(USFBuildingDefinition* InDefinition);
-
+	/**
+	 * BeginPlay 전에 시작 Tier를 설정한다.
+	 * SpawnLibrary에서 호출되며 BeginPlay의 PrepareLoadedTier로 이어진다.
+	 */
+	bool SetInitialTier(int32 InTierIndex);
+	
 	UPROPERTY(BlueprintAssignable,Category = "SF|Building")
 	FSFOnBuildingTierActivated OnBuildingTierActivated;
 
@@ -280,6 +285,14 @@ private:
 	bool bSuccess);
 
 	int32 RequestedUpgradeTier = INDEX_NONE;
+	
+	void RequestNextTierAssetsAsync();
+
+	void HandleNextTierAssetsReady(
+		USFBuildingDefinition* InDefinition,
+		int32 InTierIndex,
+		bool bSuccess);
+	
 protected:
 	// components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")

@@ -9,7 +9,8 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
     USFBuildingDefinition* InDefinition,
     int32 InTeamIndex,
     const FTransform& InSpawnTransform,
-    ESFBuildingSpawnMode InSpawnMode)
+    ESFBuildingSpawnMode InSpawnMode,
+    int32 InInitialTierIndex)
 {
     if (!IsValid(WorldContextObject) ||
         !IsValid(InDefinition))
@@ -90,15 +91,22 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
 
     if (!SpawnedBuilding->SetBuildingDefinition(InDefinition))
     {
-        SF_LOG(
-        Error,
-        "[BuildingSpawn] BuildingDefinition 주입 실패. Definition=%s",
-        *GetNameSafe(InDefinition));
-        
         SpawnedBuilding->Destroy();
         return nullptr;
     }
-    
+
+    if (!SpawnedBuilding->SetInitialTier(InInitialTierIndex))
+    {
+        SF_LOG(Error,
+            "[BuildingSpawn] 시작 Tier 설정 실패. "
+            "Definition=%s, Tier=%d",
+            *GetNameSafe(InDefinition),
+            InInitialTierIndex);
+
+        SpawnedBuilding->Destroy();
+        return nullptr;
+    }
+
     SpawnedBuilding->SetSpawnMode(InSpawnMode);
     SpawnedBuilding->SetMyTeamIndex(InTeamIndex);
 

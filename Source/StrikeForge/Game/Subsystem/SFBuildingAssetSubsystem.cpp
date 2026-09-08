@@ -72,6 +72,7 @@ void USFBuildingAssetSubsystem::RequestRaceDataAsync(ESFRace InRace, FSFOnRaceBu
 
 	LoadedRaceData.Remove(InRace);
 
+	// Catalog 비동기 로딩
 	TSharedPtr<FStreamableHandle> Handle =
 		UAssetManager::GetStreamableManager()
 		.RequestAsyncLoad(
@@ -80,16 +81,14 @@ void USFBuildingAssetSubsystem::RequestRaceDataAsync(ESFRace InRace, FSFOnRaceBu
 				this,
 				&ThisClass::HandleCatalogLoaded,
 				InRace));
-
+	// Catalog안에도 Definition들은 soft라 로딩이 필요하다
 	if (!Handle.IsValid())
 	{
 		CompleteRaceRequest(InRace, false);
 		return;
 	}
 
-	ActiveRaceHandles.Add(
-		InRace,
-		MoveTemp(Handle));
+	ActiveRaceHandles.Add(InRace, MoveTemp(Handle));
 }
 
 void USFBuildingAssetSubsystem::RequestBuildingAssetsAsync(
@@ -109,72 +108,61 @@ void USFBuildingAssetSubsystem::RequestBuildingAssetsAsync(
     }
 
     TArray<FSoftObjectPath> RuntimeAssetPaths;
-
-    if (!InDefinition->GetRuntimeAssetPaths(
-        InTierIndex,
-        RuntimeAssetPaths))
+	
+	// 현재티어에 맞는 SoftRef을 싹다 모아서 RuntimeAssetPahts에 넣는다
+    if (!InDefinition->GetRuntimeAssetPaths(InTierIndex,RuntimeAssetPaths))
     {
-        OnComplete.ExecuteIfBound(
-            InDefinition,
-            InTierIndex,
-            false);
-
+    	// 경로 모을때 오류나면 false
+        OnComplete.ExecuteIfBound(InDefinition, InTierIndex, false);
         return;
     }
 
-    const FString RequestKey =
-        MakeBuildingAssetRequestKey(
-            InDefinition,
-            InTierIndex);
-
+	// 문자 + 문자 key를 만들고 바인딩함수 콜백 델리게이트를 pending에 추가
+    const FString RequestKey = MakeBuildingAssetRequestKey(InDefinition, InTierIndex);
+	
+	// Map에 있어서 중복처리
     if (ActiveBuildingHandles.Contains(RequestKey))
     {
-        if (InDefinition->AreRuntimeAssetsLoaded(
-            InTierIndex))
+    	// 티어 건물정의의 데이터가 로드완료라면
+        if (InDefinition->AreRuntimeAssetsLoaded(InTierIndex))
         {
-            OnComplete.ExecuteIfBound(
-                InDefinition,
-                InTierIndex,
-                true);
+        	// 곧바로 델리게이트와 바인딩된 함수 실행
+            OnComplete.ExecuteIfBound(InDefinition, InTierIndex, true);
         }
         else
         {
-            PendingBuildingCallbacks
-                .FindOrAdd(RequestKey)
-                .Add(MoveTemp(OnComplete));
+        	// 로딩 신호를 보냈으나 로딩중에 콜백함수 요청이 와서 Add
+            PendingBuildingCallbacks.FindOrAdd(RequestKey).Add(MoveTemp(OnComplete));
         }
-
         return;
     }
 
-    PendingBuildingCallbacks
-        .FindOrAdd(RequestKey)
-        .Add(MoveTemp(OnComplete));
+	// Map에 없어서 신규등록 > 비동기 실행해야함
+    PendingBuildingCallbacks.FindOrAdd(RequestKey).Add(MoveTemp(OnComplete));
 
     const TWeakObjectPtr<USFBuildingDefinition>
         WeakDefinition(InDefinition);
 
+	// 비동기 실행
+	// 배열에 10개의 경로가 있으면 → 10개를 모두 로딩.
+	// 10개가 전부 완료되면 → 넘겨준 완료 델리게이트가 딱 한 번 호출됨.
     TSharedPtr<FStreamableHandle> Handle =
         UAssetManager::GetStreamableManager()
         .RequestAsyncLoad(
             RuntimeAssetPaths,
-            FStreamableDelegate::CreateWeakLambda(
+            FStreamableDelegate::CreateWeakLambda( // 완료될때 실행되는 콜백함수
                 this,
-                [this,
-                 WeakDefinition,
-                 InTierIndex,
-                 RequestKey]()
+                [this, WeakDefinition, InTierIndex, RequestKey]()
                 {
                     USFBuildingDefinition* Definition =
                         WeakDefinition.Get();
 
                     const bool bSuccess =
                         IsValid(Definition) &&
-                        Definition->AreRuntimeAssetsLoaded(
-                            InTierIndex);
+                        Definition->AreRuntimeAssetsLoaded(InTierIndex);
 
                     CompleteBuildingRequest(
-                        RequestKey,
+                        RequestKey, // key와 연결되있는 Map에 델리게이트가 TArray로 존재
                         Definition,
                         InTierIndex,
                         bSuccess);
@@ -191,9 +179,10 @@ void USFBuildingAssetSubsystem::RequestBuildingAssetsAsync(
         return;
     }
 
-    ActiveBuildingHandles.Add(
-        RequestKey,
-        MoveTemp(Handle));
+	// 비동기요청을 하고 Return되는 Handle저장
+	// ( DA에셋이름 | Tier01 ) , FStreamableHandle 저장
+	// 현재 Key로 로딩중인지 여부 판단. > 완료되면 완료콜백함수에서 remove예정
+    ActiveBuildingHandles.Add(RequestKey, MoveTemp(Handle));
 }
 
 USFBuildingCatalog* USFBuildingAssetSubsystem::GetLoadedCatalog(ESFRace InRace) const
@@ -462,9 +451,7 @@ void USFBuildingAssetSubsystem::CompleteRaceRequest(ESFRace InRace, bool bSucces
 	for (FSFOnRaceBuildingDataReady& Callback
 		: Callbacks)
 	{
-		Callback.ExecuteIfBound(
-			InRace,
-			bSuccess);
+		Callback.ExecuteIfBound(InRace,	bSuccess);
 	}
 }
 
@@ -529,12 +516,8 @@ void USFBuildingAssetSubsystem::CompleteBuildingRequest(const FString& InRequest
 		ActiveBuildingHandles.Remove(InRequestKey);
 	}
 
-	for (FSFOnBuildingAssetsReady& Callback
-		: Callbacks)
+	for (FSFOnBuildingAssetsReady& Callback : Callbacks)
 	{
-		Callback.ExecuteIfBound(
-			InDefinition,
-			InTierIndex,
-			bSuccess);
+		Callback.ExecuteIfBound(InDefinition, InTierIndex, bSuccess);
 	}
 }

@@ -197,6 +197,13 @@ int32 ASFGameState::GetNexusTier(int32 TeamIndex) const
 	return Nexus->GetCurrentTier();
 }
 
+void ASFGameState::SetStageLoadingProgress(float InProgress)
+{
+	StageLoadingProgress = FMath::Clamp(InProgress, 0.f, 1.f);
+
+	OnStageLoadingProgressChanged.Broadcast(StageLoadingProgress);
+}
+
 USFTeamState* ASFGameState::FindOrAddTeam(int32 TeamIndex)
 {
 	if (TeamIndex == Targetable::NeutralTeam) return nullptr;

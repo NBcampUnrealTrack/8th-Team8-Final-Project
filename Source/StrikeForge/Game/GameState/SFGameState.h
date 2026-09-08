@@ -8,6 +8,11 @@
 #include "Game/GameState/SFTeamState.h"
 #include "SFGameState.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnStageLoadingProgressChanged,
+    float,
+    Progress);
+
 class ASFNexusBuilding;
 class USFBuildingCatalog;
 
@@ -142,6 +147,11 @@ public:
     
     int32 GetNexusTier(int32 TeamIndex) const;
 
+    // 로딩 진행도
+    UFUNCTION(BlueprintPure, Category = "SF|Stage")
+    FORCEINLINE float GetStageLoadingProgress() const { return StageLoadingProgress; }
+
+    void SetStageLoadingProgress(float InProgress);
 public:
 
     // UI 부분
@@ -153,6 +163,9 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
     FSFOnStageResultChanged OnStageResultChanged;
 
+    // 진행도 수신 델리게이트
+    UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
+    FSFOnStageLoadingProgressChanged OnStageLoadingProgressChanged;
 private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageState StageState;
@@ -167,5 +180,7 @@ private:
     // TeamIndex를 기준으로 각 팀의 넥서스를 저장
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Team", meta = (AllowPrivateAccess = "true"))
     TMap<int32, TObjectPtr<USFTeamState>> TeamStates;
-	
+        
+    // 로딩 진행도
+    float StageLoadingProgress = 0.f;
 };

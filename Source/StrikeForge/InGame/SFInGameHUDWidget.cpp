@@ -32,10 +32,12 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/DecalComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 #include "Engine/EngineTypes.h"
 #include "EngineUtils.h"
 #include "Engine/DataTable.h"
+#include "Engine/StaticMesh.h"
 
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
@@ -44,6 +46,7 @@
 
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Math/RotationMatrix.h"
 
 #include "Kismet/GameplayStatics.h"
 
@@ -431,9 +434,11 @@ void USFInGameHUDWidget::ApplySelection(
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
     HideAllSelectionIndicators();
+    HideRallyPointIndicator();
     UnbindSelectedProductionBuilding();
 
     SelectedActor = NewSelectedActor;
+    RefreshRallyPointIndicator();
 
     BindSelectedProductionBuilding(
         SelectedActor.Get()
@@ -761,6 +766,7 @@ void USFInGameHUDWidget::ClearSelection()
 {
 
     HideAllSelectionIndicators();
+    HideRallyPointIndicator();
 
     if (IsValid(UnitPortraitActor))
     {
@@ -1431,9 +1437,22 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
 
     const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
 
+
+    const bool bIsProductionBuilding =
+        Actor->IsA<ASFProductionBuilding>();
+
+    const bool bOnlyCollidingComponents =
+        !bIsBuilding ||
+        bIsProductionBuilding;
+
     FVector Origin;
     FVector Extent;
-    Actor->GetActorBounds(!bIsBuilding, Origin, Extent);
+
+    Actor->GetActorBounds(
+        bOnlyCollidingComponents,
+        Origin,
+        Extent
+    );
 
     const float UnitBaseRadius = FMath::Max(Extent.X, Extent.Y);
     const float BuildingBaseRadius = FVector2D(Extent.X, Extent.Y).Size();
@@ -2653,5 +2672,258 @@ void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier
         SelectionPanel->ShowSelection(
             SelectedInfo
         );
+    }
+}
+
+void USFInGameHUDWidget::RefreshRallyPointIndicator()
+{
+    HideRallyPointIndicator();
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding) ||
+        !IsOwnedByLocalPlayer(ProductionBuilding) ||
+        !ProductionBuilding->HasRallyPoint())
+    {
+        return;
+    }
+
+    UStaticMesh* PlaneMesh =
+        LoadObject<UStaticMesh>(
+            nullptr,
+            TEXT("/Engine/BasicShapes/Plane.Plane")
+        );
+
+    if (!IsValid(PlaneMesh))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] Plane mesh is invalid."
+        );
+
+        return;
+    }
+
+    FVector BuildingOrigin;
+    FVector BuildingExtent;
+
+    ProductionBuilding->GetActorBounds(
+        false,
+        BuildingOrigin,
+        BuildingExtent
+    );
+
+    const FVector RallyPoint =
+        ProductionBuilding->GetRallyPoint();
+
+    const float IndicatorZ =
+        RallyPoint.Z + 25.f;
+
+    USceneComponent* RootComponent =
+        ProductionBuilding->GetRootComponent();
+
+    if (!IsValid(RootComponent))
+    {
+        return;
+    }
+
+    auto CreateRallyMesh =
+        [
+            ProductionBuilding,
+            RootComponent,
+            PlaneMesh
+        ](
+            UMaterialInterface* InMaterial,
+            const FVector& InScale,
+            const FVector& InLocation,
+            const FRotator& InRotation,
+            int32 InSortPriority
+            ) -> UStaticMeshComponent*
+        {
+            if (!IsValid(InMaterial))
+            {
+                return nullptr;
+            }
+
+            UStaticMeshComponent* NewIndicator =
+                NewObject<UStaticMeshComponent>(
+                    ProductionBuilding
+                );
+
+            if (!IsValid(NewIndicator))
+            {
+                return nullptr;
+            }
+
+            ProductionBuilding->AddInstanceComponent(
+                NewIndicator
+            );
+
+            NewIndicator->SetupAttachment(
+                RootComponent
+            );
+
+            NewIndicator->SetAbsolute(
+                true,
+                true,
+                true
+            );
+
+            NewIndicator->SetMobility(
+                EComponentMobility::Movable
+            );
+
+            NewIndicator->SetStaticMesh(
+                PlaneMesh
+            );
+
+            NewIndicator->SetMaterial(
+                0,
+                InMaterial
+            );
+
+            NewIndicator->SetCollisionEnabled(
+                ECollisionEnabled::NoCollision
+            );
+
+            NewIndicator->SetGenerateOverlapEvents(
+                false
+            );
+
+            NewIndicator->SetCastShadow(
+                false
+            );
+
+            NewIndicator->SetReceivesDecals(
+                false
+            );
+
+            NewIndicator->SetTranslucentSortPriority(
+                InSortPriority
+            );
+
+            NewIndicator->RegisterComponent();
+
+            NewIndicator->SetWorldLocation(
+                InLocation
+            );
+
+            NewIndicator->SetWorldRotation(
+                InRotation
+            );
+
+            NewIndicator->SetWorldScale3D(
+                InScale
+            );
+
+            return NewIndicator;
+        };
+
+    /*
+     * 1. 랠리 링 Mesh
+     *
+     * 기본 Plane 크기는 약 100 x 100이므로
+     * 120은 월드 기준 약 120 크기다.
+     */
+
+    const float RallyRingMeshSize =
+        90.f;
+
+    RallyPointIndicator =
+        CreateRallyMesh(
+            RallyPointIndicatorMaterial,
+            FVector(
+                RallyRingMeshSize / 100.f,
+                RallyRingMeshSize / 100.f,
+                1.f
+            ),
+            FVector(
+                RallyPoint.X,
+                RallyPoint.Y,
+                IndicatorZ
+            ),
+            FRotator::ZeroRotator,
+            12
+        );
+
+    /*
+     * 2. 건물 중심에서 랠리포인트까지 경로 계산
+     */
+
+    const FVector PathStart(
+        BuildingOrigin.X,
+        BuildingOrigin.Y,
+        IndicatorZ
+    );
+
+    const FVector PathEnd(
+        RallyPoint.X,
+        RallyPoint.Y,
+        IndicatorZ
+    );
+
+    const FVector PathDelta =
+        PathEnd - PathStart;
+
+    const float PathLength =
+        FVector2D(
+            PathDelta.X,
+            PathDelta.Y
+        ).Size();
+
+    if (PathLength <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const float PathYaw =
+        FMath::RadiansToDegrees(
+            FMath::Atan2(
+                PathDelta.Y,
+                PathDelta.X
+            )
+        );
+
+    /*
+     * 3. 점선 경로 Mesh
+     */
+
+    RallyPathIndicator =
+        CreateRallyMesh(
+            RallyPathIndicatorMaterial,
+            FVector(
+                PathLength / 100.f,
+                RallyPathIndicatorWidth / 100.f,
+                1.f
+            ),
+            (PathStart + PathEnd) * 0.5f,
+            FRotator(
+                0.f,
+                PathYaw,
+                0.f
+            ),
+            11
+        );
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Rally mesh indicators refreshed | Length: %.1f",
+        PathLength
+    );
+}
+
+void USFInGameHUDWidget::HideRallyPointIndicator()
+{
+    if (IsValid(RallyPointIndicator))
+    {
+        RallyPointIndicator->DestroyComponent();
+        RallyPointIndicator = nullptr;
+    }
+
+    if (IsValid(RallyPathIndicator))
+    {
+        RallyPathIndicator->DestroyComponent();
+        RallyPathIndicator = nullptr;
     }
 }

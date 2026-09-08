@@ -28,6 +28,7 @@ class AUnitBase;
 class UTexture2D;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
+class UStaticMeshComponent;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -101,6 +102,9 @@ public:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFProductionBuilding>
         SelectedProductionBuilding;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Rally")
+    void RefreshRallyPointIndicator();
 
 protected:
     virtual void NativeConstruct() override;
@@ -261,6 +265,8 @@ private:
     UFUNCTION()
     void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
 
+    void HideRallyPointIndicator();
+
     // ==================== Variables ====================
 
 protected:
@@ -402,6 +408,17 @@ protected:
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    TObjectPtr<UMaterialInterface> RallyPathIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    float RallyPathIndicatorWidth = 30.f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -427,4 +444,7 @@ private:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFBaseBuilding>
         SelectedBuildingForTierDelegate;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPointIndicator = nullptr;
 };

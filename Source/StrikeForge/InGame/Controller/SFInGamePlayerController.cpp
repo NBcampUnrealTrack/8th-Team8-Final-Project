@@ -1461,10 +1461,7 @@ bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
 
     if (IsValid(InGameHUDWidget))
     {
-        InGameHUDWidget->ShowMoveDestinationIndicator(
-            Hit.Location,
-            false
-        );
+        InGameHUDWidget->RefreshRallyPointIndicator();
     }
 
     SF_LOG(

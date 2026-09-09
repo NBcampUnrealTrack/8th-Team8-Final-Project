@@ -115,4 +115,7 @@ private:
 	int32 StartingMineral = 200;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 StartingEther = 100;
+
+	UPROPERTY()
+	TArray<FSFStageBuildingRule> BootstrapBuildingRules;
 };

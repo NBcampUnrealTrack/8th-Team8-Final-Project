@@ -86,6 +86,41 @@ public:
 };
 
 USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FSFStageBuildingRule
+{
+    GENERATED_BODY()
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Building"
+    )
+    FName BuildingId = NAME_None;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Building"
+    )
+    bool bCanBuild = true;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Building",
+        meta = (ClampMin = "1")
+    )
+    int32 MaxAllowedTier = 3;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Building"
+    )
+    TArray<FName> RequiredBuildingIds;
+};
+
+USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFStageData : public FTableRowBase
 {
     GENERATED_BODY()
@@ -109,7 +144,13 @@ public:
     )
     FSFMinimapSettings Minimap;
 
-    
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Stage|Building"
+    )
+    TArray<FSFStageBuildingRule> BuildingRules;
+
     /* 스테이지 진입 시 플레이어에게 기본 적용할 종족. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")
     ESFRace PlayerRace = ESFRace::None;

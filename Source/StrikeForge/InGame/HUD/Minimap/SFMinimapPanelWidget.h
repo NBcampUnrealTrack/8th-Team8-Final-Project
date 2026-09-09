@@ -10,6 +10,7 @@
 class AActor;
 class ASceneCapture2D;
 class UBorder;
+class USFMinimapViewIndicatorWidget;
 class UCanvasPanel;
 class UCombatTargetComponent;
 class UTextureRenderTarget2D;
@@ -276,6 +277,14 @@ protected:
         Category = "SF|Minimap|Marker|Size"
     )
     FVector2D CommanderMarkerSize = FVector2D(7.0f, 7.0f);
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|Marker|Position"
+    )
+    FVector2D CommanderMarkerPositionOffset = FVector2D(0.0f,6.0f);
+
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
@@ -361,11 +370,18 @@ protected:
     UPROPERTY(
         BlueprintReadOnly,
         Category = "SF|Minimap",
-        meta = (
-            BindWidget
-            )
+        meta = (BindWidget)
     )
-    TObjectPtr<UBorder> PlayerViewIndicator = nullptr;
+TObjectPtr<USFMinimapViewIndicatorWidget>
+    PlayerViewIndicator = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Minimap|View Indicator",
+        meta = (ClampMin = "0.1",ClampMax = "1.0")
+    )
+    float PlayerViewIndicatorScale = 0.9f;
 
     UPROPERTY(
         BlueprintReadOnly,

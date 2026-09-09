@@ -5,6 +5,9 @@
 #include "SFSelectInfo/SFSelectableInfo.h"
 #include "Datas/Race/SFRaceType.h"
 #include "SFSelectInfo/SFSelectionUIDataRow.h"
+// ESFStageState 를 UFUNCTION 인자로 받으려면 완전한 타입이 필요하다.
+// 전방 선언만으로는 UHT 가 델리게이트 시그니처를 만들지 못한다.
+#include "Game/GameState/SFGameState.h"
 #include "SFInGameHUDWidget.generated.h"
 
 class AActor;
@@ -219,6 +222,19 @@ private:
     void HandlePrimarySelectionRequested(AActor* Actor);
 
     void TryStartStageIntro();
+
+    /**
+     * 스테이지가 실제로 시작될 때 인트로를 연다.
+     *
+     * 예전에는 HUD 가 만들어진 다음 프레임에 무조건 열었는데, 그 시점은
+     * 아직 스테이지 에셋을 비동기로 로딩하는 중이다. 로딩 화면과 겹치고,
+     * 인트로가 게임을 일시정지시키므로 로딩이 멈출 수도 있다.
+     *
+     * GameState 가 Playing 으로 바뀌는 순간은 로딩 화면이 이미 사라진
+     * 뒤이고 게임은 아직 아무 일도 일어나지 않은 시점이다.
+     */
+    UFUNCTION()
+    void HandleStageStateChanged(ESFStageState NewState);
 
     /**
      * 스테이지 인트로 위젯을 열고 지정한 노드부터 재생한다.
@@ -442,6 +458,40 @@ protected:
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
+
+    // ── 스테이지 시작 대기 ──────────────────────────────
+
+    /** OnStageStateChanged 를 구독한 대상. NativeDestruct 에서 떼어낸다 */
+    UPROPERTY(Transient)
+    TObjectPtr<ASFGameState> BoundStageGameState = nullptr;
+
+    /**
+     * 인트로를 이미 요청했는가.
+     *
+     * Playing 은 한 판에 한 번뿐이지만, 델리게이트가 두 번 오는 경로가
+     * 생겨도 인트로 위젯이 두 개 열리지 않도록 막아둔다.
+     */
+    bool bStageIntroRequested = false;
+
+    /**
+     * 로딩이 끝날 때까지 HUD 를 숨길지.
+     *
+     * 로딩 화면이 불투명하면 꺼도 티가 안 나지만, 배경 영상에 투명도가
+     * 있거나 페이드를 넣으면 그 아래로 HUD 가 비친다.
+     *
+     * 문제가 생기면 이 값 하나로 예전 동작으로 되돌릴 수 있다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro",
+        meta = (AllowPrivateAccess = "true"))
+    bool bHideHUDUntilStagePlaying = true;
+
+    /**
+     * 숨기기 전의 가시성.
+     *
+     * SelfHitTestInvisible 로 고정해서 되돌리면 WBP 가 설정한 값과
+     * 달라져 클릭 판정이 바뀐다. 원래 값을 그대로 돌려준다.
+     */
+    ESlateVisibility VisibilityBeforeStageLoading = ESlateVisibility::SelfHitTestInvisible;
 
     UPROPERTY(Transient)
     TObjectPtr<UResultWidget> ResultWidget = nullptr;

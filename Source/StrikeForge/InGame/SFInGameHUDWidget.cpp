@@ -195,14 +195,53 @@ void USFInGameHUDWidget::NativeConstruct()
         );
     }
 
-    if (UWorld* World = GetWorld())
+    // 인트로는 로딩이 끝난 뒤에 연다.
+    //
+    // 예전에는 여기서 곧바로 다음 프레임 타이머를 걸었는데, 그 시점은 아직
+    // 스테이지 에셋을 비동기로 로딩하는 중이다. 로딩 화면 위로 인트로가
+    // 겹치고, 인트로가 게임을 일시정지시키므로 로딩까지 멈출 수 있다.
+    BoundStageGameState = GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (IsValid(BoundStageGameState))
     {
-        World->GetTimerManager().SetTimerForNextTick(
-            FTimerDelegate::CreateUObject(
-                this,
-                &USFInGameHUDWidget::TryStartStageIntro
-            )
+        BoundStageGameState->OnStageStateChanged.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleStageStateChanged
         );
+
+        if (BoundStageGameState->IsStagePlaying())
+        {
+            // HUD 가 늦게 만들어져 이미 시작된 경우.
+            // 이걸 안 보면 그 판은 인트로가 통째로 안 나온다.
+            HandleStageStateChanged(ESFStageState::Playing);
+        }
+        else if (bHideHUDUntilStagePlaying)
+        {
+            // 원래 가시성을 기억해 두고 숨긴다.
+            // 고정 값으로 되돌리면 WBP 가 설정한 클릭 판정이 바뀐다.
+            VisibilityBeforeStageLoading = GetVisibility();
+            SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    else
+    {
+        // GameState 를 못 얻는 판(전투 테스트 맵 등)에서는 예전처럼 바로 연다.
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] GameState 를 찾지 못해 인트로를 즉시 시작합니다."
+        );
+
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimerForNextTick(
+                FTimerDelegate::CreateUObject(
+                    this,
+                    &USFInGameHUDWidget::TryStartStageIntro
+                )
+            );
+        }
     }
 }
 
@@ -271,6 +310,16 @@ void USFInGameHUDWidget::NativeDestruct()
         ActiveStageIntroWidget->RemoveFromParent();
         ActiveStageIntroWidget = nullptr;
     }
+
+    if (IsValid(BoundStageGameState))
+    {
+        BoundStageGameState->OnStageStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleStageStateChanged
+        );
+    }
+
+    BoundStageGameState = nullptr;
 
     // HUD 가 사라지면 인트로를 다시 열어줄 사람이 없다.
     // 대기까지 취소해야 배너도 같이 정리된다.
@@ -2349,6 +2398,57 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
     }
 
     return StageIntroFallbackRowName;
+}
+
+void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
+{
+    /*
+     * 초기화가 실패하면 LoadingWidget 이 로비로 보낸다.
+     * 다만 그 사이 HUD 가 숨겨진 채로 남으면 화면에 아무것도 없어서
+     * "게임이 멈췄다" 로 보이므로 가시성만 되돌려 둔다.
+     */
+    if (NewState == ESFStageState::InitializationFailed)
+    {
+        if (bHideHUDUntilStagePlaying)
+        {
+            SetVisibility(VisibilityBeforeStageLoading);
+        }
+
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] 스테이지 초기화가 실패해 인트로를 열지 않습니다."
+        );
+
+        return;
+    }
+
+    if (NewState != ESFStageState::Playing)
+    {
+        return;
+    }
+
+    if (bStageIntroRequested)
+    {
+        return;
+    }
+
+    bStageIntroRequested = true;
+
+    /*
+     * 인트로를 열기 전에 가시성을 먼저 되돌려야 한다.
+     *
+     * OpenStageIntro 가 VisibilityBeforeStageIntro 에 현재 값을 저장했다가
+     * 인트로가 끝나면 그대로 복구한다. 순서를 뒤집으면 Collapsed 가 저장돼
+     * 인트로가 끝난 뒤 HUD 가 사라진 채로 남는다.
+     */
+    if (bHideHUDUntilStagePlaying)
+    {
+        SetVisibility(VisibilityBeforeStageLoading);
+    }
+
+    SF_LOG(Log, "[SFInGameHUDWidget] 스테이지가 시작되어 인트로를 엽니다.");
+
+    TryStartStageIntro();
 }
 
 void USFInGameHUDWidget::TryStartStageIntro()

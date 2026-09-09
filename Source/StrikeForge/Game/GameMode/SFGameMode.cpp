@@ -195,7 +195,10 @@ void ASFGameMode::InitGameState()
 		}
 	}
 	
-	if (!SFGameState->InitializeStage(StageRowName))
+	if (!SFGameState->InitializeStage(
+		StageRowName,
+		StageData->BuildingRules
+	))
 	{
 		SF_LOG(
 			Error,

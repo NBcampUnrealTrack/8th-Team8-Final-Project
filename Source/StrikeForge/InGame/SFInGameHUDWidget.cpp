@@ -22,6 +22,7 @@
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
@@ -478,6 +479,16 @@ void USFInGameHUDWidget::ApplySelection(
         bIsCommandableUnit && bIsMyUnit
     );
 
+    const bool bShowAttackCommandButton =
+        bIsCommandableUnit &&
+        bIsMyUnit &&
+        NewSelectedInfo.SelectableType !=
+        ESFSelectableType::Commander;
+
+    SelectionPanel->SetAttackCommandButtonVisible(
+        bShowAttackCommandButton
+    );
+
     ShowSelectionIndicator(NewSelectedActor);
 
     SelectedActors.Reset();
@@ -646,58 +657,119 @@ UTexture2D* USFInGameHUDWidget::ResolvePortraitImage(
         ? nullptr
         : UIData.PortraitImage.LoadSynchronous();
 }
-
 void USFInGameHUDWidget::RefreshSelectionPanels()
 {
     const bool bHasValidSelection =
         IsValid(SelectedActor) &&
-        SelectedInfo.SelectableType != ESFSelectableType::None;
+        SelectedInfo.SelectableType !=
+        ESFSelectableType::None;
 
     if (IsValid(SelectionPanel))
     {
         if (bHasValidSelection)
         {
-            SelectionPanel->ShowSelection(SelectedInfo);
+            SelectionPanel->ShowSelection(
+                SelectedInfo
+            );
         }
         else
         {
             SelectionPanel->ClearSelection();
         }
 
-        const bool bCanTierUp =
+        const bool bIsTierableBuilding =
             bHasValidSelection &&
             (
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::MainBuilding ||
+
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::ProductionBuilding
                 ) &&
-            IsOwnedByLocalPlayer(SelectedActor.Get());
+            IsOwnedByLocalPlayer(
+                SelectedActor.Get()
+            );
+
+        const int32 CurrentTier =
+            SelectedInfo.Tier;
+
+        const int32 MaxTier =
+            3;
+
+        const bool bHasNextTier =
+            CurrentTier < MaxTier;
+
+        ASFBaseBuilding* SelectedBuilding =
+            Cast<ASFBaseBuilding>(
+                SelectedActor.Get()
+            );
+
+        ASFGameState* GameState =
+            GetWorld()
+            ? GetWorld()->GetGameState<ASFGameState>()
+            : nullptr;
+
+        bool bStageAllowsTierUp = true;
+
+        if (
+            bIsTierableBuilding &&
+            IsValid(SelectedBuilding) &&
+            IsValid(GameState)
+            )
+        {
+            const USFBuildingDefinition*
+                BuildingDefinition =
+                SelectedBuilding->GetBuildingDefinition();
+
+            if (
+                IsValid(BuildingDefinition) &&
+                !BuildingDefinition->BuildingId.IsNone()
+                )
+            {
+                const int32 MaxAllowedTier =
+                    GameState->
+                    GetMaxAllowedTierInCurrentStage(
+                        BuildingDefinition->BuildingId
+                    );
+
+                bStageAllowsTierUp =
+                    CurrentTier < MaxAllowedTier;
+            }
+        }
+
+        // 건물 종류와 최종 티어에 따라 버튼 자체는 표시
+        const bool bShouldShowTierUpButton =
+            bIsTierableBuilding &&
+            bHasNextTier;
 
         SelectionPanel->SetTierUpButtonVisible(
-            bCanTierUp
+            bShouldShowTierUpButton
+        );
+
+        // 스테이지 제한이면 버튼 위의 블러만 표시
+        SelectionPanel->SetTierUpStageLocked(
+            bShouldShowTierUpButton &&
+            !bStageAllowsTierUp
         );
 
         FResources UpgradeCost{};
         bool bCanAffordUpgrade = false;
 
-        if (bCanTierUp)
+        if (
+            bShouldShowTierUpButton &&
+            IsValid(SelectedBuilding)
+            )
         {
-            if (ASFBaseBuilding* SelectedBuilding =
-                Cast<ASFBaseBuilding>(SelectedActor.Get()))
-            {
-                UpgradeCost =
-                    SelectedBuilding->GetUpgradeCost();
+            UpgradeCost =
+                SelectedBuilding->GetUpgradeCost();
 
-                if (ASFGameState* GameState =
-                    GetWorld()->GetGameState<ASFGameState>())
-                {
-                    bCanAffordUpgrade =
-                        GameState->CanAffordResource(
-                            SelectedBuilding->GetTeamIndex(),
-                            UpgradeCost
-                        );
-                }
+            if (IsValid(GameState))
+            {
+                bCanAffordUpgrade =
+                    GameState->CanAffordResource(
+                        SelectedBuilding->GetTeamIndex(),
+                        UpgradeCost
+                    );
             }
         }
 
@@ -713,26 +785,12 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
             bHasValidSelection &&
             SelectedInfo.SelectableType ==
             ESFSelectableType::ProductionBuilding &&
-            IsOwnedByLocalPlayer(SelectedActor.Get());
+            IsOwnedByLocalPlayer(
+                SelectedActor.Get()
+            );
 
         SelectionPanel->SetRallyPointButtonVisible(
             bCanSetRallyPoint
-        );
-    }
-
-    FResources UpgradeCost{};
-
-    if (ASFBaseBuilding* SelectedBuilding =
-        Cast<ASFBaseBuilding>(SelectedActor.Get()))
-    {
-        UpgradeCost =
-            SelectedBuilding->GetUpgradeCost();
-    }
-
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->SetUpgradeCost(
-            UpgradeCost
         );
     }
 
@@ -747,13 +805,17 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 
     if (bIsBuildingModeActive)
     {
-        ProductionBuildingPanel->HideProductionBuilding();
+        ProductionBuildingPanel->
+            HideProductionBuilding();
+
         return;
     }
 
     if (SelectedActors.Num() > 1)
     {
-        ProductionBuildingPanel->HideProductionBuilding();
+        ProductionBuildingPanel->
+            HideProductionBuilding();
+
         return;
     }
 
@@ -761,16 +823,21 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         bHasValidSelection &&
         SelectedInfo.SelectableType ==
         ESFSelectableType::ProductionBuilding &&
-        IsOwnedByLocalPlayer(SelectedActor.Get())
+        IsOwnedByLocalPlayer(
+            SelectedActor.Get()
+        )
         )
     {
-        ProductionBuildingPanel->ShowProductionBuilding(
-            SelectedActor.Get()
-        );
+        ProductionBuildingPanel->
+            ShowProductionBuilding(
+                SelectedActor.Get()
+            );
+
         return;
     }
 
-    ProductionBuildingPanel->HideProductionBuilding();
+    ProductionBuildingPanel->
+        HideProductionBuilding();
 }
 
 void USFInGameHUDWidget::RefreshSelectedPortrait()
@@ -1317,6 +1384,41 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         GetWorld()
         ? GetWorld()->GetGameState<ASFGameState>()
         : nullptr;
+
+    const USFBuildingDefinition*
+        BuildingDefinition =
+        SelectedBuilding->GetBuildingDefinition();
+
+    if (
+        !IsValid(BuildingDefinition) ||
+        BuildingDefinition->BuildingId.IsNone()
+        )
+    {
+        return;
+    }
+
+    const int32 CurrentTier =
+        SelectedInfo.Tier;
+
+    const int32 MaxAllowedTier =
+        GameState->GetMaxAllowedTierInCurrentStage(
+            BuildingDefinition->BuildingId
+        );
+
+    if (CurrentTier >= MaxAllowedTier)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "Tier upgrade blocked by stage rule | "
+            "Building: %s | CurrentTier: %d | MaxAllowedTier: %d",
+            *BuildingDefinition->BuildingId.ToString(),
+            CurrentTier,
+            MaxAllowedTier
+        );
+
+        return;
+    }
 
     if (!IsValid(GameState))
     {
@@ -2758,10 +2860,24 @@ void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier
     SelectedInfo =
         UpdatedInfo;
 
-    if (IsValid(SelectionPanel))
+    RefreshSelectionPanels();
+
+    if (SelectedInfo.Tier >= 3 &&
+        IsValid(SelectionPanel))
     {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
+        SelectionPanel->SetTierUpButtonVisible(
+            false
+        );
+
+        SelectionPanel->SetUpgradeAffordability(
+            false
+        );
+
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "Tier 3 upgrade completed. "
+            "Upgrade button hidden."
         );
     }
 }

@@ -5,10 +5,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Stage/SFStageData.h"
 #include "Game/GameState/SFTeamState.h"
 #include "SFGameState.generated.h"
 
 class ASFNexusBuilding;
+class ASFBaseBuilding;
 class USFBuildingCatalog;
 
 // 상태 정의 = 진행 상황
@@ -52,7 +54,10 @@ public:
     ASFGameState();
 
     // GamaMode가 현재 선택된 스테이지 ID를 전달
-    bool InitializeStage(FName StageRowName);
+    bool InitializeStage(
+        FName StageRowName,
+        const TArray<FSFStageBuildingRule>& InBuildingRules
+    );
 
     bool StartStage(); // 스테이지 초기화 부분 -> GameMode에서 호출
 
@@ -142,6 +147,19 @@ public:
     
     int32 GetNexusTier(int32 TeamIndex) const;
 
+    bool IsBuildingAllowedInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    int32 GetMaxAllowedTierInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    bool AreBuildingRequirementsMet(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 public:
 
     // UI 부분
@@ -167,5 +185,13 @@ private:
     // TeamIndex를 기준으로 각 팀의 넥서스를 저장
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Team", meta = (AllowPrivateAccess = "true"))
     TMap<int32, TObjectPtr<USFTeamState>> TeamStates;
+
+    UPROPERTY()
+    TArray<FSFStageBuildingRule> CurrentStageBuildingRules;
 	
+    bool HasCompletedBuilding(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 };

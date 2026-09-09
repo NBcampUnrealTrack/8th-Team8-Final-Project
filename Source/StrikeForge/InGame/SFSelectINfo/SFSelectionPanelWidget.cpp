@@ -168,6 +168,7 @@ void USFSelectionPanelWidget::ClearSelection()
 
     SetCommandButtonsVisible(false);
     SetRallyPointButtonVisible(false);
+    SetTierUpStageLocked(false);
 }
 
 bool USFSelectionPanelWidget::HasSelection() const
@@ -308,6 +309,22 @@ void USFSelectionPanelWidget::SetCommandButtonsVisible(
     }
 }
 
+void USFSelectionPanelWidget::SetAttackCommandButtonVisible(
+    bool bVisible
+)
+{
+    if (!IsValid(AttackCommandButton))
+    {
+        return;
+    }
+
+    AttackCommandButton->SetVisibility(
+        bVisible
+        ? ESlateVisibility::Visible
+        : ESlateVisibility::Collapsed
+    );
+}
+
 void USFSelectionPanelWidget::SetUpgradeCost(
     const FResources& InUpgradeCost
 )
@@ -325,8 +342,15 @@ void USFSelectionPanelWidget::SetUpgradeCost(
             FText::AsNumber(InUpgradeCost.Ether)
         );
     }
+}
 
-    bool bCanAffordUpgrade = false;
+void USFSelectionPanelWidget::SetTierUpStageLocked(
+    bool bLocked
+)
+{
+    BP_OnTierUpStageLockChanged(
+        bLocked
+    );
 }
 
 void USFSelectionPanelWidget::SetUpgradeAffordability(

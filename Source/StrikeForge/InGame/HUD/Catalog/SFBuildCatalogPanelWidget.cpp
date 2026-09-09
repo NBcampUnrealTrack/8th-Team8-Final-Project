@@ -1,5 +1,9 @@
 #include "SFBuildCatalogPanelWidget.h"
+
 #include "SFBuildCatalogEntryWidget.h"
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "EngineUtils.h"
+
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Logging/SFLog.h"
@@ -8,17 +12,18 @@
 #include "Game/GameState/SFGameState.h"
 #include "Game/GameState/SFTeamState.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
-
 void USFBuildCatalogPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
 	BindResourceData();
+	BindBuildingCompletionEvents();
 	RefreshBuildingEntries();
 }
 
 void USFBuildCatalogPanelWidget::NativeDestruct()
 {
+	UnbindBuildingCompletionEvents();
 	UnbindResourceData();
 
 	CurrentEntryWidgets.Reset();
@@ -124,7 +129,7 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 		if (IsValid(EntrySlot))
 		{
 			EntrySlot->SetPadding(
-				FMargin(5.f, 0.f, 5.f, 0.f));
+				FMargin(3.f, 0.f, -8.f, 0.f));
 		}
 
 		CurrentEntryWidgets.Add(
@@ -139,6 +144,36 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 	}
 
 	RefreshEntryAffordability();
+}
+
+void USFBuildCatalogPanelWidget::BindBuildingCompletionEvents()
+{
+	UWorld* World =
+		GetWorld();
+
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	ActorSpawnedHandle =
+		World->AddOnActorSpawnedHandler(
+			FOnActorSpawned::FDelegate::CreateUObject(
+				this,
+				&USFBuildCatalogPanelWidget::HandleBuildingSpawned
+			)
+		);
+
+	for (
+		TActorIterator<ASFBaseBuilding> It(World);
+		It;
+		++It
+		)
+	{
+		BindBuildingCompletionEvent(
+			*It
+		);
+	}
 }
 
 void USFBuildCatalogPanelWidget::RefreshEntryAffordability()
@@ -157,6 +192,50 @@ void USFBuildCatalogPanelWidget::RefreshEntryAffordability()
 		{
 			continue;
 		}
+
+		const FName SpawnBuildingId =
+			EntryWidget->GetBuildingRowName();
+
+		const FName TechBuildingId =
+			EntryWidget->GetSelectionUIRowName();
+
+		const bool bStageAllowsBuild =
+			BoundGameState->IsBuildingAllowedInCurrentStage(
+				TechBuildingId
+			);
+
+		const bool bTechRequirementsMet =
+			BoundGameState->AreBuildingRequirementsMet(
+				CachedTeamIndex,
+				TechBuildingId
+			);
+
+		const bool bCanBuild =
+			bStageAllowsBuild &&
+			bTechRequirementsMet;
+
+		EntryWidget->SetStageBuildAllowed(
+			bCanBuild
+		);
+
+		SF_LOG(
+			Log,
+			"[SFBuildCatalogPanelWidget] "
+			"Tech Check | Building: %s | "
+			"StageAllowed: %s | "
+			"RequirementsMet: %s | "
+			"CanBuild: %s",
+			*TechBuildingId.ToString(),
+			bStageAllowsBuild
+			? TEXT("True")
+			: TEXT("False"),
+			bTechRequirementsMet
+			? TEXT("True")
+			: TEXT("False"),
+			bCanBuild
+			? TEXT("True")
+			: TEXT("False")
+		);
 
 		const FResources ConstructionCost =
 			EntryWidget->GetConstructionCost();
@@ -267,4 +346,104 @@ void USFBuildCatalogPanelWidget::HandleEtherChanged(
 )
 {
 	RefreshEntryAffordability();
+}
+
+void USFBuildCatalogPanelWidget::BindBuildingCompletionEvent(
+	ASFBaseBuilding* Building
+)
+{
+	if (!IsValid(Building))
+	{
+		return;
+	}
+
+	if (
+		Building->GetTeamIndex() !=
+		CachedTeamIndex
+		)
+	{
+		return;
+	}
+
+	for (
+		const TWeakObjectPtr<ASFBaseBuilding>&
+		BoundBuilding :
+		BoundBuildings
+		)
+	{
+		if (BoundBuilding.Get() == Building)
+		{
+			return;
+		}
+	}
+
+	Building->OnBuildingTierActivated.AddUniqueDynamic(
+		this,
+		&USFBuildCatalogPanelWidget::HandleBuildingTierActivated
+	);
+
+	BoundBuildings.Add(
+		Building
+	);
+}
+
+void USFBuildCatalogPanelWidget::HandleBuildingSpawned(
+	AActor* SpawnedActor
+)
+{
+	ASFBaseBuilding* Building =
+		Cast<ASFBaseBuilding>(
+			SpawnedActor
+		);
+
+	if (!IsValid(Building))
+	{
+		return;
+	}
+
+	BindBuildingCompletionEvent(
+		Building
+	);
+}
+
+void USFBuildCatalogPanelWidget::HandleBuildingTierActivated(
+	int32 ActivatedTier
+)
+{
+	RefreshEntryAffordability();
+}
+
+void USFBuildCatalogPanelWidget::UnbindBuildingCompletionEvents()
+{
+	UWorld* World =
+		GetWorld();
+
+	if (
+		IsValid(World) &&
+		ActorSpawnedHandle.IsValid()
+		)
+	{
+		World->RemoveOnActorSpawnedHandler(
+			ActorSpawnedHandle
+		);
+
+		ActorSpawnedHandle.Reset();
+	}
+
+	for (
+		const TWeakObjectPtr<ASFBaseBuilding>&
+		BoundBuilding :
+		BoundBuildings
+		)
+	{
+		if (IsValid(BoundBuilding.Get()))
+		{
+			BoundBuilding->OnBuildingTierActivated.RemoveDynamic(
+				this,
+				&USFBuildCatalogPanelWidget::HandleBuildingTierActivated
+			);
+		}
+	}
+
+	BoundBuildings.Reset();
 }

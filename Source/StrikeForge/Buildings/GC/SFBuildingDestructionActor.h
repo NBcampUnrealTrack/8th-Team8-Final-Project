@@ -63,7 +63,8 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void ApplyFinalDestruction(int32 FinalStageIndex, const FBuildingDestruction& StageData);
-	float DebrisLifetime = 8.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Building|Destruction", meta=(AllowPrivateAccess = true))
+	float DebrisLifetime = 4.f;
 	
     UFUNCTION(BlueprintPure, Category = "SF|Building|Destruction")
     FORCEINLINE UGeometryCollectionComponent* GetGeometryCollectionComponent() const { return GeometryCollectionComponent; }

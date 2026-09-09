@@ -53,6 +53,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
 	
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
+	bool RetryCurrentStage();
+	
 	// Race
 	// 종족 선택 함수 
 	// 종족Enum만 선택해놓으면 GM이 시작할때 Load함수를 부르고 종족에 맞는 Catalog를 가져간다

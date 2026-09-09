@@ -274,6 +274,17 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
     return true;
 }
 
+bool USFGameInstance::RetryCurrentStage()
+{   // 로딩 내용 비우기
+    if (USFBuildingAssetSubsystem* AssetSubsystem =
+        GetSubsystem<USFBuildingAssetSubsystem>())
+    {
+        AssetSubsystem->ReleaseStageAssets();
+    }
+    // 로비로
+    return MoveToStage();
+}
+
 bool USFGameInstance::TravelToLevel(const TSoftObjectPtr<UWorld>& TargetLevel)
 {
 	if (TargetLevel.IsNull())

@@ -186,10 +186,9 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 
 		return;
 	}
-
-	OnBuildCatalogEntryClicked.Broadcast(
-		BuildingRowName
-	);
+	
+	// 선택시 클릭 알람?
+	OnBuildCatalogEntryClicked.Broadcast(BuildingRowName);
 	
 	// onclicked spawn building by rowname ======================================================================================
 	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
@@ -200,38 +199,16 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 	}
 	
 	// 자원이 충분한가 아닌가 검사 로직. 가능구역1
-	const FName RequestedBuildingId =
-		BuildingRowName;
+	const FName RequestedBuildingId = BuildingRowName;
 
-	SFPC->RequestBuildingPlacementAsync(
-		RequestedBuildingId,
-		FSFOnBuildingPlacementReady::CreateWeakLambda(
-			this,
-			[this, RequestedBuildingId](
-				bool bSuccess)
-			{
-				if (!bSuccess)
-				{
-					return;
-				}
+	if (!SFPC->TryStartBuildingPlacement(RequestedBuildingId))
+	{
+		return;
+	}
 
-				ASFInGamePlayerController* SFPC =
-					Cast<ASFInGamePlayerController>(
-						GetOwningPlayer());
+	SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
 
-				if (!IsValid(SFPC))
-				{
-					return;
-				}
-
-				SFPC->SetSFControlMode(
-					ESFControlMode::BuildPlacement);
-
-				USFTutorialSubsystem::
-					NotifyBuildingSelected(
-						this,
-						RequestedBuildingId);
-			}));
+	USFTutorialSubsystem::NotifyBuildingSelected(this,RequestedBuildingId);
 }
 
 void USFBuildCatalogEntryWidget::SetCanAfford(

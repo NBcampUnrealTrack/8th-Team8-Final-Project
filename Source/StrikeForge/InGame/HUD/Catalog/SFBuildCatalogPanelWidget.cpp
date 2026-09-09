@@ -13,25 +13,25 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	CachedGameState =
+	BoundGameState =
 		GetWorld()
 		? GetWorld()->GetGameState<ASFGameState>()
 		: nullptr;
 
-	if (!IsValid(CachedGameState))
+	if (!IsValid(BoundGameState))
 	{
 		return;
 	}
 
-	CachedGameState->OnStageStateChanged.RemoveDynamic(
+	BoundGameState->OnStageStateChanged.RemoveDynamic(
 		this,
 		&ThisClass::HandleStageStateChanged);
 
-	CachedGameState->OnStageStateChanged.AddUniqueDynamic(
+	BoundGameState->OnStageStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStageStateChanged);
 
-	if (CachedGameState->IsStagePlaying())
+	if (BoundGameState->IsStagePlaying())
 	{
 		BindResourceData();
 		RefreshBuildingEntries();
@@ -40,9 +40,9 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 
 void USFBuildCatalogPanelWidget::NativeDestruct()
 {
-	if (IsValid(CachedGameState))
+	if (IsValid(BoundGameState))
 	{
-		CachedGameState->OnStageStateChanged.RemoveDynamic(
+		BoundGameState->OnStageStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleStageStateChanged);
 	}
@@ -51,7 +51,7 @@ void USFBuildCatalogPanelWidget::NativeDestruct()
 
 	CurrentEntryWidgets.Reset();
 
-	CachedGameState = nullptr;
+	BoundGameState = nullptr;
 	
 	Super::NativeDestruct();
 }
@@ -60,6 +60,7 @@ void USFBuildCatalogPanelWidget::HandleStageStateChanged(ESFStageState NewState)
 {
 	if (NewState == ESFStageState::Playing)
 	{
+		BindResourceData();
 		RefreshBuildingEntries();
 	}
 }
@@ -222,9 +223,6 @@ void USFBuildCatalogPanelWidget::BindResourceData()
 		return;
 	}
 
-	BoundGameState =
-		World->GetGameState<ASFGameState>();
-
 	if (!IsValid(BoundGameState))
 	{
 		return;
@@ -266,7 +264,6 @@ void USFBuildCatalogPanelWidget::UnbindResourceData()
 {
 	if (!IsValid(BoundGameState))
 	{
-		BoundGameState = nullptr;
 		return;
 	}
 
@@ -287,8 +284,6 @@ void USFBuildCatalogPanelWidget::UnbindResourceData()
 			&USFBuildCatalogPanelWidget::HandleEtherChanged
 		);
 	}
-
-	BoundGameState = nullptr;
 }
 
 void USFBuildCatalogPanelWidget::HandleMineralChanged(

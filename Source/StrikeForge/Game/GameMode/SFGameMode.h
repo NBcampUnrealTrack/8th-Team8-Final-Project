@@ -14,18 +14,6 @@ class ASFBuildingSpawnAnchor;
 class USFBuildingDefinition;
 class USFBuildingAssetSubsystem;
 
-enum class ESFStageBootstrapState : uint8
-{
-	None,
-    LoadingRaceData,
-
-    // Buildable과 Anchor를 포함한 초기 Tier 로딩
-    LoadingInitialBuildingAssets,
-
-    Ready,
-    Failed
-};
-
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
 {
@@ -55,19 +43,17 @@ public:
 	// 전달받은 결과를 기준으로 스테이지 종료
 	bool FinishStage(ESFStageResult NewStageResult);
 	
+	// 로딩 UI 끝나고 실행하는 이벤트
+	void StartStageAfterLoadingScreen();
+	
 	// getter
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ASFGameState* GetSFGameState() const;
 	UFUNCTION(BlueprintPure, Category = "SF|Team")
 	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
-
+	
 	// 26.08.18
-	// 데이터테이블 정보를 이용해 지정된 위치에 넥서스를 생성
-	// 넥서스 생성을 런타임에 gamemode가 해서 팀인덱스를 등록할지
-	// 뷰포트배치로 nexusbuilding의 beginplay에서 팀인덱스를 등록할지 고민했으나
-	// 여러방면상 nexusbuilding이 생성과 동시에 팀인덱스 등록으로 생각하고있음
-	// UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
-	// ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
+	
 protected:
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
@@ -105,8 +91,8 @@ private:
 	TObjectPtr<USFBuildingAssetSubsystem>
 		BuildingAssetSubsystem;
 
-	ESFStageBootstrapState StageBootstrapState =
-	ESFStageBootstrapState::None;
+	// ESFStageBootstrapState StageBootstrapState =
+	// ESFStageBootstrapState::None;
 
 	FName BootstrapStageRowName = NAME_None;
 

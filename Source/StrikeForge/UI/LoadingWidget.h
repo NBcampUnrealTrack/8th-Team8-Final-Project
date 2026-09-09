@@ -25,7 +25,8 @@ public:
 	void SetProgress(float InPercent01); // 0.0 ~ 1.0
 	UFUNCTION()
 	void HandleStageStateChanged(ESFStageState InGameState);
-	
+	UFUNCTION(BlueprintCallable, Category = "SF|Loading")
+	void FinishLoadingScreen();
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UProgressBar* LoadingBar;
@@ -44,10 +45,11 @@ protected:
 	// �����Ϳ��� ����: Media Player ����
 	UPROPERTY(EditDefaultsOnly, Category = "Loading")
 	UMediaPlayer* BackgroundMediaPlayer;
-
-	// FTimerHandle FakeProgressTimerHandle;
-	// float CurrentProgress = 0.f;
-	// void TickFakeProgress();
+	
+	// Loading is too fast. Deliberately, slow down time using timer
+	FTimerHandle FakeProgressTimerHandle;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Loading", meta = (AllowPrivateAccess = true, UIMin = 0.0f))
+	float DelayStartTime = 1.f;
 	
 	//caching class
 	UPROPERTY()

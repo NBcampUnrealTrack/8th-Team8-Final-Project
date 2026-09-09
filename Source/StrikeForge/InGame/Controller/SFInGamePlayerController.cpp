@@ -22,8 +22,6 @@
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "Kismet/GameplayStatics.h"
-#include "Engine/GameInstance.h"
-#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -36,93 +34,122 @@ ASFInGamePlayerController::ASFInGamePlayerController()
     PlacementComponent = CreateDefaultSubobject<UBuildingPlacement>(TEXT("PlacementComponent"));
 }
 
-void ASFInGamePlayerController::RequestBuildingPlacementAsync(FName InBuildingId,
-    FSFOnBuildingPlacementReady OnComplete)
+bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
 {
-    if (bBuildingPlacementLoadPending ||
+    APawn* ControlledPawn = GetPawn();
+
+    if (InBuildingId.IsNone() ||
         IsValid(SpawnedBuildingRef) ||
-        InBuildingId.IsNone())
+        !IsValid(PlacementComponent) ||
+        !IsValid(ControlledPawn))
     {
-        OnComplete.ExecuteIfBound(false);
-        return;
+        return false;
     }
 
-    ASFGameState* SFGS =
-        GetWorld()
-        ? GetWorld()->GetGameState<ASFGameState>()
-        : nullptr;
+    UWorld* World = GetWorld();
 
-    if (!IsValid(SFGS))
+    ASFGameState* SFGS = IsValid(World) ?
+        World->GetGameState<ASFGameState>() : nullptr;
+
+    // 초기 로딩과 LoadingWidget 종료가 모두 완료된 이후에만
+    // 건설 배치에 진입할 수 있도록 제한합니다.
+    if (!IsValid(SFGS) || !SFGS->IsStagePlaying())
     {
-        OnComplete.ExecuteIfBound(false);
-        return;
+        SF_LOG(Warning,
+            "[SFPC] 스테이지가 아직 플레이 상태가 아닙니다.");
+
+        return false;
     }
 
-    USFBuildingCatalog* Catalog =
-        SFGS->GetTeamBuildingCatalog(
-            GetMyTeamIndex());
+    const int32 TeamIndex = GetMyTeamIndex();
+
+    USFBuildingCatalog* Catalog = SFGS->GetTeamBuildingCatalog(TeamIndex);
 
     USFBuildingDefinition* Definition =
         IsValid(Catalog)
-            ? Catalog->FindLoadedDefinition(
-                InBuildingId)
+            ? Catalog->FindLoadedDefinition(InBuildingId)
             : nullptr;
 
-    if (!IsValid(Definition))
+    if (!IsValid(Definition) || Definition->BuildingId != InBuildingId)
     {
-        OnComplete.ExecuteIfBound(false);
-        return;
+        SF_LOG(Error,
+            "[SFPC] 건물 Definition을 찾을 수 없습니다. BuildingId=%s",
+            *InBuildingId.ToString());
+
+        return false;
     }
 
-    const FSFBuildingTierData* FirstTier =
-        Definition->FindTier(0);
+    constexpr int32 PlacementTierIndex = 0;
 
-    if (!FirstTier ||
-        !SFGS->CanAffordResource(
-            GetMyTeamIndex(),
-            FirstTier->Construction.ConstructCost))
+    const FSFBuildingTierData* FirstTier = Definition->FindTier(PlacementTierIndex);
+
+    if (!FirstTier)
     {
-        
-        SF_LOG(
-            Warning,
-            "[SFPC]: 자원 부족: %s",
-            *Definition->BuildingId.ToString()
-        );
+        SF_LOG(Error,
+            "[SFPC] Tier 0 데이터가 없습니다. Definition=%s",
+            *GetNameSafe(Definition));
+
+        return false;
+    }
+
+    if (!SFGS->CanAffordResource(
+        TeamIndex,
+        FirstTier->Construction.ConstructCost))
+    {
+        SF_LOG(Warning,
+            "[SFPC] 자원 부족: %s",
+            *Definition->BuildingId.ToString());
 
         if (IsValid(InGameHUDWidget))
         {
             InGameHUDWidget->PlayResourceWarningSound();
         }
 
-        OnComplete.ExecuteIfBound(false);
-        return ;
+        return false;
     }
 
-    UGameInstance* GameInstance =
-        GetGameInstance();
-
-    USFBuildingAssetSubsystem* AssetSubsystem =
-        IsValid(GameInstance)
-            ? GameInstance
-                ->GetSubsystem<USFBuildingAssetSubsystem>()
-            : nullptr;
-
-    if (!IsValid(AssetSubsystem))
+    // 이 시점에는 GameMode의 초기 로딩 과정에서
+    // 모든 건설 가능 Tier 0 에셋이 준비되어 있어야 합니다.
+    if (!Definition->AreRuntimeAssetsLoaded(PlacementTierIndex))
     {
-        OnComplete.ExecuteIfBound(false);
-        return;
+        SF_LOG(Error,
+            "[SFPC] 사전 로딩되지 않은 Tier 0 건설 요청입니다. "
+            "Definition=%s",
+            *GetNameSafe(Definition));
+
+        return false;
     }
 
-    bBuildingPlacementLoadPending = true;
+    FTransform SpawnTransform;
+    SpawnTransform.SetLocation(ControlledPawn->GetActorLocation());
+    SpawnTransform.SetRotation(FRotator(0.f, 90.f, 0.f).Quaternion());
 
-    AssetSubsystem->RequestBuildingAssetsAsync(
-        Definition,
-        0,
-        FSFOnBuildingAssetsReady::CreateUObject(
+    ASFBaseBuilding* NewBuilding =
+        USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
             this,
-            &ThisClass::HandleBuildingPlacementAssetsReady,
-            InBuildingId,
-            MoveTemp(OnComplete)));
+            Definition,
+            TeamIndex,
+            SpawnTransform,
+            ESFBuildingSpawnMode::PlayerPlacedMode,
+            PlacementTierIndex);
+
+    if (!IsValid(NewBuilding))
+    {
+        SF_LOG(Error,
+            "[SFPC] 고스트 건물 생성에 실패했습니다. Definition=%s",
+            *GetNameSafe(Definition));
+
+        return false;
+    }
+
+    if (!PlacementComponent->StartPlacementMode(NewBuilding))
+    {
+        NewBuilding->Destroy();
+        return false;
+    }
+
+    SpawnedBuildingRef = NewBuilding;
+    return true;
 }
 
 void ASFInGamePlayerController::ClearSpawnedBuildingRef()
@@ -327,8 +354,7 @@ void ASFInGamePlayerController::SetupInputComponent()
             ToggleBuildModeAction,
             ETriggerEvent::Started,
             this,
-            &ASFInGamePlayerController::HandleToggleBuildModeInput
-        );
+            &ASFInGamePlayerController::HandleToggleBuildModeInput);
     }
 
     if (IsValid(ProduceSlot1Action))
@@ -1511,74 +1537,4 @@ void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
         SelectionSound,
         SelectedTarget->GetActorLocation()
     );
-}
-
-void ASFInGamePlayerController::HandleBuildingPlacementAssetsReady(USFBuildingDefinition* InDefinition,
-    int32 InTierIndex, bool bSuccess, FName InBuildingId, FSFOnBuildingPlacementReady OnComplete)
-{
-    bBuildingPlacementLoadPending = false;
-
-    if (!bSuccess ||
-        !IsValid(InDefinition) ||
-        InTierIndex != 0 ||
-        InDefinition->BuildingId != InBuildingId ||
-        IsValid(SpawnedBuildingRef))
-    {
-        OnComplete.ExecuteIfBound(false);
-        return;
-    }
-
-    ASFGameState* SFGS =
-        GetWorld()
-        ? GetWorld()->GetGameState<ASFGameState>()
-        : nullptr;
-
-    const FSFBuildingTierData* FirstTier =
-        InDefinition->FindTier(0);
-
-    if (!IsValid(SFGS) ||
-        !FirstTier ||
-        !SFGS->CanAffordResource(
-            GetMyTeamIndex(),
-            FirstTier->Construction.ConstructCost) ||
-        !IsValid(GetPawn()))
-    {
-        OnComplete.ExecuteIfBound(false);
-        return;
-    }
-
-    FTransform SpawnTransform;
-    SpawnTransform.SetLocation(
-        GetPawn()->GetActorLocation());
-
-    SpawnTransform.SetRotation(
-        FRotator(0.f, 90.f, 0.f)
-        .Quaternion());
-
-    ASFBaseBuilding* NewBuilding =
-        USFBuildingSpawnLibrary::
-        SpawnBuildingFromDefinition(
-            this,
-            InDefinition,
-            GetMyTeamIndex(),
-            SpawnTransform,
-            ESFBuildingSpawnMode::PlayerPlacedMode,
-            0);
-
-    if (!IsValid(NewBuilding) ||
-        !PlacementComponent
-        ->StartPlacementMode(NewBuilding))
-    {
-        if (IsValid(NewBuilding))
-        {
-            NewBuilding->Destroy();
-        }
-
-        OnComplete.ExecuteIfBound(false);
-        return;
-    }
-
-    SpawnedBuildingRef = NewBuilding;
-
-    OnComplete.ExecuteIfBound(true);
 }

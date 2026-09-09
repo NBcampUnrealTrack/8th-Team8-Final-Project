@@ -52,7 +52,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 );
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnSkillInput, int32, SkillTier);
-DECLARE_DELEGATE_OneParam(FSFOnBuildingPlacementReady, bool);
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
@@ -80,8 +79,12 @@ public:
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
     
-    /** 건설할 건물의 Tier 0 리소스를 요청한다. Catalog Entry 클릭에서 호출되며 HandleBuildingPlacementAssetsReady로 이어진다. */
-    void RequestBuildingPlacementAsync(FName InBuildingId, FSFOnBuildingPlacementReady OnComplete);
+    /**
+     * 사전 로딩된 Tier 0 에셋을 검증하고 건물 배치를 준비한다.
+     * Catalog Entry 클릭에서 호출되며 고스트 건물 생성과
+     * StartPlacementMode로 이어진다.
+     */
+    bool TryStartBuildingPlacement(FName InBuildingId);
 
     void ClearSpawnedBuildingRef();
 
@@ -129,8 +132,7 @@ protected:
     virtual void SetupInputComponent() override;
 
 private:
-    UEnhancedInputLocalPlayerSubsystem*
-        GetEnhancedInputSubsystem() const;
+    UEnhancedInputLocalPlayerSubsystem* GetEnhancedInputSubsystem() const;
 
     void ConfigureMouseInput();
 
@@ -206,15 +208,7 @@ private:
     void PlaySelectionSound(AActor* SelectedTarget);
     
     // Async
-    /** 건설 리소스 로드 결과를 검증하고 배치 건물을 생성한다. Subsystem 콜백으로 호출되며 SpawnBuildingFromDefinition과 완료 콜백으로 이어진다. */
-    void HandleBuildingPlacementAssetsReady(
-    USFBuildingDefinition* InDefinition,
-    int32 InTierIndex,
-    bool bSuccess,
-    FName InBuildingId,
-    FSFOnBuildingPlacementReady OnComplete);
 
-    bool bBuildingPlacementLoadPending = false;
     // 변수 영역
 protected:
 

@@ -5,7 +5,10 @@
 #include "MediaPlayer.h"
 #include "MediaSource.h"
 #include "TimerManager.h"
+#include "Game/GameInstance/SFGameInstance.h"
+#include "Game/GameMode/SFGameMode.h"
 #include "Game/GameState/SFGameState.h"
+#include "Logging/SFLog.h"
 
 void ULoadingWidget::NativeConstruct()
 {
@@ -27,11 +30,15 @@ void ULoadingWidget::NativeConstruct()
 		// SetProgress(0)을 대신함. progress 0또한 로딩시작시 설정함.
 		SetProgress(CachedGameState->GetStageLoadingProgress());
 		
-		// 타이밍으로 UI가 늦어 이미 플레이중이라면
+		// 타이밍으로 UI가 늦어 이미 플레이중이라면 + 로딩실패시
 		// 근데 이럴일 거의 없음 진짜 없음
-		if (CachedGameState->IsStagePlaying())
+		const ESFStageState CurrentState = CachedGameState->GetStageState();
+
+		if (CurrentState == ESFStageState::ReadyToStart ||
+			CurrentState == ESFStageState::Playing ||
+			CurrentState == ESFStageState::InitializationFailed)
 		{
-			HandleStageStateChanged(ESFStageState::Playing);
+			HandleStageStateChanged(CurrentState);
 			return;
 		}
 	}
@@ -107,15 +114,79 @@ void ULoadingWidget::HandleStageStateChanged(ESFStageState InGameState)
 	// GameState가 바뀌었을때.. 현재의 게임스테이트 종류
 	// enum class ESFStageState : uint8
 	// {
-	// 	Initializing UMETA(DisplayName = "Initializing"),
-	// 	Playing      UMETA(DisplayName = "Playing"),
-	// 	Finished     UMETA(DisplayName = "Finished")
+	// Initializing                 UMETA(DisplayName = "Initializing"),
+	// InitializationFailed         UMETA(DisplayName = "Initialization Failed"),
+	// LoadingRaceData              UMETA(DisplayName = "Loading Race Data"),
+	// LoadingInitialBuildingAssets UMETA(DisplayName = "Loading Initial Building Assets"),
+	// ReadyToStart                 UMETA(DisplayName = "Ready To Start"),
+	// Playing                      UMETA(DisplayName = "Playing"),
+	// Finished                     UMETA(DisplayName = "Finished"),
 	// };
 	
-	// 게임상태가 시작일때 100%만들고 UI제거
-	if (InGameState == ESFStageState::Playing)
+	// 로딩을 성공적으로 끝마치고 로딩이 100%가 되는 시점
+	if (InGameState == ESFStageState::ReadyToStart)
 	{
+		// 로딩 100% set
 		SetProgress(1.f);
+		// TODO:: FadeAnimation Play, On Animation Finished에 FinishLoadingScreen바인딩
+		// 필요하다면 1초 Delay
+		
+		
+		// Not Animation After Loading Finished.
+		// For now, Delay 1.0 Time Before StartStage Using Timer
+		GetWorld()->GetTimerManager().SetTimer(
+			FakeProgressTimerHandle,
+			this,
+			&ThisClass::FinishLoadingScreen,
+			DelayStartTime,
+			false);
+		return;
+	}
+
+	if (InGameState == ESFStageState::Playing)
+	{	// 이경우도 거의 없다. 로딩 UI가 로딩이 끝난 GameMode, GameState보다 늦는경우
 		RemoveFromParent();
+		return;
+	}
+
+	if (InGameState == ESFStageState::InitializationFailed)
+	{
+		if (IsValid(BackgroundMediaPlayer))
+		{
+			BackgroundMediaPlayer->Close();
+		}
+
+		
+		// TODO:: 로딩이 실패했습니다 작은 UI 생성, 재시도버튼, 로비버튼
+		// 재시도(현재스테이지 재진입) == SFGameInstance의 RetryCurrentStage()호출
+		// 로비(로비이동) == SFGameInstance의 MoveToLobby()
+		// 사실 이 흐름이 발생하면 안돼는것이긴함.
+		// 로딩이 실패하는경우는 에셋설정이 비어있거나,
+		// 팀인덱스를 잘못입력했다던가하는
+		// 휴먼에러에 기반하는 것이기 때문임.
+		USFGameInstance* SFGameInstance = GetWorld()->GetGameInstance<USFGameInstance>();
+		if (!IsValid(SFGameInstance))
+		{
+			SF_LOG(Error, "치명적 오류발생 GameInstance is Null");
+			// TODO:: 게임종료
+			
+			return;
+		}
+		SFGameInstance->MoveToLobby();
+	}
+}
+
+void ULoadingWidget::FinishLoadingScreen()
+{
+	UWorld* World = GetWorld();
+	ASFGameMode* SFGameMode =
+		World ? World->GetAuthGameMode<ASFGameMode>() : nullptr;
+
+	RemoveFromParent();
+
+	if (IsValid(SFGameMode))
+	{	// Notify Finished_Loading to GameMode.
+		SFGameMode->StartStageAfterLoadingScreen();
+		// GameMode StartStage -> GameState StartStage
 	}
 }

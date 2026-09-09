@@ -22,9 +22,12 @@ bool ASFGameState::InitializeStage(FName StageRowName)
 		return false;
 	}
 
-	if (StageState != ESFStageState::Initializing)
+	if (StageState != ESFStageState::LoadingRaceData)
 	{
-		SF_LOG(Warning, "[SFGameState] InitializeStage failed : Stage is not Initializing.");
+		SF_LOG(Warning,
+			"[SFGameState] InitializeStage failed: "
+			"Stage is not LoadingRaceData. State=%s",
+			*UEnum::GetValueAsString(StageState));
 
 		return false;
 	}
@@ -36,13 +39,51 @@ bool ASFGameState::InitializeStage(FName StageRowName)
 	return true;
 }
 
+bool ASFGameState::BeginRaceDataLoading()
+{
+	if (StageState != ESFStageState::Initializing)
+	{
+		SF_LOG(
+			Warning,
+			"[SFGameState] Race 데이터 로딩을 시작할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::LoadingRaceData;
+
+	SF_LOG(Log, "[SFGameState] Race 데이터 로딩을 시작합니다.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
+}
+
+bool ASFGameState::BeginInitialBuildingAssetsLoading()
+{
+	if (StageState != ESFStageState::LoadingRaceData)
+	{
+		SF_LOG(
+			Warning,
+			"[SFGameState] 초기 건물 에셋 로딩을 시작할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::LoadingInitialBuildingAssets;
+
+	SF_LOG(Log, "[SFGameState] 초기 건물 에셋 로딩을 시작합니다.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
+}
+
 bool ASFGameState::StartStage()
 {
 	// 스테이지 시작 부분
-	if (StageState != ESFStageState::Initializing)
+	if (StageState != ESFStageState::ReadyToStart)
 	{
-		SF_LOG(Warning, "[SFGameState] StartStage failed: Stage is not Initializing.");
-
 		return false;
 	}
 
@@ -202,6 +243,59 @@ void ASFGameState::SetStageLoadingProgress(float InProgress)
 	StageLoadingProgress = FMath::Clamp(InProgress, 0.f, 1.f);
 
 	OnStageLoadingProgressChanged.Broadcast(StageLoadingProgress);
+}
+
+bool ASFGameState::FailStageInitialization()
+{
+	// 중복 실패 요청은 이미 처리된 것으로 간주한다.
+	if (StageState == ESFStageState::InitializationFailed)
+	{
+		return true;
+	}
+
+	switch (StageState)
+	{
+	case ESFStageState::Initializing:
+	case ESFStageState::LoadingRaceData:
+	case ESFStageState::LoadingInitialBuildingAssets:
+	case ESFStageState::ReadyToStart:
+		// ReadyTo가 되면 아래 실행하지않고 조용히 나감
+		break;
+
+	default:
+		SF_LOG(
+			Warning,
+			"[SFGameState] 초기화 실패 상태로 전환할 수 없습니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::InitializationFailed;
+
+	SF_LOG(Error, "[SFGameState] Stage initialization failed.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
+}
+
+bool ASFGameState::MarkStageReadyToStart()
+{
+	if (StageState != ESFStageState::LoadingInitialBuildingAssets)
+	{
+		SF_LOG(Warning,
+			"[SFGameState] ReadyToStart로 전환할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::ReadyToStart;
+
+	SF_LOG(Log, "[SFGameState] 스테이지가 시작 준비 상태가 되었습니다.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
 }
 
 USFTeamState* ASFGameState::FindOrAddTeam(int32 TeamIndex)

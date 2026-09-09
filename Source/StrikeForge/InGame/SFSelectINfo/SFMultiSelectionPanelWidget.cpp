@@ -41,7 +41,7 @@ void USFMultiSelectionPanelWidget::ShowSelections(
     const int32 EntryCount = FMath::Min3(
         Actors.Num(),
         SelectableInfos.Num(),
-        30
+        16
     );
 
     const int32 SafeColumnCount =

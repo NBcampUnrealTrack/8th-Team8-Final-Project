@@ -7,6 +7,8 @@
 
 class UHorizontalBox;
 class USFBuildCatalogEntryWidget;
+class ASFGameState;
+class USFTeamState;
 
 UCLASS()
 class STRIKEFORGE_API USFBuildCatalogPanelWidget
@@ -14,6 +16,27 @@ class STRIKEFORGE_API USFBuildCatalogPanelWidget
 {
 	GENERATED_BODY()
 
+	//==================== = Functions ====================
+
+private:
+	void BindResourceData();
+
+	void UnbindResourceData();
+
+	void RefreshEntryAffordability();
+
+	UFUNCTION()
+	void HandleMineralChanged(
+		int32 NewMineral,
+		float NewIncomeRate
+	);
+
+	UFUNCTION()
+	void HandleEtherChanged(
+		int32 NewEther,
+		float NewIncomeRate
+	);
+	
 protected:
 	/** Widget 생성 시 Stage 상태 이벤트를 구독한다. UUserWidget 수명 주기에서 호출되며 HandleStageStateChanged로 이어진다. */
 	virtual void NativeConstruct() override;
@@ -27,14 +50,18 @@ private:
 	/** 이미 로드된 Definition으로 건설 UI Entry를 만든다. NativeConstruct와 Stage 상태 변경에서 호출된다. */
 	void RefreshBuildingEntries();
 
-	// ==================== Variables ====================
-
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UHorizontalBox> BuildingEntryHorizontalBox;
 
 	UPROPERTY(EditDefaultsOnly, Category = "SF|Build Catalog")
 	TSubclassOf<USFBuildCatalogEntryWidget> BuildingEntryWidgetClass;
-	
+
 	UPROPERTY(Transient)
-	TObjectPtr<ASFGameState> CachedGameState;
+	TObjectPtr<ASFGameState> BoundGameState = nullptr;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USFBuildCatalogEntryWidget>>
+		CurrentEntryWidgets;
+
+	int32 CachedTeamIndex = 0;
 };

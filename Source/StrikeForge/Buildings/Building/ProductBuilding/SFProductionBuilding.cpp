@@ -107,3 +107,19 @@ void ASFProductionBuilding::ResetSpeedMultiplier()
 {
 	ProductComponent->ResetSpeedMultiplier();
 }
+
+bool ASFProductionBuilding::HasRallyPoint() const
+{
+	return IsValid(ProductComponent) &&
+		ProductComponent->HasAssemblePoint();
+}
+
+FVector ASFProductionBuilding::GetRallyPoint() const
+{
+	if (!IsValid(ProductComponent))
+	{
+		return FVector::ZeroVector;
+	}
+
+	return ProductComponent->GetAssemblePoint();
+}

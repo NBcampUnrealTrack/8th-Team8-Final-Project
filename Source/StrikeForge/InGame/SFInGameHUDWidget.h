@@ -28,6 +28,9 @@ class AUnitBase;
 class UTexture2D;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
+class UStaticMeshComponent;
+class UStaticMesh;
+class UWidget;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -59,8 +62,6 @@ public:
     void ShowResultWidget(bool bIsWin);
 
     void SelectActor(AActor* Actor);
-
-    bool IsPointerOverSelectionAction() const;
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     void ToggleBuildingMode();
@@ -101,6 +102,11 @@ public:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFProductionBuilding>
         SelectedProductionBuilding;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Rally")
+    void RefreshRallyPointIndicator();
+
+    bool IsPointerOverHUDPanel();
 
 protected:
     virtual void NativeConstruct() override;
@@ -261,6 +267,8 @@ private:
     UFUNCTION()
     void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
 
+    void HideRallyPointIndicator();
+
     // ==================== Variables ====================
 
 protected:
@@ -310,6 +318,20 @@ protected:
         meta = (BindWidgetOptional)
     )
     TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Resource",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> ResourcePanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Minimap",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> MinimapPanel = nullptr;
 
     UPROPERTY(
         BlueprintReadOnly,
@@ -402,6 +424,21 @@ protected:
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    TObjectPtr<UMaterialInterface> RallyPathIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    float RallyPathIndicatorWidth = 30.f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Rally")
+    TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -427,4 +464,7 @@ private:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFBaseBuilding>
         SelectedBuildingForTierDelegate;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPointIndicator = nullptr;
 };

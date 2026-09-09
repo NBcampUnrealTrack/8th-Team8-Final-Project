@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "SFSelectableInfo.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectionPanelWidget.generated.h"
 
 class UButton;
+class UTextBlock;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(
     FSFOnTierUpgradeRequested
@@ -66,6 +68,16 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|Selection|Command")
     void SetCommandButtonsVisible(bool bVisible);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection|Building")
+    void SetUpgradeCost(const FResources& InUpgradeCost);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection|Building")
+    void SetUpgradeAffordability(bool bInCanAfford);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "SF|Selection|Building")
+    void BP_OnUpgradeAffordabilityChanged(bool bCanAfford);
+
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
@@ -117,6 +129,20 @@ protected:
         meta = (BindWidget)
     )
     TObjectPtr<UButton> StopCommandButton = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UTextBlock> UpgradeMineralCostText = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UTextBlock> UpgradeEtherCostText = nullptr;
 
 private:
     UFUNCTION()

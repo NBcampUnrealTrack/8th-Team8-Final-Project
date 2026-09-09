@@ -3,6 +3,8 @@
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 void USFBuildCatalogEntryWidget::InitializeBuildingEntry(
@@ -86,6 +88,25 @@ FName USFBuildCatalogEntryWidget::GetBuildingRowName() const
 	return BuildingRowName;
 }
 
+FResources
+USFBuildCatalogEntryWidget::GetConstructionCost() const
+{
+	if (!IsValid(BuildingDefinition))
+	{
+		return FResources{};
+	}
+
+	const FSFBuildingTierData* FirstTier =
+		BuildingDefinition->FindTier(0);
+
+	if (!FirstTier)
+	{
+		return FResources{};
+	}
+
+	return FirstTier->Construction.ConstructCost;
+}
+
 void USFBuildCatalogEntryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -144,6 +165,28 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 		return;
 	}
 
+	if (!bCanAfford)
+	{
+		SF_LOG(
+			Warning,
+			"[SFBuildCatalogEntryWidget] "
+			"Cannot build because resources are insufficient: %s",
+			*BuildingRowName.ToString()
+		);
+
+		OnBuildResourceWarningRequested.Broadcast();
+
+		if (IsValid(ResourceWarningSound))
+		{
+			UGameplayStatics::PlaySound2D(
+				this,
+				ResourceWarningSound
+			);
+		}
+
+		return;
+	}
+
 	OnBuildCatalogEntryClicked.Broadcast(
 		BuildingRowName
 	);
@@ -189,4 +232,26 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 						this,
 						RequestedBuildingId);
 			}));
+}
+
+void USFBuildCatalogEntryWidget::SetCanAfford(
+	bool bNewCanAfford
+)
+{
+	bCanAfford =
+		bNewCanAfford;
+
+	BP_OnAffordabilityChanged(
+		bCanAfford
+	);
+
+	SF_LOG(
+		Log,
+		"[SFBuildCatalogEntryWidget] "
+		"Affordability changed | Building: %s | CanAfford: %s",
+		*BuildingRowName.ToString(),
+		bCanAfford
+		? TEXT("True")
+		: TEXT("False")
+	);
 }

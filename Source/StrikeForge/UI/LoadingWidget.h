@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Game/GameState/SFGameState.h"
 #include "LoadingWidget.generated.h"
 
 class UProgressBar;
@@ -18,8 +19,14 @@ protected:
 	virtual void NativeDestruct() override;
 
 public:
+	// gamestateì˜ ë¸ë¦¬ê²Œì´íŠ¸ì— ì—°ê²°ë˜ ë°ì´í„°ê°€ ë¡œë“œë ë•Œë§ˆë‹¤ gamestateì— ê°’ì´ ë„˜ì–´ê°€ê³ 
+	// gamestateëŠ” ëª‡ê°œê°€ ë¡œë“œë¬ëŠ”ì§€ ë¹„ìœ¨ì„ ê³„ì‚°í•´ ì´ í•¨ìˆ˜ë¡œ ë„˜ê²¨ì¤Œ
+	UFUNCTION()
 	void SetProgress(float InPercent01); // 0.0 ~ 1.0
-
+	UFUNCTION()
+	void HandleStageStateChanged(ESFStageState InGameState);
+	UFUNCTION(BlueprintCallable, Category = "SF|Loading")
+	void FinishLoadingScreen();
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UProgressBar* LoadingBar;
@@ -27,20 +34,24 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UTextBlock* PercentText;
 
-	// ¹è°æ ¿µ»ó ±ò¸± Image (Brush´Â MediaTexture ÂüÁ¶ÇÏ´Â Material·Î ¼¼ÆÃ)
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Image (Brushï¿½ï¿½ MediaTexture ï¿½ï¿½ï¿½ï¿½ï¿½Ï´ï¿½ Materialï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
 	UPROPERTY(meta = (BindWidget))
 	UImage* BackgroundImage;
 
-	// ¿¡µğÅÍ¿¡¼­ ÁöÁ¤: ¹è°æÀ¸·Î Àç»ıÇÒ mp4 ¼Ò½º
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ mp4 ï¿½Ò½ï¿½
 	UPROPERTY(EditDefaultsOnly, Category = "Loading")
 	UMediaSource* BackgroundVideoSource;
 
-	// ¿¡µğÅÍ¿¡¼­ ÁöÁ¤: Media Player ¿¡¼Â
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: Media Player ï¿½ï¿½ï¿½ï¿½
 	UPROPERTY(EditDefaultsOnly, Category = "Loading")
 	UMediaPlayer* BackgroundMediaPlayer;
-
+	
+	// Loading is too fast. Deliberately, slow down time using timer
 	FTimerHandle FakeProgressTimerHandle;
-	float CurrentProgress = 0.f;
-
-	void TickFakeProgress();
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Loading", meta = (AllowPrivateAccess = true, UIMin = 0.0f))
+	float DelayStartTime = 1.f;
+	
+	//caching class
+	UPROPERTY()
+	TObjectPtr<ASFGameState> CachedGameState;
 };

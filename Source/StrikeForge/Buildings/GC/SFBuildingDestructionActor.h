@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Datas/Building/BuildingAppearance.h"
+#include "Physics/Experimental/ChaosEventType.h"
 #include "SFBuildingDestructionActor.generated.h"
 
 class UGeometryCollection;
@@ -62,7 +63,7 @@ public:
      */
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void ApplyFinalDestruction(int32 FinalStageIndex, const FBuildingDestruction& StageData);
-	float DebrisLifetime = 2.5f;
+	float DebrisLifetime = 8.f;
 	
     UFUNCTION(BlueprintPure, Category = "SF|Building|Destruction")
     FORCEINLINE UGeometryCollectionComponent* GetGeometryCollectionComponent() const { return GeometryCollectionComponent; }
@@ -77,6 +78,19 @@ private:
 	void SchedulePendingImpulse();
     void ApplyPendingImpulse();
 
+private:
+	UFUNCTION()
+	void HandleChaosBreak(const FChaosBreakEvent& BreakEvent);
+
+	/** 불꽃 유지 타이머를 시작하고 즉시 한 번 갱신한다. */
+	void StartSurfaceFireMaintenance();
+
+	/** 떨어진 불꽃을 정리하고 건물에 부족한 불꽃을 보충한다. */
+	void UpdateSurfaceFires();
+	
+	/** 조각이 아직 건물 본체에 속해 있는지 검사한다. */
+	bool IsPieceAttached(int32 PieceIndex) const;
+	
 	// fire
 	/** [BURN-TEST] 조각 위에 붙일 불꽃. BP_DestructionActor에서 지정. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
@@ -94,7 +108,7 @@ private:
 	/** 바운드 높이의 이 비율보다 낮은 조각은 제외한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
-	float SurfaceFireMinHeightRatio = 0.25f;
+	float SurfaceFireMinHeightRatio = 0.f;
 
 	/**
 	 * 불 사이 최소 간격. 건물 바닥 대각선 대비 비율.
@@ -102,7 +116,7 @@ private:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
-	float SurfaceFireMinDistanceRatio = 0.15f;
+	float SurfaceFireMinDistanceRatio = 0.2f;
 	
 	/** rest 상태 바운드. 조각이 흩어져도 MinZ 기준이 흔들리지 않게 한다. */
 	FBox CachedRestBounds = FBox(ForceInit);
@@ -124,8 +138,8 @@ private:
 
 	/** 불 유지 루프 주기(초). 불이 하나도 없으면 루프가 멈춘다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
-		meta = (ClampMin = "0.02", AllowPrivateAccess = "true"))
-	float FireTickInterval = 1.f;
+	meta = (ClampMin = "0.1", AllowPrivateAccess = "true"))
+	float SurfaceFireUpdateInterval = 0.5f;
 	
 	/** 바닥 대각선에 비례한 목표 개수. Min/Max로 잘라낸다. */
 	int32 GetTargetSurfaceFireCount() const;
@@ -135,19 +149,9 @@ private:
 
 	/** 아직 건물에 붙어 있고 불이 없는 조각들의 위치를 모은다. */
 	void CollectAttachedPieceSpots(TArray<FSFPieceSpot>& OutSpots);
-	
-	// 교체
-	/** 불 유지 루프를 시작한다. 이미 돌고 있으면 아무것도 하지 않는다. */
-	void StartFireTick();
-
-	/**
-	 * 불의 전 생애를 한 번의 순회로 처리한다.
-	 * 떨어짐 판정 → 축소 감지 → 페이드 → 부족분 보충 → 종료 판단.
-	 */
-	void TickSurfaceFires();
 
 	/** 페이드를 시작한다. 파티클은 수명을 다 채우고 컴포넌트는 스스로 소멸한다. */
-	static void StartFireFade(FSFSurfaceFire& Fire);
+	static void RemoveSurfaceFire(FSFSurfaceFire& Fire);
 	
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
         Category = "Destruction",
@@ -191,7 +195,7 @@ private:
     UPROPERTY(Transient)
     bool bFinalDestructionApplied = false;
 
-	FTimerHandle FireTickTimerHandle;
+	FTimerHandle SurfaceFireTimerHandle;
 	FTimerHandle StrainHitTimerHandle;
 	FTimerHandle ImpulseTimerHandle;
 };

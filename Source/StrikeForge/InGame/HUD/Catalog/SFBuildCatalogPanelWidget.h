@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Game/GameState/SFGameState.h"
 #include "SFBuildCatalogPanelWidget.generated.h"
 
 class UHorizontalBox;
@@ -37,12 +38,16 @@ private:
 	);
 	
 protected:
+	/** Widget 생성 시 Stage 상태 이벤트를 구독한다. UUserWidget 수명 주기에서 호출되며 HandleStageStateChanged로 이어진다. */
 	virtual void NativeConstruct() override;
-
+	/** Widget 제거 시 Stage 상태 이벤트를 해제한다. UUserWidget 수명 주기에서 호출되며 부모 NativeDestruct로 이어진다. */
 	virtual void NativeDestruct() override;
-
-	// ==================== Variables ====================
 private:
+	/** Stage가 Playing으로 바뀌면 건설 목록을 갱신한다. GameState 델리게이트에서 호출되며 RefreshBuildingEntries로 이어진다. */
+	UFUNCTION()
+	void HandleStageStateChanged(
+		ESFStageState NewState);
+	/** 이미 로드된 Definition으로 건설 UI Entry를 만든다. NativeConstruct와 Stage 상태 변경에서 호출된다. */
 	void RefreshBuildingEntries();
 
 	UPROPERTY(meta = (BindWidget))

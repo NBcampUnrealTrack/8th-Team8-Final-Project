@@ -186,10 +186,9 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 
 		return;
 	}
-
-	OnBuildCatalogEntryClicked.Broadcast(
-		BuildingRowName
-	);
+	
+	// 선택시 클릭 알람?
+	OnBuildCatalogEntryClicked.Broadcast(BuildingRowName);
 	
 	// onclicked spawn building by rowname ======================================================================================
 	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
@@ -200,16 +199,16 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 	}
 	
 	// 자원이 충분한가 아닌가 검사 로직. 가능구역1
-	if (SFPC->SpawnBuildingFunction(BuildingRowName))
-	{
-		SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
+	const FName RequestedBuildingId = BuildingRowName;
 
-		// 배치 모드로 실제 들어간 뒤에 알린다.
-		//
-		// 자원이 모자라 생성이 실패하면 손에 든 건물이 없는데, 그때 알리면
-		// 튜토리얼만 "배치하세요" 로 넘어가 버린다.
-		USFTutorialSubsystem::NotifyBuildingSelected(this, BuildingRowName);
+	if (!SFPC->TryStartBuildingPlacement(RequestedBuildingId))
+	{
+		return;
 	}
+
+	SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
+
+	USFTutorialSubsystem::NotifyBuildingSelected(this,RequestedBuildingId);
 }
 
 void USFBuildCatalogEntryWidget::SetCanAfford(

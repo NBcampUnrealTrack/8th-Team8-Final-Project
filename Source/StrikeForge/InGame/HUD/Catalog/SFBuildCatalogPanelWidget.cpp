@@ -13,17 +13,56 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	BindResourceData();
-	RefreshBuildingEntries();
+	BoundGameState =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
+	if (!IsValid(BoundGameState))
+	{
+		return;
+	}
+
+	BoundGameState->OnStageStateChanged.RemoveDynamic(
+		this,
+		&ThisClass::HandleStageStateChanged);
+
+	BoundGameState->OnStageStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleStageStateChanged);
+
+	if (BoundGameState->IsStagePlaying())
+	{
+		BindResourceData();
+		RefreshBuildingEntries();
+	}
 }
 
 void USFBuildCatalogPanelWidget::NativeDestruct()
 {
+	if (IsValid(BoundGameState))
+	{
+		BoundGameState->OnStageStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleStageStateChanged);
+	}
+
 	UnbindResourceData();
 
 	CurrentEntryWidgets.Reset();
 
+	BoundGameState = nullptr;
+	
 	Super::NativeDestruct();
+}
+
+void USFBuildCatalogPanelWidget::HandleStageStateChanged(ESFStageState NewState)
+{
+	if (NewState == ESFStageState::Playing)
+	{
+		BindResourceData();
+		RefreshBuildingEntries();
+	}
 }
 
 void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
@@ -89,7 +128,7 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 		}
 
 		USFBuildingDefinition* Definition =
-			DefinitionRef.LoadSynchronous();
+			DefinitionRef.Get();
 
 		if (!IsValid(Definition))
 		{
@@ -184,9 +223,6 @@ void USFBuildCatalogPanelWidget::BindResourceData()
 		return;
 	}
 
-	BoundGameState =
-		World->GetGameState<ASFGameState>();
-
 	if (!IsValid(BoundGameState))
 	{
 		return;
@@ -228,7 +264,6 @@ void USFBuildCatalogPanelWidget::UnbindResourceData()
 {
 	if (!IsValid(BoundGameState))
 	{
-		BoundGameState = nullptr;
 		return;
 	}
 
@@ -249,8 +284,6 @@ void USFBuildCatalogPanelWidget::UnbindResourceData()
 			&USFBuildCatalogPanelWidget::HandleEtherChanged
 		);
 	}
-
-	BoundGameState = nullptr;
 }
 
 void USFBuildCatalogPanelWidget::HandleMineralChanged(

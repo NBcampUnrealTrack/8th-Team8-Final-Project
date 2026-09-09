@@ -1,5 +1,6 @@
 #include "SFSelectionPanelWidget.h"
 
+#include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -305,4 +306,34 @@ void USFSelectionPanelWidget::SetCommandButtonsVisible(
             ButtonVisibility
         );
     }
+}
+
+void USFSelectionPanelWidget::SetUpgradeCost(
+    const FResources& InUpgradeCost
+)
+{
+    if (IsValid(UpgradeMineralCostText))
+    {
+        UpgradeMineralCostText->SetText(
+            FText::AsNumber(InUpgradeCost.Mineral)
+        );
+    }
+
+    if (IsValid(UpgradeEtherCostText))
+    {
+        UpgradeEtherCostText->SetText(
+            FText::AsNumber(InUpgradeCost.Ether)
+        );
+    }
+
+    bool bCanAffordUpgrade = false;
+}
+
+void USFSelectionPanelWidget::SetUpgradeAffordability(
+    bool bInCanAfford
+)
+{
+    BP_OnUpgradeAffordabilityChanged(
+        bInCanAfford
+    );
 }

@@ -41,7 +41,7 @@ protected:
     TSubclassOf<USFMultiSelectionEntryWidget> EntryWidgetClass;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection", meta = (ClampMin = "1"))
-    int32 ColumnCount = 10;
+    int32 ColumnCount = 8;
 
 private:
     UFUNCTION()

@@ -11,7 +11,7 @@
 #include "Components/ProgressBar.h"
 #include "Components/Button.h"
 #include "Game/GameState/SFGameState.h"
-
+#include "GameFramework/PlayerController.h"
 #include "Components/VerticalBoxSlot.h"
 #include "ActorComponent/Product/ProductComponent.h"
 #include "ActorComponent/Product/ProductInfo.h"
@@ -644,4 +644,53 @@ void USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged(
     RefreshProductionUnitEntries(
         UpdatedData
     );
+}
+
+bool USFProductionBuildingPanelWidget::
+IsPointerOverProductionPanel() const
+{
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    if (!IsValid(PlayerController))
+    {
+        return false;
+    }
+
+    if (!IsVisible())
+    {
+        return false;
+    }
+
+    float MouseX = 0.f;
+    float MouseY = 0.f;
+
+    if (!PlayerController->GetMousePosition(MouseX, MouseY))
+    {
+        return false;
+    }
+
+    const FVector2D MousePosition(
+        MouseX,
+        MouseY
+    );
+
+    const bool bOverProductionPanel =
+        GetCachedGeometry().IsUnderLocation(
+            MousePosition
+        );
+
+    if (bOverProductionPanel)
+    {
+        return true;
+    }
+
+    if (IsValid(UnitEntryBox) &&
+        UnitEntryBox->IsVisible())
+    {
+        return UnitEntryBox->GetCachedGeometry()
+            .IsUnderLocation(MousePosition);
+    }
+
+    return false;
 }

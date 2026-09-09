@@ -75,12 +75,26 @@ private:
 	void HandleRaceDataReady(ESFRace InRace, bool bSuccess);
 	/** Anchor에 필요한 건물 Tier 0 리소스를 요청한다. HandleRaceDataReady에서 호출되며 HandleAnchorAssetsReady로 이어진다. */
 	void RequestInitialBuildingAssets();
-	/** Anchor 리소스 로드 결과를 모은다. Subsystem 콜백으로 호출되며 모든 요청 완료 시 CompleteStageBootstrap으로 이어진다. */
+	/**
+	 * 초기 건물 리소스 로드 결과를 모은다.
+	 * Subsystem 콜백으로 호출되며 모든 요청 완료 시
+	 * BeginStageRenderPreparation으로 이어진다.
+	 */
 	void HandleInitialBuildingAssetsReady(
 		USFBuildingDefinition* InDefinition,
 		int32 InTierIndex,
 		bool bSuccess);
-	/** Anchor 건물을 생성하고 스테이지를 시작한다. HandleAnchorAssetsReady에서 호출되며 SpawnStageBuildingsFromAnchors와 StartStage로 이어진다. */
+	/**
+	 * 모든 비동기 에셋 로딩이 끝난 뒤 Anchor 건물을 생성한다.
+	 * HandleInitialBuildingAssetsReady에서 호출되며
+	 * 성공 시 0.5초 렌더 준비 타이머를 시작한다.
+	 */
+	void BeginStageRenderPreparation();
+
+	/**
+	 * Anchor 생성 후 렌더 준비 타이머가 끝나면 호출된다.
+	 * 진행도를 100%로 변경하고 ReadyToStart 상태로 전환한다.
+	 */
 	void CompleteStageBootstrap();
 	/** 비동기 스테이지 초기화를 실패 상태로 종료한다. 각 검증·로드 단계에서 호출되며 이후 초기화 진행을 중단한다. */
 	void FailStageBootstrap();
@@ -103,6 +117,20 @@ private:
 
 	int32 TotalInitialBuildingAssetRequestCount = 0;
 	int32 PendingInitialBuildingAssetRequestCount = 0;
+	
+	/** Anchor 생성 후 렌더 준비 시간을 관리한다. */
+	FTimerHandle StageRenderPreparationTimerHandle;
+
+	/** 렌더 준비 타이머의 중복 실행을 방지한다. */
+	bool bStageRenderPreparationStarted = false;
+
+	/**
+	 * Anchor 생성 완료 후 ReadyToStart까지 기다릴 시간이다.
+	 * 실제 렌더 완료 신호가 아니라 화면 표시를 위한 준비 시간이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
+		meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+	float StageRenderPreparationDelay = 0.5f;
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;

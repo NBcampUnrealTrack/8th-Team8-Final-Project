@@ -53,13 +53,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);
 	
+	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
+	bool RetryCurrentStage();
+	
 	// Race
 	// 종족 선택 함수 
 	// 종족Enum만 선택해놓으면 GM이 시작할때 Load함수를 부르고 종족에 맞는 Catalog를 가져간다
 	UFUNCTION(BlueprintCallable, Category = "SF|Race")
 	bool SelectRace(ESFRace InRace);
 	// TMap에서 종족에 맞는 카탈로그 반환
-	USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	// 비동기로 비활성화
+	//USFBuildingCatalog* LoadBuildingCatalog(ESFRace InRace) const;
+	TSoftObjectPtr<USFBuildingCatalog>
+			GetBuildingCatalogAsset(ESFRace InRace) const;
 	
 	// 플레이어 종족 getter
 	UFUNCTION(BlueprintPure, Category = "SF|Race")

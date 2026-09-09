@@ -105,6 +105,11 @@ protected:
 	);
 
 private:
+	/**
+	 * 건설 카탈로그 항목 클릭을 처리한다.
+	 * 버튼 클릭 이벤트에서 호출되며 TryStartBuildingPlacement를 통해
+	 * 고스트 건물을 생성한 뒤 배치 컨트롤 모드로 전환한다.
+	 */
 	void HandleEntryClicked();
 
 	UPROPERTY(Transient)

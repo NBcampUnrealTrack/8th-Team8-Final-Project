@@ -12,6 +12,8 @@
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 
+#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
+
 ASFGameMode::ASFGameMode()
 {
 	// GameMode가 사용할 GameState 클래스 지정
@@ -64,213 +66,33 @@ void ASFGameMode::Logout(AController* Exiting)
 void ASFGameMode::InitGameState()
 {
 	Super::InitGameState();
-	
+
 	SFGameState = GetGameState<ASFGameState>();
 
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] InitGameState: "
-			"SFGameState를 찾을 수 없습니다.");
-
 		return;
 	}
 
-	USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
-
-	if (!IsValid(SFGameInstance))
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] InitGameState: "
-			"SFGameInstance가 유효하지 않습니다.");
-
-		return;
-	}
-
-	// 1. 플레이어는 GameInstance가 보관한 선택 종족 사용
-	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
-	//
-	if (PlayerRace == ESFRace::None)
-	{
-		SF_LOG(Error, "[SFGameMode] 플레이어 종족이 선택되지 않았습니다.");
-		return;
-	}
-	
-	USFBuildingCatalog* PlayerCatalog = SFGameInstance->LoadBuildingCatalog(PlayerRace);
-	if (!IsValid(PlayerCatalog))
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] 플레이어 Catalog 로드 실패. Race=%s",
-			*UEnum::GetValueAsString(PlayerRace));
-		return;
-	}
-
-	if (!SFGameState->RegisterTeam(PlayerTeamIndex, PlayerRace, PlayerCatalog))
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] 플레이어 팀 등록 실패. Team=%d",
-			PlayerTeamIndex);
-		return;
-	}
-	
-	// 2. 선택된 스테이지 데이터 조회
-	const FName StageRowName = SFGameInstance->GetSelectedStageRowName();
-	if (StageRowName.IsNone())
-	{
-		SF_LOG(Error, "[SFGameMode] 선택된 Stage가 없습니다.");
-		return;
-	}
-
-	USFDataTableManager* DataManager = SFGameInstance->GetSubsystem<USFDataTableManager>();
-	if (!IsValid(DataManager))
+	if (!IsValid(SFGameState->FindOrAddTeam(PlayerTeamIndex)))
 	{
 		return;
 	}
-
-	const FSFStageData* StageData =
-		DataManager->GetDataRow<FSFStageData>(
-			EDataTableType::Stage,
-			StageRowName,
-			TEXT("ASFGameMode::InitGameState"));
-
-	if (!StageData)
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] StageData 조회 실패. Stage=%s",
-			*StageRowName.ToString());
-		return;
-	}
-	
-	// 3. AI 팀 등록
-	TSet<int32> RegisteredComputerTeams;
-
-	for (const FSFStageTeamSetup& ComputerTeam : StageData->TeamSetups)
-	{
-		if (ComputerTeam.TeamIndex == PlayerTeamIndex)
-		{
-			SF_LOG(
-				Error,
-				"[SFGameMode] AI가 플레이어 TeamIndex를 사용합니다: %d",
-				ComputerTeam.TeamIndex);
-			return;
-		}
-
-		if (RegisteredComputerTeams.Contains(ComputerTeam.TeamIndex))
-		{
-			SF_LOG(
-				Error,
-				"[SFGameMode] AI TeamIndex가 중복됐습니다: %d",
-				ComputerTeam.TeamIndex);
-			return;
-		}
-
-		RegisteredComputerTeams.Add(ComputerTeam.TeamIndex);
-
-		USFBuildingCatalog* ComputerCatalog =
-			SFGameInstance->LoadBuildingCatalog(
-				ComputerTeam.Race);
-
-		if (!IsValid(ComputerCatalog))
-		{
-			SF_LOG(
-				Error,
-				"[SFGameMode] AI Catalog 로드 실패. Team=%d, Race=%s",
-				ComputerTeam.TeamIndex,
-				*UEnum::GetValueAsString(ComputerTeam.Race));
-			return;
-		}
-
-		if (!SFGameState->RegisterTeam(ComputerTeam.TeamIndex, ComputerTeam.Race, ComputerCatalog))
-		{
-			SF_LOG(
-				Error,
-				"[SFGameMode] AI 팀 등록 실패. Team=%d",
-				ComputerTeam.TeamIndex);
-			return;
-		}
-	}
-	
-	if (!SFGameState->InitializeStage(
-		StageRowName,
-		StageData->BuildingRules
-	))
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] Stage 초기화 실패. Stage=%s",
-			*StageRowName.ToString());
-
-		return;
-	}
-	
-	SF_LOG(
-		Log,
-		"[SFGameMode] Team %d BuildingCatalog 설정 완료: %s",
-		PlayerTeamIndex,
-		*GetNameSafe(PlayerCatalog));
 }
 
 void ASFGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	// initgamestate에서 캐싱함.
-	// SFGameState = GetGameState<ASFGameState>();
-	//
-	if (!IsValid(SFGameState))
-	{
-		SF_LOG(Error, "[SFGameMode] Failed to find SFGameState.");
 	
-		return;
-	}
-
-	SF_LOG(Log, "[SFGameMode] Stage initialization started.");
-
-	if (!IsValid(
-		SFGameState->GetTeamBuildingCatalog(
-			PlayerTeamIndex)))
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] Team %d의 BuildingCatalog가 "
-			"초기화되지 않았습니다.",
-			PlayerTeamIndex);
-
-		return;
-	}
-	
-	if (SFGameState->GetCurrentStageRowName().IsNone())
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] 팀 또는 스테이지 초기화가 완료되지 않았습니다.");
-
-		return;
-	}
-	
-	if (!SpawnStageBuildingsFromAnchors())
-	{
-		SF_LOG(
-			Error,
-			"[SFGameMode] 스테이지 시작 건물 생성에 실패했습니다.");
-
-		return;
-	}
-	// 나중에 타이틀, 로비, 인게임 맵 추가 시 작성될 부분
-
-	StartStage();
+	// initgamestate에서 플레이어팀등록을 마친뒤 호출
+	BeginStageBootstrap();
 }
 
 bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 {
 	UWorld* World = GetWorld();
 
-	if (!IsValid(World) ||
-		!IsValid(SFGameState))
+	if (!IsValid(World) || !IsValid(SFGameState))
 	{
 		return false;
 	}
@@ -301,11 +123,9 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
-		if (Anchor->GetBuildingType() ==
-			ESFBuildingType::None)
+		if (Anchor->GetBuildingType() == ESFBuildingType::None)
 		{
-			SF_LOG(
-				Error,
+			SF_LOG(Error,
 				"[SFGameMode] BuildingType이 None인 Anchor가 있습니다. "
 				"Anchor=%s",
 				*GetNameSafe(Anchor));
@@ -319,8 +139,7 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 			if (NexusTeams.Contains(TeamIndex))
 			{
-				SF_LOG(
-					Error,
+				SF_LOG(Error,
 					"[SFGameMode] Team %d의 Nexus Anchor가 중복됐습니다.",
 					TeamIndex);
 
@@ -387,7 +206,7 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 		return false;
 	}
 	
-	USFBuildingDefinition* Definition =	Catalog->FindDefinitionByBuildingType(BuildingType);
+	USFBuildingDefinition* Definition =	Catalog->FindLoadedDefinitionByType(BuildingType);
 	if (!IsValid(Definition))
 	{
 		SF_LOG(Error,"[SFGameMode] BuildingType에 맞는 Definition이 없습니다. "
@@ -413,12 +232,13 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 				Definition,
 				TeamIndex,
 				SpawnTransform,
-				ESFBuildingSpawnMode::ViewPortPlacedMode);
+				ESFBuildingSpawnMode::ViewPortPlacedMode,
+				InAnchor->GetInitialTierIndex());
+	
 	if (!IsValid(SpawnedBuilding) ||
 		SpawnedBuilding->IsActorBeingDestroyed())
 	{
-		SF_LOG(
-			Error,
+		SF_LOG(Error,
 			"[SFGameMode] Anchor 건물 생성 실패. "
 			"Anchor=%s, Team=%d, Type=%s",
 			*GetNameSafe(InAnchor),
@@ -430,8 +250,7 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 	if (BuildingType == ESFBuildingType::Nexus &&
 	!IsValid(SFGameState->GetNexus(TeamIndex)))
 	{
-		SF_LOG(
-			Error,
+		SF_LOG(Error,
 			"[SFGameMode] 생성된 Nexus가 GameState에 등록되지 않았습니다. "
 			"Team=%d, Definition=%s",
 			TeamIndex,
@@ -443,6 +262,559 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 	
 	
 	return true;
+}
+
+void ASFGameMode::BeginStageBootstrap()
+{
+	if (!IsValid(SFGameState))
+    {
+        SF_LOG(Error,
+            "[SFGameMode] Stage Bootstrap을 시작할 GameState가 없습니다.");
+
+        return;
+    }
+
+    if (SFGameState->GetStageState() != ESFStageState::Initializing)
+    {
+        return;
+    }
+
+    /*
+     * 먼저 상태를 변경하여 BeginStageBootstrap 중복 호출을 막는다.
+     * 이후 검증에 실패하면 InitializationFailed로 전환한다.
+     */
+    if (!SFGameState->BeginRaceDataLoading())
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+    USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
+    if (!IsValid(SFGameInstance))
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+    // 비동기 에셋 로딩 Subsystem을 캐싱한다.
+    BuildingAssetSubsystem = SFGameInstance->GetSubsystem<USFBuildingAssetSubsystem>();
+    if (!IsValid(BuildingAssetSubsystem))
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+	// StageTable의 RowName
+    BootstrapStageRowName = SFGameInstance->GetSelectedStageRowName();
+	// 플레이어가 선택한 종족
+    const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
+
+    if (BootstrapStageRowName.IsNone() ||
+        PlayerRace == ESFRace::None)
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+	// 테이블 매니저
+    USFDataTableManager* DataManager = SFGameInstance->GetSubsystem<USFDataTableManager>();
+    if (!IsValid(DataManager))
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+	// GameInstance와 연계
+	// 테이블의 현재 RowName으로 구조체 정보 추출
+    const FSFStageData* StageData =
+        DataManager->GetDataRow<FSFStageData>(
+            EDataTableType::Stage,
+            BootstrapStageRowName,
+            TEXT("BeginStageBootstrap"));
+
+    if (!StageData)
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+    BootstrapTeamRaces.Reset();
+    BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
+
+	// 테이블의 Enemy Setup 불러와서 등록
+    for (const FSFStageTeamSetup& TeamSetup : StageData->TeamSetups)
+    {
+    	if (TeamSetup.TeamIndex == PlayerTeamIndex ||
+			TeamSetup.Race == ESFRace::None ||
+			BootstrapTeamRaces.Contains(TeamSetup.TeamIndex))
+        {
+            FailStageBootstrap();
+            return;
+        }
+		// 적Enemy 팀번호와 종족등록
+        BootstrapTeamRaces.Add(TeamSetup.TeamIndex, TeamSetup.Race);
+    }
+
+    RequestRequiredRaceData();
+}
+
+void ASFGameMode::RequestRequiredRaceData()
+{
+	if (!IsValid(SFGameState) ||
+		!IsValid(BuildingAssetSubsystem))
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	if (SFGameState->GetStageState() != ESFStageState::LoadingRaceData)
+	{
+		return;
+	}
+
+	// 공통 종족 필터
+	TSet<ESFRace> RequiredRaces;
+	for (const TPair<int32, ESFRace>& Team : BootstrapTeamRaces)
+	{
+		RequiredRaces.Add(Team.Value);
+	}
+
+	if (RequiredRaces.IsEmpty())
+	{
+		FailStageBootstrap();
+		return;
+	}
+	
+	// 현재 게임상태 State = 로딩중...
+	// StageBootstrapState = ESFStageBootstrapState::LoadingRaceData;
+	// 로딩 갯수
+	TotalRaceRequestCount = RequiredRaces.Num();
+	// 임시저장 ( 완료될때마다 줄어들거임 )
+	PendingRaceRequestCount = TotalRaceRequestCount;
+	// 로딩 UI 진행도
+	SFGameState->SetStageLoadingProgress(0.f);
+
+	for (ESFRace Race : RequiredRaces)
+	{
+		// 종족안의 건물정의들 비동기 로딩 (DA -> DA)
+		BuildingAssetSubsystem
+			->RequestRaceDataAsync(
+				Race,
+				// 에셋매니저를 인클루드했기때문에 쓸수있는 델리게이트
+				FSFOnRaceBuildingDataReady::CreateUObject(
+					this,
+					&ThisClass::HandleRaceDataReady));
+	}	// 카탈로그 로딩 ->
+		// 카탈로그안 건물Def로딩 ->
+		// UI용 이미지 로딩 ->
+		// 완료이벤트 = HandleRaceDataReady 실행
+}
+
+void ASFGameMode::HandleRaceDataReady(ESFRace InRace, bool bSuccess)
+{
+	// 비동기 로딩완료이후 종족 + 성공,실패여부와 함께 실행되는 콜백함수 시작
+	// 이함수가 실행될때는 종족카탈로그, 종족건물
+	if (!IsValid(SFGameState) ||
+		SFGameState->GetStageState() !=	ESFStageState::LoadingRaceData)
+	{
+		return;
+	}
+	
+	if (!bSuccess)
+	{	// Catalog의 배열중 하나라도 에셋이 비어있으면 로딩 실패
+		SF_LOG(Error, "[SFGameMode] 종족 데이터 로드 실패. Race=%s",
+			*UEnum::GetValueAsString(InRace));
+
+		FailStageBootstrap();
+		return;
+	}
+
+	if (PendingRaceRequestCount <= 0)
+	{
+		FailStageBootstrap();
+		return;
+	}
+	
+	// 종족하나 로딩완료
+	--PendingRaceRequestCount;
+	
+	UpdateStageLoadingProgress();
+
+	if (PendingRaceRequestCount > 0)
+	{
+		return;
+	}
+
+	// 종족 로딩 전부 완료
+	
+	for (const TPair<int32, ESFRace>& Team : BootstrapTeamRaces)
+	{	// Soft Catalog에서 TObject로 로딩완료
+		// 카탈로그는 에셋매니저가 관리한다 
+		USFBuildingCatalog* Catalog =
+			BuildingAssetSubsystem->GetLoadedCatalog(Team.Value);
+
+		if (!IsValid(Catalog) ||
+			!SFGameState->RegisterTeam(Team.Key, Team.Value, Catalog))
+		{
+			FailStageBootstrap();
+			return;
+		}
+	}
+
+	if (!SFGameState->InitializeStage(BootstrapStageRowName))
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	RequestInitialBuildingAssets();
+}
+
+void ASFGameMode::RequestInitialBuildingAssets()
+{
+	UWorld* World = GetWorld();
+
+    if (!IsValid(World) ||
+        !IsValid(SFGameState) ||
+        !IsValid(BuildingAssetSubsystem))
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+	/*
+	* 하나의 Definition에서 여러 Tier가 필요할 수 있다.
+	*
+	* 예:
+	* Nexus -> Tier 1, Tier 2
+	* House -> Tier 0
+	*/
+	TMap<USFBuildingDefinition*, TSet<int32>>RequiredTiersByDefinition;
+
+    auto AddRequiredTier =
+        [&RequiredTiersByDefinition](
+            USFBuildingDefinition* Definition,
+            int32 TierIndex) -> bool
+        {
+            if (!IsValid(Definition) ||
+                TierIndex < 0 ||
+                !Definition->FindTier(TierIndex))
+            {
+                return false;
+            }
+
+            RequiredTiersByDefinition
+                .FindOrAdd(Definition)
+                .Add(TierIndex);
+
+            return true;
+        };
+
+    /*
+     * 1. 모든 팀의 건설 UI용 건물은 Tier 0을 준비한다.
+     */
+    for (const TPair<int32, ESFRace>& Team
+        : BootstrapTeamRaces)
+    {
+        USFBuildingCatalog* Catalog =
+            SFGameState->GetTeamBuildingCatalog(
+                Team.Key);
+
+        if (!IsValid(Catalog))
+        {
+            FailStageBootstrap();
+            return;
+        }
+
+        for (const TSoftObjectPtr<
+            USFBuildingDefinition>& DefinitionRef
+            : Catalog->BuildableDefinitions)
+        {
+            USFBuildingDefinition* Definition =
+                DefinitionRef.Get();
+
+            if (!AddRequiredTier(Definition, 0))
+            {
+                SF_LOG(
+                    Error,
+                    "[SFGameMode] Buildable Tier 0 "
+                    "수집 실패. Team=%d, Asset=%s",
+                    Team.Key,
+                    *DefinitionRef
+                        .ToSoftObjectPath()
+                        .ToString());
+
+                FailStageBootstrap();
+                return;
+            }
+        }
+    }
+
+    /*
+     * 2. Anchor 건물은 시작 Tier와 다음 Tier를 준비한다.
+     */
+    int32 AnchorCount = 0;
+
+    for (TActorIterator<
+        ASFBuildingSpawnAnchor> It(World);
+        It;
+        ++It)
+    {
+        const ASFBuildingSpawnAnchor* Anchor = *It;
+
+        if (!IsValid(Anchor))
+        {
+            continue;
+        }
+
+        ++AnchorCount;
+
+        USFBuildingCatalog* Catalog =
+            SFGameState->GetTeamBuildingCatalog(
+                Anchor->GetTeamIndex());
+
+        USFBuildingDefinition* Definition =
+            IsValid(Catalog)
+                ? Catalog->FindLoadedDefinitionByType(
+                    Anchor->GetBuildingType())
+                : nullptr;
+
+        if (!IsValid(Definition))
+        {
+            FailStageBootstrap();
+            return;
+        }
+
+        const int32 InitialTier =
+            Anchor->GetInitialTierIndex();
+
+        // Anchor가 실제로 생성될 Tier이므로 반드시 존재해야 한다.
+        if (!AddRequiredTier(
+            Definition,
+            InitialTier))
+        {
+            SF_LOG(
+                Error,
+                "[SFGameMode] Anchor 시작 Tier가 "
+                "유효하지 않습니다. "
+                "Anchor=%s, Tier=%d",
+                *GetNameSafe(Anchor),
+                InitialTier);
+
+            FailStageBootstrap();
+            return;
+        }
+
+        /*
+         * 다음 Tier는 존재할 때만 추가한다.
+         * 마지막 Tier라면 오류가 아니다.
+         */
+        const int32 NextTier =
+            InitialTier + 1;
+
+        if (Definition->FindTier(NextTier))
+        {
+            AddRequiredTier(
+                Definition,
+                NextTier);
+        }
+    }
+
+    if (AnchorCount == 0 ||
+        RequiredTiersByDefinition.IsEmpty())
+    {
+        FailStageBootstrap();
+        return;
+    }
+
+    int32 RequestCount = 0;
+
+    for (const TPair<
+        USFBuildingDefinition*,
+        TSet<int32>>& Pair
+        : RequiredTiersByDefinition)
+    {
+        RequestCount += Pair.Value.Num();
+    }
+
+	TotalInitialBuildingAssetRequestCount = RequestCount;
+	PendingInitialBuildingAssetRequestCount = RequestCount;
+
+	if (!SFGameState->BeginInitialBuildingAssetsLoading())
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	UpdateStageLoadingProgress();
+    /*
+     * 콜백이 즉시 실행될 수 있으므로
+     * 카운터 설정 후 요청을 시작한다.
+     */
+    for (const TPair<USFBuildingDefinition*, TSet<int32>>& Pair
+						: RequiredTiersByDefinition)
+    {
+        USFBuildingDefinition* Definition = Pair.Key;
+
+        for (const int32 TierIndex : Pair.Value)
+        {
+        	if (!IsValid(SFGameState) ||
+				SFGameState->GetStageState() !=	ESFStageState::LoadingInitialBuildingAssets)
+        	{
+        		return;
+        	}
+
+            BuildingAssetSubsystem
+                ->RequestBuildingAssetsAsync(
+                    Definition,
+                    TierIndex,
+                    FSFOnBuildingAssetsReady::
+                    CreateUObject(
+                        this,
+                        &ThisClass::
+                        HandleInitialBuildingAssetsReady));
+        }
+    }
+}
+
+void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+{
+	if (!IsValid(SFGameState) ||
+		SFGameState->GetStageState() != ESFStageState::LoadingInitialBuildingAssets)
+	{
+		return;
+	}
+
+	if (!bSuccess ||
+	!IsValid(InDefinition) ||
+	InTierIndex < 0 ||
+	!InDefinition->FindTier(InTierIndex))
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 초기 건물 에셋 로딩 실패. "
+			"Definition=%s, Tier=%d",
+			*GetNameSafe(InDefinition),
+			InTierIndex);
+
+		FailStageBootstrap();
+		return;
+	}
+
+	if (PendingInitialBuildingAssetRequestCount <= 0)
+	{
+		SF_LOG(
+			Error,
+			"[SFGameMode] 초기 Tier 0 요청 카운터가 "
+			"잘못된 상태입니다.");
+
+		FailStageBootstrap();
+		return;
+	}
+
+	--PendingInitialBuildingAssetRequestCount;
+
+	UpdateStageLoadingProgress();
+	
+	SF_LOG(
+		Log,
+		"[SFGameMode] 초기 Tier 준비 완료. "
+		"Definition=%s, Tier=%d, Remaining=%d",
+		*GetNameSafe(InDefinition),
+		InTierIndex,
+		PendingInitialBuildingAssetRequestCount);
+
+	if (PendingInitialBuildingAssetRequestCount == 0)
+	{
+		CompleteStageBootstrap();
+	}
+}
+
+void ASFGameMode::CompleteStageBootstrap()
+{
+	if (!IsValid(SFGameState) ||
+		SFGameState->GetStageState() != ESFStageState::LoadingInitialBuildingAssets)
+	{
+		return;
+	}
+
+	if (!SpawnStageBuildingsFromAnchors())
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	SFGameState->SetStageLoadingProgress(1.f);
+
+	if (!SFGameState->MarkStageReadyToStart())
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	// 필요하면 이곳에서 UI 미응답용 비상 타이머를 시작한다.
+}
+
+void ASFGameMode::FailStageBootstrap()
+{
+	if (!IsValid(SFGameState))
+	{
+		SF_LOG(Error,
+			"[SFGameMode] 비동기 스테이지 초기화 실패. "
+			"GameState가 유효하지 않습니다.");
+
+		return;
+	}
+
+	if (SFGameState->GetStageState() ==	ESFStageState::InitializationFailed)
+	{
+		return;
+	}
+
+	SF_LOG(Error, "[SFGameMode] 비동기 스테이지 초기화 실패.");
+
+	if (!SFGameState->FailStageInitialization())
+	{
+		SF_LOG(Error,
+			"[SFGameMode] GameState가 초기화 실패 상태 전환을 거부했습니다.");
+	}
+}
+
+void ASFGameMode::UpdateStageLoadingProgress()
+{
+	if (!IsValid(SFGameState))
+	{
+		return;
+	}
+
+	// 종족 진행도
+	const float RaceDataProgress =
+		TotalRaceRequestCount > 0
+			? 1.f -
+				static_cast<float>(PendingRaceRequestCount) /
+				static_cast<float>(TotalRaceRequestCount)
+			: 0.f;
+	// 종족 안 건물 진행도
+	const float InitialBuildingAssetProgress =
+		TotalInitialBuildingAssetRequestCount > 0
+			? 1.f -
+				static_cast<float>(PendingInitialBuildingAssetRequestCount) /
+				static_cast<float>(TotalInitialBuildingAssetRequestCount)
+			: 0.f;
+	
+	
+	constexpr float RaceDataWeight = 0.30f;
+	constexpr float InitialBuildingAssetWeight = 0.65f;
+
+	// 비율계산
+	const float TotalProgress = FMath::Clamp(
+		RaceDataProgress * RaceDataWeight +
+		InitialBuildingAssetProgress *
+			InitialBuildingAssetWeight,
+		0.f,
+		0.95f);
+
+	SFGameState->SetStageLoadingProgress(TotalProgress);
 }
 
 bool ASFGameMode::StartStage()
@@ -560,133 +932,25 @@ bool ASFGameMode::FinishStage(ESFStageResult NewStageResult)
 	return true;
 }
 
+void ASFGameMode::StartStageAfterLoadingScreen()
+{
+	if (!IsValid(SFGameState) ||
+		SFGameState->GetStageState() != ESFStageState::ReadyToStart)
+	{
+		return;
+	}
+
+	if (!StartStage())
+	{
+		FailStageBootstrap();
+		return;
+	}
+
+	SF_LOG(Log,
+		"[SFGameMode] 로딩 화면 종료 후 스테이지를 시작했습니다.");
+}
+
 ASFGameState* ASFGameMode::GetSFGameState() const
 {
 	return SFGameState;
 }
-
-// 26.08.18
-// ASFNexusBuilding* ASFGameMode::SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex)
-// {
- //    if (NexusRowName.IsNone())
- //    {
- //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Nexus RowName is None.");
- //
- //        return nullptr;
- //    }
- //
- //    if (TeamIndex == INDEX_NONE)
- //    {
- //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: TeamIndex is invalid.");
- //
- //        return nullptr;
- //    }
- //
- //    UGameInstance* GameInstance = GetGameInstance();
- //
- //    if (!IsValid(GameInstance))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: GameInstance is invalid.");
- //
- //        return nullptr;
- //    }
- //
- //    USFDataTableManager* DataManager = GameInstance->GetSubsystem<USFDataTableManager>();
- //
- //    if (!IsValid(DataManager))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: DataTableManager is invalid.");
- //
- //        return nullptr;
- //    }
- //
- //    const FBuildingAppearance* NexusData = DataManager->GetDataRow<FBuildingAppearance>(EDataTableType::Building, NexusRowName, TEXT("SpawnNexus"));
- //
- //    if (NexusData == nullptr)
- //    {
- //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: Row was not found. Row: %s", *NexusRowName.ToString());
- //
- //        return nullptr;
- //    }
- //
- //    UClass* NexusClass = NexusData->BuildingClass.LoadSynchronous();
- //
- //    if (!IsValid(NexusClass))
- //    {
- //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is invalid. Row: %s", *NexusRowName.ToString());
- //
- //        return nullptr;
- //    }
- //
- //    if (!NexusClass->IsChildOf(ASFNexusBuilding::StaticClass()))
- //    {
- //        SF_LOG(Warning, "[SFGameMode] SpawnNexus failed: BuildingClass is not an SFNexusBuilding. Class: %s", *GetNameSafe(NexusClass));
- //
- //        return nullptr;
- //    }
- //
- //    UWorld* World = GetWorld();
- //
- //    if (!IsValid(World))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: World is invalid.");
- //
- //        return nullptr;
- //    }
- //
- //    ASFNexusBuilding* SpawnedNexus = World->SpawnActorDeferred<ASFNexusBuilding>(NexusClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
- //
- //    if (!IsValid(SpawnedNexus))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SpawnActorDeferred failed.");
- //
- //        return nullptr;
- //    }
- //
- //    // BeginPlay 전에 데이터테이블 RowName 설정
- //    SpawnedNexus->SetRowName(NexusRowName);
-	// SpawnedNexus->SetSpawnMode(ESFBuildingSpawnMode::ViewPortPlacedMode);
- //    // BeginPlay 전에 전투 팀 설정
- //    UCombatTargetComponent* CombatTarget = SpawnedNexus->FindComponentByClass<UCombatTargetComponent>();
- //
- //    if (!IsValid(CombatTarget))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: CombatTargetComponent is invalid.");
- //
- //        SpawnedNexus->Destroy();
- //
- //        return nullptr;
- //    }
- //
- //    CombatTarget->SetTeamIndex(TeamIndex);
- //
- //    // 여기서 BeginPlay가 실행됨
- //    SpawnedNexus->FinishSpawning(SpawnTransform);
- //
- //    if (!IsValid(SFGameState))
- //    {
- //        SFGameState = GetGameState<ASFGameState>();
- //    }
- //
- //    if (!IsValid(SFGameState))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: SFGameState is invalid.");
- //
- //        SpawnedNexus->Destroy();
- //
- //        return nullptr;
- //    }
- //
- //    if (!SFGameState->RegisterNexus(TeamIndex, SpawnedNexus))
- //    {
- //        SF_LOG(Error, "[SFGameMode] SpawnNexus failed: Nexus registration failed.");
- //
- //        SpawnedNexus->Destroy();
- //
- //        return nullptr;
- //    }
- //
- //    SF_LOG(Log, "[SFGameMode] Nexus spawned. Team: %d, Row: %s, Nexus: %s", TeamIndex, *NexusRowName.ToString(), *GetNameSafe(SpawnedNexus));
- //
- //    return SpawnedNexus;
-// }

@@ -578,12 +578,6 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount)
                     EAttachLocation::KeepWorldPosition,
                     false,
                     true);
-
-            // 교체
-            #if !UE_BUILD_SHIPPING
-            DrawDebugSphere(GetWorld(), WorldLocation, 40.f, 12,
-                FColor::Red, false, 10.f, 0, 2.f);
-            #endif
             
             if (IsValid(Fire))
             {

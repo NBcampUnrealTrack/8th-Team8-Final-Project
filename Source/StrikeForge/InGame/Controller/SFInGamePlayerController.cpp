@@ -1296,7 +1296,7 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
             break;
 
         case ESFUnitCommandMode::Move:
-            UnitCommand = ESFUnitCommand::Move;
+            UnitCommand = ESFUnitCommand::AttackMove;
             break;
 
         default:

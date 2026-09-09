@@ -343,6 +343,12 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	AttackAnimHoldRemaining = 0.f;
 	StopAttackMontage();
 
+	PendingAttackTarget.Reset();
+	AppliedAttackHitCount = 0;
+
+	// 쿨다운도 함께 초기화한다.
+	AttackCooldownRemaining = 0.f;
+
 	// 사망 모션. DeathLifeSpan 안에 끝나야 중간에 사라지지 않는다.
 	if (DeathMontage)
 	{
@@ -391,6 +397,21 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	}
 }
 
+void AUnitBase::HandleDeathPose()
+{
+	// 살아 있는 유닛에게 잘못 실행된 Notify는 무시한다.
+	if (CombatState != EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	// Notify가 실행된 현재 사망 자세에서 애니메이션을 정지한다.
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->bPauseAnims = true;
+	}
+}
+
 // ─────────────────────────────────────────────────────────
 // HUD 선택 정보
 //
@@ -407,6 +428,7 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 
 	Info.DataRowName = UnitRowName;
 	Info.SelectableType = ESFSelectableType::Unit;
+	Info.PortraitAnimation = PortraitIdleAnimation;
 
 	// ── 런타임 값 ───────────────────────────────────────
 	if (IsValid(HealthComponent))
@@ -656,6 +678,9 @@ void AUnitBase::CommandAttackMove(const FVector& InDestination)
 	// 목적지 설정·몽타주 중단·경로 재계산은 강제 이동과 완전히 같다.
 	// 다른 점은 Tick 에서 교전 판정을 건너뛰지 않는다는 것뿐이다.
 	MoveToLocation_Implementation(InDestination);
+
+	// 공격을 취소하고 잠시 목적지 이동을 우선
+	CommandAttackMoveGraceRemaining = 0.3f;
 
 	// 위 호출이 꺼놓은 플래그를 다시 켠다. 순서를 뒤집으면 꺼진다.
 	bCommandIsAttackMove = true;
@@ -1273,63 +1298,145 @@ AActor* AUnitBase::FindBestTarget()
 // ─────────────────────────────────────────────────────────
 void AUnitBase::PerformAttack(AActor* InTarget)
 {
-	if (!IsTargetUsable(InTarget)) return;
+	/**
+	 * PerformAttack에서는 공격 대상 설정과 몽타주 재생만 처리한다.
+	 * 기존의 즉시 피해 계산은 Notify 피해와 중복될 수 있으므로 제거하고,
+	 * 실제 피해는 공격 애니메이션의 타격 Notify 시점에 적용한다.
+	 */
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
 
-	const float RawDamage = Attack * AttackMultiplier;
+	// 이번 공격 모션에서 사용할 대상과 타격 횟수를 초기화한다.
+	PendingAttackTarget = InTarget;
+	AppliedAttackHitCount = 0;
+
+	// 공격 몽타주가 있으면 애니메이션을 먼저 재생한다.
+	// 실제 피해는 몽타주의 AttackHit Notify에서 적용한다.
+	if (AttackMontage)
+	{
+		const float MontageDuration = PlayAnimMontage(AttackMontage);
+
+		if (MontageDuration > 0.f)
+		{
+			AttackAnimHoldRemaining = FMath::Min(MontageDuration, AttackCooldown);
+
+			OnAttackPerformed(InTarget);
+			return;
+		}
+	}
+
+	// 몽타주가 없거나 재생에 실패한 경우의 안전장치.
+	// 이 경우에는 즉시 한 번의 전체 피해를 적용한다.
+	HandleAttackHit(1.f);
+
+	OnAttackPerformed(InTarget);
+}
+
+/** 공격 애니메이션의 타격 Notify에서 호출한다 */
+void AUnitBase::HandleAttackHit(float DamageRatio)
+{
+	// 죽은 유닛의 늦은 Notify가 피해를 주는 것을 방지한다.
+	if (CombatState == EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	// 잘못된 배율은 무시한다.
+	if (DamageRatio <= 0.f)
+	{
+		return;
+	}
+
+	// 현재 공격에서 허용된 타격 횟수를 모두 사용했다.
+	// Notify 중복 배치로 피해가 여러 번 들어가는 것도 막는다.
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		return;
+	}
+
+	AActor* Target = PendingAttackTarget.Get();
+
+	// 공격 애니메이션 도중 대상이 죽거나 제거될 수 있다.
+	if (!IsTargetUsable(Target))
+	{
+		PendingAttackTarget.Reset();
+		return;
+	}
+
+	++AppliedAttackHitCount;
+
+	ApplyAttackDamage(Target, DamageRatio);
+
+	// 마지막 타격까지 끝났다면 공격 대상 임시 참조를 해제한다.
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		PendingAttackTarget.Reset();
+	}
+}
+
+/** 공격 Notify가 발생했을 때 실제 피해를 계산하고 적용한다 */
+void AUnitBase::ApplyAttackDamage(AActor* InTarget, float DamageRatio)
+{
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
+
+	const float RawDamage = Attack * AttackMultiplier * DamageRatio;
+
 	const int32 MyTeam = GetTeamIndex();
 
-	// 최종 피해 = 공격력 x (1 - clamp(방어 - 관통, 0, 0.9))
-	// 방어 감산을 공격자가 계산하는 이유는 피해 전달 경로가 값 하나뿐이기 때문이다.
-	auto ApplyTo = [this, RawDamage](AActor* InVictim, float InRatio)
-	{
-		UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InVictim);
-		if (!IsValid(Comp) || !Comp->IsAlive()) return;
+	// 대상의 방어력과 이 유닛의 관통력을 반영해 피해를 적용한다.
+	auto ApplyTo = [this, RawDamage](AActor* InVictim, float InSplashRatio)
+		{
+			UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InVictim);
 
-		const float Effective = FMath::Clamp(Comp->GetArmor() - Penetration, 0.f, 0.9f);
-		Comp->ApplyCombatDamage(RawDamage * (1.f - Effective) * InRatio, this);
-	};
+			if (!IsValid(Comp) || !Comp->IsAlive())
+			{
+				return;
+			}
 
+			const float EffectiveArmor = FMath::Clamp(Comp->GetArmor() - Penetration, 0.f, 0.9f);
+
+			const float FinalDamage = RawDamage * (1.f - EffectiveArmor) * InSplashRatio;
+
+			Comp->ApplyCombatDamage(FinalDamage, this);
+		};
+
+	// 주 대상 피해
 	ApplyTo(InTarget, 1.f);
 
+	// 광역 피해
 	if (SplashRadius > 0.f)
 	{
 		if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
 		{
 			TArray<AActor*> Splashed;
+
 			Combat->GetHostilesInRadius(InTarget->GetActorLocation(), MyTeam, SplashRadius, Splashed);
 
 			for (AActor* Other : Splashed)
 			{
-				if (Other == InTarget) continue;		// 주 대상은 이미 맞았다
+				// 주 대상은 위에서 이미 피해를 받았다.
+				if (Other == InTarget)
+				{
+					continue;
+				}
 
-				// 앞선 피해로 이미 파괴됐을 수 있으므로 매번 다시 확인한다
-				if (!IsValid(Other)) continue;
+				if (!IsValid(Other))
+				{
+					continue;
+				}
 
 				ApplyTo(Other, SplashDamageRatio);
 			}
 		}
 	}
 
-	// 타겟 위치에 이펙트. 몽타주 노티파이로 옮기면 타이밍이 더 정확해진다.
+	// 이펙트도 실제 타격 Notify 시점에 출력한다.
 	SpawnEffectAt(AttackEffect, InTarget->GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
-
-	// 공격 모션.
-	//
-	// 이 시점에서 대상은 위 피해로 이미 쓰러졌을 수 있다. 그래도 재생한다 —
-	// 대상을 죽인 스윙이므로 보여야 한다.
-	//
-	// 대신 재생을 보장할 시간을 쿨다운으로 제한해 둔다.
-	// 몽타주가 쿨다운보다 길면 대상이 사라진 뒤에도 꼬리가 허공에서 계속
-	// 돌게 되는데, 이 값이 만료되는 순간 Tick 이 끊어준다.
-	if (AttackMontage)
-	{
-		const float MontageDuration = PlayAnimMontage(AttackMontage);
-		AttackAnimHoldRemaining = (MontageDuration > 0.f)
-			? FMath::Min(MontageDuration, AttackCooldown)
-			: 0.f;
-	}
-
-	OnAttackPerformed(InTarget);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1727,6 +1834,15 @@ void AUnitBase::Tick(float DeltaSeconds)
 		AttackCooldownRemaining -= DeltaSeconds;
 	}
 
+	if (CommandAttackMoveGraceRemaining > 0.f)
+	{
+		CommandAttackMoveGraceRemaining =
+			FMath::Max(
+				0.f,
+				CommandAttackMoveGraceRemaining - DeltaSeconds
+			);
+	}
+
 	// 공격 모션 보장 시간.
 	//
 	// 만료됐는데 이미 교전 상태가 아니라면, 대상이 쓰러진 뒤에도 남아 도는
@@ -1755,7 +1871,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	//
 	// 공격 이동(A)은 여기를 통과해 아래로 내려간다.
 	// 평소대로 적을 찾고, 적이 없을 때만 Advance() 의 0순위가 목적지로 보낸다.
-	if (bHasCommandedDestination && !bCommandIsAttackMove)
+	if (bHasCommandedDestination &&	(!bCommandIsAttackMove || CommandAttackMoveGraceRemaining > 0.f))
 	{
 		// 명령 수행 중에는 타겟을 들고 있지 않는다.
 		// 남겨두면 도착 직후 낡은 타겟으로 곧장 달려간다.
@@ -1797,6 +1913,11 @@ void AUnitBase::Tick(float DeltaSeconds)
 		if (NewTarget != CurrentTarget)
 		{
 			CurrentTarget = NewTarget;
+
+			if (IsValid(CurrentTarget))
+			{
+				AlertNearbyAllies(CurrentTarget);
+			}
 
 			// 대상이 바뀌었으니 진단 플래그를 되돌린다.
 			// 안 그러면 새 대상에서 같은 문제가 생겨도 한 번도 알리지 못한다.
@@ -2011,4 +2132,84 @@ void AUnitBase::Tick(float DeltaSeconds)
 		}
 	}
 
+}
+
+void AUnitBase::AlertNearbyAllies(AActor* InTarget)
+{
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
+
+	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!IsValid(Combat))
+	{
+		return;
+	}
+
+	TArray<AActor*> NearbyAllies;
+
+	Combat->GetNearbyAlliesForSeparation(
+		this,
+		GetTeamIndex(),
+		AllyAssistRadius,
+		NearbyAllies
+	);
+
+	for (AActor* AllyActor : NearbyAllies)
+	{
+		AUnitBase* AllyUnit = Cast<AUnitBase>(AllyActor);
+		if (!IsValid(AllyUnit))
+		{
+			continue;
+		}
+
+		AllyUnit->ReceiveAssistTarget(InTarget);
+	}
+}
+
+void AUnitBase::ReceiveAssistTarget(AActor* InTarget)
+{
+	// 죽은 유닛은 지원 요청을 받지 않는다.
+	if (CombatState == EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	// 실제로 공격할 수 있는 적인지 검사한다.
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
+
+	// 플레이어가 직접 공격 대상을 지정했다면 그것을 우선한다.
+	if (IsValid(ForcedTarget))
+	{
+		return;
+	}
+
+	// 제자리 고수 명령 중이라면 주변 교전에 합류하지 않는다.
+	if (bHoldGround)
+	{
+		return;
+	}
+
+	// 이미 정상적인 공격 대상이 있으면 기존 전투를 유지한다.
+	if (IsTargetUsable(CurrentTarget))
+	{
+		return;
+	}
+
+	CurrentTarget = InTarget;
+	RetargetTimer = RetargetInterval;
+
+	bSightBlockedReported = false;
+	bRangeUnreachableReported = false;
+	bNoTargetReported = false;
+	bAdvanceTargetReported = false;
+
+	if (AUnitAIController* AI = GetUnitAI())
+	{
+		AI->ForceRepath();
+	}
 }

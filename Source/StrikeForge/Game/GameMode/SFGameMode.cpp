@@ -338,6 +338,7 @@ void ASFGameMode::BeginStageBootstrap()
         return;
     }
 
+	BootstrapBuildingRules = StageData->BuildingRules;
     BootstrapTeamRaces.Reset();
     BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
 
@@ -461,7 +462,10 @@ void ASFGameMode::HandleRaceDataReady(ESFRace InRace, bool bSuccess)
 		}
 	}
 
-	if (!SFGameState->InitializeStage(BootstrapStageRowName))
+	if (!SFGameState->InitializeStage(
+		BootstrapStageRowName,
+		BootstrapBuildingRules
+	))
 	{
 		FailStageBootstrap();
 		return;

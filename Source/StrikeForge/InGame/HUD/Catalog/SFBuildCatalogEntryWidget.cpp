@@ -248,7 +248,7 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
     const FName RequestedBuildingId = BuildingRowName;
 
     // 5. 건설 함수는 한 번만 호출
-    if (SFPC->SpawnBuildingFunction(BuildingRowName))
+    if (SFPC->TryStartBuildingPlacement(BuildingRowName))
     {
         SFPC->SetSFControlMode(
             ESFControlMode::BuildPlacement
@@ -256,8 +256,7 @@ void USFBuildCatalogEntryWidget::HandleEntryClicked()
 
         USFTutorialSubsystem::NotifyBuildingSelected(
             this,
-            BuildingRowName,
-			RequestedBuildingId
+            BuildingRowName
         );
     }
 }

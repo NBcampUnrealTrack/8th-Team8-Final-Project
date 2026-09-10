@@ -9,6 +9,7 @@
 class UGeometryCollection;
 class UGeometryCollectionComponent;
 class URadialFalloff;
+class FGeometryCollectionDynamicStateFacade;
 
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -21,6 +22,11 @@ struct FSFPieceSpot
 
 	// GC 조각 Attach에 사용
 	FName BoneName = NAME_None;
+	
+	/** rest 상태 조각 스케일. 축소 판정의 분모. */
+	float RestScale = 1.f;
+	/** 바운드 경계 대비 수평 거리 비율. 레벨별 밴드 판정에 쓴다. */
+	float RadialRatio = 0.f;
 };
 
 USTRUCT()
@@ -38,6 +44,13 @@ struct FSFSurfaceFire
 
 	/** 건물 위 불들의 간격 판정용 */
 	FVector LocalLocation = FVector::ZeroVector;
+	
+	float RestScale = 1.f;
+	//
+	// /** 이 불에 마지막으로 넘긴 User.ClusterLevel. */
+	// int32 ClusterLevel = 1;
+	/** 이 불이 처음 붙은 손상 단계. 목표 레벨을 여기서 계산한다. */
+	//int32 BornStageIndex = 0;
 };
 
 UCLASS()
@@ -90,8 +103,10 @@ private:
 	void UpdateSurfaceFires();
 	
 	/** 조각이 아직 건물 본체에 속해 있는지 검사한다. */
-	bool IsPieceAttached(int32 PieceIndex) const;
-	
+	bool IsPieceAttached(
+		const FGeometryCollectionDynamicStateFacade& DynamicState,
+		int32 NumTransforms,
+		int32 PieceIndex) const;
 	// fire
 	/** [BURN-TEST] 조각 위에 붙일 불꽃. BP_DestructionActor에서 지정. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
@@ -142,15 +157,33 @@ private:
 	meta = (ClampMin = "0.1", AllowPrivateAccess = "true"))
 	float SurfaceFireUpdateInterval = 0.5f;
 	
+	/** 같은 프레임의 Break 폭주를 한 번으로 접는다. */
+	uint64 LastBreakWakeFrame = MAX_uint64;
+	
+	/**
+		 * 불이 붙을 수 있는 반경 밴드. 바운드 경계까지의 거리 대비 비율이다.
+		 * 아래쪽은 건물 안쪽 조각을, 위쪽은 기둥처럼 튀어나온 조각을 잘라낸다.
+		 */
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
+	float SurfaceFireMinRadialRatio = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
+	float SurfaceFireMaxRadialRatio = 0.95f;
+	
 	/** 바닥 대각선에 비례한 목표 개수. Min/Max로 잘라낸다. */
 	int32 GetTargetSurfaceFireCount() const;
 	
 	/** 후보 중 최대 DesiredCount개까지 붙이고, 실제로 붙인 개수를 돌려준다. */
 	int32 AddSurfaceFires(int32 DesiredCount);
 
-	/** 아직 건물에 붙어 있고 불이 없는 조각들의 위치를 모은다. */
-	void CollectAttachedPieceSpots(TArray<FSFPieceSpot>& OutSpots);
-
+	/** rest 데이터로 후보 표를 만들고 순서를 섞는다. 최초 1회만 실행된다. */
+	void BuildPieceSpotTable();
+	/** 미리 섞어 둔 후보 표. 이후 스캔은 앞에서부터 필요한 만큼만 읽는다. */
+	TArray<FSFPieceSpot> CachedPieceSpots;
+	bool bPieceSpotsBuilt = false;
+	
 	/** 페이드를 시작한다. 파티클은 수명을 다 채우고 컴포넌트는 스스로 소멸한다. */
 	static void RemoveSurfaceFire(FSFSurfaceFire& Fire);
 	

@@ -198,7 +198,7 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 		const FBuildingDestruction* StageData =
 			Tier->Visual.GetDestructionStage(CurrentStage);
 
-		if (StageData && EnsureDestructionActor())
+		if (StageData)
 		{
 			DestructionActor->ApplyDamageStage(
 				CurrentStage,
@@ -422,9 +422,10 @@ void ASFBaseBuilding::EnterCompletedState()
 	UpdateDamageVisual(1.f,HealthComponent->GetHealthPercent());
 	
 	//성윤 미니맵 마커제작
-	Tags.AddUnique(
-		FName(TEXT("MinimapBuilding"))
-	);
+	Tags.AddUnique(FName(TEXT("MinimapBuilding")));
+	
+	// GC 미리 SPAWN
+	EnsureDestructionActor();
 }
 
 void ASFBaseBuilding::EnterDestroyedState()

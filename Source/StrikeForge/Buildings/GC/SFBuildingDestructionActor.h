@@ -64,7 +64,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void ApplyFinalDestruction(int32 FinalStageIndex, const FBuildingDestruction& StageData);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Building|Destruction", meta=(AllowPrivateAccess = true))
-	float DebrisLifetime = 4.f;
+	float DebrisLifetime = 4.5f;
 	
     UFUNCTION(BlueprintPure, Category = "SF|Building|Destruction")
     FORCEINLINE UGeometryCollectionComponent* GetGeometryCollectionComponent() const { return GeometryCollectionComponent; }
@@ -135,7 +135,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", AllowPrivateAccess = "true"))
 	// 1.f는 조각메쉬 크기가 변함없을때(처음) 0.2는 떨어진후 크기가 작아지고 비율이 0.2일때
-	float SurfaceFireShrinkThreshold = 0.65f;
+	float SurfaceFireShrinkThreshold = 1.f;
 
 	/** 불 유지 루프 주기(초). 불이 하나도 없으면 루프가 멈춘다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Destruction|BurnTest",

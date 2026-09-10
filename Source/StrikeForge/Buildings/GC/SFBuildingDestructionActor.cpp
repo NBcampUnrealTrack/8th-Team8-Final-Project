@@ -383,7 +383,7 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
         {
             Fire.bDetached = !IsPieceAttached(Fire.PieceIndex);
         }
-
+        
         if (!Fire.bDetached)
         {
             ++AttachedFireCount;
@@ -590,6 +590,7 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount)
                 // 월드 스케일이 되어버리므로 1로 되돌린다.
                 Fire->SetRelativeScale3D(FVector::OneVector);
 
+                // AddDefaulted_GetRef = 배열끝에 기본형 요소를 추가하고 참조리턴
                 FSFSurfaceFire& NewFire = SurfaceFires.AddDefaulted_GetRef();
 
                 NewFire.Component = Fire;

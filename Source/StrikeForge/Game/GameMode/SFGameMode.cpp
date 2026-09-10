@@ -694,8 +694,7 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 	InTierIndex < 0 ||
 	!InDefinition->FindTier(InTierIndex))
 	{
-		SF_LOG(
-			Error,
+		SF_LOG(Error,
 			"[SFGameMode] 초기 건물 에셋 로딩 실패. "
 			"Definition=%s, Tier=%d",
 			*GetNameSafe(InDefinition),
@@ -707,8 +706,7 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 
 	if (PendingInitialBuildingAssetRequestCount <= 0)
 	{
-		SF_LOG(
-			Error,
+		SF_LOG(Error,
 			"[SFGameMode] 초기 Tier 0 요청 카운터가 "
 			"잘못된 상태입니다.");
 
@@ -720,8 +718,7 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 
 	UpdateStageLoadingProgress();
 	
-	SF_LOG(
-		Log,
+	SF_LOG(Log,
 		"[SFGameMode] 초기 Tier 준비 완료. "
 		"Definition=%s, Tier=%d, Remaining=%d",
 		*GetNameSafe(InDefinition),
@@ -730,11 +727,11 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 
 	if (PendingInitialBuildingAssetRequestCount == 0)
 	{
-		CompleteStageBootstrap();
+		BeginStageRenderPreparation();
 	}
 }
 
-void ASFGameMode::CompleteStageBootstrap()
+void ASFGameMode::BeginStageRenderPreparation()
 {
 	if (!IsValid(SFGameState) ||
 		SFGameState->GetStageState() != ESFStageState::LoadingInitialBuildingAssets)
@@ -742,12 +739,77 @@ void ASFGameMode::CompleteStageBootstrap()
 		return;
 	}
 
+	if (PendingInitialBuildingAssetRequestCount != 0)
+	{
+		SF_LOG(Error,
+			"[SFGameMode] 남은 건물 에셋 요청이 있는데 "
+			"렌더 준비 단계가 시작됐습니다. Remaining=%d",
+			PendingInitialBuildingAssetRequestCount);
+
+		FailStageBootstrap();
+		return;
+	}
+
+	if (bStageRenderPreparationStarted)
+	{
+		return;
+	}
+
+	/*
+	 * 이 함수가 true를 반환하면:
+	 * 1. 모든 Anchor의 건물 생성 성공
+	 * 2. 생성된 건물의 BeginPlay 실행 완료
+	 * 3. 모든 원본 Anchor 제거 요청 완료
+	 */
 	if (!SpawnStageBuildingsFromAnchors())
 	{
 		FailStageBootstrap();
 		return;
 	}
 
+	bStageRenderPreparationStarted = true;
+
+	/*
+	 * 비동기 로딩 90% + 모든 Anchor 생성 8%.
+	 * Anchor 생성은 같은 프레임에서 동기적으로 끝나므로
+	 * 90~98%가 단계적으로 올라가지 않고 98%로 변경된다.
+	 */
+	SFGameState->SetStageLoadingProgress(0.98f);
+
+	GetWorldTimerManager().SetTimer(
+		StageRenderPreparationTimerHandle,
+		this,
+		&ThisClass::CompleteStageBootstrap,
+		StageRenderPreparationDelay,
+		false);
+}
+
+void ASFGameMode::CompleteStageBootstrap()
+{
+	if (!IsValid(SFGameState) ||
+	SFGameState->GetStageState() !=	ESFStageState::LoadingInitialBuildingAssets)
+	{
+		return;
+	}
+
+	if (!bStageRenderPreparationStarted ||
+		PendingInitialBuildingAssetRequestCount != 0)
+	{
+		SF_LOG(Error,
+			"[SFGameMode] 스테이지 완료 조건이 올바르지 않습니다. "
+			"RenderPreparation=%s, Remaining=%d",
+			bStageRenderPreparationStarted
+				? TEXT("true")
+				: TEXT("false"),
+			PendingInitialBuildingAssetRequestCount);
+
+		FailStageBootstrap();
+		return;
+	}
+
+	bStageRenderPreparationStarted = false;
+
+	// 에셋 로딩, Anchor 생성, 0.5초 준비가 모두 완료됐다.
 	SFGameState->SetStageLoadingProgress(1.f);
 
 	if (!SFGameState->MarkStageReadyToStart())
@@ -756,11 +818,20 @@ void ASFGameMode::CompleteStageBootstrap()
 		return;
 	}
 
-	// 필요하면 이곳에서 UI 미응답용 비상 타이머를 시작한다.
+	SF_LOG(Log,
+		"[SFGameMode] Anchor 렌더 준비 완료. ReadyToStart.");
 }
 
 void ASFGameMode::FailStageBootstrap()
 {
+	bStageRenderPreparationStarted = false;
+	
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(StageRenderPreparationTimerHandle);
+	}
+
+	
 	if (!IsValid(SFGameState))
 	{
 		SF_LOG(Error,
@@ -808,15 +879,14 @@ void ASFGameMode::UpdateStageLoadingProgress()
 	
 	
 	constexpr float RaceDataWeight = 0.30f;
-	constexpr float InitialBuildingAssetWeight = 0.65f;
+	constexpr float InitialBuildingAssetWeight = 0.60f;
 
-	// 비율계산
 	const float TotalProgress = FMath::Clamp(
 		RaceDataProgress * RaceDataWeight +
 		InitialBuildingAssetProgress *
 			InitialBuildingAssetWeight,
 		0.f,
-		0.95f);
+		0.90f);
 
 	SFGameState->SetStageLoadingProgress(TotalProgress);
 }

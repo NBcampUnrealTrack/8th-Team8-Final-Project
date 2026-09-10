@@ -268,35 +268,33 @@ void USFBuildingAssetSubsystem::ReleaseStageAssets()
 
 void USFBuildingAssetSubsystem::HandleCatalogLoaded(ESFRace InRace)
 {
-	const USFGameInstance* SFGameInstance =
-		Cast<USFGameInstance>(GetGameInstance());
-
+	const USFGameInstance* SFGameInstance = Cast<USFGameInstance>(GetGameInstance());
 	if (!IsValid(SFGameInstance))
 	{
 		CompleteRaceRequest(InRace, false);
 		return;
 	}
 
-	USFBuildingCatalog* Catalog =
-		SFGameInstance
-		->GetBuildingCatalogAsset(InRace)
-		.Get();
-
+	USFBuildingCatalog* Catalog = SFGameInstance->GetBuildingCatalogAsset(InRace).Get();
 	if (!IsValid(Catalog))
 	{
 		CompleteRaceRequest(InRace, false);
 		return;
 	}
-
-	FSFLoadedRaceBuildingData& LoadedData =
-		LoadedRaceData.FindOrAdd(InRace);
-
+	
+	// 진행도 구조체 종족key로 찾거나 추가
+	FSFLoadedRaceBuildingData& LoadedData = LoadedRaceData.FindOrAdd(InRace);
+	
+	// 이시점까지 왔으면
+	// catalog 로딩완료임 & 이므로 대입하면 바로 value에 저장됨
 	LoadedData.Catalog = Catalog;
 	LoadedData.Definitions.Reset();
 	LoadedData.UIAssets.Reset();
 	LoadedData.bReady = false;
 
+	// 카탈로그 object의 내용에는 7개의 건물 softref이 있음
 	TArray<FSoftObjectPath> DefinitionPaths;
+	// 7개 softref 배열에 저장
 	Catalog->GetDefinitionPaths(DefinitionPaths);
 
 	if (DefinitionPaths.IsEmpty())
@@ -305,6 +303,7 @@ void USFBuildingAssetSubsystem::HandleCatalogLoaded(ESFRace InRace)
 		return;
 	}
 
+	// 배열로 한꺼번에 비동기
 	TSharedPtr<FStreamableHandle> Handle =
 		UAssetManager::GetStreamableManager()
 		.RequestAsyncLoad(
@@ -320,16 +319,16 @@ void USFBuildingAssetSubsystem::HandleCatalogLoaded(ESFRace InRace)
 		return;
 	}
 
+	// 현재 종족의 7개 건물 softref 비동기중... handle저장
 	ActiveRaceHandles.Add(InRace, MoveTemp(Handle));
+	// Animal catalog.handle(1개 참조),   Animal Definitions.handle(7개 참조)
 }
 
 void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
 {
-	FSFLoadedRaceBuildingData* LoadedData =
-        LoadedRaceData.Find(InRace);
+	FSFLoadedRaceBuildingData* LoadedData = LoadedRaceData.Find(InRace);
 
-    if (!LoadedData ||
-        !IsValid(LoadedData->Catalog))
+    if (!LoadedData || !IsValid(LoadedData->Catalog))
     {
         CompleteRaceRequest(InRace, false);
         return;
@@ -358,10 +357,12 @@ void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
             return true;
         };
 
+	// 넥서스 로드 됬는지 먼저 확인
     bool bAllDefinitionsLoaded =
         AddLoadedDefinition(
             LoadedData->Catalog->NexusDefinition);
-
+	
+	// 이후 buildable건물 확인
     for (const TSoftObjectPtr<USFBuildingDefinition>& DefinitionRef
         : LoadedData->Catalog->BuildableDefinitions)
     {
@@ -378,8 +379,7 @@ void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
 
     TArray<FSoftObjectPath> UIAssetPaths;
 
-    for (const TObjectPtr<USFBuildingDefinition>& Definition
-        : LoadedData->Definitions)
+    for (const TObjectPtr<USFBuildingDefinition>& Definition : LoadedData->Definitions)
     {
         Definition->GetUIAssetPaths(UIAssetPaths);
     }
@@ -423,8 +423,7 @@ void USFBuildingAssetSubsystem::CompleteRaceRequest(ESFRace InRace, bool bSucces
 
 	if (bSuccess)
 	{
-		FSFLoadedRaceBuildingData* LoadedData =
-			LoadedRaceData.Find(InRace);
+		FSFLoadedRaceBuildingData* LoadedData =	LoadedRaceData.Find(InRace);
 
 		bSuccess =
 			LoadedData &&

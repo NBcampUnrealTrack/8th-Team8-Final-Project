@@ -69,6 +69,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Selection|Command")
     void SetCommandButtonsVisible(bool bVisible);
 
+    void SetAttackCommandButtonVisible(bool bVisible);
+
+    void SetTierUpStageLocked(bool bLocked);
+
     UFUNCTION(BlueprintCallable, Category = "SF|Selection|Building")
     void SetUpgradeCost(const FResources& InUpgradeCost);
 
@@ -91,6 +95,14 @@ protected:
     )
     void BP_OnSelectionInfoUpdated(
         const FSFSelectableInfo& SelectableInfo
+    );
+
+    UFUNCTION(
+        BlueprintImplementableEvent,
+        Category = "SF|Selection|Building"
+    )
+    void BP_OnTierUpStageLockChanged(
+        bool bLocked
     );
 
     UFUNCTION(

@@ -7,6 +7,7 @@
 
 class UHorizontalBox;
 class USFBuildCatalogEntryWidget;
+class ASFBaseBuilding;
 class ASFGameState;
 class USFTeamState;
 
@@ -24,6 +25,23 @@ private:
 	void UnbindResourceData();
 
 	void RefreshEntryAffordability();
+
+	void BindBuildingCompletionEvents();
+
+	void UnbindBuildingCompletionEvents();
+
+	void BindBuildingCompletionEvent(
+		ASFBaseBuilding* Building
+	);
+
+	void HandleBuildingSpawned(
+		AActor* SpawnedActor
+	);
+
+	UFUNCTION()
+	void HandleBuildingTierActivated(
+		int32 ActivatedTier
+	);
 
 	UFUNCTION()
 	void HandleMineralChanged(
@@ -64,4 +82,9 @@ private:
 		CurrentEntryWidgets;
 
 	int32 CachedTeamIndex = 0;
+
+	FDelegateHandle ActorSpawnedHandle;
+
+	TArray<TWeakObjectPtr<ASFBaseBuilding>>
+		BoundBuildings;
 };

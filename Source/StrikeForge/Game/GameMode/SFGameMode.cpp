@@ -66,20 +66,16 @@ void ASFGameMode::Logout(AController* Exiting)
 void ASFGameMode::InitGameState()
 {
 	Super::InitGameState();
-	
+
 	SFGameState = GetGameState<ASFGameState>();
+
 	if (!IsValid(SFGameState))
 	{
-		SF_LOG(Error, "[SFGameMode] SFGameState를 찾을 수 없습니다.");
 		return;
 	}
-	/*
-	 * 비동기 로딩 중 PostLogin이 먼저 호출돼도
-	 * 플레이어를 연결할 수 있도록 빈 TeamState를 준비한다.
-	 */
+
 	if (!IsValid(SFGameState->FindOrAddTeam(PlayerTeamIndex)))
 	{
-		SF_LOG(Error, "[SFGameMode] 플레이어 TeamState 생성 실패.");
 		return;
 	}
 }
@@ -342,6 +338,7 @@ void ASFGameMode::BeginStageBootstrap()
         return;
     }
 
+	BootstrapBuildingRules = StageData->BuildingRules;
     BootstrapTeamRaces.Reset();
     BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
 
@@ -465,7 +462,10 @@ void ASFGameMode::HandleRaceDataReady(ESFRace InRace, bool bSuccess)
 		}
 	}
 
-	if (!SFGameState->InitializeStage(BootstrapStageRowName))
+	if (!SFGameState->InitializeStage(
+		BootstrapStageRowName,
+		BootstrapBuildingRules
+	))
 	{
 		FailStageBootstrap();
 		return;

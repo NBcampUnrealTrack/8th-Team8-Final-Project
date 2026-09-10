@@ -1,4 +1,5 @@
 #include "SFMinimapPanelWidget.h"
+#include "SFMinimapViewIndicatorWidget.h"
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Datas/Stage/SFStageData.h"
@@ -470,7 +471,7 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
                 FMath::Max(1000.0f, CaptureHeight)
             ),
             FRotator(
-                -87.0f,
+                -90.0f,
                 0.0f,
                 0.0f
             ),
@@ -1228,109 +1229,13 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
         return;
     }
 
-    const FVector2D ScreenCorners[4] =
-    {
-        FVector2D(0.0f, 0.0f),
-        FVector2D(
-            static_cast<float>(ViewportWidth - 1),
-            0.0f
-        ),
-        FVector2D(
-            static_cast<float>(ViewportWidth - 1),
-            static_cast<float>(ViewportHeight - 1)
-        ),
-        FVector2D(
-            0.0f,
-            static_cast<float>(ViewportHeight - 1)
-        )
-    };
-
-    constexpr float GroundZ = 0.0f;
-
-    FVector2D MinimapMin = FVector2D::ZeroVector;
-    FVector2D MinimapMax = FVector2D::ZeroVector;
-
-    bool bHasValidCorner = false;
-
-    for (const FVector2D& ScreenPosition : ScreenCorners)
-    {
-        FVector WorldOrigin;
-        FVector WorldDirection;
-
-        if (
-            !PlayerController->DeprojectScreenPositionToWorld(
-                ScreenPosition.X,
-                ScreenPosition.Y,
-                WorldOrigin,
-                WorldDirection
-            )
-            )
-        {
-            continue;
-        }
-
-        if (FMath::IsNearlyZero(WorldDirection.Z))
-        {
-            continue;
-        }
-
-        const float DistanceToGround =
-            (GroundZ - WorldOrigin.Z) /
-            WorldDirection.Z;
-
-        if (DistanceToGround <= 0.0f)
-        {
-            continue;
-        }
-
-        const FVector GroundLocation =
-            WorldOrigin +
-            WorldDirection * DistanceToGround;
-
-        const FVector2D MinimapPosition =
-            WorldToMinimapPosition(
-                GroundLocation
-            );
-
-        if (!bHasValidCorner)
-        {
-            MinimapMin = MinimapPosition;
-            MinimapMax = MinimapPosition;
-            bHasValidCorner = true;
-        }
-        else
-        {
-            MinimapMin.X =
-                FMath::Min(
-                    MinimapMin.X,
-                    MinimapPosition.X
-                );
-
-            MinimapMin.Y =
-                FMath::Min(
-                    MinimapMin.Y,
-                    MinimapPosition.Y
-                );
-
-            MinimapMax.X =
-                FMath::Max(
-                    MinimapMax.X,
-                    MinimapPosition.X
-                );
-
-            MinimapMax.Y =
-                FMath::Max(
-                    MinimapMax.Y,
-                    MinimapPosition.Y
-                );
-        }
-    }
-
-    if (!bHasValidCorner)
-    {
-        return;
-    }
-
+    /*
+     * PlayerViewIndicator 자체는
+     * MinimapMarkerLayer 전체를 차지하게 만든다.
+     *
+     * 새 WBP 내부에는 앵커를 설정하지 않는다.
+     * 부모 CanvasPanel의 슬롯을 코드에서 전체 영역으로 설정한다.
+     */
     UCanvasPanelSlot* IndicatorSlot =
         Cast<UCanvasPanelSlot>(
             PlayerViewIndicator->Slot
@@ -1341,51 +1246,161 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
         return;
     }
 
-    const FVector2D MinimapSize =
-        MinimapMarkerLayer
-        ->GetCachedGeometry()
-        .GetLocalSize();
-
-    if (
-        MinimapSize.X <= 0.0f ||
-        MinimapSize.Y <= 0.0f
-        )
-    {
-        return;
-    }
-
-    const FVector2D ViewIndicatorSize =
-        MinimapMax - MinimapMin;
-
-    const FVector2D ClampedSize(
-        FMath::Clamp(
-            ViewIndicatorSize.X,
-            2.0f,
-            MinimapSize.X
-        ),
-        FMath::Clamp(
-            ViewIndicatorSize.Y,
-            2.0f,
-            MinimapSize.Y
+    IndicatorSlot->SetAnchors(
+        FAnchors(
+            0.0f,
+            0.0f,
+            1.0f,
+            1.0f
         )
     );
 
-    const FVector2D ViewIndicatorCenter =
-        (MinimapMin + MinimapMax) * 0.5f;
+    IndicatorSlot->SetOffsets(
+        FMargin(0.0f)
+    );
+
+    IndicatorSlot->SetAlignment(
+        FVector2D(
+            0.0f,
+            0.0f
+        )
+    );
 
     IndicatorSlot->SetAutoSize(false);
 
-    IndicatorSlot->SetAlignment(
-        FVector2D(0.5f, 0.5f)
+    /*
+     * 테스트 단계에서는 1.0으로 둔다.
+     * 먼저 위치가 맞는지 확인한 뒤 크기를 줄인다.
+     */
+    const float ViewScale =
+        FMath::Clamp(
+            PlayerViewIndicatorScale,
+            0.1f,
+            1.0f
+        );
+
+    const FVector2D ViewportCenter(
+        static_cast<float>(ViewportWidth) * 0.5f,
+        static_cast<float>(ViewportHeight) * 0.5f
     );
 
-    IndicatorSlot->SetSize(
-        ClampedSize
+    const FVector2D ScreenCorners[4] =
+    {
+        FVector2D(
+            0.0f,
+            0.0f
+        ),
+
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            0.0f
+        ),
+
+        FVector2D(
+            static_cast<float>(ViewportWidth - 1),
+            static_cast<float>(ViewportHeight - 1)
+        ),
+
+        FVector2D(
+            0.0f,
+            static_cast<float>(ViewportHeight - 1)
+        )
+    };
+
+    FVector2D MinimapCorners[4];
+
+    bool bHasValidCorners = true;
+
+    constexpr float GroundZ = 0.0f;
+
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        /*
+         * 화면 중심을 기준으로 화면 영역을 축소한다.
+         * 이렇게 해야 사다리꼴이 중앙을 유지한 채 작아진다.
+         */
+        const FVector2D ScaledScreenPosition =
+            ViewportCenter +
+            (
+                ScreenCorners[Index] -
+                ViewportCenter
+                ) *
+            ViewScale;
+
+        FVector WorldOrigin;
+        FVector WorldDirection;
+
+        if (
+            !PlayerController->DeprojectScreenPositionToWorld(
+                ScaledScreenPosition.X,
+                ScaledScreenPosition.Y,
+                WorldOrigin,
+                WorldDirection
+            )
+            )
+        {
+            bHasValidCorners = false;
+            break;
+        }
+
+        if (FMath::IsNearlyZero(WorldDirection.Z))
+        {
+            bHasValidCorners = false;
+            break;
+        }
+
+        const float DistanceToGround =
+            (
+                GroundZ -
+                WorldOrigin.Z
+                ) /
+            WorldDirection.Z;
+
+        if (DistanceToGround <= 0.0f)
+        {
+            bHasValidCorners = false;
+            break;
+        }
+
+        const FVector GroundLocation =
+            WorldOrigin +
+            WorldDirection *
+            DistanceToGround;
+
+        MinimapCorners[Index] =
+            WorldToMinimapPosition(
+                GroundLocation
+            );
+
+        MinimapCorners[Index].Y += 12.0f;
+    }
+
+    if (!bHasValidCorners)
+    {
+        PlayerViewIndicator->SetVisibility(
+            ESlateVisibility::Collapsed
+        );
+
+        return;
+    }
+
+    /*
+     * NativePaint가 사용할 좌표 순서
+     *
+     * 0: 좌측 위
+     * 1: 우측 위
+     * 2: 우측 아래
+     * 3: 좌측 아래
+     */
+    PlayerViewIndicator->SetViewCorners(
+        MinimapCorners[0],
+        MinimapCorners[1],
+        MinimapCorners[2],
+        MinimapCorners[3]
     );
 
-    SetMarkerLayerPosition(
-        PlayerViewIndicator,
-        ViewIndicatorCenter
+    PlayerViewIndicator->SetVisibility(
+        ESlateVisibility::SelfHitTestInvisible
     );
 }
 
@@ -1428,10 +1443,19 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers(
             continue;
         }
 
-        const FVector2D MinimapPosition =
+        FVector2D MinimapPosition =
             WorldToMinimapPosition(
                 TargetActor->GetActorLocation()
             );
+
+        if (
+            MarkerEntry.MarkerType ==
+            ESFMinimapMarkerType::Commander
+            )
+        {
+            MinimapPosition +=
+                CommanderMarkerPositionOffset;
+        }
 
         SetMarkerLayerPosition(
             MarkerWidget,

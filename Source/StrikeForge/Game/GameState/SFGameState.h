@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Stage/SFStageData.h"
 #include "Game/GameState/SFTeamState.h"
 #include "SFGameState.generated.h"
 
@@ -14,6 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     Progress);
 
 class ASFNexusBuilding;
+class ASFBaseBuilding;
 class USFBuildingCatalog;
 
 // 상태 정의 = 진행 상황
@@ -62,7 +64,7 @@ public:
     ASFGameState();
 
     // GamaMode가 현재 선택된 스테이지 ID를 전달
-    bool InitializeStage(FName StageRowName);
+    bool InitializeStage(FName StageRowName,const TArray<FSFStageBuildingRule>& InBuildingRules);
     /**
      * 스테이지 비동기 초기화를 시작한다.
      * GameMode::BeginStageBootstrap에서 호출되며
@@ -182,6 +184,19 @@ public:
 
     void SetStageLoadingProgress(float InProgress);
 
+    bool IsBuildingAllowedInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    int32 GetMaxAllowedTierInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    bool AreBuildingRequirementsMet(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 public:
 
     // UI 부분
@@ -213,4 +228,13 @@ private:
         
     // 로딩 진행도
     float StageLoadingProgress = 0.f;
+
+    UPROPERTY()
+    TArray<FSFStageBuildingRule> CurrentStageBuildingRules;
+	
+    bool HasCompletedBuilding(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 };

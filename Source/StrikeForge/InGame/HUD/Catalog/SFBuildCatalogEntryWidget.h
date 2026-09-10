@@ -33,6 +33,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Build Catalog")
 	FName GetBuildingRowName() const;
 
+	UFUNCTION(
+		BlueprintPure,
+		Category = "SF|Build Catalog"
+	)
+	FName GetSelectionUIRowName() const;
+
 	UPROPERTY(
 		BlueprintAssignable,
 		Category = "SF|Build Catalog"
@@ -53,6 +59,8 @@ public:
 	void SetCanAfford(
 		bool bNewCanAfford
 	);
+
+	void SetStageBuildAllowed(bool bAllowed);
 
 	UFUNCTION(BlueprintPure,Category = "SF|Build Catalog")
 	bool CanAfford() const
@@ -88,6 +96,14 @@ protected:
 		bool bNewCanAfford
 	);
 
+	UFUNCTION(
+		BlueprintImplementableEvent,
+		Category = "SF|Build Catalog"
+	)
+	void BP_OnStageBuildLockChanged(
+		bool bStageLocked
+	);
+
 private:
 	/**
 	 * 건설 카탈로그 항목 클릭을 처리한다.
@@ -104,6 +120,9 @@ private:
 
 	UPROPERTY(Transient)
 	bool bCanAfford = true;
+
+	UPROPERTY(Transient)
+	bool bStageBuildAllowed = true;
 
 protected:
 	UPROPERTY(

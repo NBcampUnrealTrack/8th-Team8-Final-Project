@@ -65,7 +65,7 @@ void USFMultiSelectionEntryWidget::InitializeEntry(
     if (IsValid(SelectionIconImage))
     {
         SelectionIconImage->SetBrushFromTexture(
-            SelectableInfo.SelectionIcon,
+            SelectableInfo.PortraitImage,
             false
         );
     }

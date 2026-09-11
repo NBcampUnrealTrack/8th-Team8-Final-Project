@@ -78,7 +78,7 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    
+
     /**
      * 사전 로딩된 Tier 0 에셋을 검증하고 건물 배치를 준비한다.
      * Catalog Entry 클릭에서 호출되며 고스트 건물 생성과
@@ -160,6 +160,8 @@ private:
 
     void HandleToggleSettingsInput();
 
+    void HandleSelectAllUnitsInput();
+
     void HandleToggleBuildModeInput();
 
     // 생산 슬롯 입력 처리
@@ -202,11 +204,11 @@ private:
     void HandleRallyPointInput();
 
     bool ExecutePendingRallyPointUnderCursor();
-    
+
     // 선택하면 소리재생 함수
     UFUNCTION(BlueprintCallable)
     void PlaySelectionSound(AActor* SelectedTarget);
-    
+
     // Async
 
     // 변수 영역
@@ -323,6 +325,13 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Input"
+    )
+    TObjectPtr<UInputAction> SelectAllUnitsAction = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Input",
         meta = (AllowPrivateAccess = "true")
     )
@@ -416,7 +425,7 @@ private:
 
     // team
     int32 MyTeamIndex = 0;
-    
+
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

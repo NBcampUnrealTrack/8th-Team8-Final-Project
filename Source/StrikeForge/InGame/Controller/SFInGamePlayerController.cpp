@@ -67,8 +67,8 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
 
     USFBuildingDefinition* Definition =
         IsValid(Catalog)
-            ? Catalog->FindLoadedDefinition(InBuildingId)
-            : nullptr;
+        ? Catalog->FindLoadedDefinition(InBuildingId)
+        : nullptr;
 
     if (!IsValid(Definition) || Definition->BuildingId != InBuildingId)
     {
@@ -167,7 +167,7 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 void ASFInGamePlayerController::NotifyBuilderArrived() // start construct =====================================
 {
     if (!IsValid(PendingSpawnedBuildingRef)) return;
-    
+
     ASFBaseBuilding* const Building = PendingSpawnedBuildingRef;
     const FResources ConstructCost = Building->GetConstructCost();
 
@@ -346,6 +346,16 @@ void ASFInGamePlayerController::SetupInputComponent()
             this,
             &ASFInGamePlayerController::
             HandleToggleSettingsInput);
+    }
+
+    if (IsValid(SelectAllUnitsAction))
+    {
+        EnhancedInputComponent->BindAction(
+            SelectAllUnitsAction,
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleSelectAllUnitsInput
+        );
     }
 
     if (IsValid(ToggleBuildModeAction))
@@ -1109,6 +1119,21 @@ void ASFInGamePlayerController::HandleToggleSettingsInput()
     InGameHUDWidget->ToggleSettings();
 }
 
+void ASFInGamePlayerController::HandleSelectAllUnitsInput()
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->SelectAllOwnedUnits();
+}
+
 void ASFInGamePlayerController::HandleToggleBuildModeInput()
 {
     if (!IsValid(InGameHUDWidget))
@@ -1154,7 +1179,7 @@ void ASFInGamePlayerController::HandleMoveCommandModeInput()
 void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
 {
     SF_LOG(Log, "Commander Skill: Tier%d", Tier);
-    
+
     OnSkillInput.Broadcast(Tier);
 }
 
@@ -1517,8 +1542,8 @@ void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
 {
     // 소리는 내 컴퓨터에서만 들려야함. 멀티가 아니라서 상관없지만 논리상 IsLocalController 조건추가
     if (!IsLocalController() ||
-       !IsValid(SelectedTarget) ||
-       !SelectedTarget->Implements<USFSelectable>())
+        !IsValid(SelectedTarget) ||
+        !SelectedTarget->Implements<USFSelectable>())
     {
         return;
     }

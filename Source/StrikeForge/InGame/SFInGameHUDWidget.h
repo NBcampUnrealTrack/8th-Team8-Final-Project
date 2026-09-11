@@ -55,7 +55,7 @@ public:
         Category = "SF|HUD|Building"
     )
     void CloseBuildingMode();
-    
+
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Settings"
@@ -65,6 +65,10 @@ public:
     void ShowResultWidget(bool bIsWin);
 
     void SelectActor(AActor* Actor);
+
+    /** 내 소유의 살아 있는 일반 유닛만 모두 선택한다. 커맨더와 건물은 제외한다. */
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
+    void SelectAllOwnedUnits();
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     void ToggleBuildingMode();
@@ -221,6 +225,10 @@ private:
     UFUNCTION()
     void HandlePrimarySelectionRequested(AActor* Actor);
 
+    void CreateRallyPointIndicatorsForBuilding(
+        ASFProductionBuilding* ProductionBuilding
+    );
+
     void TryStartStageIntro();
 
     /**
@@ -266,7 +274,7 @@ private:
     );
 
     void HandleStageIntroDeactivated();
-    
+
     FName ResolveStageIntroRowName() const;
 
     UFUNCTION()
@@ -392,7 +400,7 @@ protected:
     )
     TObjectPtr<UBorder> SelectionDragBox = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Result")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Result")
     TSubclassOf<UResultWidget> ResultWidgetClass;
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|HUD|Settings", meta = (BindWidget))
@@ -428,19 +436,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
     FName StageIntroFallbackRowName = NAME_None;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildModeOpenSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildModeCloseSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildStartSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Command|Feedback")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
@@ -450,9 +458,9 @@ protected:
     float RallyPathIndicatorWidth = 30.f;
 
     UPROPERTY(Transient)
-    TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPathIndicators;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Rally")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Rally")
     TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
 
 private:
@@ -516,5 +524,5 @@ private:
         SelectedBuildingForTierDelegate;
 
     UPROPERTY(Transient)
-    TObjectPtr<UStaticMeshComponent> RallyPointIndicator = nullptr;
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPointIndicators;
 };

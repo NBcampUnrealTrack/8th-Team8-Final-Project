@@ -1,10 +1,11 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "SettingWidget.h"
 #include "StartWidget.generated.h"
+
 class UButton;
 class UWidget;
-class USettingWidget;
 UCLASS()
 class STRIKEFORGE_API UStartWidget : public UUserWidget
 {
@@ -29,7 +30,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn;
 
-	// WBP_Start ĵ������ ���� ��ġ�� WBP_Setting �ν��Ͻ� (Visibility ��۷� ���� ����)
 	UPROPERTY(meta = (BindWidget))
 	USettingWidget* SettingWidget;
 };

@@ -20,6 +20,7 @@
 #include "NiagaraSystem.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
+#include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "EngineUtils.h"
 #include "Logging/SFLog.h"
@@ -52,7 +53,7 @@ AUnitBase::AUnitBase()
 	, bCommandRejectedReported(false)
 	, bPopulationApplied(false)
 	, bAdvanceModeInjected(false)
-	, bBlockOtherUnits(false)
+	, bBlockOtherUnits(true)
 	, bRequireLineOfSightForBuildings(false)
 	, bSightBlockedReported(false)
 	, bReturnToHoldLocation(false)
@@ -134,6 +135,11 @@ void AUnitBase::BeginPlay()
 		ApplyPopulationDelta(+PopulationCost);
 	}
 
+	if (IsValid(CombatTarget))
+	{
+		CombatTarget->OnCombatDamaged.AddUniqueDynamic(this, &AUnitBase::HandleCombatDamaged);
+	}
+
 	// 유닛끼리 서로를 막을지 반영한다.
 	ApplyUnitCollisionMode();
 
@@ -161,6 +167,11 @@ void AUnitBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		bPopulationApplied = false;
 		ApplyPopulationDelta(-PopulationCost);
+	}
+
+	if (IsValid(CombatTarget))
+	{
+		CombatTarget->OnCombatDamaged.RemoveDynamic(this, &AUnitBase::HandleCombatDamaged);
 	}
 
 	// 잡아둔 공격 슬롯을 놓는다.
@@ -1437,6 +1448,14 @@ void AUnitBase::ApplyAttackDamage(AActor* InTarget, float DamageRatio)
 
 	// 이펙트도 실제 타격 Notify 시점에 출력한다.
 	SpawnEffectAt(AttackEffect, InTarget->GetActorLocation() + FVector(0.f, 0.f, EffectHeightOffset));
+
+	// 실제 피격 대상의 종류에 따라 타격 사운드를 선택한다.
+	USoundBase* HitSound = IsBuildingTarget(InTarget) ? BuildingHitSound : UnitHitSound;
+
+	if (IsValid(HitSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, HitSound, InTarget->GetActorLocation());
+	}
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1774,6 +1793,16 @@ void AUnitBase::DrawCombatDebug() const
 #endif
 }
 
+void AUnitBase::HandleCombatDamaged(UCombatTargetComponent* InTarget, float InDamage, AActor* InInstigator)
+{
+	if (InDamage <= 0.f || !IsValid(DamagedSound))
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(this, DamagedSound, GetActorLocation());
+}
+
 #if !UE_BUILD_SHIPPING
 /**
  * 유닛 간 통과 여부를 즉시 전환한다.
@@ -2083,20 +2112,31 @@ void AUnitBase::Tick(float DeltaSeconds)
 
 		if (bCloseQuarters)
 		{
-			// NavMesh 이동 요청과 우리 스티어링이 동시에 캐릭터무브먼트에 입력을
-			// 넣으면 서로 간섭한다. 확실히 꺼둔다 — Attacking 분기가 이미 매 틱
-			// ClearMoveRequest 를 부르는 것과 같은 방식이다.
-			if (AUnitAIController* AI = GetUnitAI())
-			{
-				AI->ClearMoveRequest();
-			}
-
-			// 이 구간은 정체를 시간으로 추론할 필요가 없다 — 매 틱 직접 계산해서
-			// 움직이므로 "멈췄다" 라는 중간 상태 자체가 없다.
 			StuckTimer = 0.f;
 			bRangeUnreachableReported = false;
 
-			SteerTowardSlot(DeltaSeconds);
+			AUnitAIController* AI = GetUnitAI();
+			USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+
+			if (AI && Combat)
+			{
+				FVector SlotLocation;
+
+				// 대상 주변에 배정받은 공격 위치가 있다면
+				// Detour Crowd 경로 이동으로 해당 위치까지 우회한다.
+				if (AttackSlotIndex != INDEX_NONE && Combat->GetAttackSlotLocation(
+						CurrentTarget,
+						AttackSlotIndex,
+						GetApproachDistance(CurrentTarget), SlotLocation))
+				{
+					AI->RequestMoveToLocation(SlotLocation, SlotAcceptanceRadius, true);
+				}
+				else
+				{
+					// 공격 자리가 완전히 찬 경우 앞 유닛을 계속 밀지 않는다.
+					AI->ClearMoveRequest();
+				}
+			}
 		}
 		else
 		{

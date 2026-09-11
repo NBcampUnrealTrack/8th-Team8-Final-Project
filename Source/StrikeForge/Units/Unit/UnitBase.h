@@ -830,6 +830,22 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Effect", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UNiagaraSystem> AttackEffect;
 
+	/** 유닛을 타격했을 때 재생할 사운드 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound|Combat", meta = (AllowPrivateAccess = true))
+	TObjectPtr<USoundBase> UnitHitSound;
+
+	/** 건물을 타격했을 때 재생할 사운드 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound|Combat", meta = (AllowPrivateAccess = true))
+	TObjectPtr<USoundBase> BuildingHitSound;
+
+	/** 이 유닛이 피해를 받았을 때 재생할 사운드 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound|Combat", meta = (AllowPrivateAccess = true))
+	TObjectPtr<USoundBase> DamagedSound;
+
+	/** CombatTarget에서 실제 피해가 들어왔을 때 호출 */
+	UFUNCTION()
+	void HandleCombatDamaged(UCombatTargetComponent* InTarget, float InDamage, AActor* InInstigator);
+
 	/**
 	 * 공격 시 재생할 몽타주.
 	 *

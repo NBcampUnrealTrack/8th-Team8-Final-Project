@@ -1,11 +1,12 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "SettingWidget.h"
 #include "LobbyWidget.generated.h"
+
 class UButton;
 class UWidget;
 class UTexture2D;
-class USettingWidget;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
@@ -57,7 +58,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Back_Btn;
 
-	// WBP_Lobby 캔버스에 직접 배치된 WBP_Setting 인스턴스 (Visibility 토글로 열고 닫음)
 	UPROPERTY(meta = (BindWidget))
 	USettingWidget* SettingWidget;
 

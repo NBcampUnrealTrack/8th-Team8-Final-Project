@@ -439,7 +439,6 @@ void USFStageIntroWidget::ShowWaitForObjectiveNode(const FSFStageIntroNode& Node
     // Node 는 ActiveNodes 안의 원소를 가리키는 참조다. 아래에서 배열을 비우면
     // 그 순간 무효가 되므로, 쓸 값은 먼저 전부 복사해 둔다.
     const FGameplayTag ObjectiveTag = Node.ObjectiveTag;
-    const FText BannerText = Node.ObjectiveBannerText;
     const int32 ResumeNodeIndex = Node.NextNodeIndex;
 
     USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this);
@@ -462,8 +461,7 @@ void USFStageIntroWidget::ShowWaitForObjectiveNode(const FSFStageIntroNode& Node
         ActiveDataTable,
         ActiveRowName,
         ResumeNodeIndex,
-        ObjectiveTag,
-        BannerText
+        ObjectiveTag
     );
 
     if (!bWaiting)

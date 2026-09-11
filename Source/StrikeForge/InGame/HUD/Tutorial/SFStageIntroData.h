@@ -213,6 +213,10 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Look")
     bool bDimBackground = true;
 
+    /** 이 단계에서만 스포트라이트 테두리를 그릴지 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Look")
+    bool bShowHighlight = true;
+
     /**
      * 회색 배치 고스트를 띄울지. TargetKind 가 WorldLocation 일 때만 뜬다.
      *
@@ -334,15 +338,6 @@ struct STRIKEFORGE_API FSFStageIntroNode
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Objective")
     FGameplayTag ObjectiveTag;
-
-    /**
-     * 대기 중 화면에 남길 목표 문구. 비우면 배너를 띄우지 않는다.
-     *
-     * 대사 노드에서 이미 설명했더라도 한 줄은 남기는 편이 낫다. 플레이어가
-     * 조작하다가 뭘 하던 중이었는지 잊으면 다시 볼 방법이 없다.
-     */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Objective", meta = (MultiLine = true))
-    FText ObjectiveBannerText;
 
     /**
      * 단계별 안내. NodeType 이 InteractiveGuide 일 때만 쓰인다.

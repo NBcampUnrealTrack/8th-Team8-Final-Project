@@ -22,11 +22,7 @@ class ASFTutorialGhostActor;
 class USFBuildingDefinition;
 class USoundBase;
 
-/** 목표 대기가 시작됐다. 목표 배너를 띄우는 쪽이 구독한다 */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
-    FSFTutorialObjectiveStarted, FGameplayTag, ObjectiveTag, const FText&, BannerText);
-
-/** 목표가 달성됐다. 배너를 지우거나 연출을 낼 때 구독한다 */
+/** 목표가 달성됐다. 완료 연출이나 후속 처리를 할 때 구독한다 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FSFTutorialObjectiveCompleted, FGameplayTag, ObjectiveTag);
 
@@ -83,21 +79,21 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
  * ActiveNodes 를 비우므로 "어디까지 왔는지" 가 함께 사라진다.
  *
  * 그래서 대기에 필요한 최소한(어느 테이블/행의 몇 번 노드로 돌아와야 하는가,
- * 무엇을 기다리는가)만 위젯 밖으로 뺐다. 노드를 그리는 일은 여전히 위젯이
- * 전부 한다 — 진행 로직까지 옮기면 위젯을 크게 뒤집어야 하고, 지금 필요한
- * 것은 그게 아니다.
- *
- * ── 신호는 어디서 오는가 ────────────────────────────────
+     * 무엇을 기다리는가)만 위젯 밖으로 뺐다. 노드를 그리는 일은 여전히 위젯이
+     * 전부 한다 — 진행 로직까지 옮기면 위젯을 크게 뒤집어야 하고, 지금 필요한
+     * 것은 그게 아니다.
+     *
+     * ── 신호는 어디서 오는가 ────────────────────────────────
  *
  * 게임플레이 쪽에서 NotifyObjective 를 부른다. static BlueprintCallable 이라
  * 건물 BP 든 GameMode 든 아무 데서나 노드 하나로 부를 수 있고, 그쪽 C++ 를
  * 고칠 필요가 없다.
  *
- * ── 배너는 왜 여기서 안 만드는가 ────────────────────────
+ * ── UI는 왜 여기서 만들지 않는가 ────────────────────────
  *
  * 위젯을 어떻게 띄우는지(CommonUI 스택 푸시인지 AddToViewport 인지)는 HUD 쪽
  * 사정이다. 서브시스템이 그걸 알면 HUD 구조가 바뀔 때마다 여기도 바뀐다.
- * 델리게이트만 쏘고, 실제로 무엇을 띄울지는 구독하는 쪽이 정한다.
+ * 튜토리얼 진행만 관리하고, 실제 UI 표현은 각 위젯이 담당한다.
  */
 UCLASS()
 class STRIKEFORGE_API USFTutorialSubsystem : public UWorldSubsystem
@@ -124,8 +120,7 @@ public:
         UDataTable* InDataTable,
         FName InRowName,
         int32 InResumeNodeIndex,
-        FGameplayTag InObjectiveTag,
-        const FText& InBannerText);
+        FGameplayTag InObjectiveTag);
 
     /** 대기를 취소한다. 튜토리얼을 중간에 끄거나 스테이지를 나갈 때 부른다 */
     UFUNCTION(BlueprintCallable, Category = "SF|Tutorial")
@@ -329,17 +324,10 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial")
     FGameplayTag GetActiveObjectiveTag() const;
 
-    /** 대기 중인 목표의 배너 문구. 배너 위젯을 늦게 만들어도 문구를 가져갈 수 있다 */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial")
-    FText GetActiveObjectiveText() const;
-
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial")
     bool IsObjectiveCompleted(FGameplayTag InObjectiveTag) const;
 
     // ── 델리게이트 ──────────────────────────────────────
-
-    UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
-    FSFTutorialObjectiveStarted OnObjectiveStarted;
 
     UPROPERTY(BlueprintAssignable, Category = "SF|Tutorial")
     FSFTutorialObjectiveCompleted OnObjectiveCompleted;
@@ -458,9 +446,6 @@ private:
     /** 지금 기다리는 목표. 유효하지 않으면 대기 중이 아니다 */
     UPROPERTY(Transient)
     FGameplayTag PendingObjectiveTag;
-
-    UPROPERTY(Transient)
-    FText PendingBannerText;
 
     UPROPERTY(Transient)
     TObjectPtr<UDataTable> PendingDataTable = nullptr;

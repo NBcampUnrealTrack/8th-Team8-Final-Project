@@ -18,6 +18,7 @@ class UNiagaraSystem;
 class UAnimMontage;
 class ALanePath;
 class USoundBase;
+class UAnimationAsset;
 
 /** 전투 상태 머신 */
 UENUM(BlueprintType)
@@ -97,6 +98,10 @@ public:
 	AUnitBase();
 	
 	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
+
+	/** 유닛 초상화 애니메이션 설정 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
+	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
 
 	/** 데이터테이블 행 이름. "같은 종류" 판정의 기준이 된다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
@@ -183,6 +188,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void PerformAttack(AActor* InTarget);
+
+	/** 공격 애니메이션의 타격 Notify에서 호출한다 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void HandleAttackHit(float DamageRatio = 1.f);
+
+	/** 사망 애니메이션이 완전히 누운 자세에 도달했을 때 호출한다 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Animation")
+	void HandleDeathPose();
 
 	/** 타겟까지 시야가 열려 있는가. 벽 너머 공격을 막는다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
@@ -325,6 +338,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Runtime")
 	float AttackMultiplier = 1.f;
 
+	/** 공격 이동 명령 직후 적을 다시 탐색하지 않는 시간 */
+	float CommandAttackMoveGraceRemaining = 0.f;
+
 #pragma endregion
 
 protected:
@@ -332,11 +348,20 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
+	/** 발견한 적을 일정 거리 안의 아군에게 알린다 */
+	void AlertNearbyAllies(AActor* InTarget);
+
+	/** 주변 아군의 지원 요청으로 전달된 적을 받아들인다 */
+	void ReceiveAssistTarget(AActor* InTarget);
+
 	/** CombatTargetComponent 의 파괴 델리게이트에 연결된다 */
 	UFUNCTION()
 	void HandleDeath(UCombatTargetComponent* InTarget);
 
 	bool IsTargetUsable(const AActor* InTarget) const;
+
+	/** 공격 Notify가 발생했을 때 실제 피해를 계산하고 적용한다 */
+	void ApplyAttackDamage(AActor* InTarget, float DamageRatio);
 
 	/**
 	 * 이 유닛이 플레이어 명령을 받아들이는가.
@@ -477,6 +502,10 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true))
 	float Attack = 10.f;
 
+	/** 한 번의 공격 모션에서 허용되는 타격 횟수 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true, ClampMin = "1"))
+	int32 AttackHitCount = 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stat", meta = (AllowPrivateAccess = true))
 	float AttackRange = 270.f;
 
@@ -510,6 +539,10 @@ private:
 	/** 교전 반경. 이 안의 대상만 타겟으로 잡는다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
 	float AggroRadius = 1050.f;
+
+	/** 주변 아군이 발견한 적에게 합류하는 거리 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
+	float AllyAssistRadius = 1500.f;
 
 	/**
 	 * 교전을 시작하는 거리 비율. 실제 시작 거리 = AttackRange * 이 값.
@@ -988,6 +1021,13 @@ private:
 	TObjectPtr<USoundBase> CachedSelectionSound = nullptr;
 
 	float AttackCooldownRemaining = 0.f;
+
+	/** 현재 공격 모션이 타격할 대상 */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> PendingAttackTarget;
+
+	/** 현재 공격 모션에서 이미 적용된 타격 횟수 */
+	int32 AppliedAttackHitCount = 0;
 
 	/**
 	 * 공격 모션을 끊지 않고 보장할 남은 시간(초).

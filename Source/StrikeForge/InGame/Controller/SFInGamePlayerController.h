@@ -13,6 +13,7 @@ class UEnhancedInputLocalPlayerSubsystem;
 class UInputAction;
 class UInputMappingContext;
 class USFInGameHUDWidget;
+class USFBuildingDefinition;
 
 UENUM(BlueprintType)
 enum class ESFControlMode : uint8
@@ -77,8 +78,13 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-
-    bool SpawnBuildingFunction(const FName& InBuildingId);
+    
+    /**
+     * 사전 로딩된 Tier 0 에셋을 검증하고 건물 배치를 준비한다.
+     * Catalog Entry 클릭에서 호출되며 고스트 건물 생성과
+     * StartPlacementMode로 이어진다.
+     */
+    bool TryStartBuildingPlacement(FName InBuildingId);
 
     void ClearSpawnedBuildingRef();
 
@@ -126,8 +132,7 @@ protected:
     virtual void SetupInputComponent() override;
 
 private:
-    UEnhancedInputLocalPlayerSubsystem*
-        GetEnhancedInputSubsystem() const;
+    UEnhancedInputLocalPlayerSubsystem* GetEnhancedInputSubsystem() const;
 
     void ConfigureMouseInput();
 
@@ -202,6 +207,8 @@ private:
     UFUNCTION(BlueprintCallable)
     void PlaySelectionSound(AActor* SelectedTarget);
     
+    // Async
+
     // 변수 영역
 protected:
 

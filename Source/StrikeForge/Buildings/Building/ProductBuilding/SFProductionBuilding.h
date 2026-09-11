@@ -24,6 +24,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Production")
 	FProductUnitArrayChanged OnSpawnableUnitsChanged;
 	
+	//HUD가 ProductComponent를 직접 만지지 않도록 생산 건물에 래퍼 함수를 추가
+	UFUNCTION(BlueprintPure, Category = "SF|Production|Rally")
+	bool HasRallyPoint() const;
+
+	UFUNCTION(BlueprintPure, Category = "SF|Production|Rally")
+	FVector GetRallyPoint() const;
+
 	// setter
 	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
 	void ApplySpeedBuff(float InMultiflyValue) const;

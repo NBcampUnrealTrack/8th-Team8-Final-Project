@@ -1,5 +1,6 @@
 #include "SFSelectionPanelWidget.h"
 
+#include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -167,6 +168,7 @@ void USFSelectionPanelWidget::ClearSelection()
 
     SetCommandButtonsVisible(false);
     SetRallyPointButtonVisible(false);
+    SetTierUpStageLocked(false);
 }
 
 bool USFSelectionPanelWidget::HasSelection() const
@@ -305,4 +307,57 @@ void USFSelectionPanelWidget::SetCommandButtonsVisible(
             ButtonVisibility
         );
     }
+}
+
+void USFSelectionPanelWidget::SetAttackCommandButtonVisible(
+    bool bVisible
+)
+{
+    if (!IsValid(AttackCommandButton))
+    {
+        return;
+    }
+
+    AttackCommandButton->SetVisibility(
+        bVisible
+        ? ESlateVisibility::Visible
+        : ESlateVisibility::Collapsed
+    );
+}
+
+void USFSelectionPanelWidget::SetUpgradeCost(
+    const FResources& InUpgradeCost
+)
+{
+    if (IsValid(UpgradeMineralCostText))
+    {
+        UpgradeMineralCostText->SetText(
+            FText::AsNumber(InUpgradeCost.Mineral)
+        );
+    }
+
+    if (IsValid(UpgradeEtherCostText))
+    {
+        UpgradeEtherCostText->SetText(
+            FText::AsNumber(InUpgradeCost.Ether)
+        );
+    }
+}
+
+void USFSelectionPanelWidget::SetTierUpStageLocked(
+    bool bLocked
+)
+{
+    BP_OnTierUpStageLockChanged(
+        bLocked
+    );
+}
+
+void USFSelectionPanelWidget::SetUpgradeAffordability(
+    bool bInCanAfford
+)
+{
+    BP_OnUpgradeAffordabilityChanged(
+        bInCanAfford
+    );
 }

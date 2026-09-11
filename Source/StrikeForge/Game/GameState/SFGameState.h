@@ -5,19 +5,31 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Stage/SFStageData.h"
 #include "Game/GameState/SFTeamState.h"
 #include "SFGameState.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnStageLoadingProgressChanged,
+    float,
+    Progress);
+
 class ASFNexusBuilding;
+class ASFBaseBuilding;
 class USFBuildingCatalog;
 
 // 상태 정의 = 진행 상황
 UENUM(BlueprintType)
 enum class ESFStageState : uint8
 {
-    Initializing UMETA(DisplayName = "Initializing"),
-    Playing      UMETA(DisplayName = "Playing"),
-    Finished     UMETA(DisplayName = "Finished")
+    // 기존 enum 값을 보존하기 위해 기존 항목 순서를 변경하지 않는다.
+    Initializing                 UMETA(DisplayName = "Initializing"),
+    InitializationFailed         UMETA(DisplayName = "Initialization Failed"),
+    LoadingRaceData              UMETA(DisplayName = "Loading Race Data"),
+    LoadingInitialBuildingAssets UMETA(DisplayName = "Loading Initial Building Assets"),
+    ReadyToStart                 UMETA(DisplayName = "Ready To Start"),
+    Playing                      UMETA(DisplayName = "Playing"),
+    Finished                     UMETA(DisplayName = "Finished"),
 };
 
 // 상태 정의 = 결과
@@ -52,10 +64,34 @@ public:
     ASFGameState();
 
     // GamaMode가 현재 선택된 스테이지 ID를 전달
-    bool InitializeStage(FName StageRowName);
+    bool InitializeStage(FName StageRowName,const TArray<FSFStageBuildingRule>& InBuildingRules);
+    /**
+     * 스테이지 비동기 초기화를 시작한다.
+     * GameMode::BeginStageBootstrap에서 호출되며
+     * Initializing 상태를 LoadingRaceData로 변경한다.
+     */
+    bool BeginRaceDataLoading();
 
-    bool StartStage(); // 스테이지 초기화 부분 -> GameMode에서 호출
+    /**
+     * 종족 데이터 로딩이 끝난 뒤 초기 건물 에셋 로딩 단계로 전환한다.
+     * GameMode::RequestInitialBuildingAssets에서 호출되며
+     * LoadingRaceData를 LoadingInitialBuildingAssets로 변경한다.
+     */
+    bool BeginInitialBuildingAssetsLoading();
 
+    /**
+     * 스테이지의 기본 데이터와 건물이 준비되었음을 기록한다.
+     * GameMode::CompleteStageBootstrap에서 호출되며
+     * LoadingInitialBuildingAssets를 ReadyToStart로 변경한다.
+     */
+    bool MarkStageReadyToStart();
+    
+    // 스테이지 초기화 부분 -> GameMode에서 호출
+    bool StartStage(); 
+
+    /** 스테이지 초기화 실패를 기록하고 UI에 상태 변경을 알린다. */
+    bool FailStageInitialization();
+    
     // 스테이지 승 or 패 부분 -> GameMode에서 호출
     bool FinishStage(ESFStageResult NewStageResult);
 
@@ -142,6 +178,25 @@ public:
     
     int32 GetNexusTier(int32 TeamIndex) const;
 
+    // 로딩 진행도
+    UFUNCTION(BlueprintPure, Category = "SF|Stage")
+    FORCEINLINE float GetStageLoadingProgress() const { return StageLoadingProgress; }
+
+    void SetStageLoadingProgress(float InProgress);
+
+    bool IsBuildingAllowedInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    int32 GetMaxAllowedTierInCurrentStage(
+        FName InBuildingId
+    ) const;
+
+    bool AreBuildingRequirementsMet(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 public:
 
     // UI 부분
@@ -153,6 +208,9 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
     FSFOnStageResultChanged OnStageResultChanged;
 
+    // 진행도 수신 델리게이트
+    UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
+    FSFOnStageLoadingProgressChanged OnStageLoadingProgressChanged;
 private:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
     ESFStageState StageState;
@@ -167,5 +225,16 @@ private:
     // TeamIndex를 기준으로 각 팀의 넥서스를 저장
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Team", meta = (AllowPrivateAccess = "true"))
     TMap<int32, TObjectPtr<USFTeamState>> TeamStates;
+        
+    // 로딩 진행도
+    float StageLoadingProgress = 0.f;
+
+    UPROPERTY()
+    TArray<FSFStageBuildingRule> CurrentStageBuildingRules;
 	
+    bool HasCompletedBuilding(
+        int32 TeamIndex,
+        FName InBuildingId
+    ) const;
+
 };

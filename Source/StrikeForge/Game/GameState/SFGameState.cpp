@@ -4,6 +4,9 @@
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "EngineUtils.h"
+#include "Buildings/Building/SFBaseBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "Interfaces/Units/Targetable.h"
 
 ASFGameState::ASFGameState()
@@ -13,36 +16,93 @@ ASFGameState::ASFGameState()
 	StageResult = ESFStageResult::Undetermined;
 }
 
-bool ASFGameState::InitializeStage(FName StageRowName)
+bool ASFGameState::InitializeStage(
+	FName StageRowName,
+	const TArray<FSFStageBuildingRule>& InBuildingRules
+)
 {
 	if (StageRowName.IsNone())
 	{
-		SF_LOG(Warning, "[SFGameState] InitializeStage failed : Stage Row Name is None.");
+		SF_LOG(
+			Warning,
+			"[SFGameState] "
+			"InitializeStage failed : Stage Row Name is None."
+		);
 
 		return false;
 	}
 
+	if (StageState != ESFStageState::LoadingRaceData)
+	{
+		SF_LOG(Warning,
+			"[SFGameState] InitializeStage failed: "
+			"Stage is not LoadingRaceData. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	CurrentStageRowName =
+		StageRowName;
+
+	CurrentStageBuildingRules =
+		InBuildingRules;
+
+	SF_LOG(
+		Log,
+		"[SFGameState] Stage initialized : %s | BuildingRules: %d",
+		*CurrentStageRowName.ToString(),
+		CurrentStageBuildingRules.Num()
+	);
+
+	return true;
+}
+
+bool ASFGameState::BeginRaceDataLoading()
+{
 	if (StageState != ESFStageState::Initializing)
 	{
-		SF_LOG(Warning, "[SFGameState] InitializeStage failed : Stage is not Initializing.");
+		SF_LOG(
+			Warning,
+			"[SFGameState] Race 데이터 로딩을 시작할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
 
 		return false;
 	}
 
-	CurrentStageRowName = StageRowName;
+	StageState = ESFStageState::LoadingRaceData;
 
-	SF_LOG(Log, "[SFGameState] Stage initialized : %s", *CurrentStageRowName.ToString());
+	SF_LOG(Log, "[SFGameState] Race 데이터 로딩을 시작합니다.");
 
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
+}
+
+bool ASFGameState::BeginInitialBuildingAssetsLoading()
+{
+	if (StageState != ESFStageState::LoadingRaceData)
+	{
+		SF_LOG(
+			Warning,
+			"[SFGameState] 초기 건물 에셋 로딩을 시작할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::LoadingInitialBuildingAssets;
+
+	SF_LOG(Log, "[SFGameState] 초기 건물 에셋 로딩을 시작합니다.");
+
+	OnStageStateChanged.Broadcast(StageState);
 	return true;
 }
 
 bool ASFGameState::StartStage()
 {
 	// 스테이지 시작 부분
-	if (StageState != ESFStageState::Initializing)
+	if (StageState != ESFStageState::ReadyToStart)
 	{
-		SF_LOG(Warning, "[SFGameState] StartStage failed: Stage is not Initializing.");
-
 		return false;
 	}
 
@@ -195,6 +255,66 @@ int32 ASFGameState::GetNexusTier(int32 TeamIndex) const
 		return INDEX_NONE;
 	}
 	return Nexus->GetCurrentTier();
+}
+
+void ASFGameState::SetStageLoadingProgress(float InProgress)
+{
+	StageLoadingProgress = FMath::Clamp(InProgress, 0.f, 1.f);
+
+	OnStageLoadingProgressChanged.Broadcast(StageLoadingProgress);
+}
+
+bool ASFGameState::FailStageInitialization()
+{
+	// 중복 실패 요청은 이미 처리된 것으로 간주한다.
+	if (StageState == ESFStageState::InitializationFailed)
+	{
+		return true;
+	}
+
+	switch (StageState)
+	{
+	case ESFStageState::Initializing:
+	case ESFStageState::LoadingRaceData:
+	case ESFStageState::LoadingInitialBuildingAssets:
+	case ESFStageState::ReadyToStart:
+		// ReadyTo가 되면 아래 실행하지않고 조용히 나감
+		break;
+
+	default:
+		SF_LOG(
+			Warning,
+			"[SFGameState] 초기화 실패 상태로 전환할 수 없습니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::InitializationFailed;
+
+	SF_LOG(Error, "[SFGameState] Stage initialization failed.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
+}
+
+bool ASFGameState::MarkStageReadyToStart()
+{
+	if (StageState != ESFStageState::LoadingInitialBuildingAssets)
+	{
+		SF_LOG(Warning,
+			"[SFGameState] ReadyToStart로 전환할 수 없는 상태입니다. State=%s",
+			*UEnum::GetValueAsString(StageState));
+
+		return false;
+	}
+
+	StageState = ESFStageState::ReadyToStart;
+
+	SF_LOG(Log, "[SFGameState] 스테이지가 시작 준비 상태가 되었습니다.");
+
+	OnStageStateChanged.Broadcast(StageState);
+	return true;
 }
 
 USFTeamState* ASFGameState::FindOrAddTeam(int32 TeamIndex)
@@ -378,4 +498,169 @@ USFBuildingCatalog* ASFGameState::GetTeamBuildingCatalog(int32 TeamIndex) const
 
 	return IsValid(Team)?
 			Team->GetBuildingCatalog(): nullptr;
+}
+
+bool ASFGameState::IsBuildingAllowedInCurrentStage(
+	FName InBuildingId
+) const
+{
+	if (InBuildingId.IsNone())
+	{
+		return false;
+	}
+
+	for (const FSFStageBuildingRule& Rule
+		: CurrentStageBuildingRules)
+	{
+		if (Rule.BuildingId == InBuildingId)
+		{
+			return Rule.bCanBuild;
+		}
+	}
+
+	// 규칙에 없는 건물은 기본적으로 허용
+	return true;
+}
+
+bool ASFGameState::AreBuildingRequirementsMet(
+	int32 TeamIndex,
+	FName InBuildingId
+) const
+{
+	if (InBuildingId.IsNone())
+	{
+		return false;
+	}
+
+	const FSFStageBuildingRule* TargetRule =
+		nullptr;
+
+	for (
+		const FSFStageBuildingRule& Rule :
+		CurrentStageBuildingRules
+		)
+	{
+		if (Rule.BuildingId == InBuildingId)
+		{
+			TargetRule =
+				&Rule;
+
+			break;
+		}
+	}
+
+	// 테크 조건이 등록되지 않은 건물은 기본적으로 해금
+	if (!TargetRule)
+	{
+		return true;
+	}
+
+	for (
+		const FName& RequiredBuildingId :
+		TargetRule->RequiredBuildingIds
+		)
+	{
+		if (!HasCompletedBuilding(
+			TeamIndex,
+			RequiredBuildingId
+		))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+int32 ASFGameState::GetMaxAllowedTierInCurrentStage(
+	FName InBuildingId
+) const
+{
+	if (InBuildingId.IsNone())
+	{
+		return 3;
+	}
+
+	for (const FSFStageBuildingRule& Rule
+		: CurrentStageBuildingRules)
+	{
+		if (Rule.BuildingId == InBuildingId)
+		{
+			return Rule.MaxAllowedTier;
+		}
+	}
+
+	// 규칙에 없는 건물은 최대 티어 3
+	return 3;
+}
+
+bool ASFGameState::HasCompletedBuilding(
+	int32 TeamIndex,
+	FName InBuildingId
+) const
+{
+	if (InBuildingId.IsNone())
+	{
+		return false;
+	}
+
+	UWorld* World =
+		GetWorld();
+
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	for (
+		TActorIterator<ASFBaseBuilding> It(World);
+		It;
+		++It
+		)
+	{
+		ASFBaseBuilding* Building =
+			*It;
+
+		if (!IsValid(Building))
+		{
+			continue;
+		}
+
+		if (Building->GetTeamIndex() != TeamIndex)
+		{
+			continue;
+		}
+
+		// 건설이 완전히 끝난 건물만 인정
+		if (!Building->IsTierActivated())
+		{
+			continue;
+		}
+
+		USFBuildingDefinition* Definition =
+			Building->GetBuildingDefinition();
+
+		if (!IsValid(Definition))
+		{
+			continue;
+		}
+
+		const bool bMatchesSelectionRow =
+			Definition->SelectionUIRowName ==
+			InBuildingId;
+
+		const bool bMatchesBuildingId =
+			Definition->BuildingId ==
+			InBuildingId;
+
+		if (
+			bMatchesSelectionRow ||
+			bMatchesBuildingId
+			)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }

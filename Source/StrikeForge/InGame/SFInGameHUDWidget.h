@@ -5,6 +5,9 @@
 #include "SFSelectInfo/SFSelectableInfo.h"
 #include "Datas/Race/SFRaceType.h"
 #include "SFSelectInfo/SFSelectionUIDataRow.h"
+// ESFStageState 를 UFUNCTION 인자로 받으려면 완전한 타입이 필요하다.
+// 전방 선언만으로는 UHT 가 델리게이트 시그니처를 만들지 못한다.
+#include "Game/GameState/SFGameState.h"
 #include "SFInGameHUDWidget.generated.h"
 
 class AActor;
@@ -28,6 +31,9 @@ class AUnitBase;
 class UTexture2D;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
+class UStaticMeshComponent;
+class UStaticMesh;
+class UWidget;
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -59,8 +65,6 @@ public:
     void ShowResultWidget(bool bIsWin);
 
     void SelectActor(AActor* Actor);
-
-    bool IsPointerOverSelectionAction() const;
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     void ToggleBuildingMode();
@@ -101,6 +105,11 @@ public:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFProductionBuilding>
         SelectedProductionBuilding;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Rally")
+    void RefreshRallyPointIndicator();
+
+    bool IsPointerOverHUDPanel();
 
 protected:
     virtual void NativeConstruct() override;
@@ -215,6 +224,19 @@ private:
     void TryStartStageIntro();
 
     /**
+     * 스테이지가 실제로 시작될 때 인트로를 연다.
+     *
+     * 예전에는 HUD 가 만들어진 다음 프레임에 무조건 열었는데, 그 시점은
+     * 아직 스테이지 에셋을 비동기로 로딩하는 중이다. 로딩 화면과 겹치고,
+     * 인트로가 게임을 일시정지시키므로 로딩이 멈출 수도 있다.
+     *
+     * GameState 가 Playing 으로 바뀌는 순간은 로딩 화면이 이미 사라진
+     * 뒤이고 게임은 아직 아무 일도 일어나지 않은 시점이다.
+     */
+    UFUNCTION()
+    void HandleStageStateChanged(ESFStageState NewState);
+
+    /**
      * 스테이지 인트로 위젯을 열고 지정한 노드부터 재생한다.
      *
      * TryStartStageIntro 의 본문을 그대로 옮겨온 것이다. 여는 절차(위젯 생성,
@@ -260,6 +282,8 @@ private:
 
     UFUNCTION()
     void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
+
+    void HideRallyPointIndicator();
 
     // ==================== Variables ====================
 
@@ -310,6 +334,20 @@ protected:
         meta = (BindWidgetOptional)
     )
     TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Resource",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> ResourcePanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Minimap",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> MinimapPanel = nullptr;
 
     UPROPERTY(
         BlueprintReadOnly,
@@ -402,9 +440,58 @@ protected:
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    TObjectPtr<UMaterialInterface> RallyPathIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    float RallyPathIndicatorWidth = 30.f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Rally")
+    TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
+
+    // ── 스테이지 시작 대기 ──────────────────────────────
+
+    /** OnStageStateChanged 를 구독한 대상. NativeDestruct 에서 떼어낸다 */
+    UPROPERTY(Transient)
+    TObjectPtr<ASFGameState> BoundStageGameState = nullptr;
+
+    /**
+     * 인트로를 이미 요청했는가.
+     *
+     * Playing 은 한 판에 한 번뿐이지만, 델리게이트가 두 번 오는 경로가
+     * 생겨도 인트로 위젯이 두 개 열리지 않도록 막아둔다.
+     */
+    bool bStageIntroRequested = false;
+
+    /**
+     * 로딩이 끝날 때까지 HUD 를 숨길지.
+     *
+     * 로딩 화면이 불투명하면 꺼도 티가 안 나지만, 배경 영상에 투명도가
+     * 있거나 페이드를 넣으면 그 아래로 HUD 가 비친다.
+     *
+     * 문제가 생기면 이 값 하나로 예전 동작으로 되돌릴 수 있다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro",
+        meta = (AllowPrivateAccess = "true"))
+    bool bHideHUDUntilStagePlaying = true;
+
+    /**
+     * 숨기기 전의 가시성.
+     *
+     * SelfHitTestInvisible 로 고정해서 되돌리면 WBP 가 설정한 값과
+     * 달라져 클릭 판정이 바뀐다. 원래 값을 그대로 돌려준다.
+     */
+    ESlateVisibility VisibilityBeforeStageLoading = ESlateVisibility::SelfHitTestInvisible;
 
     UPROPERTY(Transient)
     TObjectPtr<UResultWidget> ResultWidget = nullptr;
@@ -427,4 +514,7 @@ private:
     UPROPERTY(Transient)
     TWeakObjectPtr<ASFBaseBuilding>
         SelectedBuildingForTierDelegate;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UStaticMeshComponent> RallyPointIndicator = nullptr;
 };

@@ -21,7 +21,8 @@ public:
 	
 	int32 GetTeamIndex() const { return TeamIndex; }
 	ESFBuildingType GetBuildingType() const { return BuildingType; }
-	
+	/** Anchor가 생성할 건물의 시작 Tier 인덱스다. */
+	int32 GetInitialTierIndex() const {	return InitialTierIndex; }
 protected:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "SF|Spawn",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneComponent;
@@ -36,7 +37,13 @@ private:
 	 */
 	UPROPERTY(EditInstanceOnly,BlueprintReadOnly,Category = "SF|Spawn",meta = (AllowPrivateAccess = "true"))
 	ESFBuildingType BuildingType = ESFBuildingType::None;
-
+	/**
+	 * 생성할 건물의 시작 Tier 인덱스.
+	 * 0은 코드상의 Tier 0, 1은 Tier 1이다.
+	 */
+	UPROPERTY(EditInstanceOnly,	BlueprintReadOnly, Category = "SF|Spawn", meta = (AllowPrivateAccess = "true",
+			ClampMin = "0",	UIMin = "0"))
+	int32 InitialTierIndex = 0;
 #if WITH_EDITORONLY_DATA
 
 	/**

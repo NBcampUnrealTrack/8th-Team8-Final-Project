@@ -18,6 +18,9 @@
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
+#include "InGame/Controller/SFInGamePlayerController.h"
+#include "Engine/GameInstance.h"
+#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -167,46 +170,40 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 			*GetName());
 		return;
 	}
-	//
-	// PreviousHealthRatio =
-	// 	FMath::Clamp(PreviousHealthRatio, 0.f, 1.f);
-	//
-	// CurrentHealthRatio =
-	// 	FMath::Clamp(CurrentHealthRatio, 0.f, 1.f);
 
 	// GC가 설정된 건물은 GC 손상 단계를 사용한다.
-	if (IsValid(ActiveTierAssets.DestructionCollection))
+	if (IsValid(ActiveTierAssets.DestructionCollection) && EnsureDestructionActor())
 	{
+		/*
+		 * GC 파괴와 불꽃 부착은 서로 다른 임계값 배열을 쓴다.
+		 * 둘 중 하나만 넘는 경우가 있으므로 따로 판정한다.
+		 */
 		const int32 PreviousStage =
-			Tier->Visual.FindDestructionStageIndex(
-				PreviousHealthRatio);
+			Tier->Visual.FindDestructionStageIndex(PreviousHealthRatio);
 
 		const int32 CurrentStage =
-			Tier->Visual.FindDestructionStageIndex(
-				CurrentHealthRatio);
+			Tier->Visual.FindDestructionStageIndex(CurrentHealthRatio);
 
-		// 새로운 손상 단계에 진입하지 않았다.
-		if (CurrentStage == INDEX_NONE ||
-			CurrentStage <= PreviousStage)
+		if (CurrentStage != INDEX_NONE && CurrentStage > PreviousStage)
 		{
-			return;
+			if (const FBuildingDestruction* StageData =
+					Tier->Visual.GetDestructionStage(CurrentStage))
+			{
+				DestructionActor->ApplyDamageStage(CurrentStage, *StageData);
+			}
 		}
 
-		const FBuildingDestruction* StageData =
-			Tier->Visual.GetDestructionStage(CurrentStage);
+		// 불꽃 구간은 GC 단계와 별개로 판정한다.
+		const int32 FireStep =
+			Tier->Visual.FindSurfaceFireStepIndex(CurrentHealthRatio);
 
-		if (StageData && EnsureDestructionActor())
+		if (const FBuildingSurfaceFireStep* FireStepData =
+				Tier->Visual.GetSurfaceFireStep(FireStep))
 		{
-			DestructionActor->ApplyDamageStage(
-				CurrentStage,
-				*StageData);
-			
-			// 새로운 GC 손상 단계에 진입했을 때만 새 불꽃을 생성한다.
-			//PlayBurningEffect(CurrentStage);
-			
-			return;
+			DestructionActor->SetSurfaceFireStep(FireStep, FireStepData->FireCount);
 		}
-		// GC 생성 실패 시 아래 DamageMesh 경로를 사용한다.
+
+		return;
 	}
 
 	// GC가 없는 건물은 기존 DamageMesh를 사용한다.
@@ -402,7 +399,8 @@ void ASFBaseBuilding::BeginConstruction()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	
 	PlayVFXComponent->PlayConstructionEffect(ConstructionEffect, StaticMeshComponent);
-	
+	// 다음티어 비동기 Request
+	RequestNextTierAssetsAsync();
 	ProgressComponent->StartProgress();
 }
 
@@ -418,9 +416,8 @@ void ASFBaseBuilding::EnterCompletedState()
 	UpdateDamageVisual(1.f,HealthComponent->GetHealthPercent());
 	
 	//성윤 미니맵 마커제작
-	Tags.AddUnique(
-		FName(TEXT("MinimapBuilding"))
-	);
+	Tags.AddUnique(FName(TEXT("MinimapBuilding")));
+
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -696,59 +693,73 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
-	if (CurrentBuildingState != EBuildingState::Completed ||
+	if (CurrentBuildingState !=
+			EBuildingState::Completed ||
 		UpgradeValue <= 0 ||
-		PendingTier != INDEX_NONE)
+		PendingTier != INDEX_NONE ||
+		RequestedUpgradeTier != INDEX_NONE ||
+		!IsValid(BuildingDefinition))
 	{
 		return;
 	}
-	const int32 NextTier = CurrentTier + UpgradeValue;
+
+	const int32 NextTier =
+		CurrentTier + UpgradeValue;
+
 	if (!GetTierInfo(NextTier))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] 업그레이드 티어가 유효하지 않습니다. Tier=%d, Count=%d"),
-			*GetName(),
-			NextTier, CachedCommonTiers.Num());
 		return;
 	}
-	ASFGameState* SFGS = GetWorld()->GetGameState<ASFGameState>();
+
+	ASFGameState* SFGS =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
 	if (!IsValid(SFGS))
 	{
-		SF_LOG(Error, "SFGameState가 없습니다.");
-		return;
-	}
-	
-	if (false == IsA<ASFNexusBuilding>())
-	{	// nexus가 아닐때는 업그레이드할때 넥서스티어비교
-		const int32 NexusTier = SFGS->GetNexusTier(GetTeamIndex());
-		if (NextTier > NexusTier)
-		{
-			SF_LOG(Warning, "현재건물의 티어: %d / Nexus의 티어: %d 업글할수있는티어의 최대입니다. 업글불가", CurrentTier, NexusTier);
-			return;
-		}
-	}
-	// 업그레이드비용 저장
-	const FResources SpendCost = GetUpgradeCost();
-	
-	if (!SFGS->TrySpendCost(GetTeamIndex(),	SpendCost))
-	{
-		SF_LOG(Warning, "[%s]: 자원이 부족합니다. 필요자원 Mineral: %d, Ether: %d",
-			*GetName(), SpendCost.Mineral, SpendCost.Ether);
-		return;
-	}
-	
-	// 다음티어 있는지확인하고 다음티어정보로 치환 ( 티어정보 교체시점 )
-	if (!PrepareTier(NextTier))
-	{
-		// 준비 실패 시 차감한 비용을 원상 복구한다.
-		SFGS->RefundCost(GetTeamIndex(), SpendCost);
-
-		SF_LOG(Error, "[%s] Tier %d 준비 실패. 업그레이드 비용을 환불했습니다.",
-			*GetName(),
-			NextTier);
 		return;
 	}
 
-	SetBuildingState(EBuildingState::UnderConstruction);
+	if (!IsA<ASFNexusBuilding>() &&
+		NextTier >
+			SFGS->GetNexusTier(GetTeamIndex()))
+	{
+		return;
+	}
+
+	const FResources UpgradeCost =
+		GetUpgradeCost();
+
+	if (!SFGS->CanAffordResource(
+		GetTeamIndex(),
+		UpgradeCost))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance =
+		GetGameInstance();
+
+	USFBuildingAssetSubsystem* AssetSubsystem =
+		IsValid(GameInstance)
+			? GameInstance
+				->GetSubsystem<USFBuildingAssetSubsystem>()
+			: nullptr;
+
+	if (!IsValid(AssetSubsystem))
+	{
+		return;
+	}
+
+	RequestedUpgradeTier = NextTier;
+
+	AssetSubsystem->RequestBuildingAssetsAsync(
+		BuildingDefinition,
+		NextTier,
+		FSFOnBuildingAssetsReady::CreateUObject(
+			this,
+			&ThisClass::HandleUpgradeAssetsReady));
 }
 
 void ASFBaseBuilding::HandleCompleteConstruction()
@@ -786,20 +797,35 @@ bool ASFBaseBuilding::SetBuildingDefinition(USFBuildingDefinition* InDefinition)
 	return true;
 }
 
+bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
+{
+	// BeginPlay가 실행된 뒤에는 초기 Tier를 변경할 수 없다.
+	if (HasActorBegunPlay() ||
+		!IsValid(BuildingDefinition) ||
+		InTierIndex < 0 ||
+		!BuildingDefinition->FindTier(InTierIndex))
+	{
+		return false;
+	}
+
+	CurrentTier = InTierIndex;
+	return true;
+}
+
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
-	if (!LoadBuildingDefinition())
+	if (!CacheLoadedDefinitionData())
 	{
 		Destroy();
 		return; // 디폴트값 로딩 실패시
 	}
 	OnBuildingDefinitionLoaded();
 	// if load failed return
-	if (!PrepareTier(CurrentTier))
+	if (!PrepareLoadedTier(CurrentTier))
 	{
 		Destroy();
 		return; // 메쉬준비 실패시
@@ -862,7 +888,7 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-bool ASFBaseBuilding::LoadBuildingDefinition()
+bool ASFBaseBuilding::CacheLoadedDefinitionData()
 {
 	if (!IsValid(BuildingDefinition))
 	{
@@ -925,26 +951,36 @@ bool ASFBaseBuilding::LoadBuildingDefinition()
 			{
 				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
+		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+
+		CachedTier.Visual.SurfaceFireSteps.Sort([](const FBuildingSurfaceFireStep& Left, const FBuildingSurfaceFireStep& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+		
 	}
 	
 	DisplayName = BuildingDefinition->DisplayName;
 	// grid
 	ConfiguredGridSize = BuildingDefinition->GridSize;
 	// sound
-	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.LoadSynchronous();
-	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.LoadSynchronous();
-	DestroyedSound = BuildingDefinition->DestroyedSound.LoadSynchronous();
+	UnderConstructionSelectionSound = BuildingDefinition->UnderConstructionSelectionSound.Get();
+	CompletedSelectionSound = BuildingDefinition->CompletedSelectionSound.Get();
+	DestroyedSound = BuildingDefinition->DestroyedSound.Get();
 	// niagara
-	ConstructionEffect = BuildingDefinition->ConstructEffect.LoadSynchronous();
-	DestroyedEffect = BuildingDefinition->DestroyEffect.LoadSynchronous();
-	DamagedBurningEffect = BuildingDefinition->DamagedBurningEffect.LoadSynchronous();
+	ConstructionEffect = BuildingDefinition->ConstructEffect.Get();
+	DestroyedEffect = BuildingDefinition->DestroyEffect.Get();
+	DamagedBurningEffect = BuildingDefinition->DamagedBurningEffect.Get();
 	// preview ghost
-	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.LoadSynchronous();
+	BuildingPreviewMaterialInstance = BuildingDefinition->PreviewMaterial.Get();
 
 	return true;
 }
 
-bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
+bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 {
 	// appear -> tier[0,1,2] -> tier[0] -> construct[0,1,2], dmg[0,1,2]
 	// Getter TierInfo by currentTier
@@ -991,7 +1027,7 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 
 		for (int32 Index = 0; Index < Stages.Num(); ++Index)
 		{
-			UStaticMesh* const Mesh = Stages[Index].Mesh.LoadSynchronous();
+			UStaticMesh* const Mesh = Stages[Index].Mesh.Get();
 			OutMeshes.Add(Mesh);
 
 			if (!IsValid(Mesh))
@@ -1018,13 +1054,13 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 		TEXT("DamageStage"));
 	
 	// CACHED completed_mesh
-	NewAssets.CompletedMesh = Visual.CompletedMesh.LoadSynchronous();
-	NewAssets.DestroyedMesh = Visual.DestroyedMesh.LoadSynchronous();
+	NewAssets.CompletedMesh = Visual.CompletedMesh.Get();
+	NewAssets.DestroyedMesh = Visual.DestroyedMesh.Get();
 	
 	
 	if (!Visual.DestructionCollection.IsNull())
 	{
-		NewAssets.DestructionCollection = Visual.DestructionCollection.LoadSynchronous();
+		NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
 	}
 	
 	// CACHED failed return false
@@ -1038,8 +1074,8 @@ bool ASFBaseBuilding::PrepareTier(int32 TierIndex)
 	}
 
 	// CACHED sounds
-	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.LoadSynchronous();
-	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.LoadSynchronous();
+	NewAssets.ConstructionStartSound = Tier->Audio.ConstructionStart.Get();
+	NewAssets.ConstructionCompleteSound = Tier->Audio.ConstructionComplete.Get();
 
 	// CACHED load assets
 	PendingTierAssets = MoveTemp(NewAssets);
@@ -1197,6 +1233,15 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 {
 	Super::NotifyActorBeginCursorOver();
 	if (CurrentBuildingState == EBuildingState::Preview) return;
+	
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC) return;
+	
+	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(PC);
+	if (!SFPC) return;
+	
+	if (SFPC->GetMyTeamIndex() != GetTeamIndex()) return;
+	
 	WidgetComponent->SetVisibility(true);
 	SF_LOG(Warning, "NotifyActorBeginOverlap");
 }
@@ -1455,6 +1500,123 @@ void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
 		SpawnTransform,
 		SpawnBoxSize,
 		DamageStageIndex + 1);
+}
+
+void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+{
+	if (RequestedUpgradeTier != InTierIndex)
+	{
+		return;
+	}
+
+	RequestedUpgradeTier = INDEX_NONE;
+
+	if (!bSuccess ||
+		InDefinition != BuildingDefinition ||
+		CurrentBuildingState !=
+			EBuildingState::Completed ||
+		PendingTier != INDEX_NONE)
+	{
+		return;
+	}
+
+	ASFGameState* SFGS =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
+	if (!IsValid(SFGS))
+	{
+		return;
+	}
+
+	if (!IsA<ASFNexusBuilding>() &&
+		InTierIndex >
+			SFGS->GetNexusTier(GetTeamIndex()))
+	{
+		return;
+	}
+
+	const FResources UpgradeCost =
+		GetUpgradeCost();
+
+	if (!SFGS->TrySpendCost(
+		GetTeamIndex(),
+		UpgradeCost))
+	{
+		return;
+	}
+
+	if (!PrepareLoadedTier(InTierIndex))
+	{
+		SFGS->RefundCost(
+			GetTeamIndex(),
+			UpgradeCost);
+
+		return;
+	}
+
+	SetBuildingState(
+		EBuildingState::UnderConstruction);
+}
+
+void ASFBaseBuilding::RequestNextTierAssetsAsync()
+{
+	if (!IsValid(BuildingDefinition) ||
+		PendingTier == INDEX_NONE)
+	{
+		return;
+	}
+
+	/*
+	 * 최초 건설 중:
+	 * PendingTier 0 → Tier 1 준비
+	 *
+	 * Tier 1 업그레이드 중:
+	 * PendingTier 1 → Tier 2 준비
+	 */
+	const int32 NextTier = PendingTier + 1;
+
+	// 마지막 Tier라면 요청하지 않는다.
+	if (!BuildingDefinition->FindTier(NextTier))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+
+	USFBuildingAssetSubsystem* AssetSubsystem =
+		IsValid(GameInstance)
+			? GameInstance
+				->GetSubsystem<USFBuildingAssetSubsystem>()
+			: nullptr;
+
+	if (!IsValid(AssetSubsystem))
+	{
+		return;
+	}
+
+	AssetSubsystem->RequestBuildingAssetsAsync(
+		BuildingDefinition,
+		NextTier,
+		FSFOnBuildingAssetsReady::CreateUObject(
+			this,
+			&ThisClass::HandleNextTierAssetsReady));
+}
+
+void ASFBaseBuilding::HandleNextTierAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+{
+	if (!bSuccess ||
+		InDefinition != BuildingDefinition)
+	{
+		SF_LOG(
+			Warning,
+			"[%s] 다음 Tier 선로딩 실패. "
+			"Definition=%s, Tier=%d",
+			*GetName(),
+			*GetNameSafe(InDefinition),
+			InTierIndex);
+	}
 }
 
 USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const

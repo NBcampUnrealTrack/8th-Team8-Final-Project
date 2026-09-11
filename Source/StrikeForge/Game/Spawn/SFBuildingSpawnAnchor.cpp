@@ -49,15 +49,17 @@ void ASFBuildingSpawnAnchor::RefreshEditorPreview()
 		return;
 	}
 
-	const FSFBuildingTierData* FirstTier = Definition->FindTier(0);
-	if (!FirstTier)
+	const FSFBuildingTierData* PreviewTier =
+	Definition->FindTier(InitialTierIndex);
+
+	if (!PreviewTier)
 	{
 		return;
 	}
 
-	UStaticMesh* CompletedMesh = FirstTier->Visual.CompletedMesh.LoadSynchronous();
+	UStaticMesh* CompletedMesh =
+		PreviewTier->Visual.CompletedMesh.LoadSynchronous();
 	PreviewMeshComponent->SetStaticMesh(CompletedMesh);
-
 #endif
 }
 #endif

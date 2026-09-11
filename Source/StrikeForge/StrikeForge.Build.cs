@@ -17,12 +17,13 @@ public class StrikeForge : ModuleRules
 			"AIModule", "NavigationSystem", "GameplayTasks",
 			
 			// ui
-			"UMG", "Slate", "SlateCore", "CommonUI", "GameplayTags",
+			"UMG", "Slate", "SlateCore", "CommonUI", "GameplayTags", "MediaAssets",
 
 			// effect
 			"Niagara",
 			
 			// gc
+			"Chaos",
 			"GeometryCollectionEngine",
 			"FieldSystemEngine",
         });

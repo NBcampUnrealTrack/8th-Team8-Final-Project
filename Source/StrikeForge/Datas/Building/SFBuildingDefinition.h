@@ -21,15 +21,28 @@ class STRIKEFORGE_API USFBuildingDefinition
 
 public:
     static const FPrimaryAssetType BuildingAssetType;
-
+    
+    // UPrimaryDataAsset내부 API
+    /** Asset Manager 스캔 시 Building Primary Asset ID를 만든다. 엔진에서 호출되며 등록·조회에 사용된다. */
     virtual FPrimaryAssetId GetPrimaryAssetId() const override;
     
-    // * 자식 Definition이 소유한 Tier 개수를 반환한다.
+    /** Definition의 Tier 개수를 반환한다. CacheLoadedDefinitionData에서 호출되며 각 Tier 조회로 이어진다. */
     virtual int32 GetTierCount() const;
     
-    // * 지정한 Tier의 공통 데이터를 반환한다.
+    /** 지정한 Tier 데이터를 반환한다. 경로 수집과 건물 캐시 준비에서 호출되며 리소스 로드·적용으로 이어진다. */
     virtual const FSFBuildingTierData* FindTier(int32 TierIndex) const;
 
+    // Async
+    
+    /** UI 아이콘의 Soft 경로를 수집한다. HandleDefinitionsLoaded에서 호출되며 UI 비동기 로드로 이어진다. */
+    void GetUIAssetPaths(TArray<FSoftObjectPath>& OutPaths) const;
+
+    /** 지정 Tier의 클래스·메시·효과·사운드 경로를 수집한다. RequestBuildingAssetsAsync에서 호출되며 런타임 비동기 로드로 이어진다. */
+    // 현재Tier의 softRef 경로수집
+    bool GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoftObjectPath>& OutPaths) const;
+
+    /** 지정 Tier의 필수 리소스가 모두 메모리에 있는지 검사한다. 비동기 완료 시 호출되며 CompleteBuildingRequest로 이어진다. */
+    bool AreRuntimeAssetsLoaded(int32 InTierIndex) const;
 public:
     // 전체 건물 Definition에서 고유해야 하는 ID. 종족을 포함한 이름을 권장한다. ex) HumanHouse, AnimalHouse
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,  AssetRegistrySearchable, Category = "Identity")
@@ -44,7 +57,11 @@ public:
     ESFBuildingType BuildingType;
     
     // * 건설 UI 등에 표시되는 건물 아이콘.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+    UPROPERTY(
+    EditDefaultsOnly,
+    BlueprintReadOnly,
+    Category = "UI",
+    meta = (AssetBundles = "UI"))
     TSoftObjectPtr<UTexture2D> Icon;
     
     // * 현재 DT_UI와 연결하기 위한 임시 브리지. Unit 선택 UI가 DA로 전환될 때 함께 제거한다.
@@ -52,7 +69,11 @@ public:
     FName SelectionUIRowName;
     
     // * 이 Definition으로 생성할 실제 건물 Actor 클래스.
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spawn")
+    UPROPERTY(
+    EditDefaultsOnly,
+    BlueprintReadOnly,
+    Category = "Spawn",
+    meta = (AssetBundles = "Spawn"))
     TSoftClassPtr<ASFBaseBuilding> BuildingClass;
     
     // * 건물이 점유하는 Grid 크기.
@@ -86,4 +107,8 @@ public:
     // * 건물 파괴 시 재생할 공통 Niagara Effect.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
     TSoftObjectPtr<UNiagaraSystem> DestroyEffect;
+    
+    /** 손상 단계에서 파단면에 붙일 불꽃 Effect.* Infinite 루프 시스템이어야 한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
+    TSoftObjectPtr<UNiagaraSystem> DamagedBurningEffect;
 };

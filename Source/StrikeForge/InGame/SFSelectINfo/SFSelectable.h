@@ -23,7 +23,7 @@ struct FHealthData
     UPROPERTY()
     FText DisplayName;
     UPROPERTY()
-    int32 CurrentTier;
+    int32 CurrentTier = 0;
     UPROPERTY()
     FResources ConstructCost;
     UPROPERTY()

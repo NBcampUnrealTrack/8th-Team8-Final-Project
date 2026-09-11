@@ -409,6 +409,11 @@ void ASFRTSCameraPawn::FocusOnWorldLocation(
     NewLocation.Y =
         WorldLocation.Y;
 
+    constexpr float CommanderFocusVerticalOffset = 50.0f;
+
+    NewLocation.X -=
+        CommanderFocusVerticalOffset;
+
     SetActorLocation(
         NewLocation
     );

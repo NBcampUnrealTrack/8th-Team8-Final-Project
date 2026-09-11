@@ -11,6 +11,8 @@
 
 class ASFNexusBuilding;
 class ASFBuildingSpawnAnchor;
+class USFBuildingDefinition;
+class USFBuildingAssetSubsystem;
 
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
@@ -41,19 +43,17 @@ public:
 	// 전달받은 결과를 기준으로 스테이지 종료
 	bool FinishStage(ESFStageResult NewStageResult);
 	
+	// 로딩 UI 끝나고 실행하는 이벤트
+	void StartStageAfterLoadingScreen();
+	
 	// getter
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ASFGameState* GetSFGameState() const;
 	UFUNCTION(BlueprintPure, Category = "SF|Team")
 	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
-
+	
 	// 26.08.18
-	// 데이터테이블 정보를 이용해 지정된 위치에 넥서스를 생성
-	// 넥서스 생성을 런타임에 gamemode가 해서 팀인덱스를 등록할지
-	// 뷰포트배치로 nexusbuilding의 beginplay에서 팀인덱스를 등록할지 고민했으나
-	// 여러방면상 nexusbuilding이 생성과 동시에 팀인덱스 등록으로 생각하고있음
-	// UFUNCTION(BlueprintCallable, Category = "SF|Nexus")
-	// ASFNexusBuilding* SpawnNexus(FName NexusRowName, const FTransform& SpawnTransform, int32 TeamIndex);
+	
 protected:
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
@@ -65,6 +65,72 @@ private:
 
 	/** 하나의 BuildingSpawnAnchor를 실제 건물로 변환한다. */
 	bool SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor);
+	
+	// Async
+	/** 스테이지 비동기 초기화를 시작한다. BeginPlay에서 호출되며 RequestRequiredRaceData로 이어진다. */
+	void BeginStageBootstrap();
+	/** 스테이지에 필요한 종족 데이터를 모두 요청한다. BeginStageBootstrap에서 호출되며 HandleRaceDataReady로 이어진다. */
+	void RequestRequiredRaceData();
+	/** 종족 로드 결과를 모아 팀과 스테이지 데이터를 초기화한다. Subsystem 콜백으로 호출되며 RequestAnchorBuildingAssets로 이어진다. */
+	void HandleRaceDataReady(ESFRace InRace, bool bSuccess);
+	/** Anchor에 필요한 건물 Tier 0 리소스를 요청한다. HandleRaceDataReady에서 호출되며 HandleAnchorAssetsReady로 이어진다. */
+	void RequestInitialBuildingAssets();
+	/**
+	 * 초기 건물 리소스 로드 결과를 모은다.
+	 * Subsystem 콜백으로 호출되며 모든 요청 완료 시
+	 * BeginStageRenderPreparation으로 이어진다.
+	 */
+	void HandleInitialBuildingAssetsReady(
+		USFBuildingDefinition* InDefinition,
+		int32 InTierIndex,
+		bool bSuccess);
+	/**
+	 * 모든 비동기 에셋 로딩이 끝난 뒤 Anchor 건물을 생성한다.
+	 * HandleInitialBuildingAssetsReady에서 호출되며
+	 * 성공 시 0.5초 렌더 준비 타이머를 시작한다.
+	 */
+	void BeginStageRenderPreparation();
+
+	/**
+	 * Anchor 생성 후 렌더 준비 타이머가 끝나면 호출된다.
+	 * 진행도를 100%로 변경하고 ReadyToStart 상태로 전환한다.
+	 */
+	void CompleteStageBootstrap();
+	/** 비동기 스테이지 초기화를 실패 상태로 종료한다. 각 검증·로드 단계에서 호출되며 이후 초기화 진행을 중단한다. */
+	void FailStageBootstrap();
+	// UI 진행도
+	void UpdateStageLoadingProgress();
+	
+	UPROPERTY(Transient)
+	TObjectPtr<USFBuildingAssetSubsystem>
+		BuildingAssetSubsystem;
+
+	// ESFStageBootstrapState StageBootstrapState =
+	// ESFStageBootstrapState::None;
+
+	FName BootstrapStageRowName = NAME_None;
+
+	TMap<int32, ESFRace> BootstrapTeamRaces;
+
+	int32 TotalRaceRequestCount = 0;
+	int32 PendingRaceRequestCount = 0;
+
+	int32 TotalInitialBuildingAssetRequestCount = 0;
+	int32 PendingInitialBuildingAssetRequestCount = 0;
+	
+	/** Anchor 생성 후 렌더 준비 시간을 관리한다. */
+	FTimerHandle StageRenderPreparationTimerHandle;
+
+	/** 렌더 준비 타이머의 중복 실행을 방지한다. */
+	bool bStageRenderPreparationStarted = false;
+
+	/**
+	 * Anchor 생성 완료 후 ReadyToStart까지 기다릴 시간이다.
+	 * 실제 렌더 완료 신호가 아니라 화면 표시를 위한 준비 시간이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
+		meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+	float StageRenderPreparationDelay = 0.5f;
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;
@@ -77,4 +143,7 @@ private:
 	int32 StartingMineral = 200;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 StartingEther = 100;
+
+	UPROPERTY()
+	TArray<FSFStageBuildingRule> BootstrapBuildingRules;
 };

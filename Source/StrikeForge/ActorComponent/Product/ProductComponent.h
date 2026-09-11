@@ -49,6 +49,13 @@ public:
 	// 집결지 getter - 나중에 vector가져와서 집결지랑 building위치벡터랑 연결해서 집결지표시용
 	FORCEINLINE const FVector& GetAssemblePoint() const { return AssemblePoint; } 
 
+	// 집결지 설정 여부
+	UFUNCTION(BlueprintPure, Category = "SF|Product|Rally")
+	bool HasAssemblePoint() const
+	{
+		return bSetAssemblePoint;
+	}
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:

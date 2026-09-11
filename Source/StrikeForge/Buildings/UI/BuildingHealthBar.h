@@ -11,6 +11,7 @@ class STRIKEFORGE_API UBuildingHealthBar : public UUserWidget
 {
 	GENERATED_BODY()
 public:
+	
 	UFUNCTION()
 	void SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP);
 	

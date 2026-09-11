@@ -18,6 +18,7 @@
 #include "HUD/Portrait/SFUnitPortraitActor.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/Widget.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -32,6 +33,7 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/DecalComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 #include "Engine/EngineTypes.h"
 #include "EngineUtils.h"
@@ -44,6 +46,7 @@
 
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Math/RotationMatrix.h"
 
 #include "Kismet/GameplayStatics.h"
 
@@ -192,14 +195,53 @@ void USFInGameHUDWidget::NativeConstruct()
         );
     }
 
-    if (UWorld* World = GetWorld())
+    // 인트로는 로딩이 끝난 뒤에 연다.
+    //
+    // 예전에는 여기서 곧바로 다음 프레임 타이머를 걸었는데, 그 시점은 아직
+    // 스테이지 에셋을 비동기로 로딩하는 중이다. 로딩 화면 위로 인트로가
+    // 겹치고, 인트로가 게임을 일시정지시키므로 로딩까지 멈출 수 있다.
+    BoundStageGameState = GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (IsValid(BoundStageGameState))
     {
-        World->GetTimerManager().SetTimerForNextTick(
-            FTimerDelegate::CreateUObject(
-                this,
-                &USFInGameHUDWidget::TryStartStageIntro
-            )
+        BoundStageGameState->OnStageStateChanged.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleStageStateChanged
         );
+
+        if (BoundStageGameState->IsStagePlaying())
+        {
+            // HUD 가 늦게 만들어져 이미 시작된 경우.
+            // 이걸 안 보면 그 판은 인트로가 통째로 안 나온다.
+            HandleStageStateChanged(ESFStageState::Playing);
+        }
+        else if (bHideHUDUntilStagePlaying)
+        {
+            // 원래 가시성을 기억해 두고 숨긴다.
+            // 고정 값으로 되돌리면 WBP 가 설정한 클릭 판정이 바뀐다.
+            VisibilityBeforeStageLoading = GetVisibility();
+            SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    else
+    {
+        // GameState 를 못 얻는 판(전투 테스트 맵 등)에서는 예전처럼 바로 연다.
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] GameState 를 찾지 못해 인트로를 즉시 시작합니다."
+        );
+
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimerForNextTick(
+                FTimerDelegate::CreateUObject(
+                    this,
+                    &USFInGameHUDWidget::TryStartStageIntro
+                )
+            );
+        }
     }
 }
 
@@ -269,6 +311,16 @@ void USFInGameHUDWidget::NativeDestruct()
         ActiveStageIntroWidget = nullptr;
     }
 
+    if (IsValid(BoundStageGameState))
+    {
+        BoundStageGameState->OnStageStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleStageStateChanged
+        );
+    }
+
+    BoundStageGameState = nullptr;
+
     // HUD 가 사라지면 인트로를 다시 열어줄 사람이 없다.
     // 대기까지 취소해야 배너도 같이 정리된다.
     if (USFTutorialSubsystem* TutorialSubsystem = USFTutorialSubsystem::Get(this))
@@ -286,7 +338,21 @@ void USFInGameHUDWidget::NativeDestruct()
 
 void USFInGameHUDWidget::HandleSelectInput()
 {
-    SF_LOG(Log, "[SFInGameHUDWidget] Select input received.");
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Select input received."
+    );
+
+    if (IsPointerOverHUDPanel())
+    {
+        SF_LOG(
+            Log,
+            "[SFInGameHUDWidget] "
+            "Selection ignored because cursor is over HUD panel."
+        );
+
+        return;
+    }
 
     CloseBuildingMode();
     PerformSelectionTrace();
@@ -431,9 +497,11 @@ void USFInGameHUDWidget::ApplySelection(
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
     HideAllSelectionIndicators();
+    HideRallyPointIndicator();
     UnbindSelectedProductionBuilding();
 
     SelectedActor = NewSelectedActor;
+    RefreshRallyPointIndicator();
 
     BindSelectedProductionBuilding(
         SelectedActor.Get()
@@ -659,6 +727,37 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
             bCanTierUp
         );
 
+        FResources UpgradeCost{};
+        bool bCanAffordUpgrade = false;
+
+        if (bCanTierUp)
+        {
+            if (ASFBaseBuilding* SelectedBuilding =
+                Cast<ASFBaseBuilding>(SelectedActor.Get()))
+            {
+                UpgradeCost =
+                    SelectedBuilding->GetUpgradeCost();
+
+                if (ASFGameState* GameState =
+                    GetWorld()->GetGameState<ASFGameState>())
+                {
+                    bCanAffordUpgrade =
+                        GameState->CanAffordResource(
+                            SelectedBuilding->GetTeamIndex(),
+                            UpgradeCost
+                        );
+                }
+            }
+        }
+
+        SelectionPanel->SetUpgradeCost(
+            UpgradeCost
+        );
+
+        SelectionPanel->SetUpgradeAffordability(
+            bCanAffordUpgrade
+        );
+
         const bool bCanSetRallyPoint =
             bHasValidSelection &&
             SelectedInfo.SelectableType ==
@@ -667,6 +766,22 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 
         SelectionPanel->SetRallyPointButtonVisible(
             bCanSetRallyPoint
+        );
+    }
+
+    FResources UpgradeCost{};
+
+    if (ASFBaseBuilding* SelectedBuilding =
+        Cast<ASFBaseBuilding>(SelectedActor.Get()))
+    {
+        UpgradeCost =
+            SelectedBuilding->GetUpgradeCost();
+    }
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->SetUpgradeCost(
+            UpgradeCost
         );
     }
 
@@ -761,6 +876,7 @@ void USFInGameHUDWidget::ClearSelection()
 {
 
     HideAllSelectionIndicators();
+    HideRallyPointIndicator();
 
     if (IsValid(UnitPortraitActor))
     {
@@ -1064,6 +1180,26 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
 
     ApplySelectionUIData(Actor,SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
+
+    // 선택음은 여기서 한 번만 울린다.
+    //
+    // 원래는 ASFInGamePlayerController::PlaySelectionSound 를 부르면 되지만
+    // 그 함수가 private 이라 C++ 에서는 접근할 수 없다. UFUNCTION 이라
+    // BP 에서만 보이는 상태다. 컨트롤러는 담당자 파일이라 손대지 않고,
+    // 같은 내용을 여기서 직접 수행한다.
+    //
+    // 위에서 ISFSelectable 구현 여부를 이미 걸렀으므로 다시 검사하지 않는다.
+    // DT_Units 의 Selection Sound 를 비워둔 유닛은 소리가 null 이라 조용히
+    // 넘어간다 — 소리를 지정하지 않은 유닛이 무음인 것은 정상 동작이다.
+    if (USoundBase* SelectionSound =
+        ISFSelectable::Execute_GetSelectionSound(Actor))
+    {
+        UGameplayStatics::PlaySoundAtLocation(
+            this,
+            SelectionSound,
+            Actor->GetActorLocation()
+        );
+    }
 }
 
 bool USFInGameHUDWidget::TryHandleUnitDoubleClick(
@@ -1199,12 +1335,6 @@ void USFInGameHUDWidget::SelectNearbyUnitsOfSameType(
     );
 }
 
-bool USFInGameHUDWidget::IsPointerOverSelectionAction() const
-{
-    return
-        IsValid(SelectionPanel) &&
-        SelectionPanel->IsTierUpButtonHovered();
-}
 
 void USFInGameHUDWidget::HandleTierUpgradeRequested()
 {
@@ -1252,6 +1382,43 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         return;
     }
 
+    ASFGameState* GameState =
+        GetWorld()
+        ? GetWorld()->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (!IsValid(GameState))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] "
+            "Upgrade failed: GameState is invalid."
+        );
+
+        return;
+    }
+
+    const FResources UpgradeCost =
+        SelectedBuilding->GetUpgradeCost();
+
+    const bool bCanAffordUpgrade =
+        GameState->CanAffordResource(
+            SelectedBuilding->GetTeamIndex(),
+            UpgradeCost
+        );
+
+    if (!bCanAffordUpgrade)
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "Upgrade failed: insufficient resources."
+        );
+
+        PlayResourceWarningSound();
+        return;
+    }
+
     SF_LOG(
         Log,
         "[SFInGameHUDWidget] "
@@ -1259,7 +1426,6 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         *SelectedBuilding->GetName()
     );
 
-    // 건물 담당자가 이미 구현한 기존 함수 사용
     SelectedBuilding->UpgradeBuilding(1);
 }
 
@@ -1431,9 +1597,22 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
 
     const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
 
+
+    const bool bIsProductionBuilding =
+        Actor->IsA<ASFProductionBuilding>();
+
+    const bool bOnlyCollidingComponents =
+        !bIsBuilding ||
+        bIsProductionBuilding;
+
     FVector Origin;
     FVector Extent;
-    Actor->GetActorBounds(!bIsBuilding, Origin, Extent);
+
+    Actor->GetActorBounds(
+        bOnlyCollidingComponents,
+        Origin,
+        Extent
+    );
 
     const float UnitBaseRadius = FMath::Max(Extent.X, Extent.Y);
     const float BuildingBaseRadius = FVector2D(Extent.X, Extent.Y).Size();
@@ -2241,6 +2420,57 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
     return StageIntroFallbackRowName;
 }
 
+void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
+{
+    /*
+     * 초기화가 실패하면 LoadingWidget 이 로비로 보낸다.
+     * 다만 그 사이 HUD 가 숨겨진 채로 남으면 화면에 아무것도 없어서
+     * "게임이 멈췄다" 로 보이므로 가시성만 되돌려 둔다.
+     */
+    if (NewState == ESFStageState::InitializationFailed)
+    {
+        if (bHideHUDUntilStagePlaying)
+        {
+            SetVisibility(VisibilityBeforeStageLoading);
+        }
+
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] 스테이지 초기화가 실패해 인트로를 열지 않습니다."
+        );
+
+        return;
+    }
+
+    if (NewState != ESFStageState::Playing)
+    {
+        return;
+    }
+
+    if (bStageIntroRequested)
+    {
+        return;
+    }
+
+    bStageIntroRequested = true;
+
+    /*
+     * 인트로를 열기 전에 가시성을 먼저 되돌려야 한다.
+     *
+     * OpenStageIntro 가 VisibilityBeforeStageIntro 에 현재 값을 저장했다가
+     * 인트로가 끝나면 그대로 복구한다. 순서를 뒤집으면 Collapsed 가 저장돼
+     * 인트로가 끝난 뒤 HUD 가 사라진 채로 남는다.
+     */
+    if (bHideHUDUntilStagePlaying)
+    {
+        SetVisibility(VisibilityBeforeStageLoading);
+    }
+
+    SF_LOG(Log, "[SFInGameHUDWidget] 스테이지가 시작되어 인트로를 엽니다.");
+
+    TryStartStageIntro();
+}
+
 void USFInGameHUDWidget::TryStartStageIntro()
 {
     SF_LOG(Log, "[SFInGameHUDWidget] TryStartStageIntro called.");
@@ -2655,3 +2885,404 @@ void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier
         );
     }
 }
+
+void USFInGameHUDWidget::RefreshRallyPointIndicator()
+{
+    HideRallyPointIndicator();
+
+    ASFProductionBuilding* ProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+    if (!IsValid(ProductionBuilding) ||
+        !IsOwnedByLocalPlayer(ProductionBuilding) ||
+        !ProductionBuilding->HasRallyPoint())
+    {
+        return;
+    }
+
+    UStaticMesh* PlaneMesh =
+        RallyIndicatorMesh.Get();
+
+    if (!IsValid(PlaneMesh))
+    {
+        SF_LOG(
+            Error,
+            "[SFInGameHUDWidget] RallyIndicatorMesh is invalid."
+        );
+
+        return;
+    }
+
+    FVector BuildingOrigin;
+    FVector BuildingExtent;
+
+    ProductionBuilding->GetActorBounds(
+        false,
+        BuildingOrigin,
+        BuildingExtent
+    );
+
+    const FVector RallyPoint =
+        ProductionBuilding->GetRallyPoint();
+
+    const float IndicatorZ =
+        RallyPoint.Z + 25.f;
+
+    USceneComponent* RootComponent =
+        ProductionBuilding->GetRootComponent();
+
+    if (!IsValid(RootComponent))
+    {
+        return;
+    }
+
+    auto CreateRallyMesh =
+        [
+            ProductionBuilding,
+            RootComponent,
+            PlaneMesh
+        ](
+            UMaterialInterface* InMaterial,
+            const FVector& InScale,
+            const FVector& InLocation,
+            const FRotator& InRotation,
+            int32 InSortPriority
+            ) -> UStaticMeshComponent*
+        {
+            if (!IsValid(InMaterial))
+            {
+                return nullptr;
+            }
+
+            UStaticMeshComponent* NewIndicator =
+                NewObject<UStaticMeshComponent>(
+                    ProductionBuilding
+                );
+
+            if (!IsValid(NewIndicator))
+            {
+                return nullptr;
+            }
+
+            ProductionBuilding->AddInstanceComponent(
+                NewIndicator
+            );
+
+            NewIndicator->SetupAttachment(
+                RootComponent
+            );
+
+            NewIndicator->SetAbsolute(
+                true,
+                true,
+                true
+            );
+
+            NewIndicator->SetMobility(
+                EComponentMobility::Movable
+            );
+
+            NewIndicator->SetStaticMesh(
+                PlaneMesh
+            );
+
+            NewIndicator->SetMaterial(
+                0,
+                InMaterial
+            );
+
+            NewIndicator->SetCollisionEnabled(
+                ECollisionEnabled::NoCollision
+            );
+
+            NewIndicator->SetGenerateOverlapEvents(
+                false
+            );
+
+            NewIndicator->SetCastShadow(
+                false
+            );
+
+            NewIndicator->SetReceivesDecals(
+                false
+            );
+
+            NewIndicator->SetTranslucentSortPriority(
+                InSortPriority
+            );
+
+            NewIndicator->RegisterComponent();
+
+            NewIndicator->SetWorldLocation(
+                InLocation
+            );
+
+            NewIndicator->SetWorldRotation(
+                InRotation
+            );
+
+            NewIndicator->SetWorldScale3D(
+                InScale
+            );
+
+            return NewIndicator;
+        };
+
+    /*
+     * 1. 랠리 링 Mesh
+     *
+     * 기본 Plane 크기는 약 100 x 100이므로
+     * 120은 월드 기준 약 120 크기다.
+     */
+
+    const float RallyRingMeshSize =
+        90.f;
+
+    RallyPointIndicator =
+        CreateRallyMesh(
+            RallyPointIndicatorMaterial,
+            FVector(
+                RallyRingMeshSize / 100.f,
+                RallyRingMeshSize / 100.f,
+                1.f
+            ),
+            FVector(
+                RallyPoint.X,
+                RallyPoint.Y,
+                IndicatorZ
+            ),
+            FRotator::ZeroRotator,
+            12
+        );
+
+    /*
+     * 2. 건물 중심에서 랠리포인트까지 경로 계산
+     */
+
+    const FVector PathStart(
+        BuildingOrigin.X,
+        BuildingOrigin.Y,
+        IndicatorZ
+    );
+
+    const FVector PathEnd(
+        RallyPoint.X,
+        RallyPoint.Y,
+        IndicatorZ
+    );
+
+    const FVector PathDelta =
+        PathEnd - PathStart;
+
+    const float PathLength =
+        FVector2D(
+            PathDelta.X,
+            PathDelta.Y
+        ).Size();
+
+    if (PathLength <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
+    const float PathYaw =
+        FMath::RadiansToDegrees(
+            FMath::Atan2(
+                PathDelta.Y,
+                PathDelta.X
+            )
+        );
+
+    /*
+     * 3. 점선 경로 Mesh
+     */
+
+    RallyPathIndicator =
+        CreateRallyMesh(
+            RallyPathIndicatorMaterial,
+            FVector(
+                PathLength / 100.f,
+                RallyPathIndicatorWidth / 100.f,
+                1.f
+            ),
+            (PathStart + PathEnd) * 0.5f,
+            FRotator(
+                0.f,
+                PathYaw,
+                0.f
+            ),
+            11
+        );
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Rally mesh indicators refreshed | Length: %.1f",
+        PathLength
+    );
+}
+
+void USFInGameHUDWidget::HideRallyPointIndicator()
+{
+    if (IsValid(RallyPointIndicator))
+    {
+        RallyPointIndicator->DestroyComponent();
+        RallyPointIndicator = nullptr;
+    }
+
+    if (IsValid(RallyPathIndicator))
+    {
+        RallyPathIndicator->DestroyComponent();
+        RallyPathIndicator = nullptr;
+    }
+}
+
+bool USFInGameHUDWidget::IsPointerOverHUDPanel()
+{
+    const FGeometry ViewportGeometry =
+        UWidgetLayoutLibrary::GetViewportWidgetGeometry(
+            this
+        );
+
+    const FVector2D MouseViewportPosition =
+        UWidgetLayoutLibrary::GetMousePositionOnViewport(
+            this
+        );
+
+    if (MouseViewportPosition.X < 0.f ||
+        MouseViewportPosition.Y < 0.f)
+    {
+        return false;
+    }
+
+    /*
+     * GetMousePositionOnViewport()는 뷰포트 로컬 좌표이고,
+     * CachedGeometry().IsUnderLocation()은 절대 좌표를 사용한다.
+     * 따라서 절대 좌표로 변환해서 비교한다.
+     */
+    const FVector2D MouseAbsolutePosition =
+        ViewportGeometry.LocalToAbsolute(
+            MouseViewportPosition
+        );
+
+    /*
+     * 람다:
+     * 이 함수 안에서만 잠깐 사용하는 작은 검사 함수다.
+     *
+     * Widget이 유효하고 화면에 보이며,
+     * 현재 마우스 위치가 위젯 영역 안에 있으면 true를 반환한다.
+     */
+    auto IsWidgetUnderMouse =
+        [&MouseAbsolutePosition](
+            const UWidget* Widget
+        ) -> bool
+        {
+            if (!IsValid(Widget))
+            {
+                return false;
+            }
+
+            if (!Widget->IsVisible())
+            {
+                return false;
+            }
+
+            return Widget->GetCachedGeometry()
+                .IsUnderLocation(
+                    MouseAbsolutePosition
+                );
+        };
+
+    // 선택 정보 패널
+    if (IsWidgetUnderMouse(SelectionPanel))
+    {
+        return true;
+    }
+
+    if (UWidget* SelectedInfoWidget =
+        GetWidgetFromName(
+            TEXT("SelectedInfoPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(SelectedInfoWidget))
+        {
+            return true;
+        }
+    }
+
+    if (UWidget* SelectionWidget =
+        GetWidgetFromName(
+            TEXT("SelectionPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(SelectionWidget))
+        {
+            return true;
+        }
+    }
+
+    // 다중 선택 패널
+    if (IsWidgetUnderMouse(MultiSelectionPanel))
+    {
+        return true;
+    }
+
+    // 생산 건물 패널
+    // ProductionUnitEntry는 이 패널 안에서 동적으로 생성되므로
+    // 부모 패널 영역을 검사하면 함께 처리된다.
+    if (IsWidgetUnderMouse(ProductionBuildingPanel))
+    {
+        return true;
+    }
+
+    // 자원 패널
+    if (UWidget* ResourceWidget =
+        GetWidgetFromName(
+            TEXT("ResourcePanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(ResourceWidget))
+        {
+            return true;
+        }
+    }
+
+    // 미니맵 패널
+    if (UWidget* MinimapWidget =
+        GetWidgetFromName(
+            TEXT("MinimapPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(MinimapWidget))
+        {
+            return true;
+        }
+    }
+
+    if (UWidget* MinimapWidget =
+        GetWidgetFromName(
+            TEXT("WBP_SFMinimapPanel")
+        ))
+    {
+        if (IsWidgetUnderMouse(MinimapWidget))
+        {
+            return true;
+        }
+    }
+
+    // 빌드 카탈로그의 실제 패널만 검사한다.
+    // ActiveBuildingModeWidget 전체를 검사하면 안 된다.
+    if (IsValid(ActiveBuildingModeWidget))
+    {
+        UWidget* BuildCatalogWidget =
+            ActiveBuildingModeWidget->GetWidgetFromName(
+                TEXT("BuildCatalogPanel")
+            );
+
+        if (IsWidgetUnderMouse(BuildCatalogWidget))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}       

@@ -3,6 +3,8 @@
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 void USFBuildCatalogEntryWidget::InitializeBuildingEntry(
@@ -86,6 +88,39 @@ FName USFBuildCatalogEntryWidget::GetBuildingRowName() const
 	return BuildingRowName;
 }
 
+FName USFBuildCatalogEntryWidget::GetSelectionUIRowName() const
+{
+    if (
+        IsValid(BuildingDefinition) &&
+        !BuildingDefinition->SelectionUIRowName.IsNone()
+        )
+    {
+        return BuildingDefinition->SelectionUIRowName;
+    }
+
+    // 공통 UI 이름이 없으면 실제 BuildingId를 사용한다.
+    return BuildingRowName;
+}
+
+FResources
+USFBuildCatalogEntryWidget::GetConstructionCost() const
+{
+	if (!IsValid(BuildingDefinition))
+	{
+		return FResources{};
+	}
+
+	const FSFBuildingTierData* FirstTier =
+		BuildingDefinition->FindTier(0);
+
+	if (!FirstTier)
+	{
+		return FResources{};
+	}
+
+	return FirstTier->Construction.ConstructCost;
+}
+
 void USFBuildCatalogEntryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -106,65 +141,156 @@ void USFBuildCatalogEntryWidget::NativeDestruct()
 }
 
 void USFBuildCatalogEntryWidget::HandleEntryClicked()
-{// horizontal child widghet clicked
-	if (BuildingRowName.IsNone())
-	{
-		SF_LOG(
-			Warning,
-			"[SFBuildCatalogEntryWidget] "
-			"Clicked entry has no BuildingRowName."
-		);
+{
+    if (BuildingRowName.IsNone())
+    {
+        SF_LOG(
+            Warning,
+            "[SFBuildCatalogEntryWidget] "
+            "Clicked entry has no BuildingRowName."
+        );
 
-		return;
-	}
+        return;
+    }
+
+    SF_LOG(
+        Log,
+        "[SFBuildCatalogEntryWidget] "
+        "Entry Clicked: %s",
+        *BuildingRowName.ToString()
+    );
+
+    // 1. 스테이지 건설 제한 검사
+    if (!bStageBuildAllowed)
+    {
+        SF_LOG(
+            Warning,
+            "[SFBuildCatalogEntryWidget] "
+            "Building is locked by current stage: %s",
+            *BuildingRowName.ToString()
+        );
+
+        if (IsValid(ResourceWarningSound))
+        {
+            UGameplayStatics::PlaySound2D(
+                this,
+                ResourceWarningSound
+            );
+        }
+
+        return;
+    }
+
+    // 2. 튜토리얼 건물 선택 제한
+    if (!USFTutorialSubsystem::IsBuildingSelectionAllowed(
+        this,
+        BuildingRowName
+    ))
+    {
+        SF_LOG(
+            Log,
+            "[SFBuildCatalogEntryWidget] "
+            "튜토리얼이 다른 건물을 요구하는 중이라 무시합니다: %s",
+            *BuildingRowName.ToString()
+        );
+
+        return;
+    }
+
+    // 3. 자원 부족 검사
+    if (!bCanAfford)
+    {
+        SF_LOG(
+            Warning,
+            "[SFBuildCatalogEntryWidget] "
+            "Cannot build because resources are insufficient: %s",
+            *BuildingRowName.ToString()
+        );
+
+        OnBuildResourceWarningRequested.Broadcast();
+
+        if (IsValid(ResourceWarningSound))
+        {
+            UGameplayStatics::PlaySound2D(
+                this,
+                ResourceWarningSound
+            );
+        }
+
+        return;
+    }
+
+    // 4. 클릭 이벤트 전달
+    OnBuildCatalogEntryClicked.Broadcast(
+        BuildingRowName
+    );
+
+    ASFInGamePlayerController* SFPC =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (!IsValid(SFPC))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT(
+                "USFBuildCatalogEntryWidget::"
+                "HandleEntryClicked: "
+                "SFInGamePlayerController is invalid."
+            )
+        );
+
+        return;
+    }
+
+    const FName RequestedBuildingId = BuildingRowName;
+
+    // 5. 건설 함수는 한 번만 호출
+    if (SFPC->TryStartBuildingPlacement(BuildingRowName))
+    {
+        SFPC->SetSFControlMode(
+            ESFControlMode::BuildPlacement
+        );
+
+        USFTutorialSubsystem::NotifyBuildingSelected(
+            this,
+            BuildingRowName
+        );
+    }
+}
+
+void USFBuildCatalogEntryWidget::SetCanAfford(
+	bool bNewCanAfford
+)
+{
+	bCanAfford =
+		bNewCanAfford;
+
+	BP_OnAffordabilityChanged(
+		bCanAfford
+	);
 
 	SF_LOG(
 		Log,
 		"[SFBuildCatalogEntryWidget] "
-		"Entry Clicked: %s",
-		*BuildingRowName.ToString()
+		"Affordability changed | Building: %s | CanAfford: %s",
+		*BuildingRowName.ToString(),
+		bCanAfford
+		? TEXT("True")
+		: TEXT("False")
 	);
+}
 
-	// 튜토리얼이 특정 건물을 고르라고 안내하는 중이면 다른 항목은 통과시키지 않는다.
-	//
-	// 브로드캐스트보다 앞에 둔다. 아래로 내리면 선택 표시 같은 UI 반응만
-	// 일어나고 실제 건설은 안 되는, 눌린 것도 안 눌린 것도 아닌 상태가 된다.
-	//
-	// 튜토리얼이 없는 판이나 건물 선택을 요구하지 않는 단계에서는 항상 true 라
-	// 일반 플레이에는 영향이 없다.
-	if (!USFTutorialSubsystem::IsBuildingSelectionAllowed(this, BuildingRowName))
-	{
-		SF_LOG(
-			Log,
-			"[SFBuildCatalogEntryWidget] "
-			"튜토리얼이 다른 건물을 요구하는 중이라 무시합니다: %s",
-			*BuildingRowName.ToString()
-		);
+void USFBuildCatalogEntryWidget::SetStageBuildAllowed(
+	bool bAllowed
+)
+{
+	bStageBuildAllowed =
+		bAllowed;
 
-		return;
-	}
-
-	OnBuildCatalogEntryClicked.Broadcast(
-		BuildingRowName
+	BP_OnStageBuildLockChanged(
+		!bStageBuildAllowed
 	);
-	
-	// onclicked spawn building by rowname ======================================================================================
-	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
-	if (!IsValid(SFPC))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("USFBuildCatalogEntryWidget::HandleEntryClicked: SFInGamePlayerController IS INVALID"));
-		return;
-	}
-	
-	// 자원이 충분한가 아닌가 검사 로직. 가능구역1
-	if (SFPC->SpawnBuildingFunction(BuildingRowName))
-	{
-		SFPC->SetSFControlMode(ESFControlMode::BuildPlacement);
-
-		// 배치 모드로 실제 들어간 뒤에 알린다.
-		//
-		// 자원이 모자라 생성이 실패하면 손에 든 건물이 없는데, 그때 알리면
-		// 튜토리얼만 "배치하세요" 로 넘어가 버린다.
-		USFTutorialSubsystem::NotifyBuildingSelected(this, BuildingRowName);
-	}
 }

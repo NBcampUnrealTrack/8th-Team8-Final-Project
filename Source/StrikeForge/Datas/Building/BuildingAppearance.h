@@ -79,6 +79,22 @@ struct STRIKEFORGE_API FBuildingDestruction
 };
 
 USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FBuildingSurfaceFireStep
+{
+	GENERATED_BODY()
+
+	/** 이 체력 비율 이하에서 이 구간에 진입한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SurfaceFire",
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HealthThreshold = 0.9f;
+
+	/** 이 구간에서 건물에 붙어 있어야 할 불꽃 개수. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SurfaceFire",
+		meta = (ClampMin = "1"))
+	int32 FireCount = 1;
+};
+
+USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FBuildingConstructionData
 {
 	GENERATED_BODY()
@@ -143,6 +159,13 @@ struct STRIKEFORGE_API FBuildingVisualData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
 	TArray<FBuildingDestruction> DestructionStages;
 
+	/**
+	 * 불꽃이 하나씩 추가되는 체력 비율.
+	 * 내림차순으로 넣는다. 예: 0.9, 0.75, 0.6, 0.45, 0.3
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|Destruction")
+	TArray<FBuildingSurfaceFireStep> SurfaceFireSteps;
+	
 	int32 FindConstructionStageIndex(float ProgressRatio) const
 	{
 		if (ConstructionStages.IsEmpty()) return INDEX_NONE;
@@ -211,6 +234,31 @@ struct STRIKEFORGE_API FBuildingVisualData
 
 		return Result;
 	}
+	/** 지금까지 넘어선 불꽃 구간 수. 그대로 목표 불꽃 개수가 된다. */
+	int32 FindSurfaceFireStepIndex(float HealthRatio) const
+	{
+		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);
+
+		int32 Result = INDEX_NONE;
+
+		for (int32 Index = 0; Index < SurfaceFireSteps.Num(); ++Index)
+		{
+			if (HealthRatio <= SurfaceFireSteps[Index].HealthThreshold)
+			{
+				Result = Index;
+			}
+		}
+
+		return Result;
+	}
+
+	const FBuildingSurfaceFireStep* GetSurfaceFireStep(const int32 StepIndex) const
+	{
+		return SurfaceFireSteps.IsValidIndex(StepIndex)
+			? &SurfaceFireSteps[StepIndex]
+			: nullptr;
+	}
+	
 	const FBuildingDestruction* GetDestructionStage(const int32 StageIndex) const
 	{
 		return DestructionStages.IsValidIndex(StageIndex)

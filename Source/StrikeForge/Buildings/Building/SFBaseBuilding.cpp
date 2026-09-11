@@ -1140,9 +1140,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	bIsTierActivated = true;
 	OnTierActivated();
 
-	OnBuildingTierActivated.Broadcast(
-		CurrentTier
-	);
+	OnBuildingTierActivated.Broadcast(CurrentTier);
 
 	return true;
 }
@@ -1176,10 +1174,7 @@ void ASFBaseBuilding::PlayConstructionCompleteSound()
 
 void ASFBaseBuilding::PlayDestroyEffect()
 {
-	const FVector EffectLocation =
-		IsValid(StaticMeshComponent)
-			? StaticMeshComponent->Bounds.Origin
-			: GetActorLocation();
+	const FVector EffectLocation = GetActorLocation();
 	
 	if (IsValid(PlayVFXComponent))
 	{

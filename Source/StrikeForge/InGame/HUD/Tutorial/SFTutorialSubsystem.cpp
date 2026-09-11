@@ -66,8 +66,7 @@ bool USFTutorialSubsystem::BeginObjectiveWait(
     UDataTable* InDataTable,
     FName InRowName,
     int32 InResumeNodeIndex,
-    FGameplayTag InObjectiveTag,
-    const FText& InBannerText
+    FGameplayTag InObjectiveTag
 )
 {
     // 태그가 비어 있으면 아무리 기다려도 풀리지 않는다.
@@ -94,15 +93,12 @@ bool USFTutorialSubsystem::BeginObjectiveWait(
     }
 
     PendingObjectiveTag = InObjectiveTag;
-    PendingBannerText = InBannerText;
     PendingDataTable = InDataTable;
     PendingRowName = InRowName;
     PendingResumeNodeIndex = InResumeNodeIndex;
 
     SF_LOG(Log, "[SFTutorialSubsystem] Waiting for objective | Tag: %s | Resume node: %d",
         *InObjectiveTag.ToString(), InResumeNodeIndex);
-
-    OnObjectiveStarted.Broadcast(PendingObjectiveTag, PendingBannerText);
 
     return true;
 }
@@ -124,12 +120,11 @@ void USFTutorialSubsystem::CancelObjectiveWait()
 
     SF_LOG(Log, "[SFTutorialSubsystem] Objective wait cancelled | Tag: %s", *PendingObjectiveTag.ToString());
 
-    // 배너를 지울 수 있게 알린다. 재개 델리게이트는 쏘지 않는다 —
+    // 완료 처리를 할 수 있게 알린다. 재개 델리게이트는 쏘지 않는다 —
     // 취소는 "그만둔다" 이지 "다음으로 간다" 가 아니다.
     const FGameplayTag CancelledTag = PendingObjectiveTag;
 
     PendingObjectiveTag = FGameplayTag();
-    PendingBannerText = FText::GetEmpty();
     PendingDataTable = nullptr;
     PendingRowName = NAME_None;
     PendingResumeNodeIndex = INDEX_NONE;
@@ -225,7 +220,6 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
     const FGameplayTag CompletedTag = Tutorial->PendingObjectiveTag;
 
     Tutorial->PendingObjectiveTag = FGameplayTag();
-    Tutorial->PendingBannerText = FText::GetEmpty();
     Tutorial->PendingDataTable = nullptr;
     Tutorial->PendingRowName = NAME_None;
     Tutorial->PendingResumeNodeIndex = INDEX_NONE;
@@ -384,8 +378,6 @@ void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
     // 신호를 기다리는 칸만 대기 태그를 건다.
     // Click / Timer 칸은 스포트라이트나 타이머가 직접 넘기므로 대기가 없다.
     PendingObjectiveTag = FGameplayTag();
-    PendingBannerText = Step.InstructionText;
-
     if (Step.Completion == ESFGuideCompletion::ObjectiveTag)
     {
         if (Step.CompletionTag.IsValid())
@@ -531,7 +523,6 @@ void USFTutorialSubsystem::ClearGuideState()
     CurrentStepSuccessSound = nullptr;
 
     PendingObjectiveTag = FGameplayTag();
-    PendingBannerText = FText::GetEmpty();
     PendingDataTable = nullptr;
     PendingRowName = NAME_None;
     PendingResumeNodeIndex = INDEX_NONE;
@@ -713,8 +704,8 @@ void USFTutorialSubsystem::SetStageObjectiveSuccessSound(
 
     SF_LOG(Log, "[SFTutorialSubsystem] 스테이지 성공음 | %s",
         IsValid(Tutorial->StageObjectiveSuccessSound)
-            ? *Tutorial->StageObjectiveSuccessSound->GetName()
-            : TEXT("(none)"));
+        ? *Tutorial->StageObjectiveSuccessSound->GetName()
+        : TEXT("(none)"));
 }
 
 void USFTutorialSubsystem::PlayObjectiveSuccessSound(const UObject* InWorldContext) const
@@ -868,8 +859,8 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
     {
         SF_LOG(Log, "[SFTutorialSubsystem] 지금 기다리는 것이 건물 선택이 아니다 | Pending: %s",
             Tutorial->PendingObjectiveTag.IsValid()
-                ? *Tutorial->PendingObjectiveTag.ToString()
-                : TEXT("(none)"));
+            ? *Tutorial->PendingObjectiveTag.ToString()
+            : TEXT("(none)"));
         return true;
     }
 
@@ -1247,11 +1238,6 @@ FGameplayTag USFTutorialSubsystem::GetActiveObjectiveTag() const
     return PendingObjectiveTag;
 }
 
-FText USFTutorialSubsystem::GetActiveObjectiveText() const
-{
-    return PendingBannerText;
-}
-
 bool USFTutorialSubsystem::IsObjectiveCompleted(FGameplayTag InObjectiveTag) const
 {
     return InObjectiveTag.IsValid() && CompletedObjectives.HasTag(InObjectiveTag);
@@ -1270,7 +1256,6 @@ void USFTutorialSubsystem::DumpState() const
     if (PendingObjectiveTag.IsValid())
     {
         SF_LOG(Warning, "  Waiting for : %s", *PendingObjectiveTag.ToString());
-        SF_LOG(Warning, "  Banner      : %s", *PendingBannerText.ToString());
         SF_LOG(Warning, "  Resume      : %s / %s / node %d",
             IsValid(PendingDataTable) ? *PendingDataTable->GetName() : TEXT("None"),
             *PendingRowName.ToString(),
@@ -1306,8 +1291,8 @@ void USFTutorialSubsystem::DumpState() const
 
             SF_LOG(Warning, "  Step needs  : RequiredBuildingRowName=%s",
                 Step.RequiredBuildingRowName.IsNone()
-                    ? TEXT("(none)")
-                    : *Step.RequiredBuildingRowName.ToString());
+                ? TEXT("(none)")
+                : *Step.RequiredBuildingRowName.ToString());
 
             // 종류에 따라 실제로 쓰이는 값이 다르다.
             // 반대쪽 값을 찍으면 멀쩡해 보이는 숫자에 속는다.
@@ -1406,8 +1391,8 @@ namespace SFTutorialInputWatch
         const int32 MaxDepth = 6;
 
         for (int32 Index = Path.Widgets.Num() - 1, Printed = 0;
-             Index >= 0 && Printed < MaxDepth;
-             --Index, ++Printed)
+            Index >= 0 && Printed < MaxDepth;
+            --Index, ++Printed)
         {
             const TSharedRef<SWidget>& Widget = Path.Widgets[Index].Widget;
 

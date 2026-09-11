@@ -1,7 +1,6 @@
 #include "InGame/HUD/Tutorial/SFTutorialSpotlightWidget.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -11,46 +10,17 @@
 void USFTutorialSpotlightWidget::NativeConstruct()
 {
     Super::NativeConstruct();
-
-    if (IsValid(WarningText))
-    {
-        WarningText->SetText(WarningMessage);
-        WarningText->SetVisibility(ESlateVisibility::Collapsed);
-    }
-
-    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
-    {
-        Tutorial->OnBuildBlockedChanged.AddUniqueDynamic(
-            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
-    }
 }
 
 void USFTutorialSpotlightWidget::NativeDestruct()
 {
-    if (USFTutorialSubsystem* Tutorial = USFTutorialSubsystem::Get(this))
-    {
-        Tutorial->OnBuildBlockedChanged.RemoveDynamic(
-            this, &USFTutorialSpotlightWidget::HandleBuildBlockedChanged);
-    }
-
     Super::NativeDestruct();
-}
-
-void USFTutorialSpotlightWidget::HandleBuildBlockedChanged(bool bBlocked)
-{
-    if (!IsValid(WarningText))
-    {
-        return;
-    }
-
-    WarningText->SetVisibility(
-        bBlocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
 void USFTutorialSpotlightWidget::ApplyGuideStep(
     const FSFStageIntroGuideStep& InStep,
-    int32 InStepIndex,
-    int32 InStepCount
+    int32 /*InStepIndex*/,
+    int32 /*InStepCount*/
 )
 {
     CurrentStep = InStep;
@@ -79,25 +49,6 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
             : ESlateVisibility::HitTestInvisible);
     }
 
-    if (IsValid(StepCounterText))
-    {
-        // 한 칸짜리 안내에 "1 / 1" 을 띄우면 오히려 눈에 거슬린다.
-        if (InStepCount <= 1)
-        {
-            StepCounterText->SetVisibility(ESlateVisibility::Collapsed);
-        }
-        else
-        {
-            StepCounterText->SetText(
-                FText::Format(
-                    NSLOCTEXT("SFTutorialSpotlight", "StepCounterFormat", "{0} / {1}"),
-                    FText::AsNumber(InStepIndex + 1),
-                    FText::AsNumber(InStepCount)));
-
-            StepCounterText->SetVisibility(ESlateVisibility::HitTestInvisible);
-        }
-    }
-
     // 입력을 막을지는 칸마다 다르다.
     //
     // 클릭으로 넘기는 칸은 클릭을 받아야 하므로 덮개가 입력을 가져간다.
@@ -120,19 +71,9 @@ void USFTutorialSpotlightWidget::ClearGuide()
 {
     bHasStep = false;
 
-    if (IsValid(WarningText))
-    {
-        WarningText->SetVisibility(ESlateVisibility::Collapsed);
-    }
-
     if (IsValid(InstructionText))
     {
         InstructionText->SetVisibility(ESlateVisibility::Collapsed);
-    }
-
-    if (IsValid(StepCounterText))
-    {
-        StepCounterText->SetVisibility(ESlateVisibility::Collapsed);
     }
 
     SetVisibility(ESlateVisibility::Collapsed);
@@ -163,7 +104,6 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
         }
     }
 
-    UpdateInstructionPosition(MyGeometry);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -243,43 +183,6 @@ FVector2D USFTutorialSpotlightWidget::GetHoleExtentPx(const FVector2D& InSize) c
     return FVector2D(RadiusPx, RadiusPx);
 }
 
-void USFTutorialSpotlightWidget::UpdateInstructionPosition(const FGeometry& MyGeometry)
-{
-    if (!IsValid(InstructionText) || !bInstructionFollowsSpotlight)
-    {
-        return;
-    }
-
-    // 캔버스에 놓지 않았다면 레이아웃을 손대지 않는다.
-    // 화면 아래에 고정해 두고 쓰는 것도 흔한 구성이라 강제하지 않는다.
-    UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(InstructionText->Slot);
-
-    if (CanvasSlot == nullptr)
-    {
-        return;
-    }
-
-    const FVector2D LocalSize = MyGeometry.GetLocalSize();
-
-    if (LocalSize.Y <= KINDA_SMALL_NUMBER)
-    {
-        return;
-    }
-
-    const FVector2D ExtentPx = GetHoleExtentPx(LocalSize);
-
-    FVector2D Position = HoleCenterNorm * LocalSize;
-
-    // 구멍 아래에 붙인다. 아래가 화면 밖으로 나가면 위로 넘긴다.
-    const float Margin = static_cast<float>(ExtentPx.Y) + FMath::Max(InstructionOffset, 0.f);
-    Position.Y = (Position.Y + Margin > LocalSize.Y * 0.9f)
-        ? Position.Y - Margin
-        : Position.Y + Margin;
-
-    CanvasSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-    CanvasSlot->SetPosition(Position);
-}
-
 // ─────────────────────────────────────────────────────────
 // 그리기
 //
@@ -345,20 +248,20 @@ int32 USFTutorialSpotlightWidget::NativePaint(
     // 선(MakeLines) 대신 얇은 사각형으로 테두리를 그리는 이유는 단순하다 —
     // 그리는 방법이 하나면 엔진 버전에 따라 한쪽만 깨지는 일이 없다.
     auto DrawQuad = [&](int32 InLayer, const FVector2D& InPosition, const FVector2D& InSize, const FLinearColor& InColor)
-    {
-        if (InSize.X <= 0.f || InSize.Y <= 0.f)
         {
-            return;
-        }
+            if (InSize.X <= 0.f || InSize.Y <= 0.f)
+            {
+                return;
+            }
 
-        FSlateDrawElement::MakeBox(
-            OutDrawElements,
-            InLayer,
-            AllottedGeometry.ToPaintGeometry(InSize, FSlateLayoutTransform(InPosition)),
-            Brush,
-            ESlateDrawEffect::None,
-            InColor);
-    };
+            FSlateDrawElement::MakeBox(
+                OutDrawElements,
+                InLayer,
+                AllottedGeometry.ToPaintGeometry(InSize, FSlateLayoutTransform(InPosition)),
+                Brush,
+                ESlateDrawEffect::None,
+                InColor);
+        };
 
     if (CurrentStep.bDimBackground)
     {
@@ -378,6 +281,13 @@ int32 USFTutorialSpotlightWidget::NativePaint(
     }
 
     if (!bDrawHole)
+    {
+        return DimLayer + 1;
+    }
+
+    // 단계별로 강조 테두리를 끌 수 있다. 문구는 계속 표시하되,
+    // 특정 단계에서만 가운데 사각형을 숨기고 싶을 때 사용한다.
+    if (!CurrentStep.bShowHighlight)
     {
         return DimLayer + 1;
     }

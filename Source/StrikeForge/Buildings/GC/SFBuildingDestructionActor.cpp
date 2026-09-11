@@ -1,13 +1,76 @@
 ﻿#include "Buildings/GC/SFBuildingDestructionActor.h"
-#include "NiagaraSystem.h"
+
+#include "TimerManager.h"
+
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+
 #include "Field/FieldSystemObjects.h"
+#include "GeometryCollectionProxyData.h"
+#include "GeometryCollection/GeometryCollectionAlgo.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
-#include "TimerManager.h"
-#include "DrawDebugHelpers.h"
-#include "GeometryCollectionProxyData.h"
+
+namespace SFVFXParameters
+{
+    const FName ClusterLevel(TEXT("User.ClusterLevel"));
+}
+
+struct FSFPieceState
+{
+    const TArray<FTransform3f>* Transforms = nullptr;
+    TOptional<FGeometryCollectionDynamicStateFacade> State;
+    int32 NumTransforms = 0;
+
+    bool IsValidPiece(int32 PieceIndex) const
+    {
+        return Transforms && Transforms->IsValidIndex(PieceIndex);
+    }
+
+    float GetScale(int32 PieceIndex) const
+    {
+        return (*Transforms)[PieceIndex].GetScale3D().GetAbsMax();
+    }
+    
+};
+
+static float RayBoxDistance2D(const FVector& Extent, const FVector& Dir)
+{
+    float Distance = TNumericLimits<float>::Max();
+
+    if (FMath::Abs(Dir.X) > KINDA_SMALL_NUMBER)
+    {
+        Distance = FMath::Min(Distance, Extent.X / FMath::Abs(Dir.X));
+    }
+
+    if (FMath::Abs(Dir.Y) > KINDA_SMALL_NUMBER)
+    {
+        Distance = FMath::Min(Distance, Extent.Y / FMath::Abs(Dir.Y));
+    }
+
+    return Distance;
+}
+
+static void BuildPieceState(UGeometryCollectionComponent& Component, FSFPieceState& Out)
+{
+    Out.Transforms = &Component.GetComponentSpaceTransforms3f();
+
+    FGeometryDynamicCollection* Dynamic = Component.GetDynamicCollection();
+
+    Out.NumTransforms = Dynamic ? Dynamic->GetNumTransforms() : 0;
+
+    // 루트가 멀쩡하면 모든 조각이 본체 소속이다. 파사드 자체가 필요 없다.
+    if (Dynamic && Component.IsRootBroken())
+    {
+        Out.State.Emplace(*Dynamic);
+
+        if (!Out.State->IsValid())
+        {
+            Out.State.Reset();
+        }
+    }
+}
 
 ASFBuildingDestructionActor::ASFBuildingDestructionActor()
 {
@@ -40,8 +103,7 @@ ASFBuildingDestructionActor::ASFBuildingDestructionActor()
             TEXT("StrainField"));
 }
 
-bool ASFBuildingDestructionActor::InitializeDestruction(
-    const UGeometryCollection* InCollection)
+bool ASFBuildingDestructionActor::InitializeDestruction(const UGeometryCollection* InCollection)
 {
 
     if (bInitialized)
@@ -124,10 +186,61 @@ void ASFBuildingDestructionActor::ApplyDamageStage(int32 StageIndex, const FBuil
 
     ApplyStageSettings(StageData,StageIndex + 1);
     
-    
     UE_LOG(LogTemp, Log, TEXT("[%s] Destruction stage applied: %d"),
         *GetName(), StageIndex);
 
+}
+
+void ASFBuildingDestructionActor::SetSurfaceFireStep(int32 StepIndex, int32 FireCount)
+{
+    if (!bInitialized || bFinalDestructionApplied || StepIndex <= SurfaceFireStep)
+    {
+        return;
+    }
+
+    SurfaceFireStep = StepIndex;
+    SurfaceFireTarget = FMath::Max(FireCount, 0);
+
+    // 잠들어 있으면 깨워서 부족분을 채우게 한다.
+    StartSurfaceFireMaintenance();
+}
+
+void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
+{
+    if (!bInitialized ||
+         bFinalDestructionApplied ||
+         FinalStageIndex < 0)
+    {
+        return;
+    }
+
+    // 새 불꽃 보충만 금지한다.
+    bFinalDestructionApplied = true;
+
+    GeometryCollectionComponent->RemoveAllAnchors();
+
+    ApplyStageSettings(StageData,FinalStageIndex + 1);
+    SetLifeSpan(DebrisLifetime);
+}
+
+void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
+
+    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
+
+    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
+
+    if (IsValid(GeometryCollectionComponent))
+    {
+        GeometryCollectionComponent->OnChaosBreakEvent.RemoveDynamic(
+            this,
+            &ThisClass::HandleChaosBreak);
+    }
+
+    SurfaceFires.Reset();
+
+    Super::EndPlay(EndPlayReason);
 }
 
 void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction& StageData, const int32 TargetClusterDepth)
@@ -146,14 +259,8 @@ void ASFBuildingDestructionActor::ApplyStageSettings(const FBuildingDestruction&
 
     const FVector WorldCenter =
         ComponentTransform.TransformPosition(LocalFieldCenter);
-
-    /**
-     * BP StaticMeshComponent가 2,2,2 Scale이면
-     * 파괴 반경도 그에 맞춰 증가시킨다.
-     */
-    const float ComponentScale =
-        FMath::Max(ComponentTransform.GetScale3D().GetAbsMax(),
-                KINDA_SMALL_NUMBER);
+    
+    const float ComponentScale = GetComponentUniformScale();
 
     const float WorldRadius =
         FMath::Max(CachedRestBounds.GetExtent().Size(), 1.f) *
@@ -241,10 +348,9 @@ void ASFBuildingDestructionActor::SchedulePendingImpulse()
     {
         GeometryCollectionComponent->CrumbleActiveClusters();
     }
-    else
-    {
-        StartSurfaceFireMaintenance();
-    }
+
+    // 최종 파괴 후에도 남은 불을 정리하려면 루프가 계속 돌아야 한다.
+    StartSurfaceFireMaintenance();
 
     if (PendingImpulseStrength <= 0.f)
     {
@@ -290,40 +396,74 @@ void ASFBuildingDestructionActor::ApplyPendingImpulse()
 void ASFBuildingDestructionActor::HandleChaosBreak(const FChaosBreakEvent& BreakEvent)
 {
     if (!bInitialized ||
-        !bFinalDestructionApplied ||
         BreakEvent.Component != GeometryCollectionComponent)
     {
         return;
     }
 
-    // 새롭게 활성화된 하위 클러스터까지 완전히 해체한다.
-    GeometryCollectionComponent->CrumbleActiveClusters();
-}
+    if (bFinalDestructionApplied)
+    {
+        // 새롭게 활성화된 하위 클러스터까지 완전히 해체한다.
+        GeometryCollectionComponent->CrumbleActiveClusters();
+    }
 
-void ASFBuildingDestructionActor::StartSurfaceFireMaintenance()
-{
-    if (bFinalDestructionApplied ||
-        !IsValid(GeometryCollectionComponent) ||
-        !IsValid(SurfaceFireEffect))
+    /*
+     * IsTimerActive만으로는 부족하다.
+     * UpdateSurfaceFires가 같은 호출 안에서 타이머를 도로 끄기 때문에
+     * 뒤이어 도착한 Break가 가드를 그대로 통과한다.
+     */
+    if (LastBreakWakeFrame == GFrameCounter)
     {
         return;
     }
 
-    // 첫 불꽃은 기다리지 않고 즉시 생성한다.
-    UpdateSurfaceFires();
+    LastBreakWakeFrame = GFrameCounter;
 
+    if (!GetWorldTimerManager().IsTimerActive(SurfaceFireTimerHandle))
+    {
+        StartSurfaceFireMaintenance();
+    }
+}
+
+void ASFBuildingDestructionActor::StartSurfaceFireMaintenance()
+{
+    if (!IsValid(GeometryCollectionComponent))
+    {
+        return;
+    }
+
+    /*
+     * 최종 파괴 후에는 새 불을 보충하지 않는다.
+     * 남은 불의 축소를 감지해 정리하기 위해서만 루프를 돌린다.
+     */
+    if (bFinalDestructionApplied)
+    {
+        if (SurfaceFires.IsEmpty())
+        {
+            return;
+        }
+    }
+    else if (!IsValid(SurfaceFireEffect))
+    {
+        return;
+    }
+    
     if (GetWorldTimerManager().IsTimerActive(
         SurfaceFireTimerHandle))
     {
         return;
     }
-
+    
+    // 루프를 먼저 걸고 즉시 한 번 갱신한다.
+    // 할 일이 없으면 UpdateSurfaceFires가 스스로 이 타이머를 끈다.
     GetWorldTimerManager().SetTimer(
         SurfaceFireTimerHandle,
         this,
         &ThisClass::UpdateSurfaceFires,
         SurfaceFireUpdateInterval,
         true);
+    
+    UpdateSurfaceFires();
 }
 
 void ASFBuildingDestructionActor::UpdateSurfaceFires()
@@ -334,11 +474,12 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
         SurfaceFires.Reset();
         return;
     }
-
-    const TArray<FTransform3f>& PieceTransforms =
-        GeometryCollectionComponent->GetComponentSpaceTransforms3f();
+    
+    FSFPieceState Pieces;
+    BuildPieceState(*GeometryCollectionComponent, Pieces);
 
     int32 AttachedFireCount = 0;
+    bool bAnyDetached = false;
 
     for (int32 Index = SurfaceFires.Num() - 1; Index >= 0; --Index)
     {
@@ -349,8 +490,8 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
             SurfaceFires.RemoveAtSwap(Index);
             continue;
         }
-
-        if (!PieceTransforms.IsValidIndex(Fire.PieceIndex))
+        
+        if (!Pieces.IsValidPiece(Fire.PieceIndex))
         {
             RemoveSurfaceFire(Fire);
             SurfaceFires.RemoveAtSwap(Index);
@@ -361,19 +502,8 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
          * 계층 분리 판정보다 먼저 검사한다.
          * 빠른 파괴로 분리 상태를 놓쳐도 조각 축소는 감지할 수 있다.
          */
-        const float PieceScale =
-            PieceTransforms[Fire.PieceIndex]
-                .GetScale3D()
-                .GetAbsMax();
-
-        if (PieceScale < SurfaceFireShrinkThreshold)
+        if (IsPieceShrunk(Pieces, Fire.PieceIndex, Fire.RestScale))
         {
-            UE_LOG(LogTemp, Warning, TEXT("[%s] Surface fire removed: Piece=%d Scale=%.3f Final=%s"),
-                *GetName(), Fire.PieceIndex, PieceScale,
-                    bFinalDestructionApplied
-                    ? TEXT("true")
-                    : TEXT("false"));
-
             RemoveSurfaceFire(Fire);
             SurfaceFires.RemoveAtSwap(Index);
             continue;
@@ -381,354 +511,48 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 
         if (!Fire.bDetached)
         {
-            Fire.bDetached = !IsPieceAttached(Fire.PieceIndex);
+            Fire.bDetached = !IsPieceOnBuilding(Pieces, Fire.PieceIndex);
         }
 
-        if (!Fire.bDetached)
+        if (Fire.bDetached)
+        {
+            bAnyDetached = true;
+        }
+        else
         {
             ++AttachedFireCount;
+            
+            const int32 TargetLevel =
+                SurfaceFireStep - Fire.BornFireStep + 1;
+
+            if (TargetLevel != Fire.ClusterLevel)
+            {
+                Fire.ClusterLevel = TargetLevel;
+
+                Fire.Component->SetVariableInt(SFVFXParameters::ClusterLevel, TargetLevel);
+            }
         }
+        
     }
 
     if (!bFinalDestructionApplied)
     {
-        const int32 MissingCount =
-            GetTargetSurfaceFireCount() - AttachedFireCount;
+        const int32 MissingCount = SurfaceFireTarget - AttachedFireCount;
 
         if (MissingCount > 0)
         {
-            const int32 AddedCount = AddSurfaceFires(MissingCount);
-
-            /*
-             * 불꽃도 없고 유효한 조각도 없다면
-             * 계속 전체 GC를 순회하지 않는다.
-             *
-             * 다음 손상 단계가 적용되면
-             * StartSurfaceFireMaintenance()에서 다시 시작된다.
-             */
-            if (AddedCount == 0 && SurfaceFires.IsEmpty())
-            {
-                GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
-            }
+            AttachedFireCount += AddSurfaceFires(MissingCount, Pieces);
         }
     }
-    else if (SurfaceFires.IsEmpty())
+
+    const bool bNeedsNextTick =
+        bAnyDetached ||
+        (bFinalDestructionApplied && !SurfaceFires.IsEmpty()) ||
+        LastBreakWakeFrame == GFrameCounter;
+
+    if (!bNeedsNextTick)
     {
         GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
-    }
-}
-
-bool ASFBuildingDestructionActor::IsPieceAttached(int32 PieceIndex) const
-{
-    if (!IsValid(GeometryCollectionComponent))
-    {
-        return false;
-    }
-
-    FGeometryDynamicCollection* DynamicCollection =
-        GeometryCollectionComponent->GetDynamicCollection();
-
-    if (!DynamicCollection ||
-        PieceIndex < 0 ||
-        PieceIndex >= DynamicCollection->GetNumTransforms())
-    {
-        return false;
-    }
-
-    // 루트가 아직 깨지지 않았다면 모든 조각은 건물 본체 소속이다.
-    if (!GeometryCollectionComponent->IsRootBroken())
-    {
-        return true;
-    }
-
-    FGeometryCollectionDynamicStateFacade DynamicState(*DynamicCollection);
-
-    if (!DynamicState.IsValid())
-    {
-        return false;
-    }
-
-    // 현재 물리 계층의 가장 위쪽 부모를 찾는다.
-    int32 TopIndex = PieceIndex;
-
-    for (int32 Guard = 0; Guard < DynamicCollection->GetNumTransforms(); ++Guard)
-    {
-        const int32 ParentIndex =
-            GeometryCollectionComponent->GetParent(TopIndex);
-
-        if (ParentIndex == INDEX_NONE)
-        {
-            break;
-        }
-
-        if (ParentIndex < 0 ||
-            ParentIndex >= DynamicCollection->GetNumTransforms())
-        {
-            return false;
-        }
-
-        TopIndex = ParentIndex;
-    }
-
-    /*
-     * 최상위 조각이 Dynamic/Sleeping 상태로 원래 부모에서
-     * 떨어졌다면 건물 본체가 아니라 낙하 파편이다.
-     */
-    return !DynamicState.HasBrokenOff(TopIndex);
-}
-
-int32 ASFBuildingDestructionActor::GetTargetSurfaceFireCount() const
-{
-    if (!IsValid(GeometryCollectionComponent))
-    {
-        return SurfaceFireMinCount;
-    }
-
-    // ApplyStageSettings(:171)의 반경 계산과 같은 방식으로 스케일을 반영한다.
-    const float ComponentScale = FMath::Max(
-        GeometryCollectionComponent->GetComponentTransform().GetScale3D().GetAbsMax(),
-        KINDA_SMALL_NUMBER);
-
-    const float WorldDiagonal =
-        CachedRestBounds.GetSize().Size2D() * ComponentScale;
-
-    return FMath::Clamp(
-        FMath::RoundToInt(WorldDiagonal / FMath::Max(SurfaceFireSpacing, 1.f)),
-        SurfaceFireMinCount,
-        SurfaceFireMaxCount);
-}
-
-int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount)
-{
-    if (DesiredCount <= 0 ||
-        !IsValid(SurfaceFireEffect) ||
-        !IsValid(GeometryCollectionComponent))
-    {
-        return 0;
-    }
-
-    TArray<FSFPieceSpot> Spots;
-    CollectAttachedPieceSpots(Spots);
-
-    if (Spots.IsEmpty())
-    {
-        return 0;
-    }
-
-    // 후보 전체를 한 번 섞어둔다. 이후에는 앞에서부터 훑기만 한다.
-    for (int32 i = 0; i < Spots.Num() - 1; ++i)
-    {
-        Spots.Swap(i, FMath::RandRange(i, Spots.Num() - 1));
-    }
-
-    const float MinDistSq = FMath::Square(
-        CachedRestBounds.GetSize().Size2D() * SurfaceFireMinDistanceRatio);
-
-    const FTransform ComponentTransform =
-        GeometryCollectionComponent->GetComponentTransform();
-
-    int32 Added = 0;
-
-    // 1차는 간격을 지켜서, 자리가 모자라면 2차에서 간격을 풀고 개수를 채운다.
-    for (int32 Pass = 0; Pass < 2 && Added < DesiredCount; ++Pass)
-    {
-        const float PassMinDistSq = (Pass == 0) ? MinDistSq : 0.f;
-
-        for (const FSFPieceSpot& Spot : Spots)
-        {
-            if (Added >= DesiredCount)
-            {
-                break;
-            }
-
-            // 같은 조각이거나, 이미 붙은 불과 너무 가까우면 건너뛴다.
-            const bool bReject =
-                SurfaceFires.ContainsByPredicate(
-                    [&Spot, PassMinDistSq](
-                        const FSFSurfaceFire& Fire)
-                    {
-                        if (Fire.bDetached)
-                        {
-                            return false;
-                        }
-
-                        return
-                            Fire.PieceIndex == Spot.PieceIndex ||
-                            FVector::DistSquared(
-                                Fire.LocalLocation,
-                                Spot.LocalLocation) <
-                            PassMinDistSq;
-                    });
-
-            if (bReject)
-            {
-                continue;
-            }
-
-            FVector WorldLocation =
-                ComponentTransform.TransformPosition(Spot.LocalLocation);
-            
-            UNiagaraComponent* Fire =
-                UNiagaraFunctionLibrary::SpawnSystemAttached(
-                    SurfaceFireEffect,
-                    GeometryCollectionComponent,
-                    Spot.BoneName,
-                    WorldLocation,
-                    FRotator::ZeroRotator,
-                    EAttachLocation::KeepWorldPosition,
-                    false,
-                    true);
-            
-            if (IsValid(Fire))
-            {
-                // 조각의 축소·0 스케일을 상속하면 컴포넌트 바운드가 0으로 붕괴해
-                // 파티클이 살아 있어도 컬링된다. 위치·회전만 따라가게 한다.
-                Fire->SetUsingAbsoluteScale(true);
-
-                // SpawnSystemAttached가 KeepWorldPosition 보정으로 상대 스케일에
-                // 1/부모스케일을 넣어둔다. 절대 스케일에서는 그 값이 그대로
-                // 월드 스케일이 되어버리므로 1로 되돌린다.
-                Fire->SetRelativeScale3D(FVector::OneVector);
-
-                FSFSurfaceFire& NewFire = SurfaceFires.AddDefaulted_GetRef();
-
-                NewFire.Component = Fire;
-                NewFire.PieceIndex = Spot.PieceIndex;
-                NewFire.bDetached = false;
-                NewFire.LocalLocation = Spot.LocalLocation;
-
-                ++Added;
-            }
-        }
-    }
-
-    return Added;
-}
-
-void ASFBuildingDestructionActor::CollectAttachedPieceSpots(TArray<FSFPieceSpot>& OutSpots)
-{
-    OutSpots.Reset();
-
-    if (!IsValid(GeometryCollectionComponent))
-    {
-        return;
-    }
-
-    const TArray<FTransform3f>& PieceTransforms =
-        GeometryCollectionComponent->GetComponentSpaceTransforms3f();
-
-    if (PieceTransforms.Num() == 0)
-    {
-        return;
-    }
-
-    const UGeometryCollection* Rest =
-        GeometryCollectionComponent->GetRestCollection();
-
-    if (!Rest || !Rest->GetGeometryCollection())
-    {
-        return;
-    }
-
-    const FGeometryCollection& Collection = *Rest->GetGeometryCollection();
-
-    const TManagedArray<FBox>&        Boxes     = Collection.BoundingBox;
-    const TManagedArray<int32>&       XfIndices = Collection.TransformIndex;
-    const TManagedArray<TSet<int32>>& TChildren = Collection.Children;
-    const TManagedArray<FString>&     BoneNames = Collection.BoneName; 
-
-    const float MinZ =
-        CachedRestBounds.Min.Z +
-        CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
-
-    for (int32 GeoIdx = 0; GeoIdx < Boxes.Num(); ++GeoIdx)
-    {
-        const int32 XfIdx = XfIndices[GeoIdx];
-
-        if (!TChildren.IsValidIndex(XfIdx))        continue;
-        if (TChildren[XfIdx].Num() != 0)           continue;   // 리프 조각만
-        if (!PieceTransforms.IsValidIndex(XfIdx)) continue;
-        
-        /*
-     * Remove On Break로 축소 중이거나 이미 사라진 조각은
-     * 새로운 불꽃 후보로 다시 사용하지 않는다.
-     */
-        const float PieceScale =
-            PieceTransforms[XfIdx]
-                .GetScale3D()
-                .GetAbsMax();
-
-        if (PieceScale < SurfaceFireShrinkThreshold)
-        {
-            continue;
-        }
-        
-        if (!BoneNames.IsValidIndex(XfIdx))
-        {
-            continue;
-        }
-
-        const FName BoneName(*BoneNames[XfIdx]);
-
-        if (BoneName.IsNone())
-        {
-            continue;
-        }
-        
-        if (!IsPieceAttached(XfIdx))
-        {
-            continue;
-        }
-        
-        // 이미 불이 붙어 있는 조각 제외
-        const bool bAlreadyBurning = SurfaceFires.ContainsByPredicate(
-            [XfIdx](const FSFSurfaceFire& Fire)
-            {
-                return Fire.PieceIndex == XfIdx;
-            });
-
-        if (bAlreadyBurning)
-        {
-            continue;
-        }
-        
-        // Spawn Location
-        // 조각 AABB를 컴포넌트 공간으로 옮긴다. 회전이 반영된 축정렬 박스가 나온다.
-        const FBox PieceBox =
-            Boxes[GeoIdx].TransformBy(FTransform(PieceTransforms[XfIdx]));
-
-        FVector LocalCenter = PieceBox.GetCenter();
-
-        if (LocalCenter.Z < MinZ)
-        {
-            continue;
-        }
-
-        // 건물 중심에서 이 조각을 향하는 수평 방향 = 바깥쪽
-        FVector Outward = LocalCenter - CachedRestBounds.GetCenter();
-        Outward.Z = 0.f;
-        Outward = Outward.GetSafeNormal();
-
-        // 방향이 나오지 않는 조각 = 건물 한가운데.
-        // 표면을 특정할 수 없고 밖에서 보이지도 않으므로 후보에서 제외한다.
-        if (Outward.IsNearlyZero())
-        {
-            continue;
-        }
-
-        // Outward 방향으로 중심에서 표면까지의 거리(AABB 지원 함수).
-        // 조각 크기에서 직접 나오므로 건물 스케일에 자동으로 따라간다.
-        const FVector Extent = PieceBox.GetExtent() * 0.6f;
-
-        LocalCenter += Outward *
-            (FMath::Abs(Outward.X) * Extent.X +
-             FMath::Abs(Outward.Y) * Extent.Y);
-
-        FSFPieceSpot& NewSpot = OutSpots.AddDefaulted_GetRef();
-
-        NewSpot.LocalLocation = LocalCenter;
-        NewSpot.PieceIndex = XfIdx;
-        NewSpot.BoneName = BoneName;
     }
 }
 
@@ -744,40 +568,340 @@ void ASFBuildingDestructionActor::RemoveSurfaceFire(FSFSurfaceFire& Fire)
     Fire.Component->Deactivate();
 }
 
-void ASFBuildingDestructionActor::ApplyFinalDestruction(const int32 FinalStageIndex, const FBuildingDestruction& StageData)
+bool ASFBuildingDestructionActor::IsPieceShrunk(const FSFPieceState& Pieces, int32 PieceIndex, float RestScale) const
 {
-    if (!bInitialized ||
-         bFinalDestructionApplied ||
-         FinalStageIndex < 0)
+    return Pieces.GetScale(PieceIndex) / RestScale < SurfaceFireShrinkThreshold;
+}
+
+bool ASFBuildingDestructionActor::IsPieceOnBuilding(const FSFPieceState& Pieces, int32 PieceIndex) const
+{
+    // 파사드가 없으면 루트가 아직 안 깨졌다는 뜻이다.
+    if (!Pieces.State.IsSet())
+    {
+        return true;
+    }
+
+    if (PieceIndex < 0 || PieceIndex >= Pieces.NumTransforms)
+    {
+        return false;
+    }
+    
+    /*
+     * 내부 클러스터에 실려 떨어지는 조각은 HasBrokenOff로 잡히지 않는다.
+     * 부모가 트랜스폼 계층에서 빠지면서 조각 자신은 비활성이 되고,
+     * HasBrokenOff의 첫 조건인 IsActive가 거짓이 되기 때문이다.
+     */
+    if (Pieces.State->HasDynamicInternalClusterParent(PieceIndex))
+    {
+        return false;
+    }
+
+    // 현재 물리 계층의 가장 위쪽 부모를 찾는다.
+    int32 TopIndex = PieceIndex;
+
+    for (int32 Guard = 0; Guard < Pieces.NumTransforms; ++Guard)
+    {
+        const int32 ParentIndex =
+            GeometryCollectionComponent->GetParent(TopIndex);
+
+        if (ParentIndex == INDEX_NONE)
+        {
+            break;
+        }
+
+        if (ParentIndex < 0 || ParentIndex >= Pieces.NumTransforms)
+        {
+            return false;
+        }
+
+        TopIndex = ParentIndex;
+    }
+
+    return !Pieces.State->HasBrokenOff(TopIndex);
+}
+
+int32 ASFBuildingDestructionActor::GetTargetSurfaceFireCount() const
+{
+    return SurfaceFireTarget;
+}
+
+int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount, const FSFPieceState& Pieces)
+{
+    if (DesiredCount <= 0 ||
+        !IsValid(SurfaceFireEffect) ||
+        !IsValid(GeometryCollectionComponent))
+    {
+        return 0;
+    }
+
+    BuildPieceSpotTable();
+
+    if (CachedPieceSpots.IsEmpty())
+    {
+        return 0;
+    }
+
+    const FTransform ComponentTransform =
+        GeometryCollectionComponent->GetComponentTransform();
+
+    // 반경 밴드는 GC 단계를 따른다. 불꽃 세기와는 무관하다.
+    const int32 ClusterStage = FMath::Max(AppliedStageIndex + 1, 1);
+    /*
+     * 링 전체가 단계마다 안쪽으로 이동한다.
+     * 안쪽 경계가 0에 닿으면 거기서 멈추고, 바깥 경계만 계속 좁혀진다.
+     */
+    const float RadialShift =
+        SurfaceFireRadialRatioStepPerLevel * (ClusterStage - 1);
+
+    const float LevelMinRadialRatio =
+        FMath::Max(SurfaceFireMinRadialRatio - RadialShift, 0.f);
+
+    const float LevelMaxRadialRatio =
+        FMath::Max(SurfaceFireMaxRadialRatio - RadialShift, LevelMinRadialRatio);
+
+    const float MinDistSq = FMath::Square(
+        CachedRestBounds.GetSize().Size2D() * SurfaceFireMinDistanceRatio);
+
+    int32 Added = 0;
+
+    /*
+     * 개수는 반드시 채운다. 조건을 단계적으로 푼다.
+     * 0차는 전부 지키고, 1차는 간격을, 2차는 반경 밴드까지 푼다.
+     * 붙어 있는 조각인지만은 끝까지 지킨다.
+     */
+    for (int32 Pass = 0; Pass < 3 && Added < DesiredCount; ++Pass)
+    {
+        const float PassMinDistSq = (Pass == 0) ? MinDistSq : 0.f;
+
+        const float PassMinRadialRatio = (Pass < 2) ? LevelMinRadialRatio : 0.f;
+        const float PassMaxRadialRatio = (Pass < 2) ? LevelMaxRadialRatio : 1.f;
+        
+        for (const FSFPieceSpot& Spot : CachedPieceSpots)
+        {
+            if (Added >= DesiredCount)
+            {
+                break;   // 목표를 채우면 남은 조각은 보지 않는다.
+            }
+
+            if (Spot.RadialRatio < PassMinRadialRatio ||
+                Spot.RadialRatio > PassMaxRadialRatio)
+            {
+                continue;
+            }
+
+            // 같은 조각이거나, 이미 붙은 불과 너무 가까우면 건너뛴다.
+            const bool bReject =
+                SurfaceFires.ContainsByPredicate(
+                    [&Spot, PassMinDistSq](const FSFSurfaceFire& Fire)
+                    {
+                        if (Fire.bDetached)
+                        {
+                            return false;
+                        }
+
+                        return
+                            Fire.PieceIndex == Spot.PieceIndex ||
+                            FVector::DistSquared(
+                                Fire.LocalLocation, Spot.LocalLocation) < PassMinDistSq;
+                    });
+
+            if (bReject)
+            {
+                continue;
+            }
+
+            if (!Pieces.IsValidPiece(Spot.PieceIndex))
+            {
+                continue;
+            }
+
+            if (IsPieceShrunk(Pieces, Spot.PieceIndex, Spot.RestScale) ||
+                !IsPieceOnBuilding(Pieces, Spot.PieceIndex))
+            {
+                continue;
+            }
+            
+            FVector WorldLocation =
+                ComponentTransform.TransformPosition(Spot.LocalLocation);
+            
+            UNiagaraComponent* Fire =
+                UNiagaraFunctionLibrary::SpawnSystemAttached(
+                    SurfaceFireEffect,
+                    GeometryCollectionComponent,
+                    Spot.BoneName,
+                    WorldLocation,
+                    FRotator::ZeroRotator,
+                    EAttachLocation::KeepWorldPosition,
+                    false,
+                    false);
+            
+            if (IsValid(Fire))
+            {
+                // 조각의 축소·0 스케일을 상속하면 컴포넌트 바운드가 0으로 붕괴해
+                // 파티클이 살아 있어도 컬링된다. 위치·회전만 따라가게 한다.
+                Fire->SetUsingAbsoluteScale(true);
+
+                // SpawnSystemAttached가 KeepWorldPosition 보정으로 상대 스케일에
+                // 1/부모스케일을 넣어둔다. 절대 스케일에서는 그 값이 그대로
+                // 월드 스케일이 되어버리므로 1로 되돌린다.
+                Fire->SetRelativeScale3D(FVector::OneVector);
+                // 새 불은 1에서 시작한다. 이후 불꽃 구간을 넘을 때마다 오른다.
+                Fire->SetVariableInt(SFVFXParameters::ClusterLevel, 1);
+                
+                Fire->Activate(true);
+                
+                // AddDefaulted_GetRef = 배열끝에 기본형 요소를 추가하고 참조리턴
+                FSFSurfaceFire& NewFire = SurfaceFires.AddDefaulted_GetRef();
+
+                NewFire.Component = Fire;
+                NewFire.PieceIndex = Spot.PieceIndex;
+                NewFire.bDetached = false;
+                NewFire.LocalLocation = Spot.LocalLocation;
+                NewFire.RestScale = Spot.RestScale;
+                NewFire.ClusterLevel = 1;
+                NewFire.BornFireStep = SurfaceFireStep;
+                
+                ++Added;
+            }
+        }
+    }
+
+    return Added;
+}
+
+void ASFBuildingDestructionActor::BuildPieceSpotTable()
+{
+    if (bPieceSpotsBuilt || !IsValid(GeometryCollectionComponent))
+    {
+        return;
+    }
+    
+    const UGeometryCollection* Rest =
+        GeometryCollectionComponent->GetRestCollection();
+
+    if (!Rest || !Rest->GetGeometryCollection())
     {
         return;
     }
 
-    // 새 불꽃 보충만 금지한다.
-    bFinalDestructionApplied = true;
+    bPieceSpotsBuilt = true;
+    
+    const FGeometryCollection& Collection = *Rest->GetGeometryCollection();
 
-    GeometryCollectionComponent->RemoveAllAnchors();
+    // rest 기준 컴포넌트 공간 변환. 물리 상태와 무관하게 항상 같은 값이다.
+    TArray<FTransform3f> RestTransforms;
+    GeometryCollectionAlgo::GlobalMatrices(
+        Collection.Transform, Collection.Parent, RestTransforms);
 
-    ApplyStageSettings(StageData,FinalStageIndex + 1);
-    SetLifeSpan(DebrisLifetime);
-}
+    const TManagedArray<FBox>&        Boxes     = Collection.BoundingBox;
+    const TManagedArray<int32>&       XfIndices = Collection.TransformIndex;
+    const TManagedArray<TSet<int32>>& TChildren = Collection.Children;
+    const TManagedArray<FString>&     BoneNames = Collection.BoneName;
+    const TManagedArray<int32>&       VertStarts = Collection.VertexStart;
+    const TManagedArray<int32>&       VertCounts = Collection.VertexCount;
+    const TManagedArray<FVector3f>&   Positions  = Collection.Vertex;
+    
+    const float MinZ =
+        CachedRestBounds.Min.Z +
+        CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
 
-void ASFBuildingDestructionActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-    GetWorldTimerManager().ClearTimer(SurfaceFireTimerHandle);
-
-    GetWorldTimerManager().ClearTimer(StrainHitTimerHandle);
-
-    GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
-
-    if (IsValid(GeometryCollectionComponent))
+    for (int32 GeoIdx = 0; GeoIdx < Boxes.Num(); ++GeoIdx)
     {
-        GeometryCollectionComponent->OnChaosBreakEvent.RemoveDynamic(
-            this,
-            &ThisClass::HandleChaosBreak);
+        const int32 XfIdx = XfIndices[GeoIdx];
+
+        if (!TChildren.IsValidIndex(XfIdx))      continue;
+        if (TChildren[XfIdx].Num() != 0)         continue;   // 리프 조각만
+        if (!RestTransforms.IsValidIndex(XfIdx)) continue;
+        if (!BoneNames.IsValidIndex(XfIdx))      continue;
+
+        const FName BoneName(*BoneNames[XfIdx]);
+
+        if (BoneName.IsNone())
+        {
+            continue;
+        }
+
+        const FBox PieceBox =
+            Boxes[GeoIdx].TransformBy(FTransform(RestTransforms[XfIdx]));
+
+        FVector LocalCenter = PieceBox.GetCenter();
+
+        if (LocalCenter.Z < MinZ)
+        {
+            continue;
+        }
+
+        FVector Outward = LocalCenter - CachedRestBounds.GetCenter();
+        Outward.Z = 0.f;
+        Outward = Outward.GetSafeNormal();
+
+        if (Outward.IsNearlyZero())
+        {
+            continue;
+        }
+
+        // 모서리 방향에서는 경계가 멀어지므로 코너 조각도 공평하게 평가된다.
+        const float RadialRatio =
+            FVector(LocalCenter - CachedRestBounds.GetCenter()).Size2D() /
+            FMath::Max(RayBoxDistance2D(CachedRestBounds.GetExtent(), Outward), 1.f);
+
+        /*
+         * Outward 방향으로 가장 멀리 나간 실제 정점을 찾는다.
+         * AABB 면과 달리 이 점은 반드시 메시 위에 있다.
+         */
+        const FTransform PieceToComponent(RestTransforms[XfIdx]);
+
+        const int32 VertBegin = VertStarts[GeoIdx];
+        const int32 VertEnd   = VertBegin + VertCounts[GeoIdx];
+
+        FVector SurfacePoint = LocalCenter;
+        float   BestDot = -MAX_flt;
+
+        for (int32 VertIdx = VertBegin; VertIdx < VertEnd; ++VertIdx)
+        {
+            if (!Positions.IsValidIndex(VertIdx))
+            {
+                continue;
+            }
+
+            const FVector V =
+                PieceToComponent.TransformPosition(FVector(Positions[VertIdx]));
+
+            const float Dot = FVector::DotProduct(V - LocalCenter, Outward);
+
+            if (Dot > BestDot)
+            {
+                BestDot = Dot;
+                SurfacePoint = V;
+            }
+        }
+
+        // 정점에 정확히 붙이면 모서리에 걸리므로 중심 쪽으로 조금 당긴다.
+        LocalCenter = FMath::Lerp(LocalCenter, SurfacePoint, 0.85f);
+
+        FSFPieceSpot& NewSpot = CachedPieceSpots.AddDefaulted_GetRef();
+
+        NewSpot.LocalLocation = LocalCenter;
+        NewSpot.PieceIndex = XfIdx;
+        NewSpot.BoneName = BoneName;
+        NewSpot.RestScale = FMath::Max(
+            RestTransforms[XfIdx].GetScale3D().GetAbsMax(), KINDA_SMALL_NUMBER);
+        NewSpot.RadialRatio = RadialRatio;
     }
 
-    SurfaceFires.Reset();
+    // 순서를 여기서 한 번만 섞는다. 갱신마다 다시 섞지 않는다.
+    for (int32 i = 0; i < CachedPieceSpots.Num() - 1; ++i)
+    {
+        CachedPieceSpots.Swap(
+            i, FMath::RandRange(i, CachedPieceSpots.Num() - 1));
+    }
 
-    Super::EndPlay(EndPlayReason);
+    CachedPieceSpots.Shrink();
+}
+
+float ASFBuildingDestructionActor::GetComponentUniformScale() const
+{
+    return FMath::Max(
+            GeometryCollectionComponent->GetComponentTransform().GetScale3D().GetAbsMax(),
+            KINDA_SMALL_NUMBER);
 }

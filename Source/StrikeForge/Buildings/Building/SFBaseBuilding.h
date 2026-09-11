@@ -122,7 +122,7 @@ public:
 	void UpgradeBuilding(int32 UpgradeValue = 1);
 	
 	// React
-	void PlayHitReaction(const FVector& LocalDirection);
+	void PlayHitReaction(const FVector& WorldDirection);
 	
 	// Grid System
 	
@@ -265,7 +265,7 @@ private:
 	UStaticMesh* ResolveMesh() const;
 	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
 
-	/** GC 액터가 없으면 생성하고 기존 StaticMesh를 숨긴다. */
+	/** GC 액터를 생성하고 Root Proxy가 준비되면 기존 StaticMesh만 숨긴다. */
 	bool EnsureDestructionActor();
 
 	/** 기존 GC를 제거하고 StaticMesh를 다시 표시한다. */

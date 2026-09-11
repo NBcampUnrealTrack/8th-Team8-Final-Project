@@ -462,16 +462,20 @@ void ASFGameMode::HandleRaceDataReady(ESFRace InRace, bool bSuccess)
 		}
 	}
 
-	if (!SFGameState->InitializeStage(
-		BootstrapStageRowName,
-		BootstrapBuildingRules
-	))
+	if (!SFGameState->InitializeStage(BootstrapStageRowName,BootstrapBuildingRules))
 	{
 		FailStageBootstrap();
 		return;
 	}
-
-	RequestInitialBuildingAssets();
+	
+	// 30% Loading Completed Timer 1.f
+	GetWorldTimerManager().SetTimer(
+	Stage30PercentDelayTimerHandle,
+	this,
+	&ThisClass::RequestInitialBuildingAssets,
+	Stage30PercentDelayTime,
+	false);
+	
 }
 
 void ASFGameMode::RequestInitialBuildingAssets()
@@ -521,8 +525,7 @@ void ASFGameMode::RequestInitialBuildingAssets()
         : BootstrapTeamRaces)
     {
         USFBuildingCatalog* Catalog =
-            SFGameState->GetTeamBuildingCatalog(
-                Team.Key);
+            SFGameState->GetTeamBuildingCatalog(Team.Key);
 
         if (!IsValid(Catalog))
         {
@@ -721,13 +724,17 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 	SF_LOG(Log,
 		"[SFGameMode] 초기 Tier 준비 완료. "
 		"Definition=%s, Tier=%d, Remaining=%d",
-		*GetNameSafe(InDefinition),
-		InTierIndex,
-		PendingInitialBuildingAssetRequestCount);
+		*GetNameSafe(InDefinition),	InTierIndex, PendingInitialBuildingAssetRequestCount);
 
 	if (PendingInitialBuildingAssetRequestCount == 0)
 	{
-		BeginStageRenderPreparation();
+		// 90% Loading Completed Timer 1.f
+		GetWorldTimerManager().SetTimer(
+		Stage90PercentDelayTimerHandle,
+		this,
+		&ThisClass::BeginStageRenderPreparation,
+		Stage90PercentDelayTime,
+		false);
 	}
 }
 
@@ -777,10 +784,10 @@ void ASFGameMode::BeginStageRenderPreparation()
 	SFGameState->SetStageLoadingProgress(0.98f);
 
 	GetWorldTimerManager().SetTimer(
-		StageRenderPreparationTimerHandle,
+		Stage98PercentDelayTimerHandle,
 		this,
 		&ThisClass::CompleteStageBootstrap,
-		StageRenderPreparationDelay,
+		Stage98PercentDelayTime,
 		false);
 }
 
@@ -828,7 +835,7 @@ void ASFGameMode::FailStageBootstrap()
 	
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(StageRenderPreparationTimerHandle);
+		World->GetTimerManager().ClearTimer(Stage98PercentDelayTimerHandle);
 	}
 
 	

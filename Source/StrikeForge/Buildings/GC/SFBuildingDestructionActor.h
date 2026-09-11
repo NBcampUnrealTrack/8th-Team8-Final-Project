@@ -20,9 +20,9 @@ struct FSFPieceSpot
 {
 	FVector LocalLocation = FVector::ZeroVector;
 	int32 PieceIndex = INDEX_NONE;
-
 	// GC 조각 Attach에 사용
 	FName BoneName = NAME_None;
+	FVector BoneLocalLocation = FVector::ZeroVector;
 	
 	/** rest 상태 조각 스케일. 축소 판정의 분모. */
 	float RestScale = 1.f;
@@ -62,7 +62,7 @@ class STRIKEFORGE_API ASFBuildingDestructionActor : public AActor
 public:
 	ASFBuildingDestructionActor();
 
-	/** 건물이 첫 손상 단계에 들어갈 때 1회. */
+	/** 건물 완성 시 GC와 Root Proxy 및 Chaos 시뮬레이션을 준비한다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	bool InitializeDestruction(const UGeometryCollection* InCollection);
 
@@ -106,7 +106,7 @@ private:
 	static void RemoveSurfaceFire(FSFSurfaceFire& Fire);
 	bool IsPieceShrunk(const FSFPieceState& Pieces, int32 PieceIndex, float RestScale) const;
 	bool IsPieceOnBuilding(const FSFPieceState& Pieces, int32 PieceIndex) const;
-	int32 GetTargetSurfaceFireCount() const;
+
 	int32 AddSurfaceFires(int32 DesiredCount, const FSFPieceState& Pieces);
 	void BuildPieceSpotTable();
 
@@ -160,13 +160,18 @@ private:
 	UPROPERTY(Transient) int32 AppliedClusterDepth = 0;
 	UPROPERTY(Transient) int32 PendingTargetClusterDepth = 0;
 
+	UPROPERTY(Transient)
+	bool bInitialized = false;
+	UPROPERTY(Transient)
+	bool bFinalDestructionApplied = false;
+	
 	FVector PendingImpulseOrigin = FVector::ZeroVector;
 	float PendingImpulseRadius = 0.f;
 	float PendingImpulseStrength = 0.f;
 	float PendingImpulseDelay = 0.f;
 
-	UPROPERTY(Transient) bool bInitialized = false;
-	UPROPERTY(Transient) bool bFinalDestructionApplied = false;
+	// UPROPERTY(Transient) bool bInitialized = false;
+	// UPROPERTY(Transient) bool bFinalDestructionApplied = false;
 
 	// ---- 런타임 상태: 불꽃 ----
 	UPROPERTY(Transient)

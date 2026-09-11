@@ -150,7 +150,10 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 		}
 	}
 
-	// Nexus를 우선 생성한다.
+	int32 SpawnedBuildingCount = 0;
+	int32 SkippedAnchorCount = 0;
+
+	// Nexus는 스테이지 진행에 필수이므로 기존처럼 실패 처리한다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
 		if (Anchor->GetBuildingType() != ESFBuildingType::Nexus)
@@ -160,11 +163,16 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 		if (!SpawnBuildingAtAnchor(Anchor))
 		{
+			SF_LOG(Error, "[SFGameMode] 필수 Nexus Anchor 생성 실패. Anchor=%s",
+				*GetNameSafe(Anchor));
+
 			return false;
 		}
+
+		++SpawnedBuildingCount;
 	}
 
-	// House, Mine, Production 등을 생성한다.
+	// House, Mine, Production 등은 실패한 Anchor만 건너뛴다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
@@ -174,16 +182,32 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 		if (!SpawnBuildingAtAnchor(Anchor))
 		{
-			return false;
+			++SkippedAnchorCount;
+
+			SF_LOG(Warning,
+				"[SFGameMode] Anchor 건물을 건너뜁니다. "
+				"Anchor=%s, Team=%d, Type=%s",
+				*GetNameSafe(Anchor), Anchor->GetTeamIndex(), *UEnum::GetValueAsString(Anchor->GetBuildingType()));
+
+			continue;
 		}
+
+		++SpawnedBuildingCount;
 	}
-	
-	// 완료하면 destory한다
+
+	// 성공 여부와 관계없이 런타임 Anchor는 정리한다.
 	for (ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
-		Anchor->Destroy();
+		if (IsValid(Anchor))
+		{
+			Anchor->Destroy();
+		}
 	}
-	return true;
+
+	SF_LOG(Log, "[SFGameMode] Anchor 생성 완료. 성공=%d, 건너뜀=%d",
+		SpawnedBuildingCount, SkippedAnchorCount);
+
+	return SpawnedBuildingCount > 0;
 }
 
 bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)

@@ -52,6 +52,116 @@ static float RayBoxDistance2D(const FVector& Extent, const FVector& Dir)
     return Distance;
 }
 
+static int32 CalculateRestHierarchyLevel(const TManagedArray<int32>& Parents, int32 TransformIndex)
+{
+    if (!Parents.IsValidIndex(TransformIndex))
+    {
+        return INDEX_NONE;
+    }
+
+    int32 CurrentIndex = TransformIndex;
+    int32 Level = 0;
+
+    for (int32 Guard = 0; Guard < Parents.Num(); ++Guard)
+    {
+        const int32 ParentIndex = Parents[CurrentIndex];
+
+        if (ParentIndex == INDEX_NONE)
+        {
+            return Level;
+        }
+
+        if (!Parents.IsValidIndex(ParentIndex))
+        {
+            return INDEX_NONE;
+        }
+
+        CurrentIndex = ParentIndex;
+        ++Level;
+    }
+
+    // 비정상적인 순환 계층
+    return INDEX_NONE;
+}
+
+static int32 FindAncestorAtRestLevel(
+    const TManagedArray<int32>& Parents,
+    const TArray<int32>& HierarchyLevels,
+    int32 TransformIndex,
+    int32 TargetLevel)
+{
+    if (!HierarchyLevels.IsValidIndex(TransformIndex) ||
+        HierarchyLevels[TransformIndex] == INDEX_NONE)
+    {
+        return INDEX_NONE;
+    }
+
+    int32 CurrentIndex = TransformIndex;
+
+    for (int32 Guard = 0; Guard < Parents.Num(); ++Guard)
+    {
+        if (HierarchyLevels[CurrentIndex] <= TargetLevel)
+        {
+            return CurrentIndex;
+        }
+
+        const int32 ParentIndex = Parents[CurrentIndex];
+
+        if (!Parents.IsValidIndex(ParentIndex))
+        {
+            return CurrentIndex;
+        }
+
+        CurrentIndex = ParentIndex;
+    }
+
+    return INDEX_NONE;
+}
+
+static float GetBoxSurfaceGapRatio(const FBox& OuterBox, const FBox& InnerBox)
+{
+    const FVector OuterSize = OuterBox.GetSize();
+    float MinGapRatio = 1.f;
+
+    const auto ConsumeAxis =
+        [&MinGapRatio](
+            float DistanceToMin,
+            float DistanceToMax,
+            float AxisSize)
+        {
+            if (AxisSize <= KINDA_SMALL_NUMBER)
+            {
+                MinGapRatio = 0.f;
+                return;
+            }
+
+            const float Gap = FMath::Max(
+                FMath::Min(DistanceToMin, DistanceToMax),
+                0.f);
+
+            MinGapRatio = FMath::Min(
+                MinGapRatio,
+                Gap / AxisSize);
+        };
+
+    ConsumeAxis(
+        InnerBox.Min.X - OuterBox.Min.X,
+        OuterBox.Max.X - InnerBox.Max.X,
+        OuterSize.X);
+
+    ConsumeAxis(
+        InnerBox.Min.Y - OuterBox.Min.Y,
+        OuterBox.Max.Y - InnerBox.Max.Y,
+        OuterSize.Y);
+
+    ConsumeAxis(
+        InnerBox.Min.Z - OuterBox.Min.Z,
+        OuterBox.Max.Z - InnerBox.Max.Z,
+        OuterSize.Z);
+
+    return FMath::Clamp(MinGapRatio, 0.f, 1.f);
+}
+
 static void BuildPieceState(UGeometryCollectionComponent& Component, FSFPieceState& Out)
 {
     Out.Transforms = &Component.GetComponentSpaceTransforms3f();
@@ -622,26 +732,71 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount, const FSF
 
     BuildPieceSpotTable();
 
-    if (CachedPieceSpots.IsEmpty())
+    if (CachedSurfaceSpotsByLevel.IsEmpty())
     {
         return 0;
     }
-    
-    // 반경 밴드는 GC 단계를 따른다. 불꽃 세기와는 무관하다.
-    const int32 ClusterStage = FMath::Max(AppliedStageIndex + 1, 1);
+
     /*
-     * 링 전체가 단계마다 안쪽으로 이동한다.
-     * 안쪽 경계가 0에 닿으면 거기서 멈추고, 바깥 경계만 계속 좁혀진다.
+     * PendingTargetClusterDepth를 사용하는 이유:
+     * 한 번의 큰 피해로 여러 파괴 단계를 건너뛰더라도
+     * 최종적으로 요청된 GC Level의 표면 후보를 사용하기 위해서다.
+     *
+     * 파괴 단계 진입 전에는 값이 0이므로 Level 0 표면을 사용한다.
      */
+    if (PendingTargetClusterDepth > 0 &&
+    AppliedClusterDepth < PendingTargetClusterDepth)
+    {
+        return 0;
+    }
+
+    const int32 RequestedGCLevel = FMath::Clamp(
+        AppliedClusterDepth,
+        0,
+        CachedSurfaceSpotsByLevel.Num() - 1);
+
+    const TArray<FSFPieceSpot>* CandidateSpots = nullptr;
+
+    /*
+     * 요청 Level에 후보가 없다면 더 낮은 Level부터 찾는다.
+     * 더 깊은 Level로 올라가면 아직 노출되지 않은 조각을 선택할 수 있으므로
+     * 낮은 방향으로만 폴백한다.
+     */
+    for (int32 Level = RequestedGCLevel; Level >= 0; --Level)
+    {
+        if (!CachedSurfaceSpotsByLevel[Level].IsEmpty())
+        {
+            CandidateSpots = &CachedSurfaceSpotsByLevel[Level];
+            break;
+        }
+    }
+
+    if (!CandidateSpots)
+    {
+        return 0;
+    }
+
+    /*
+     * GC Level별 후보군은 이미 분리됐으므로,
+     * 반경 값은 단계 이동이 아니라 전체 건물에 대한 연출 필터로만 사용한다.
+     */
+    const int32 RadialStage =
+        FMath::Max(AppliedStageIndex + 1, 1);
+
     const float RadialShift =
-        SurfaceFireRadialRatioStepPerLevel * (ClusterStage - 1);
+        SurfaceFireRadialRatioStepPerLevel *
+        (RadialStage - 1);
 
     const float LevelMinRadialRatio =
-        FMath::Max(SurfaceFireMinRadialRatio - RadialShift, 0.f);
+        FMath::Max(
+            SurfaceFireMinRadialRatio - RadialShift,
+            0.f);
 
     const float LevelMaxRadialRatio =
-        FMath::Max(SurfaceFireMaxRadialRatio - RadialShift, LevelMinRadialRatio);
-
+        FMath::Max(
+            SurfaceFireMaxRadialRatio - RadialShift,
+            LevelMinRadialRatio);
+    
     const float MinDistSq = FMath::Square(
         CachedRestBounds.GetSize().Size2D() * SurfaceFireMinDistanceRatio);
 
@@ -659,7 +814,7 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount, const FSF
         const float PassMinRadialRatio = (Pass < 2) ? LevelMinRadialRatio : 0.f;
         const float PassMaxRadialRatio = (Pass < 2) ? LevelMaxRadialRatio : 1.f;
         
-        for (const FSFPieceSpot& Spot : CachedPieceSpots)
+        for (const FSFPieceSpot& Spot : *CandidateSpots)
         {
             if (Added >= DesiredCount)
             {
@@ -764,11 +919,12 @@ int32 ASFBuildingDestructionActor::AddSurfaceFires(int32 DesiredCount, const FSF
 
 void ASFBuildingDestructionActor::BuildPieceSpotTable()
 {
-    if (bPieceSpotsBuilt || !IsValid(GeometryCollectionComponent))
+    if (bPieceSpotsBuilt ||
+        !IsValid(GeometryCollectionComponent))
     {
         return;
     }
-    
+
     const UGeometryCollection* Rest =
         GeometryCollectionComponent->GetRestCollection();
 
@@ -778,128 +934,395 @@ void ASFBuildingDestructionActor::BuildPieceSpotTable()
     }
 
     bPieceSpotsBuilt = true;
-    
-    const FGeometryCollection& Collection = *Rest->GetGeometryCollection();
+    CachedSurfaceSpotsByLevel.Reset();
 
-    // rest 기준 컴포넌트 공간 변환. 물리 상태와 무관하게 항상 같은 값이다.
+    const FGeometryCollection& Collection =
+        *Rest->GetGeometryCollection();
+
+    // Rest 상태의 컴포넌트 공간 Transform
     TArray<FTransform3f> RestTransforms;
+
     GeometryCollectionAlgo::GlobalMatrices(
-        Collection.Transform, Collection.Parent, RestTransforms);
+        Collection.Transform,
+        Collection.Parent,
+        RestTransforms);
 
-    const TManagedArray<FBox>&        Boxes     = Collection.BoundingBox;
-    const TManagedArray<int32>&       XfIndices = Collection.TransformIndex;
-    const TManagedArray<TSet<int32>>& TChildren = Collection.Children;
-    const TManagedArray<FString>&     BoneNames = Collection.BoneName;
-    const TManagedArray<int32>&       VertStarts = Collection.VertexStart;
-    const TManagedArray<int32>&       VertCounts = Collection.VertexCount;
-    const TManagedArray<FVector3f>&   Positions  = Collection.Vertex;
+    const TManagedArray<int32>& Parents =
+        Collection.Parent;
+
+    const TManagedArray<TSet<int32>>& TChildren =
+        Collection.Children;
+
+    const TManagedArray<FBox>& Boxes =
+        Collection.BoundingBox;
+
+    const TManagedArray<int32>& TransformIndices =
+        Collection.TransformIndex;
+
+    const TManagedArray<FString>& BoneNames =
+        Collection.BoneName;
+
+    const TManagedArray<int32>& FaceStarts =
+        Collection.FaceStart;
+
+    const TManagedArray<int32>& FaceCounts =
+        Collection.FaceCount;
     
-    const float MinZ =
-        CachedRestBounds.Min.Z +
-        CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
+    const TManagedArray<bool>& VisibleFaces =
+        Collection.Visible;
 
-    for (int32 GeoIdx = 0; GeoIdx < Boxes.Num(); ++GeoIdx)
+    const TManagedArray<bool>& InternalFaces =
+        Collection.Internal;
+    
+    /*
+     * Proximity는 Geometry Group의 조각 인접 관계다.
+     * 에셋에 데이터가 없을 수도 있으므로 FindAttribute를 사용한다.
+     */
+    const TManagedArray<TSet<int32>>* Proximity =
+        Collection.FindAttribute<TSet<int32>>(
+            FName(TEXT("Proximity")), FGeometryCollection::GeometryGroup);
+
+    // -------------------------------------------------------
+    // 1. 각 Transform의 Rest 계층 Level 계산
+    // -------------------------------------------------------
+
+    TArray<int32> HierarchyLevels;
+
+    HierarchyLevels.Init(INDEX_NONE,Parents.Num());
+
+    for (int32 TransformIndex = 0;
+         TransformIndex < Parents.Num();
+         ++TransformIndex)
     {
-        const int32 XfIdx = XfIndices[GeoIdx];
+        HierarchyLevels[TransformIndex] =
+            CalculateRestHierarchyLevel(Parents, TransformIndex);
+    }
 
-        if (!TChildren.IsValidIndex(XfIdx))      continue;
-        if (TChildren[XfIdx].Num() != 0)         continue;   // 리프 조각만
-        if (!RestTransforms.IsValidIndex(XfIdx)) continue;
-        if (!BoneNames.IsValidIndex(XfIdx))      continue;
+    // -------------------------------------------------------
+    // 2. 리프 Geometry의 Rest 바운드와 외부 표면 여부 캐싱
+    // -------------------------------------------------------
 
-        const FName BoneName(*BoneNames[XfIdx]);
+    TArray<bool> bLeafGeometry;
+    TArray<bool> bHasExternalFace;
+    TArray<FBox> PieceBoxes;
 
-        if (BoneName.IsNone())
+    bLeafGeometry.Init(false, Boxes.Num());
+    bHasExternalFace.Init(false, Boxes.Num());
+    PieceBoxes.Init(FBox(ForceInit), Boxes.Num());
+
+    int32 MaxLeafLevel = 0;
+
+    for (int32 GeometryIndex = 0;
+         GeometryIndex < Boxes.Num();
+         ++GeometryIndex)
+    {
+        if (!TransformIndices.IsValidIndex(GeometryIndex))
         {
             continue;
         }
 
-        const FBox PieceBox =
-            Boxes[GeoIdx].TransformBy(FTransform(RestTransforms[XfIdx]));
+        const int32 TransformIndex =
+            TransformIndices[GeometryIndex];
 
-        FVector LocalCenter = PieceBox.GetCenter();
-
-        if (LocalCenter.Z < MinZ)
+        if (!TChildren.IsValidIndex(TransformIndex) ||
+            !RestTransforms.IsValidIndex(TransformIndex) ||
+            !HierarchyLevels.IsValidIndex(TransformIndex))
         {
             continue;
         }
 
-        FVector Outward = LocalCenter - CachedRestBounds.GetCenter();
-        Outward.Z = 0.f;
-        Outward = Outward.GetSafeNormal();
-
-        if (Outward.IsNearlyZero())
+        // 실제 메쉬를 가진 최하위 리프 조각만 사용한다.
+        if (TChildren[TransformIndex].Num() != 0)
         {
             continue;
         }
 
-        // 모서리 방향에서는 경계가 멀어지므로 코너 조각도 공평하게 평가된다.
-        const float RadialRatio =
-            FVector(LocalCenter - CachedRestBounds.GetCenter()).Size2D() /
-            FMath::Max(RayBoxDistance2D(CachedRestBounds.GetExtent(), Outward), 1.f);
+        bLeafGeometry[GeometryIndex] = true;
+
+        PieceBoxes[GeometryIndex] =
+            Boxes[GeometryIndex].TransformBy(
+                FTransform(RestTransforms[TransformIndex]));
+
+        MaxLeafLevel = FMath::Max(
+            MaxLeafLevel,HierarchyLevels[TransformIndex]);
 
         /*
-         * Outward 방향으로 가장 멀리 나간 실제 정점을 찾는다.
-         * AABB 면과 달리 이 점은 반드시 메시 위에 있다.
+         * Internal == false인 Face가 하나라도 있으면
+         * 원래 건물 외부 표면을 포함한 조각이다.
          */
-        const FTransform PieceToComponent(RestTransforms[XfIdx]);
-
-        const int32 VertBegin = VertStarts[GeoIdx];
-        const int32 VertEnd   = VertBegin + VertCounts[GeoIdx];
-
-        FVector SurfacePoint = LocalCenter;
-        float   BestDot = -MAX_flt;
-
-        for (int32 VertIdx = VertBegin; VertIdx < VertEnd; ++VertIdx)
+        if (FaceStarts.IsValidIndex(GeometryIndex) &&
+            FaceCounts.IsValidIndex(GeometryIndex))
         {
-            if (!Positions.IsValidIndex(VertIdx))
+            const int32 FaceBegin = FaceStarts[GeometryIndex];
+
+            const int32 FaceEnd =
+                FaceBegin + FMath::Max(FaceCounts[GeometryIndex],0);
+
+            for (int32 FaceIndex = FaceBegin; FaceIndex < FaceEnd; ++FaceIndex)
+            {
+                if (VisibleFaces.IsValidIndex(FaceIndex) &&
+                    VisibleFaces[FaceIndex] &&
+                    InternalFaces.IsValidIndex(FaceIndex) &&
+                    !InternalFaces[FaceIndex])
+                {
+                    bHasExternalFace[GeometryIndex] = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    CachedSurfaceSpotsByLevel.SetNum(MaxLeafLevel + 1);
+
+    const float MinZ =
+        CachedRestBounds.Min.Z + CachedRestBounds.GetSize().Z * SurfaceFireMinHeightRatio;
+
+    // -------------------------------------------------------
+    // 3. GC Level별 표면 조각 후보 생성
+    // -------------------------------------------------------
+
+    for (int32 GCLevel = 0; GCLevel <= MaxLeafLevel; ++GCLevel)
+    {
+        /*
+         * 같은 Level에서 각 클러스터가 포함한 리프 조각들의
+         * 전체 Rest 바운드를 계산한다.
+         */
+        TMap<int32, FBox> ClusterBoundsByTransform;
+
+        for (int32 GeometryIndex = 0; GeometryIndex < Boxes.Num(); ++GeometryIndex)
+        {
+            if (!bLeafGeometry[GeometryIndex])
             {
                 continue;
             }
 
-            const FVector V =
-                PieceToComponent.TransformPosition(FVector(Positions[VertIdx]));
+            const int32 TransformIndex = TransformIndices[GeometryIndex];
 
-            const float Dot = FVector::DotProduct(V - LocalCenter, Outward);
+            const int32 ClusterIndex =
+                FindAncestorAtRestLevel(
+                    Parents,
+                    HierarchyLevels,
+                    TransformIndex,
+                    GCLevel);
 
-            if (Dot > BestDot)
+            if (ClusterIndex == INDEX_NONE)
             {
-                BestDot = Dot;
-                SurfacePoint = V;
+                continue;
+            }
+
+            if (FBox* ExistingBounds =
+                    ClusterBoundsByTransform.Find(ClusterIndex))
+            {
+                *ExistingBounds +=
+                    PieceBoxes[GeometryIndex];
+            }
+            else
+            {
+                ClusterBoundsByTransform.Add(
+                    ClusterIndex, PieceBoxes[GeometryIndex]);
             }
         }
 
-        // 정점에 정확히 붙이면 모서리에 걸리므로 중심 쪽으로 조금 당긴다.
-        LocalCenter = FMath::Lerp(LocalCenter, SurfacePoint, 0.85f);
+        TArray<FSFPieceSpot>& LevelSpots =
+            CachedSurfaceSpotsByLevel[GCLevel];
 
-        FSFPieceSpot& NewSpot = CachedPieceSpots.AddDefaulted_GetRef();
+        for (int32 GeometryIndex = 0;
+             GeometryIndex < Boxes.Num(); ++GeometryIndex)
+        {
+            if (!bLeafGeometry[GeometryIndex])
+            {
+                continue;
+            }
 
-        NewSpot.LocalLocation = LocalCenter;
+            const int32 TransformIndex =
+                TransformIndices[GeometryIndex];
 
-        /*
-         * Rest 상태의 컴포넌트 공간 위치를
-         * 해당 조각의 로컬 공간 위치로 변환한다.
-         */
-        NewSpot.BoneLocalLocation =
-            PieceToComponent.InverseTransformPosition(LocalCenter);
+            if (!BoneNames.IsValidIndex(TransformIndex))
+            {
+                continue;
+            }
 
-        NewSpot.PieceIndex = XfIdx;
-        NewSpot.BoneName = BoneName;
+            const FName BoneName(*BoneNames[TransformIndex]);
 
-        NewSpot.RestScale = FMath::Max(
-            RestTransforms[XfIdx].GetScale3D().GetAbsMax(),
-            KINDA_SMALL_NUMBER);
+            if (BoneName.IsNone())
+            {
+                continue;
+            }
 
-        NewSpot.RadialRatio = RadialRatio;
+            const FBox& PieceBox =
+                PieceBoxes[GeometryIndex];
+
+            const FVector PieceLocation =
+                PieceBox.GetCenter();
+
+            if (PieceLocation.Z < MinZ)
+            {
+                continue;
+            }
+
+            const int32 ClusterIndex =
+                FindAncestorAtRestLevel(
+                    Parents,
+                    HierarchyLevels,
+                    TransformIndex,
+                    GCLevel);
+
+            const FBox* ClusterBounds =
+                ClusterBoundsByTransform.Find(ClusterIndex);
+
+            if (!ClusterBounds)
+            {
+                continue;
+            }
+
+            /*
+             * 원래 외부 표면을 포함한 조각인지 확인한다.
+             * 생성 시 외부 면에 붙일지 절단면에 붙일지는 구분하지 않는다.
+             */
+            const bool bOriginalExterior =
+                bHasExternalFace[GeometryIndex];
+
+            /*
+             * 현재 GC Level에서 다른 클러스터와 맞닿아 있는 조각은
+             * 해당 Level이 파괴됐을 때 표면 조각이 된다.
+             */
+            bool bLevelBoundary = false;
+
+            const bool bHasProximityData =
+                Proximity &&
+                Proximity->IsValidIndex(GeometryIndex) &&
+                !(*Proximity)[GeometryIndex].IsEmpty();
+
+            if (bHasProximityData)
+            {
+                for (const int32 NeighborGeometryIndex :
+                     (*Proximity)[GeometryIndex])
+                {
+                    if (!TransformIndices.IsValidIndex(NeighborGeometryIndex))
+                    {
+                        continue;
+                    }
+
+                    const int32 NeighborTransformIndex =
+                        TransformIndices[NeighborGeometryIndex];
+
+                    const int32 NeighborClusterIndex =
+                        FindAncestorAtRestLevel(
+                            Parents,
+                            HierarchyLevels,
+                            NeighborTransformIndex,
+                            GCLevel);
+
+                    if (NeighborClusterIndex != INDEX_NONE &&
+                        NeighborClusterIndex != ClusterIndex)
+                    {
+                        bLevelBoundary = true;
+                        break;
+                    }
+                }
+            }
+
+            /*
+             * Proximity가 없는 GC 에셋에서만 AABB 판정을
+             * 보조 수단으로 사용한다.
+             */
+            bool bFallbackSurface = false;
+
+            if (!bHasProximityData)
+            {
+                const float SurfaceGapRatio =
+                    GetBoxSurfaceGapRatio(
+                        *ClusterBounds,
+                        PieceBox);
+
+                bFallbackSurface =
+                    SurfaceGapRatio <=
+                    SurfaceFireClusterSurfaceTolerance;
+            }
+
+            const bool bSurfacePiece =
+                bOriginalExterior ||
+                bLevelBoundary ||
+                bFallbackSurface;
+
+            if (!bSurfacePiece)
+            {
+                continue;
+            }
+
+            /*
+             * 조각 위치를 기준으로 기존 전역 반경 범위를 계산한다.
+             */
+            FVector RadialDirection =
+                PieceLocation -
+                CachedRestBounds.GetCenter();
+
+            RadialDirection.Z = 0.f;
+
+            const float HorizontalDistance =
+                RadialDirection.Size2D();
+
+            float RadialRatio = 0.f;
+
+            if (HorizontalDistance > KINDA_SMALL_NUMBER)
+            {
+                RadialDirection /= HorizontalDistance;
+
+                RadialRatio =
+                    HorizontalDistance /
+                    FMath::Max(
+                        RayBoxDistance2D(
+                            CachedRestBounds.GetExtent(),
+                            RadialDirection),
+                        1.f);
+            }
+
+            const FTransform PieceToComponent(
+                RestTransforms[TransformIndex]);
+
+            FSFPieceSpot& NewSpot =
+                LevelSpots.AddDefaulted_GetRef();
+
+            NewSpot.LocalLocation =
+                PieceLocation;
+
+            NewSpot.BoneLocalLocation =
+                PieceToComponent.InverseTransformPosition(
+                    PieceLocation);
+            
+            NewSpot.PieceIndex = TransformIndex;
+
+            NewSpot.BoneName = BoneName;
+
+            NewSpot.RestScale =
+                FMath::Max(
+                    RestTransforms[TransformIndex]
+                        .GetScale3D()
+                        .GetAbsMax(),
+                    KINDA_SMALL_NUMBER);
+
+            NewSpot.RadialRatio = RadialRatio;
+        }
+
+        // Level별 후보 순서를 초기화 시 한 번만 섞는다.
+        for (int32 Index = 0;
+             Index < LevelSpots.Num() - 1; ++Index)
+        {
+            LevelSpots.Swap(
+                Index,
+                FMath::RandRange(
+                    Index,
+                    LevelSpots.Num() - 1));
+        }
+
+        LevelSpots.Shrink();
+
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[%s] GC surface fire Level %d: %d candidates"),
+            *GetName(),
+            GCLevel,
+            LevelSpots.Num());
     }
-
-    // 순서를 여기서 한 번만 섞는다. 갱신마다 다시 섞지 않는다.
-    for (int32 i = 0; i < CachedPieceSpots.Num() - 1; ++i)
-    {
-        CachedPieceSpots.Swap(i, FMath::RandRange(i, CachedPieceSpots.Num() - 1));
-    }
-
-    CachedPieceSpots.Shrink();
 }
 
 float ASFBuildingDestructionActor::GetComponentUniformScale() const

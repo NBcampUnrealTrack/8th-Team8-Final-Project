@@ -311,9 +311,9 @@ void ASFBaseBuilding::ApplySpawnMode()
 			
 			if (!TryRegistInitialGrid())
 			{
-				ensureAlwaysMsgf(
-					false,
-					TEXT("%s failed to register its initial grid. Be Destroyed"),
+				SF_LOG(
+					Warning,
+					"[%s] 선배치 격자 등록 실패. 해당 Anchor 건물을 건너뜁니다.",
 					*GetName());
 				Destroy();
 				return;

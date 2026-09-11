@@ -49,18 +49,13 @@ void UPlayVFXComponent::PlayConstructionEffect(
 		return;
 	}
 
-	NewEffect->SetVariableVec3(
-		SFVFXParameters::BuildingScale,
+	NewEffect->SetVariableVec3(SFVFXParameters::BuildingScale,
 		TargetMesh->GetRelativeScale3D());
 
 	// 새 효과 생성에 성공한 경우에만 기존 효과를 교체한다.
-	StopManagedEffect(
-		ESFBuildingVFXChannel::Construction,
-		true);
+	StopManagedEffect(ESFBuildingVFXChannel::Construction,true);
 
-	ActiveEffects.Add(
-		ESFBuildingVFXChannel::Construction,
-		NewEffect);
+	ActiveEffects.Add(ESFBuildingVFXChannel::Construction,NewEffect);
 
 	NewEffect->Activate(true);
 }
@@ -91,13 +86,9 @@ void UPlayVFXComponent::PlayBurningEffect(UNiagaraSystem* NiagaraSystem, const F
 		return;
 	}
 
-	NewEffect->SetVariableInt(
-		SFVFXParameters::BurnStage,
-		BurnStage);
+	NewEffect->SetVariableInt(SFVFXParameters::BurnStage, BurnStage);
 
-	NewEffect->SetVariableVec3(
-		SFVFXParameters::SpawnBoxSize,
-		SpawnBoxSize);
+	NewEffect->SetVariableVec3(SFVFXParameters::SpawnBoxSize, SpawnBoxSize);
 
 	ActiveBurningEffects.Add(NewEffect);
 
@@ -106,11 +97,9 @@ void UPlayVFXComponent::PlayBurningEffect(UNiagaraSystem* NiagaraSystem, const F
 
 void UPlayVFXComponent::StopBurningEffects(bool bImmediate)
 {
-	for (TObjectPtr<UNiagaraComponent>& Effect :
-		ActiveBurningEffects)
+	for (TObjectPtr<UNiagaraComponent>& Effect : ActiveBurningEffects)
 	{
-		UNiagaraComponent* EffectComponent =
-			Effect.Get();
+		UNiagaraComponent* EffectComponent = Effect.Get();
 
 		if (!IsValid(EffectComponent))
 		{

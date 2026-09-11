@@ -170,46 +170,40 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 			*GetName());
 		return;
 	}
-	//
-	// PreviousHealthRatio =
-	// 	FMath::Clamp(PreviousHealthRatio, 0.f, 1.f);
-	//
-	// CurrentHealthRatio =
-	// 	FMath::Clamp(CurrentHealthRatio, 0.f, 1.f);
 
 	// GC가 설정된 건물은 GC 손상 단계를 사용한다.
-	if (IsValid(ActiveTierAssets.DestructionCollection))
+	if (IsValid(ActiveTierAssets.DestructionCollection) && EnsureDestructionActor())
 	{
+		/*
+		 * GC 파괴와 불꽃 부착은 서로 다른 임계값 배열을 쓴다.
+		 * 둘 중 하나만 넘는 경우가 있으므로 따로 판정한다.
+		 */
 		const int32 PreviousStage =
-			Tier->Visual.FindDestructionStageIndex(
-				PreviousHealthRatio);
+			Tier->Visual.FindDestructionStageIndex(PreviousHealthRatio);
 
 		const int32 CurrentStage =
-			Tier->Visual.FindDestructionStageIndex(
-				CurrentHealthRatio);
+			Tier->Visual.FindDestructionStageIndex(CurrentHealthRatio);
 
-		// 새로운 손상 단계에 진입하지 않았다.
-		if (CurrentStage == INDEX_NONE ||
-			CurrentStage <= PreviousStage)
+		if (CurrentStage != INDEX_NONE && CurrentStage > PreviousStage)
 		{
-			return;
+			if (const FBuildingDestruction* StageData =
+					Tier->Visual.GetDestructionStage(CurrentStage))
+			{
+				DestructionActor->ApplyDamageStage(CurrentStage, *StageData);
+			}
 		}
 
-		const FBuildingDestruction* StageData =
-			Tier->Visual.GetDestructionStage(CurrentStage);
+		// 불꽃 구간은 GC 단계와 별개로 판정한다.
+		const int32 FireStep =
+			Tier->Visual.FindSurfaceFireStepIndex(CurrentHealthRatio);
 
-		if (StageData && EnsureDestructionActor())
+		if (const FBuildingSurfaceFireStep* FireStepData =
+				Tier->Visual.GetSurfaceFireStep(FireStep))
 		{
-			DestructionActor->ApplyDamageStage(
-				CurrentStage,
-				*StageData);
-			
-			// 새로운 GC 손상 단계에 진입했을 때만 새 불꽃을 생성한다.
-			//PlayBurningEffect(CurrentStage);
-			
-			return;
+			DestructionActor->SetSurfaceFireStep(FireStep, FireStepData->FireCount);
 		}
-		// GC 생성 실패 시 아래 DamageMesh 경로를 사용한다.
+
+		return;
 	}
 
 	// GC가 없는 건물은 기존 DamageMesh를 사용한다.
@@ -422,9 +416,8 @@ void ASFBaseBuilding::EnterCompletedState()
 	UpdateDamageVisual(1.f,HealthComponent->GetHealthPercent());
 	
 	//성윤 미니맵 마커제작
-	Tags.AddUnique(
-		FName(TEXT("MinimapBuilding"))
-	);
+	Tags.AddUnique(FName(TEXT("MinimapBuilding")));
+
 }
 
 void ASFBaseBuilding::EnterDestroyedState()
@@ -958,6 +951,16 @@ bool ASFBaseBuilding::CacheLoadedDefinitionData()
 			{
 				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
+		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+
+		CachedTier.Visual.SurfaceFireSteps.Sort([](const FBuildingSurfaceFireStep& Left, const FBuildingSurfaceFireStep& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+		
 	}
 	
 	DisplayName = BuildingDefinition->DisplayName;

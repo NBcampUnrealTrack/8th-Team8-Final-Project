@@ -522,20 +522,14 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
         {
             ++AttachedFireCount;
             
-            /*
-             * 레벨은 불꽃 구간을 따른다.
-             * 분리 판정을 실제로 돌린 패스에서만 손댄다.
-             */
-            if (Pieces.State.IsSet())
+            const int32 TargetLevel =
+                SurfaceFireStep - Fire.BornFireStep + 1;
+
+            if (TargetLevel != Fire.ClusterLevel)
             {
-                const int32 TargetLevel = SurfaceFireStep - Fire.BornFireStep + 1;
+                Fire.ClusterLevel = TargetLevel;
 
-                if (TargetLevel != Fire.ClusterLevel)
-                {
-                    Fire.ClusterLevel = TargetLevel;
-
-                    Fire.Component->SetVariableInt(SFVFXParameters::ClusterLevel, TargetLevel);
-                }
+                Fire.Component->SetVariableInt(SFVFXParameters::ClusterLevel, TargetLevel);
             }
         }
         
@@ -543,26 +537,18 @@ void ASFBuildingDestructionActor::UpdateSurfaceFires()
 
     if (!bFinalDestructionApplied)
     {
-        const int32 MissingCount =
-            GetTargetSurfaceFireCount() - AttachedFireCount;
-        
+        const int32 MissingCount = SurfaceFireTarget - AttachedFireCount;
+
         if (MissingCount > 0)
         {
-            AddSurfaceFires(MissingCount, Pieces);
+            AttachedFireCount += AddSurfaceFires(MissingCount, Pieces);
         }
     }
 
-    /*
-     * Break 디스패치 중에 돈 갱신은 한 번 더 돌린다.
-     * 같은 프레임의 나머지 Break를 프레임 가드가 막기 때문에,
-     * 여기서 잠들면 그 프레임에 떨어진 조각을 아무도 다시 보지 않는다.
-     */
     const bool bNeedsNextTick =
         bAnyDetached ||
         (bFinalDestructionApplied && !SurfaceFires.IsEmpty()) ||
-        LastBreakWakeFrame == GFrameCounter ||
-        (!bFinalDestructionApplied &&
-            AttachedFireCount < GetTargetSurfaceFireCount());
+        LastBreakWakeFrame == GFrameCounter;
 
     if (!bNeedsNextTick)
     {

@@ -959,6 +959,16 @@ bool ASFBaseBuilding::CacheLoadedDefinitionData()
 			{
 				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
+		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+
+		CachedTier.Visual.SurfaceFireSteps.Sort([](const FBuildingSurfaceFireStep& Left, const FBuildingSurfaceFireStep& Right)
+			{
+				return Left.HealthThreshold > Right.HealthThreshold;
+			});
+		
 	}
 	
 	DisplayName = BuildingDefinition->DisplayName;

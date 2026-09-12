@@ -22,7 +22,7 @@ public:
 	UMiningComponent();
 	
 	// delegate
-	// 남은량
+	// 이번타임에 자원을 캔량
 	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
 	FSFOnResourceExtracted OnResourceExtracted;
 	// ui progress

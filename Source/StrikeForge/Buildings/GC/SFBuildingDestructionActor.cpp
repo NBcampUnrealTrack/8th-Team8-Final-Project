@@ -258,11 +258,11 @@ bool ASFBuildingDestructionActor::InitializeDestruction(const UGeometryCollectio
     GeometryCollectionComponent->SetEnableDamageFromCollision(false);
     GeometryCollectionComponent->SetCollisionResponseToChannel(
         ECC_Pawn,ECR_Ignore);
-
+    
     // 마우스 선택도 잔해를 통과시킨다.
     GeometryCollectionComponent->SetCollisionResponseToChannel(
         ECC_Visibility,ECR_Ignore);
-
+    
     GeometryCollectionComponent->SetGenerateOverlapEvents(false);
     GeometryCollectionComponent->SetCanEverAffectNavigation(false);
     
@@ -449,26 +449,26 @@ void ASFBuildingDestructionActor::ApplyNextStrainHit()
 void ASFBuildingDestructionActor::SchedulePendingImpulse()
 {
     GetWorldTimerManager().ClearTimer(ImpulseTimerHandle);
-
+    
     if (bFinalDestructionApplied)
     {
         GeometryCollectionComponent->CrumbleActiveClusters();
     }
-
+    
     // 최종 파괴 후에도 남은 불을 정리하려면 루프가 계속 돌아야 한다.
     StartSurfaceFireMaintenance();
-
+    
     if (PendingImpulseStrength <= 0.f)
     {
         return;
     }
-
+    
     if (PendingImpulseDelay <= 0.f)
     {
         ApplyPendingImpulse();
         return;
     }
-
+    
     GetWorldTimerManager().SetTimer(
         ImpulseTimerHandle,
         this,

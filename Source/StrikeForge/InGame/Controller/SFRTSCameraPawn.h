@@ -10,6 +10,7 @@ class UCameraComponent;
 class UFloatingPawnMovement;
 class UInputAction;
 class UInputComponent;
+class USphereComponent;
 class USceneComponent;
 class USpringArmComponent;
 
@@ -37,6 +38,13 @@ protected:
     virtual void SetupPlayerInputComponent(
         UInputComponent* PlayerInputComponent
     ) override;
+
+    UPROPERTY(
+        VisibleAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Camera"
+    )
+    TObjectPtr<USphereComponent> CameraCollision;
 
     UPROPERTY(
         VisibleAnywhere,

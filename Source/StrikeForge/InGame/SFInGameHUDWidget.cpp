@@ -93,9 +93,9 @@ void USFInGameHUDWidget::NativeConstruct()
 
     if (IsValid(ProductionBuildingPanel))
     {
-        ProductionBuildingPanel->OnProductionResourceWarningRequested.RemoveDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.RemoveDynamic(this, &USFInGameHUDWidget::HandleProductionResourceWarningRequested);
 
-        ProductionBuildingPanel->OnProductionResourceWarningRequested.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleProductionResourceWarningRequested);
+        ProductionBuildingPanel->OnProductionResourceWarningRequested.AddUniqueDynamic(this, &USFInGameHUDWidget::HandleProductionResourceWarningRequested);
     }
 
     PlayerController->OnSelectInput.AddUniqueDynamic(
@@ -405,6 +405,7 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(AActor* DestroyedActor)
         return;
     }
 
+    RefreshRallyPointIndicator();
     RefreshMultiSelectionPanel();
 
     SF_LOG(
@@ -1090,7 +1091,7 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
     const bool bIsBuildingSelected =
         SelectedInfo.SelectableType ==
         ESFSelectableType::MainBuilding ||
-        SelectedInfo.SelectableType == 
+        SelectedInfo.SelectableType ==
         ESFSelectableType::NormalBuilding ||
         SelectedInfo.SelectableType ==
         ESFSelectableType::ProductionBuilding ||
@@ -1178,7 +1179,7 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
         SelectableInfo.Tier = HealthData.CurrentTier + 1;
     }
 
-    ApplySelectionUIData(Actor,SelectableInfo);
+    ApplySelectionUIData(Actor, SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
 
     // 선택음은 여기서 한 번만 울린다.
@@ -1200,6 +1201,71 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
             Actor->GetActorLocation()
         );
     }
+}
+
+void USFInGameHUDWidget::SelectAllOwnedUnits()
+{
+    UWorld* World = GetWorld();
+
+    if (!IsValid(World))
+    {
+        return;
+    }
+
+    TArray<AActor*> FoundUnits;
+
+    for (TActorIterator<AUnitBase> Iterator(World); Iterator; ++Iterator)
+    {
+        AUnitBase* Unit = *Iterator;
+
+        if (!IsValid(Unit) || !IsOwnedByLocalPlayer(Unit))
+        {
+            continue;
+        }
+
+        if (!Unit->GetClass()->ImplementsInterface(USFSelectable::StaticClass()))
+        {
+            continue;
+        }
+
+        if (Unit->GetCombatState() == EUnitCombatState::Dead)
+        {
+            continue;
+        }
+
+        const FSFSelectableInfo SelectableInfo =
+            ISFSelectable::Execute_GetSelectableInfo(Unit);
+
+        if (SelectableInfo.SelectableType != ESFSelectableType::Unit &&
+            SelectableInfo.SelectableType != ESFSelectableType::Commander)
+        {
+            continue;
+        }
+
+        FoundUnits.Add(Unit);
+    }
+
+    FoundUnits.Sort(
+        [](const AActor& Left, const AActor& Right)
+        {
+            return Left.GetName() < Right.GetName();
+        }
+    );
+
+    if (FoundUnits.IsEmpty())
+    {
+        ClearSelection();
+        SF_LOG(Log, "[SFInGameHUDWidget] Select-all found no living units or commander.");
+        return;
+    }
+
+    ApplyMultipleSelection(FoundUnits);
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] All owned units selected | Count: %d",
+        FoundUnits.Num()
+    );
 }
 
 bool USFInGameHUDWidget::TryHandleUnitDoubleClick(
@@ -2111,6 +2177,7 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         ShowSelectionIndicator(Actor);
     }
 
+    RefreshRallyPointIndicator();
     BindSelectedActorsDestroyed();
     RefreshMultiSelectionPanel();
 
@@ -2168,7 +2235,7 @@ void USFInGameHUDWidget::RefreshMultiSelectionPanel()
         FSFSelectableInfo SelectableInfo =
             ISFSelectable::Execute_GetSelectableInfo(Actor);
 
-        ApplySelectionUIData(Actor,SelectableInfo);
+        ApplySelectionUIData(Actor, SelectableInfo);
 
         ValidActors.Add(Actor);
         SelectableInfos.Add(SelectableInfo);
@@ -2272,6 +2339,7 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
     }
 
     RefreshSelectedPortrait();
+    RefreshRallyPointIndicator();
     RefreshMultiSelectionPanel();
 
     SF_LOG(
@@ -2774,7 +2842,7 @@ void USFInGameHUDWidget::BindSelectedProductionBuilding(
         SelectedBuildingForTierDelegate =
             BaseBuilding;
 
-        SelectedBuildingForTierDelegate->OnBuildingTierActivated.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
+        SelectedBuildingForTierDelegate->OnBuildingTierActivated.AddUniqueDynamic(this, &USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
     }
 
     // 생산 건물 전용 델리게이트 연결
@@ -2784,7 +2852,7 @@ void USFInGameHUDWidget::BindSelectedProductionBuilding(
     {
         SelectedProductionBuilding = ProductionBuilding;
 
-        SelectedProductionBuilding->OnSpawnableUnitsChanged.AddUniqueDynamic(this,&USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
+        SelectedProductionBuilding->OnSpawnableUnitsChanged.AddUniqueDynamic(this, &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
     }
 }
 
@@ -2792,7 +2860,7 @@ void USFInGameHUDWidget::UnbindSelectedProductionBuilding()
 {
     if (SelectedBuildingForTierDelegate.IsValid())
     {
-        SelectedBuildingForTierDelegate->OnBuildingTierActivated.RemoveDynamic(this,&USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
+        SelectedBuildingForTierDelegate->OnBuildingTierActivated.RemoveDynamic(this, &USFInGameHUDWidget::HandleSelectedBuildingTierActivated);
     }
 
     SelectedBuildingForTierDelegate = nullptr;
@@ -2800,7 +2868,7 @@ void USFInGameHUDWidget::UnbindSelectedProductionBuilding()
 
     if (SelectedProductionBuilding.IsValid())
     {
-        SelectedProductionBuilding->OnSpawnableUnitsChanged.RemoveDynamic(this,&USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
+        SelectedProductionBuilding->OnSpawnableUnitsChanged.RemoveDynamic(this, &USFInGameHUDWidget::HandleSelectedProductionBuildingTierActivated);
     }
 
     SelectedProductionBuilding = nullptr;
@@ -2855,7 +2923,7 @@ HandleSelectedProductionBuildingTierActivated(
 
 void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier)
 {
-    AActor* Actor =SelectedActor.Get();
+    AActor* Actor = SelectedActor.Get();
 
     if (!IsValid(Actor))
     {
@@ -2890,9 +2958,43 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
 {
     HideRallyPointIndicator();
 
-    ASFProductionBuilding* ProductionBuilding =
-        Cast<ASFProductionBuilding>(SelectedActor.Get());
+    TArray<ASFProductionBuilding*> SelectedProductionBuildings;
 
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        ASFProductionBuilding* ProductionBuilding =
+            Cast<ASFProductionBuilding>(ActorPtr.Get());
+
+        if (IsValid(ProductionBuilding) &&
+            !SelectedProductionBuildings.Contains(ProductionBuilding))
+        {
+            SelectedProductionBuildings.Add(ProductionBuilding);
+        }
+    }
+
+    // 단일 선택 경로에서는 SelectedActors가 아직 갱신되기 전에도
+    // 이 함수가 호출될 수 있으므로 기본 선택 액터를 보완한다.
+    if (SelectedProductionBuildings.IsEmpty())
+    {
+        ASFProductionBuilding* ProductionBuilding =
+            Cast<ASFProductionBuilding>(SelectedActor.Get());
+
+        if (IsValid(ProductionBuilding))
+        {
+            SelectedProductionBuildings.Add(ProductionBuilding);
+        }
+    }
+
+    for (ASFProductionBuilding* ProductionBuilding : SelectedProductionBuildings)
+    {
+        CreateRallyPointIndicatorsForBuilding(ProductionBuilding);
+    }
+}
+
+void USFInGameHUDWidget::CreateRallyPointIndicatorsForBuilding(
+    ASFProductionBuilding* ProductionBuilding
+)
+{
     if (!IsValid(ProductionBuilding) ||
         !IsOwnedByLocalPlayer(ProductionBuilding) ||
         !ProductionBuilding->HasRallyPoint())
@@ -3038,7 +3140,7 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
     const float RallyRingMeshSize =
         90.f;
 
-    RallyPointIndicator =
+    if (UStaticMeshComponent* RallyPointIndicator =
         CreateRallyMesh(
             RallyPointIndicatorMaterial,
             FVector(
@@ -3053,7 +3155,10 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
             ),
             FRotator::ZeroRotator,
             12
-        );
+        ))
+    {
+        RallyPointIndicators.Add(RallyPointIndicator);
+    }
 
     /*
      * 2. 건물 중심에서 랠리포인트까지 경로 계산
@@ -3097,7 +3202,7 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
      * 3. 점선 경로 Mesh
      */
 
-    RallyPathIndicator =
+    if (UStaticMeshComponent* RallyPathIndicator =
         CreateRallyMesh(
             RallyPathIndicatorMaterial,
             FVector(
@@ -3112,7 +3217,10 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
                 0.f
             ),
             11
-        );
+        ))
+    {
+        RallyPathIndicators.Add(RallyPathIndicator);
+    }
 
     SF_LOG(
         Log,
@@ -3123,17 +3231,23 @@ void USFInGameHUDWidget::RefreshRallyPointIndicator()
 
 void USFInGameHUDWidget::HideRallyPointIndicator()
 {
-    if (IsValid(RallyPointIndicator))
+    for (UStaticMeshComponent* Indicator : RallyPointIndicators)
     {
-        RallyPointIndicator->DestroyComponent();
-        RallyPointIndicator = nullptr;
+        if (IsValid(Indicator))
+        {
+            Indicator->DestroyComponent();
+        }
     }
+    RallyPointIndicators.Empty();
 
-    if (IsValid(RallyPathIndicator))
+    for (UStaticMeshComponent* Indicator : RallyPathIndicators)
     {
-        RallyPathIndicator->DestroyComponent();
-        RallyPathIndicator = nullptr;
+        if (IsValid(Indicator))
+        {
+            Indicator->DestroyComponent();
+        }
     }
+    RallyPathIndicators.Empty();
 }
 
 bool USFInGameHUDWidget::IsPointerOverHUDPanel()
@@ -3174,7 +3288,7 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
     auto IsWidgetUnderMouse =
         [&MouseAbsolutePosition](
             const UWidget* Widget
-        ) -> bool
+            ) -> bool
         {
             if (!IsValid(Widget))
             {
@@ -3234,6 +3348,22 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
         return true;
     }
 
+    // 가운데 패널의 자식이 아닌 빈 공간도 HUD 입력으로 처리한다.
+    if (IsWidgetUnderMouse(CenterPanel))
+    {
+        return true;
+    }
+
+    // BindWidget 연결 전/이름 기반 WBP 구성도 지원한다.
+    if (UWidget* CenterPanelWidget =
+        GetWidgetFromName(TEXT("CenterPanel")))
+    {
+        if (IsWidgetUnderMouse(CenterPanelWidget))
+        {
+            return true;
+        }
+    }
+
     // 자원 패널
     if (UWidget* ResourceWidget =
         GetWidgetFromName(
@@ -3270,19 +3400,28 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
     }
 
     // 빌드 카탈로그의 실제 패널만 검사한다.
-    // ActiveBuildingModeWidget 전체를 검사하면 안 된다.
+    // ActiveBuildingModeWidget 전체를 검사하면 월드 배치 영역까지 막을 수 있다.
     if (IsValid(ActiveBuildingModeWidget))
     {
-        UWidget* BuildCatalogWidget =
-            ActiveBuildingModeWidget->GetWidgetFromName(
-                TEXT("BuildCatalogPanel")
-            );
-
-        if (IsWidgetUnderMouse(BuildCatalogWidget))
+        const FName BuildPanelNames[] =
         {
-            return true;
+            TEXT("BuildCatalogPanel"),
+            TEXT("BuildingModePanelSizeBox")
+        };
+
+        for (const FName& BuildPanelName : BuildPanelNames)
+        {
+            UWidget* BuildPanelWidget =
+                ActiveBuildingModeWidget->GetWidgetFromName(
+                    BuildPanelName
+                );
+
+            if (IsWidgetUnderMouse(BuildPanelWidget))
+            {
+                return true;
+            }
         }
     }
 
     return false;
-}       
+}

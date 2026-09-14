@@ -150,7 +150,10 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 		}
 	}
 
-	// Nexus를 우선 생성한다.
+	int32 SpawnedBuildingCount = 0;
+	int32 SkippedAnchorCount = 0;
+
+	// Nexus는 스테이지 진행에 필수이므로 기존처럼 실패 처리한다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
 		if (Anchor->GetBuildingType() != ESFBuildingType::Nexus)
@@ -160,11 +163,16 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 		if (!SpawnBuildingAtAnchor(Anchor))
 		{
+			SF_LOG(Error, "[SFGameMode] 필수 Nexus Anchor 생성 실패. Anchor=%s",
+				*GetNameSafe(Anchor));
+
 			return false;
 		}
+
+		++SpawnedBuildingCount;
 	}
 
-	// House, Mine, Production 등을 생성한다.
+	// House, Mine, Production 등은 실패한 Anchor만 건너뛴다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
@@ -174,16 +182,32 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 		if (!SpawnBuildingAtAnchor(Anchor))
 		{
-			return false;
+			++SkippedAnchorCount;
+
+			SF_LOG(Warning,
+				"[SFGameMode] Anchor 건물을 건너뜁니다. "
+				"Anchor=%s, Team=%d, Type=%s",
+				*GetNameSafe(Anchor), Anchor->GetTeamIndex(), *UEnum::GetValueAsString(Anchor->GetBuildingType()));
+
+			continue;
 		}
+
+		++SpawnedBuildingCount;
 	}
-	
-	// 완료하면 destory한다
+
+	// 성공 여부와 관계없이 런타임 Anchor는 정리한다.
 	for (ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
-		Anchor->Destroy();
+		if (IsValid(Anchor))
+		{
+			Anchor->Destroy();
+		}
 	}
-	return true;
+
+	SF_LOG(Log, "[SFGameMode] Anchor 생성 완료. 성공=%d, 건너뜀=%d",
+		SpawnedBuildingCount, SkippedAnchorCount);
+
+	return SpawnedBuildingCount > 0;
 }
 
 bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
@@ -462,16 +486,20 @@ void ASFGameMode::HandleRaceDataReady(ESFRace InRace, bool bSuccess)
 		}
 	}
 
-	if (!SFGameState->InitializeStage(
-		BootstrapStageRowName,
-		BootstrapBuildingRules
-	))
+	if (!SFGameState->InitializeStage(BootstrapStageRowName,BootstrapBuildingRules))
 	{
 		FailStageBootstrap();
 		return;
 	}
-
-	RequestInitialBuildingAssets();
+	
+	// 30% Loading Completed Timer 1.f
+	GetWorldTimerManager().SetTimer(
+	Stage30PercentDelayTimerHandle,
+	this,
+	&ThisClass::RequestInitialBuildingAssets,
+	Stage30PercentDelayTime,
+	false);
+	
 }
 
 void ASFGameMode::RequestInitialBuildingAssets()
@@ -521,8 +549,7 @@ void ASFGameMode::RequestInitialBuildingAssets()
         : BootstrapTeamRaces)
     {
         USFBuildingCatalog* Catalog =
-            SFGameState->GetTeamBuildingCatalog(
-                Team.Key);
+            SFGameState->GetTeamBuildingCatalog(Team.Key);
 
         if (!IsValid(Catalog))
         {
@@ -721,13 +748,17 @@ void ASFGameMode::HandleInitialBuildingAssetsReady(USFBuildingDefinition* InDefi
 	SF_LOG(Log,
 		"[SFGameMode] 초기 Tier 준비 완료. "
 		"Definition=%s, Tier=%d, Remaining=%d",
-		*GetNameSafe(InDefinition),
-		InTierIndex,
-		PendingInitialBuildingAssetRequestCount);
+		*GetNameSafe(InDefinition),	InTierIndex, PendingInitialBuildingAssetRequestCount);
 
 	if (PendingInitialBuildingAssetRequestCount == 0)
 	{
-		BeginStageRenderPreparation();
+		// 90% Loading Completed Timer 1.f
+		GetWorldTimerManager().SetTimer(
+		Stage90PercentDelayTimerHandle,
+		this,
+		&ThisClass::BeginStageRenderPreparation,
+		Stage90PercentDelayTime,
+		false);
 	}
 }
 
@@ -777,10 +808,10 @@ void ASFGameMode::BeginStageRenderPreparation()
 	SFGameState->SetStageLoadingProgress(0.98f);
 
 	GetWorldTimerManager().SetTimer(
-		StageRenderPreparationTimerHandle,
+		Stage98PercentDelayTimerHandle,
 		this,
 		&ThisClass::CompleteStageBootstrap,
-		StageRenderPreparationDelay,
+		Stage98PercentDelayTime,
 		false);
 }
 
@@ -828,7 +859,7 @@ void ASFGameMode::FailStageBootstrap()
 	
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(StageRenderPreparationTimerHandle);
+		World->GetTimerManager().ClearTimer(Stage98PercentDelayTimerHandle);
 	}
 
 	

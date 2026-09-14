@@ -7,6 +7,7 @@
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "GameFramework/Actor.h"
 #include "Interface/Minable.h"
+#include "InGame/SFSelectINfo/SFSelectable.h"
 #include "ResourceBase.generated.h"
 
 class UBoxComponent;
@@ -16,6 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnResourceNodeDepleted, AResource
 UCLASS(Abstract)
 class STRIKEFORGE_API AResourceBase 
 	: public AActor
+	, public ISFSelectable
 	, public IMinable
 {
 	GENERATED_BODY()
@@ -27,7 +29,7 @@ public:
 	FSFOnResourceNodeDepleted OnDepleted;
 	
 	virtual int32 Extract(int32 InDigAmount) override;
-	
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	// Getter
 	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
 	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }

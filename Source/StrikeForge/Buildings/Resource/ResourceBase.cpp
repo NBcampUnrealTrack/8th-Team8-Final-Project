@@ -38,6 +38,14 @@ int32 AResourceBase::Extract(int32 InDigAmount)
 	return ExtractedAmount;
 }
 
+FSFSelectableInfo AResourceBase::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info;
+	SF_LOG(Warning, "%s Selected.", *UEnum::GetValueAsString(ResourceType));
+	
+	return Info;
+}
+
 void AResourceBase::BeginPlay()
 {
 	Super::BeginPlay();

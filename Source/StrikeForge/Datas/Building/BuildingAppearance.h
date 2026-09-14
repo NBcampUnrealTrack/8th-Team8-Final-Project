@@ -234,7 +234,7 @@ struct STRIKEFORGE_API FBuildingVisualData
 
 		return Result;
 	}
-	/** 지금까지 넘어선 불꽃 구간 수. 그대로 목표 불꽃 개수가 된다. */
+	/** 현재 체력 비율에 해당하는 불꽃 구간 인덱스를 반환한다. */
 	int32 FindSurfaceFireStepIndex(float HealthRatio) const
 	{
 		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);

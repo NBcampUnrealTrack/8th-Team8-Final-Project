@@ -118,19 +118,25 @@ private:
 	int32 TotalInitialBuildingAssetRequestCount = 0;
 	int32 PendingInitialBuildingAssetRequestCount = 0;
 	
+	/** 30% 종족로딩완료시 DelayTime */
+	FTimerHandle Stage30PercentDelayTimerHandle;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
+	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+	float Stage30PercentDelayTime = 0.5f;
+	/** 90% 건물로딩완료시 DelayTime */
+	FTimerHandle Stage90PercentDelayTimerHandle;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
+	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+	float Stage90PercentDelayTime = 0.5f;
 	/** Anchor 생성 후 렌더 준비 시간을 관리한다. */
-	FTimerHandle StageRenderPreparationTimerHandle;
+	FTimerHandle Stage98PercentDelayTimerHandle;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
+	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+	float Stage98PercentDelayTime = 0.5f;
 
 	/** 렌더 준비 타이머의 중복 실행을 방지한다. */
 	bool bStageRenderPreparationStarted = false;
 
-	/**
-	 * Anchor 생성 완료 후 ReadyToStart까지 기다릴 시간이다.
-	 * 실제 렌더 완료 신호가 아니라 화면 표시를 위한 준비 시간이다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
-		meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
-	float StageRenderPreparationDelay = 0.5f;
 private:
 	UPROPERTY()
 	TObjectPtr<ASFGameState> SFGameState;

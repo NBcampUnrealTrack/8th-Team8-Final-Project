@@ -1,7 +1,7 @@
 ﻿#include "SFBuildingGridSubsystem.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "GameFramework/Actor.h"
-#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
+#include "Buildings/Resource/Interface/SFMinable.h"
 
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -75,8 +75,8 @@ bool USFBuildingGridSubsystem::CanPlacePlayerBuildingGrid(const AActor* Building
 		return false;
 	}
 
-	const ISFGridResourceConsumer* Consumer =
-		Cast<ISFGridResourceConsumer>(Building);
+	const IMinable* Consumer =
+		Cast<IMinable>(Building);
 
 	// 일반 건물은 CanRegisterBuildingGrid 결과만 따르면 된다.
 	if (!Consumer)
@@ -608,8 +608,8 @@ bool USFBuildingGridSubsystem::CanShareResourceGrid(const AActor* Building, cons
 		return false;
 	}
 
-	const ISFGridResourceConsumer* Consumer =
-		Cast<ISFGridResourceConsumer>(Building);
+	const IMinable* Consumer =
+		Cast<IMinable>(Building);
 
 	return Consumer &&
 		Consumer->CanAcceptResource(Resource);
@@ -668,8 +668,8 @@ bool USFBuildingGridSubsystem::TryResolveResourceConnection(AActor* Building, AR
 		return false;
 	}
 
-	ISFGridResourceConsumer* Consumer =
-		Cast<ISFGridResourceConsumer>(Building);
+	IMinable* Consumer =
+		Cast<IMinable>(Building);
 
 	if (!Consumer ||
 		!Consumer->CanAcceptResource(Resource))
@@ -687,8 +687,8 @@ void USFBuildingGridSubsystem::DisconnectResourceConnection(AActor* Building, co
 		return;
 	}
 
-	ISFGridResourceConsumer* Consumer =
-		Cast<ISFGridResourceConsumer>(Building);
+	IMinable* Consumer =
+		Cast<IMinable>(Building);
 
 	if (Consumer)
 	{

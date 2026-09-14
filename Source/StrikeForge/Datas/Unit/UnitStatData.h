@@ -157,4 +157,18 @@ struct FUnitStatData : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Selection")
 	TSoftObjectPtr<class USoundBase> SelectionSound;
+
+	/**
+	 * 이 유닛에게 이동 명령을 내렸을 때 재생할 소리.
+	 *
+	 * 비워두면 소리가 나지 않는다 — 소리를 줄 유닛만 채우면 된다.
+	 * SelectionSound 와 마찬가지로 AUnitBase::InitStat 이 스폰 때 한 번만
+	 * 로드한다. 명령할 때마다 로드하면 그 유닛에게 처음 명령하는 순간
+	 * 히치가 생긴다.
+	 *
+	 * 여러 기를 한꺼번에 움직여도 한 기만 대답한다 — 간격은
+	 * sf.CommandVoiceInterval 로 조절한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Command")
+	TSoftObjectPtr<class USoundBase> MoveCommandSound;
 };

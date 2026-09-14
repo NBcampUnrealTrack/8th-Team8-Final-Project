@@ -46,6 +46,18 @@ FSFSelectableInfo AResourceBase::GetSelectableInfo_Implementation()
 	return Info;
 }
 
+FBeMinedableData AResourceBase::GetBeMinedableData() const
+{
+	FBeMinedableData Data;
+	
+	Data.ResourceType = ResourceType;
+	Data.ResourceLeftAmount = ResourceDeposit;
+	Data.ResourceTier = ResourceTier;
+	Data.ResourceRequiredWork = ResourceRequiredWork;
+	
+	return Data;
+}
+
 void AResourceBase::BeginPlay()
 {
 	Super::BeginPlay();
@@ -68,6 +80,8 @@ void AResourceBase::BeginPlay()
 		SF_LOG(Warning, "Resource: %s Failed to Register GridSystem", *GetName());
 		Destroy();
 	}
+	
+	SetBoxExtent();
 }
 
 void AResourceBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -83,4 +97,17 @@ void AResourceBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	
 	Super::EndPlay(EndPlayReason);
+}
+
+void AResourceBase::SetBoxExtent()
+{
+	const FBoxSphereBounds BoundsInParent = StaticMeshComponent->CalcBounds(
+		StaticMeshComponent->GetRelativeTransform());
+	const FVector DownSizeBoxExtent = BoundsInParent.BoxExtent * 0.85f;
+	const float SubBoxExtentZ = BoundsInParent.BoxExtent.Z - DownSizeBoxExtent.Z;
+	FVector CustomOrigin = BoundsInParent.Origin;
+	CustomOrigin.Z -= SubBoxExtentZ;
+	
+	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
+	BoxComponent->SetRelativeLocation(CustomOrigin);
 }

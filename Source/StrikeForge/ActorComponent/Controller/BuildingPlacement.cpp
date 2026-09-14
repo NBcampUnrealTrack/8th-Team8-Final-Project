@@ -4,7 +4,7 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
-#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
+#include "Buildings/Resource/Interface/SFMinable.h"
 
 UBuildingPlacement::UBuildingPlacement()
 {
@@ -89,7 +89,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
 		
 		const bool bUsesResourceGrid =
-			Cast<ISFGridResourceConsumer>(
+			Cast<IMinable>(
 		TargetBuilding.Get()) != nullptr;
 
 		const bool bCanPlaceOnNavigation =
@@ -170,7 +170,7 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	}
 
 	const bool bUsesResourceGrid =
-		Cast<ISFGridResourceConsumer>(Building) != nullptr;
+		Cast<IMinable>(Building) != nullptr;
 
 	const bool bCanPlaceOnNavigation =
 		bUsesResourceGrid ||

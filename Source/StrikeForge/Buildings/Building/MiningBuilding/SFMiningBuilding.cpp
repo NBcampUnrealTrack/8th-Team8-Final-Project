@@ -57,6 +57,20 @@ FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
 	return Info;
 }
 
+const FMinableData ASFMiningBuilding::GetMinableData()
+{
+	FMinableData Data;
+	
+	Data.ExtractAmount = GetExtractAmount();
+	Data.ResourceLeftAmount = GetResourceAmount();
+	Data.GetMiningProgressRatio = GetMiningProgressRatio();
+	Data.ResourceType = GetMineResourceType();
+	Data.UpgradeCost = GetUpgradeCost();
+	Data.MiningComponent = MiningComponent;
+	
+	return Data;
+}
+
 void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 {
 	Super::OnBuildingDefinitionLoaded();
@@ -197,6 +211,18 @@ int32 ASFMiningBuilding::GetExtractAmount() const
 {
 	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetExtractAmount::InValid MiningComponent"));
 	return MiningComponent->GetExtractAmount();
+}
+
+int32 ASFMiningBuilding::GetResourceAmount() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetResourceAmount::InValid MiningComponent"));
+	return MiningComponent->GetRemainingDeposit();
+}
+
+float ASFMiningBuilding::GetMiningProgressRatio() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMiningProgressRatio::InValid MiningComponent"));
+	return MiningComponent->GetExtractProgressRatio();
 }
 
 // delegates

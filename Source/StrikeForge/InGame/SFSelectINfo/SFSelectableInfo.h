@@ -16,6 +16,7 @@ enum class ESFSelectableType : uint8
     NormalBuilding      UMETA(DisplayName = "Normal Building"),
     ProductionBuilding  UMETA(DisplayName = "Production Building"),
     ResourceBuilding    UMETA(DisplayName = "Resource Building"),
+    Resource            UMETA(DisplayName = "Resource"),
     Unit                UMETA(DisplayName = "Unit")
 };
 

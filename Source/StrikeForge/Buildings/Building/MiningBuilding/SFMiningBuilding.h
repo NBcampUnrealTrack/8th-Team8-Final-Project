@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Buildings/Resource/Interface/SFGridResourceConsumer.h"
+#include "Buildings/Resource/Interface/SFMinable.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFMiningBuilding.generated.h"
 
@@ -12,13 +12,14 @@ class AResourceBase;
 UCLASS()
 class STRIKEFORGE_API ASFMiningBuilding 
 	: public ASFBaseBuilding
-	, public ISFGridResourceConsumer
+	, public IMinable
 {
 	GENERATED_BODY()
 
 public:
 	ASFMiningBuilding();
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+	virtual const FMinableData GetMinableData() override;
 	
 	void BindDelegateFunction();
 	void UnBindDelegateFunction();
@@ -30,20 +31,17 @@ public:
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
 
-	// ISFGridResourceConsumer
-	virtual bool CanAcceptResource(
-		const AResourceBase* InResource) const override;
+	// Minable
+	virtual bool CanAcceptResource(const AResourceBase* InResource) const override;
+	virtual bool TryLinkResource(AResourceBase* InResource) override;
+	virtual void UnlinkResource(const AResourceBase* InResource) override;
 
-	virtual bool TryLinkResource(
-		AResourceBase* InResource) override;
-
-	virtual void UnlinkResource(
-		const AResourceBase* InResource) override;
-
-	// getter
+	// getter ui 초기값 설정
 	EResourceType GetMineResourceType() const;
 	int32 GetExtractAmount() const;
-
+	int32 GetResourceAmount() const;
+	float GetMiningProgressRatio() const;
+	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -20,9 +20,9 @@ struct FSFPieceSpot
 {
 	FVector LocalLocation = FVector::ZeroVector;
 	int32 PieceIndex = INDEX_NONE;
-
 	// GC 조각 Attach에 사용
 	FName BoneName = NAME_None;
+	FVector BoneLocalLocation = FVector::ZeroVector;
 	
 	/** rest 상태 조각 스케일. 축소 판정의 분모. */
 	float RestScale = 1.f;
@@ -62,7 +62,7 @@ class STRIKEFORGE_API ASFBuildingDestructionActor : public AActor
 public:
 	ASFBuildingDestructionActor();
 
-	/** 건물이 첫 손상 단계에 들어갈 때 1회. */
+	/** 건물 완성 시 GC와 Root Proxy 및 Chaos 시뮬레이션을 준비한다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	bool InitializeDestruction(const UGeometryCollection* InCollection);
 
@@ -73,14 +73,13 @@ public:
 	/** 체력 0에서 호출한다. DebrisLifetime 후 Actor를 제거한다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void ApplyFinalDestruction(int32 FinalStageIndex, const FBuildingDestruction& StageData);
-	/** 불꽃 구간에 진입할 때 건물이 부른다. 구간 번호가 레벨을, 개수가 목표를 정한다. */
+	/** 불꽃 구간에 진입할 때 호출한다. 구간 번호는 Niagara 표현 단계이고 FireCount는 목표 개수다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void SetSurfaceFireStep(int32 StepIndex, int32 FireCount);
-	
 	/** 목표 불꽃 개수. 구간 데이터에서 받는다. */
 	UPROPERTY(Transient)
 	int32 SurfaceFireTarget = 0;
-	/** 현재 불꽃 구간 번호. 레벨 계산에만 쓴다. */
+	/** 기존 불꽃의 Niagara 표현 단계를 계산하는 불꽃 구간 번호. */
 	UPROPERTY(Transient)
 	int32 SurfaceFireStep = INDEX_NONE;
 	
@@ -106,7 +105,7 @@ private:
 	static void RemoveSurfaceFire(FSFSurfaceFire& Fire);
 	bool IsPieceShrunk(const FSFPieceState& Pieces, int32 PieceIndex, float RestScale) const;
 	bool IsPieceOnBuilding(const FSFPieceState& Pieces, int32 PieceIndex) const;
-	int32 GetTargetSurfaceFireCount() const;
+
 	int32 AddSurfaceFires(int32 DesiredCount, const FSFPieceState& Pieces);
 	void BuildPieceSpotTable();
 
@@ -144,15 +143,21 @@ private:
 	float SurfaceFireMinHeightRatio = 0.f;
 
 	// 배치 범위
-	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound", meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="1.0"))
 	float SurfaceFireMinDistanceRatio = 0.2f;
-	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound", meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="1.0"))
 	float SurfaceFireMinRadialRatio = 0.f;
-	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound", meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="1.0"))
 	float SurfaceFireMaxRadialRatio = 0.85f;
-	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="0.45"))
+	UPROPERTY(
+	EditDefaultsOnly,
+	Category="BurnTest|SpawnBound",
+	meta=(ClampMin="0.0", ClampMax="0.5"))
 	float SurfaceFireRadialRatioStepPerLevel = 0.15f;
-
+	/** 조각 바운드가 레벨별 클러스터 바운드 가장자리에서 어느 정도 안쪽까지 있으면 표면 조각으로 인정할지 결정한다. */
+	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="0.5"))
+	float SurfaceFireClusterSurfaceTolerance = 0.08f;
+	
 	// ---- 런타임 상태: 파괴 단계 ----
 	FBox CachedRestBounds = FBox(ForceInit);
 
@@ -160,19 +165,25 @@ private:
 	UPROPERTY(Transient) int32 AppliedClusterDepth = 0;
 	UPROPERTY(Transient) int32 PendingTargetClusterDepth = 0;
 
+	UPROPERTY(Transient)
+	bool bInitialized = false;
+	UPROPERTY(Transient)
+	bool bFinalDestructionApplied = false;
+	
 	FVector PendingImpulseOrigin = FVector::ZeroVector;
 	float PendingImpulseRadius = 0.f;
 	float PendingImpulseStrength = 0.f;
 	float PendingImpulseDelay = 0.f;
 
-	UPROPERTY(Transient) bool bInitialized = false;
-	UPROPERTY(Transient) bool bFinalDestructionApplied = false;
+	// UPROPERTY(Transient) bool bInitialized = false;
+	// UPROPERTY(Transient) bool bFinalDestructionApplied = false;
 
 	// ---- 런타임 상태: 불꽃 ----
 	UPROPERTY(Transient)
 	TArray<FSFSurfaceFire> SurfaceFires;
 
-	TArray<FSFPieceSpot> CachedPieceSpots;
+	/** 배열 인덱스가 GC 계층 Level이다. 각 배열에는 해당 Level에서 표면으로 판단된 리프 조각 후보가 들어간다. */
+	TArray<TArray<FSFPieceSpot>> CachedSurfaceSpotsByLevel;
 	bool bPieceSpotsBuilt = false;
 	uint64 LastBreakWakeFrame = MAX_uint64;
 

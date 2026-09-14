@@ -11,6 +11,7 @@
 class AResourceBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSFOnResourceExtracted, EResourceType, ResourceType, int32, Amount);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSFOnRemainingDepositChanged, EResourceType, ResourceType, int32, Remaining);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSFOnExtractProgressRatio, EResourceType, ResourceType, float, CurrentExtractRatio);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnResourceDepleted);
 
@@ -22,11 +23,17 @@ public:
 	UMiningComponent();
 	
 	// delegate
+	// 이번타임에 자원을 캔량
 	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
 	FSFOnResourceExtracted OnResourceExtracted;
+	// 연결된 자원의 남은 양.
+	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
+	FSFOnRemainingDepositChanged OnRemainingDepositChanged;
 	// ui progress
+	// 채굴진행도
 	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
 	FSFOnExtractProgressRatio OnExtractProgressRatioChanged;
+	// 고갈시
 	UPROPERTY(BlueprintAssignable, Category = "Mining|Info|Delegate")
 	FSFOnResourceDepleted OnResourceDepleted;
 	
@@ -50,9 +57,14 @@ public:
 	// getter
 	FORCEINLINE EResourceType GetMineResourceType() const { return MineResourceType; }
 	FORCEINLINE int32 GetExtractAmount() const { return ExtractAmount; }
+	// 현재 남은 자원량 get
+	int32 GetRemainingDeposit() const;
+	/** 현재 채굴 진행률. get */
+	float GetExtractProgressRatio() const;
+	
+	
 	// 자원이 연결되있는지 확인
 	bool IsLinkedResource(const AResourceBase* InResource) const;
-	
 	void UnlinkResource();
 	UFUNCTION()
 	void HandleResourceDepleted(AResourceBase* Resource);

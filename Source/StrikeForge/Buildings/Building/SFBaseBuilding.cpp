@@ -86,9 +86,7 @@ void ASFBaseBuilding::TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo
 		{
 			if (DamageInfo.HitActor.IsValid())
 			{
-				HitDirection = GetActorLocation() - DamageInfo.HitActor->GetActorLocation();
-				HitDirection.Z = 0;
-				HitDirection.Normalize();
+				HitDirection = GetActorLocation() -	DamageInfo.HitActor->GetActorLocation();
 			}
 			PlayHitReaction(HitDirection);
 		}
@@ -162,74 +160,102 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 	}
 
 	const FSFBuildingTierData* Tier = GetCurrentTierInfo();
+
 	if (!Tier)
 	{
-		SF_LOG(
-			Error,
-			"[%s] Current Tier가 없습니다.",
-			*GetName());
+		SF_LOG(	Error, "[%s] Current Tier가 없습니다.", *GetName());
 		return;
 	}
 
-	// GC가 설정된 건물은 GC 손상 단계를 사용한다.
-	if (IsValid(ActiveTierAssets.DestructionCollection) && EnsureDestructionActor())
+	/*
+	 * GC가 설정된 건물에서만 GC 파괴 단계와
+	 * SurfaceFire 단계 값을 사용한다.
+	 */
+	if (IsValid(ActiveTierAssets.DestructionCollection))
 	{
-		/*
-		 * GC 파괴와 불꽃 부착은 서로 다른 임계값 배열을 쓴다.
-		 * 둘 중 하나만 넘는 경우가 있으므로 따로 판정한다.
-		 */
 		const int32 PreviousStage =
 			Tier->Visual.FindDestructionStageIndex(PreviousHealthRatio);
 
 		const int32 CurrentStage =
 			Tier->Visual.FindDestructionStageIndex(CurrentHealthRatio);
 
-		if (CurrentStage != INDEX_NONE && CurrentStage > PreviousStage)
-		{
-			if (const FBuildingDestruction* StageData =
-					Tier->Visual.GetDestructionStage(CurrentStage))
-			{
-				DestructionActor->ApplyDamageStage(CurrentStage, *StageData);
-			}
-		}
+		const int32 PreviousFireStep =
+			Tier->Visual.FindSurfaceFireStepIndex(PreviousHealthRatio);
 
-		// 불꽃 구간은 GC 단계와 별개로 판정한다.
-		const int32 FireStep =
+		const int32 CurrentFireStep =
 			Tier->Visual.FindSurfaceFireStepIndex(CurrentHealthRatio);
 
-		if (const FBuildingSurfaceFireStep* FireStepData =
-				Tier->Visual.GetSurfaceFireStep(FireStep))
+		const bool bReachedGCVisual =
+			CurrentStage != INDEX_NONE || CurrentFireStep != INDEX_NONE;
+
+		/*
+		 * 파괴 또는 불꽃 임계값 전에는
+		 * GC의 Root Proxy 상태만 유지한다.
+		 */
+		if (!bReachedGCVisual)
 		{
-			DestructionActor->SetSurfaceFireStep(FireStep, FireStepData->FireCount);
+			return;
 		}
 
-		return;
+		if (EnsureDestructionActor())
+		{
+			if (CurrentStage != INDEX_NONE && CurrentStage > PreviousStage)
+			{
+				if (const FBuildingDestruction* StageData =
+						Tier->Visual.GetDestructionStage(CurrentStage))
+				{
+					DestructionActor->ApplyDamageStage(
+						CurrentStage, *StageData);
+				}
+			}
+
+			/*
+			 * 한 번의 공격으로 여러 불꽃 임계값을 넘은 경우에도
+			 * 각 단계의 불꽃을 순서대로 생성한다.
+			 */
+			if (CurrentFireStep != INDEX_NONE && CurrentFireStep > PreviousFireStep)
+			{
+				const int32 FirstEnteredFireStep =
+					FMath::Max(PreviousFireStep + 1, 0);
+
+				for (int32 Step = FirstEnteredFireStep; Step <= CurrentFireStep; ++Step)	
+				{
+					if (const FBuildingSurfaceFireStep* StepData =
+							Tier->Visual.GetSurfaceFireStep(Step))
+					{
+						DestructionActor->SetSurfaceFireStep(Step, StepData->FireCount);
+					}
+				}
+			}
+
+			return;
+		}
+
+		/*
+		 * GC 생성 실패 시에는 아래 DamageMesh 방식으로
+		 * 안전하게 폴백한다.
+		 */
 	}
 
 	// GC가 없는 건물은 기존 DamageMesh를 사용한다.
 	const int32 PreviousMeshStage =
-		Tier->Visual.FindDamageStageIndex(
-			PreviousHealthRatio);
+		Tier->Visual.FindDamageStageIndex(PreviousHealthRatio);
 
 	const int32 CurrentMeshStage =
-		Tier->Visual.FindDamageStageIndex(
-			CurrentHealthRatio);
+		Tier->Visual.FindDamageStageIndex(CurrentHealthRatio);
 
 	if (PreviousMeshStage == CurrentMeshStage)
 	{
 		return;
 	}
 
-	// ResolveDamageMesh가 현재 체력 비율에 맞는 메시를 선택한다.
 	RefreshVisual();
 	PlayBurningEffect(CurrentMeshStage);
+
 	if (CurrentMeshStage != INDEX_NONE)
 	{
-		SF_LOG(
-			Warning,
-			"[%s] Damage mesh stage entered: %d",
-			*GetName(),
-			CurrentMeshStage);
+		SF_LOG(Warning, "[%s] Damage mesh stage entered: %d",
+			*GetName(),	CurrentMeshStage);
 	}
 }
 
@@ -285,9 +311,9 @@ void ASFBaseBuilding::ApplySpawnMode()
 			
 			if (!TryRegistInitialGrid())
 			{
-				ensureAlwaysMsgf(
-					false,
-					TEXT("%s failed to register its initial grid. Be Destroyed"),
+				SF_LOG(
+					Warning,
+					"[%s] 선배치 격자 등록 실패. 해당 Anchor 건물을 건너뜁니다.",
 					*GetName());
 				Destroy();
 				return;
@@ -412,6 +438,11 @@ void ASFBaseBuilding::EnterCompletedState()
 	RefreshVisual();
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding"); // 완료된 상태에서 시작하는 액터있음
 	SetBoxExtent();
+	
+	if (IsValid(ActiveTierAssets.DestructionCollection))
+	{
+		EnsureDestructionActor();
+	}
 	
 	UpdateDamageVisual(1.f,HealthComponent->GetHealthPercent());
 	
@@ -951,11 +982,6 @@ bool ASFBaseBuilding::CacheLoadedDefinitionData()
 			{
 				return Left.HealthThreshold >  Right.HealthThreshold;
 			});
-		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
-			{
-				return Left.HealthThreshold > Right.HealthThreshold;
-			});
-
 		CachedTier.Visual.SurfaceFireSteps.Sort([](const FBuildingSurfaceFireStep& Left, const FBuildingSurfaceFireStep& Right)
 			{
 				return Left.HealthThreshold > Right.HealthThreshold;
@@ -1140,9 +1166,7 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	bIsTierActivated = true;
 	OnTierActivated();
 
-	OnBuildingTierActivated.Broadcast(
-		CurrentTier
-	);
+	OnBuildingTierActivated.Broadcast(CurrentTier);
 
 	return true;
 }
@@ -1176,10 +1200,7 @@ void ASFBaseBuilding::PlayConstructionCompleteSound()
 
 void ASFBaseBuilding::PlayDestroyEffect()
 {
-	const FVector EffectLocation =
-		IsValid(StaticMeshComponent)
-			? StaticMeshComponent->Bounds.Origin
-			: GetActorLocation();
+	const FVector EffectLocation = GetActorLocation();
 	
 	if (IsValid(PlayVFXComponent))
 	{
@@ -1318,16 +1339,15 @@ void ASFBaseBuilding::FinishHitReaction()
 }
 
 
-void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
+void ASFBaseBuilding::PlayHitReaction(const FVector& WorldDirection)
 {
 	if (!IsValid(HitReactionTimeline) ||
-	   !IsValid(HitReactionCurve))
+		!IsValid(HitReactionCurve))
 	{
 		return;
 	}
-	
-	USceneComponent* Target =
-		ResolveHitReactionTarget();
+
+	USceneComponent* Target = ResolveHitReactionTarget();
 
 	if (!IsValid(Target))
 	{
@@ -1335,11 +1355,20 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& LocalDirection)
 	}
 
 	ActiveHitReactionTarget = Target;
-	OriginalHitReactionTransform =
-		Target->GetComponentTransform();
 
+	OriginalHitReactionTransform = Target->GetComponentTransform();
+
+	FVector HorizontalWorldDirection = WorldDirection;
+	HorizontalWorldDirection.Z = 0.f;
+	HorizontalWorldDirection.Normalize();
+
+	/*
+	 * UpdateHitReaction()에서 BaseRotation을 다시 적용하므로
+	 * 여기에서는 월드 방향을 Target 로컬 방향으로 변환한다.
+	 */
 	HitLocalDirection =
-		LocalDirection.GetSafeNormal();
+		OriginalHitReactionTransform
+			.InverseTransformVectorNoScale(HorizontalWorldDirection).GetSafeNormal();
 
 	HitReactionTimeline->PlayFromStart();
 }
@@ -1357,12 +1386,6 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 	UGeometryCollection* Collection =
 		ActiveTierAssets.DestructionCollection;
 	
-	// destroy assets.
-	// ActiveTierAssets.DestructionCollection;
-	// DestroyedSound
-	// DestroyedEffect
-	// DamagedBurningEffect
-	
 	if (!IsValid(Collection))
 	{
 		return false;
@@ -1372,10 +1395,6 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 	
 	const FTransform VisualTransform =
 		StaticMeshComponent->GetComponentTransform();
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	
 	if (!IsValid(DestructionActorClass))
 	{
@@ -1403,17 +1422,16 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 	}
 
 	SpawnedActor->FinishSpawning(VisualTransform);
-	
+
 	DestructionActor = SpawnedActor;
-	
-	GetWorldTimerManager().SetTimerForNextTick(
-	[WeakThis = TWeakObjectPtr<ASFBaseBuilding>(this)]()
+	/*
+	 * FinishSpawning으로 Root Proxy 렌더러가 등록된 뒤,
+	 * 같은 게임 틱에서 기존 Static Mesh만 숨긴다.
+	 */
+	if (IsValid(StaticMeshComponent))
 	{
-		if (WeakThis.IsValid() && IsValid(WeakThis->StaticMeshComponent))
-		{
-			WeakThis->StaticMeshComponent->SetVisibility(false, true);
-		}
-	});
+		StaticMeshComponent->SetVisibility(false, false);
+	}
 
 	return true;
 }
@@ -1439,9 +1457,7 @@ void ASFBaseBuilding::ClearDestructionVisual()
 
 	if (IsValid(StaticMeshComponent))
 	{
-		StaticMeshComponent->SetVisibility(
-			true,
-			true);
+		StaticMeshComponent->SetVisibility(true,false);
 	}
 }
 
@@ -1623,8 +1639,7 @@ USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const
 {
 	if (IsValid(DestructionActor))
 	{
-		return DestructionActor
-			->GetGeometryCollectionComponent();
+		return DestructionActor->GetGeometryCollectionComponent();
 	}
 
 	return StaticMeshComponent;

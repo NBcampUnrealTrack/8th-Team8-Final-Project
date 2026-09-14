@@ -11,6 +11,7 @@
 
 class ASFNexusBuilding;
 class ASFBuildingSpawnAnchor;
+class AActor;
 class USFBuildingDefinition;
 class USFBuildingAssetSubsystem;
 
@@ -18,10 +19,10 @@ UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
-	
+
 public:
 	ASFGameMode();
-	
+
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 	// 스테이지 초기화가 끝난 후 게임 시작
@@ -42,30 +43,36 @@ public:
 
 	// 전달받은 결과를 기준으로 스테이지 종료
 	bool FinishStage(ESFStageResult NewStageResult);
-	
+
 	// 로딩 UI 끝나고 실행하는 이벤트
 	void StartStageAfterLoadingScreen();
-	
+
 	// getter
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ASFGameState* GetSFGameState() const;
 	UFUNCTION(BlueprintPure, Category = "SF|Team")
 	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
-	
+
 	// 26.08.18
-	
+
 protected:
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
 	virtual void BeginPlay() override;
-	
+
 private:
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
 	bool SpawnStageBuildingsFromAnchors();
 
 	/** 하나의 BuildingSpawnAnchor를 실제 건물로 변환한다. */
 	bool SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor);
-	
+
+	/** NavMesh Bounds를 기준으로 런타임 카메라 경계를 생성한다. */
+	bool CreateStageCameraBoundaries();
+
+	/** 이전에 생성한 런타임 카메라 경계를 정리한다. */
+	void ClearStageCameraBoundaries();
+
 	// Async
 	/** 스테이지 비동기 초기화를 시작한다. BeginPlay에서 호출되며 RequestRequiredRaceData로 이어진다. */
 	void BeginStageBootstrap();
@@ -100,7 +107,7 @@ private:
 	void FailStageBootstrap();
 	// UI 진행도
 	void UpdateStageLoadingProgress();
-	
+
 	UPROPERTY(Transient)
 	TObjectPtr<USFBuildingAssetSubsystem>
 		BuildingAssetSubsystem;
@@ -117,21 +124,21 @@ private:
 
 	int32 TotalInitialBuildingAssetRequestCount = 0;
 	int32 PendingInitialBuildingAssetRequestCount = 0;
-	
+
 	/** 30% 종족로딩완료시 DelayTime */
 	FTimerHandle Stage30PercentDelayTimerHandle;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
-	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+		meta = (AllowPrivateAccess = "true", ClampMin = "0.01", UIMin = "0.01"))
 	float Stage30PercentDelayTime = 0.5f;
 	/** 90% 건물로딩완료시 DelayTime */
 	FTimerHandle Stage90PercentDelayTimerHandle;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
-	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+		meta = (AllowPrivateAccess = "true", ClampMin = "0.01", UIMin = "0.01"))
 	float Stage90PercentDelayTime = 0.5f;
 	/** Anchor 생성 후 렌더 준비 시간을 관리한다. */
 	FTimerHandle Stage98PercentDelayTimerHandle;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Loading",
-	meta = (AllowPrivateAccess = "true",ClampMin = "0.01",UIMin = "0.01"))
+		meta = (AllowPrivateAccess = "true", ClampMin = "0.01", UIMin = "0.01"))
 	float Stage98PercentDelayTime = 0.5f;
 
 	/** 렌더 준비 타이머의 중복 실행을 방지한다. */
@@ -143,13 +150,24 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 PlayerTeamIndex = 0;
-	
+
 	/** 플레이어 팀의 시작 자원 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 StartingMineral = 200;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 StartingEther = 100;
 
+	/** 카메라 경계 박스의 두께 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Camera Boundary", meta = (AllowPrivateAccess = "true", ClampMin = "1.0"))
+	float CameraBoundaryThickness = 50.0f;
+
+	/** 카메라 경계 박스 높이의 절반 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Camera Boundary", meta = (AllowPrivateAccess = "true", ClampMin = "100.0"))
+	float CameraBoundaryHalfHeight = 5000.0f;
+
 	UPROPERTY()
 	TArray<FSFStageBuildingRule> BootstrapBuildingRules;
+
+	UPROPERTY()
+	TArray<TObjectPtr<AActor>> StageCameraBoundaryActors;
 };

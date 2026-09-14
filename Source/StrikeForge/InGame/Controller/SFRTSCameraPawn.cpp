@@ -1,6 +1,7 @@
 ﻿#include "SFRTSCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/SphereComponent.h"
 #include "Components/SceneComponent.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/FloatingPawnMovement.h"
@@ -12,11 +13,32 @@ ASFRTSCameraPawn::ASFRTSCameraPawn()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    CameraCollision = CreateDefaultSubobject<USphereComponent>(
+        TEXT("CameraCollision")
+    );
+
+    SetRootComponent(CameraCollision);
+
+    CameraCollision->InitSphereRadius(50.0f);
+    CameraCollision->SetCollisionEnabled(
+        ECollisionEnabled::QueryOnly
+    );
+    CameraCollision->SetCollisionObjectType(ECC_Pawn);
+    CameraCollision->SetCollisionResponseToAllChannels(
+        ECR_Ignore
+    );
+    CameraCollision->SetCollisionResponseToChannel(
+        ECC_GameTraceChannel2,
+        ECR_Block
+    );
+    CameraCollision->SetGenerateOverlapEvents(false);
+    CameraCollision->SetCanEverAffectNavigation(false);
+
     SceneRoot = CreateDefaultSubobject<USceneComponent>(
         TEXT("SceneRoot")
     );
 
-    SetRootComponent(SceneRoot);
+    SceneRoot->SetupAttachment(CameraCollision);
 
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(
         TEXT("SpringArm")
@@ -29,7 +51,12 @@ ASFRTSCameraPawn::ASFRTSCameraPawn()
         FRotator(CameraPitch, 0.0f, 0.0f)
     );
 
+    // 카메라 폰의 이동 경계만 사용한다.
+    // SpringArm 충돌 검사를 켜면 경계에 닿을 때 붐 길이가 줄어들어
+    // 특정 방향에서 카메라가 확대되는 현상이 발생한다.
     SpringArm->bDoCollisionTest = false;
+    SpringArm->ProbeChannel = ECC_GameTraceChannel2;
+    SpringArm->ProbeSize = 12.0f;
     SpringArm->bUsePawnControlRotation = false;
 
     Camera = CreateDefaultSubobject<UCameraComponent>(
@@ -78,6 +105,10 @@ void ASFRTSCameraPawn::BeginPlay()
         SpringArm->SetRelativeRotation(
             FRotator(CameraPitch, 0.0f, 0.0f)
         );
+
+        // 카메라 폰의 이동 경계만 사용하고 SpringArm은 길이를 유지한다.
+        SpringArm->bDoCollisionTest = false;
+        SpringArm->ProbeChannel = ECC_GameTraceChannel2;
     }
 
     if (IsValid(FloatingPawnMovement))
@@ -85,8 +116,26 @@ void ASFRTSCameraPawn::BeginPlay()
         FloatingPawnMovement->MaxSpeed = CameraMoveSpeed;
 
         FloatingPawnMovement->SetUpdatedComponent(
-            SceneRoot
+            CameraCollision
         );
+    }
+
+    if (IsValid(CameraCollision))
+    {
+        // BP의 Collision Profile이 C++ 기본값을 덮어쓰는 경우를 방지한다.
+        // 실제 Pawn Sweep과 SpringArm Trace 모두 CameraBoundary만 사용한다.
+        CameraCollision->SetCollisionEnabled(
+            ECollisionEnabled::QueryOnly
+        );
+        CameraCollision->SetCollisionObjectType(ECC_Pawn);
+        CameraCollision->SetCollisionResponseToAllChannels(
+            ECR_Ignore
+        );
+        CameraCollision->SetCollisionResponseToChannel(
+            ECC_GameTraceChannel2,
+            ECR_Block
+        );
+        CameraCollision->SetGenerateOverlapEvents(false);
     }
 }
 
@@ -385,7 +434,7 @@ void ASFRTSCameraPawn::ClampCameraLocation()
 
     if (!CurrentLocation.Equals(ClampedLocation))
     {
-        SetActorLocation(ClampedLocation);
+        SetActorLocation(ClampedLocation, true);
     }
 }
 
@@ -409,13 +458,9 @@ void ASFRTSCameraPawn::FocusOnWorldLocation(
     NewLocation.Y =
         WorldLocation.Y;
 
-    constexpr float CommanderFocusVerticalOffset = 50.0f;
-
-    NewLocation.X -=
-        CommanderFocusVerticalOffset;
-
     SetActorLocation(
-        NewLocation
+        NewLocation,
+        true
     );
 
     ClampCameraLocation();

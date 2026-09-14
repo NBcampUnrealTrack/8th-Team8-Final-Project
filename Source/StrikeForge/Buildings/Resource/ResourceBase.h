@@ -71,5 +71,8 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Grid")
 	FBuildingGridInfo RegisteredResourceGridInfo;
 	bool bResourceGridRegistered  = false;
+
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Selection|UI")
+	FName SelectionUIDataRowName = NAME_None;
 private:
 };

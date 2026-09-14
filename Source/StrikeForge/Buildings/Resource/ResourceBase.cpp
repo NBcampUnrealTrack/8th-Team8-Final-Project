@@ -1,5 +1,6 @@
 ﻿#include "ResourceBase.h"
 #include "Components/BoxComponent.h"
+#include "UObject/UnrealType.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
 
@@ -43,6 +44,16 @@ FSFSelectableInfo AResourceBase::GetSelectableInfo_Implementation()
 	FSFSelectableInfo Info;
 	SF_LOG(Warning, "%s Selected.", *UEnum::GetValueAsString(ResourceType));
 	
+	Info.SelectableType =
+		ESFSelectableType::ResourceBuilding;
+
+	Info.bShowHealth = false;
+	Info.bShowAttackPower = false;
+	Info.bShowMoveSpeed = false;
+	Info.bShowSkillIcons = false;
+
+	Info.DataRowName = SelectionUIDataRowName;
+
 	return Info;
 }
 

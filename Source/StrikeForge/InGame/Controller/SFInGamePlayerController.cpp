@@ -10,6 +10,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "InputCoreTypes.h"
 #include "Units/Commander/SFCommander.h"
 #include "Units/Unit/UnitBase.h"
 #include "Units/Interfaces/Movable.h"
@@ -355,6 +356,32 @@ void ASFInGamePlayerController::SetupInputComponent()
             ETriggerEvent::Started,
             this,
             &ASFInGamePlayerController::HandleSelectAllUnitsInput
+        );
+    }
+
+    TArray<TWeakObjectPtr<UInputAction>> ControlGroupActions =
+    {
+        ControlGroup01Action,
+        ControlGroup02Action,
+        ControlGroup03Action,
+        ControlGroup04Action,
+        ControlGroup05Action,
+        ControlGroup06Action
+    };
+
+    for (int32 Index = 0; Index < ControlGroupActions.Num(); ++Index)
+    {
+        if (!ControlGroupActions[Index].IsValid())
+        {
+            continue;
+        }
+
+        EnhancedInputComponent->BindAction(
+            ControlGroupActions[Index].Get(),
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleControlGroupInput,
+            Index
         );
     }
 
@@ -978,6 +1005,9 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         return;
     }
 
+    const bool bAppendToQueue =
+        IsShiftCommandModifierDown();
+
     // 실제로 조종할 대상이 확인된 뒤에만 UI/BP 쪽 이동 이벤트를 알린다.
     //OnMoveInput.Broadcast(Destination);
 
@@ -1008,7 +1038,8 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
             Commandables[Index],
             ESFUnitCommandMode::Move,
             Goal,
-            nullptr
+            nullptr,
+            bAppendToQueue
         );
     }
 
@@ -1288,13 +1319,17 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
         return true;
     }
 
+    const bool bAppendToQueue =
+        IsShiftCommandModifierDown();
+
     for (AActor* Actor : Commandables)
     {
         ExecuteUnitCommandForActor(
             Actor,
             CommandMode,
             Hit.Location,
-            AttackTarget
+            AttackTarget,
+            bAppendToQueue
         );
     }
 
@@ -1357,7 +1392,8 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
     AActor* Actor,
     ESFUnitCommandMode CommandMode,
     const FVector& Location,
-    AActor* Target
+    AActor* Target,
+    bool bAppendToQueue
 ) const
 {
     if (!IsValid(Actor) || !IsLocallyControllableActor(Actor))
@@ -1384,7 +1420,12 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
         }
 
         // 유닛의 사거리·시야·강제 타겟·정지 상태는 UnitBase가 책임진다.
-        Unit->ExecuteCommand(UnitCommand, Location, Target);
+        Unit->ExecuteCommandWithQueue(
+            UnitCommand,
+            Location,
+            Target,
+            bAppendToQueue
+        );
         return;
     }
 
@@ -1628,4 +1669,53 @@ void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
         SelectionSound,
         SelectedTarget->GetActorLocation()
     );
+}
+
+void ASFInGamePlayerController::HandleControlGroupInput(
+    int32 GroupIndex
+)
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay)
+    {
+        return;
+    }
+
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    const bool bCtrlPressed =
+        IsInputKeyDown(EKeys::LeftControl) ||
+        IsInputKeyDown(EKeys::RightControl);
+
+    const bool bShiftPressed =
+        IsInputKeyDown(EKeys::LeftShift) ||
+        IsInputKeyDown(EKeys::RightShift);
+
+    if (bCtrlPressed)
+    {
+        InGameHUDWidget->SaveCurrentSelectionToControlGroup(
+            GroupIndex,
+            false
+        );
+    }
+    else if (bShiftPressed)
+    {
+        InGameHUDWidget->SaveCurrentSelectionToControlGroup(
+            GroupIndex,
+            true
+        );
+    }
+    else
+    {
+        InGameHUDWidget->SelectControlGroup(GroupIndex);
+    }
+}
+
+bool ASFInGamePlayerController::IsShiftCommandModifierDown() const
+{
+    return
+        IsInputKeyDown(EKeys::LeftShift) ||
+        IsInputKeyDown(EKeys::RightShift);
 }

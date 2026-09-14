@@ -6,6 +6,7 @@
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectionPanelWidget.generated.h"
 
+class UWidget;
 class UButton;
 class UTextBlock;
 
@@ -43,6 +44,12 @@ public:
         Category = "SF|Selection"
     )
     bool HasSelection() const;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection|Resource")
+    void SetMiningResourceAmount(int32 RemainingResourceAmount);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection|Resource")
+    void ClearMiningResourceAmount();
 
     UPROPERTY(
         BlueprintAssignable,
@@ -155,6 +162,13 @@ protected:
         meta = (BindWidget)
     )
     TObjectPtr<UTextBlock> UpgradeEtherCostText = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection|Resource",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UTextBlock> MiningResourceAmountText = nullptr;
 
 private:
     UFUNCTION()

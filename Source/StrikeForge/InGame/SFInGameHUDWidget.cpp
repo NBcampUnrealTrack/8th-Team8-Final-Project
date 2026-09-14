@@ -1236,7 +1236,8 @@ void USFInGameHUDWidget::SelectAllOwnedUnits()
         const FSFSelectableInfo SelectableInfo =
             ISFSelectable::Execute_GetSelectableInfo(Unit);
 
-        if (SelectableInfo.SelectableType != ESFSelectableType::Unit)
+        if (SelectableInfo.SelectableType != ESFSelectableType::Unit &&
+            SelectableInfo.SelectableType != ESFSelectableType::Commander)
         {
             continue;
         }
@@ -1254,7 +1255,7 @@ void USFInGameHUDWidget::SelectAllOwnedUnits()
     if (FoundUnits.IsEmpty())
     {
         ClearSelection();
-        SF_LOG(Log, "[SFInGameHUDWidget] F2 unit selection found no units.");
+        SF_LOG(Log, "[SFInGameHUDWidget] Select-all found no living units or commander.");
         return;
     }
 
@@ -3347,6 +3348,22 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
         return true;
     }
 
+    // 가운데 패널의 자식이 아닌 빈 공간도 HUD 입력으로 처리한다.
+    if (IsWidgetUnderMouse(CenterPanel))
+    {
+        return true;
+    }
+
+    // BindWidget 연결 전/이름 기반 WBP 구성도 지원한다.
+    if (UWidget* CenterPanelWidget =
+        GetWidgetFromName(TEXT("CenterPanel")))
+    {
+        if (IsWidgetUnderMouse(CenterPanelWidget))
+        {
+            return true;
+        }
+    }
+
     // 자원 패널
     if (UWidget* ResourceWidget =
         GetWidgetFromName(
@@ -3383,17 +3400,26 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
     }
 
     // 빌드 카탈로그의 실제 패널만 검사한다.
-    // ActiveBuildingModeWidget 전체를 검사하면 안 된다.
+    // ActiveBuildingModeWidget 전체를 검사하면 월드 배치 영역까지 막을 수 있다.
     if (IsValid(ActiveBuildingModeWidget))
     {
-        UWidget* BuildCatalogWidget =
-            ActiveBuildingModeWidget->GetWidgetFromName(
-                TEXT("BuildCatalogPanel")
-            );
-
-        if (IsWidgetUnderMouse(BuildCatalogWidget))
+        const FName BuildPanelNames[] =
         {
-            return true;
+            TEXT("BuildCatalogPanel"),
+            TEXT("BuildingModePanelSizeBox")
+        };
+
+        for (const FName& BuildPanelName : BuildPanelNames)
+        {
+            UWidget* BuildPanelWidget =
+                ActiveBuildingModeWidget->GetWidgetFromName(
+                    BuildPanelName
+                );
+
+            if (IsWidgetUnderMouse(BuildPanelWidget))
+            {
+                return true;
+            }
         }
     }
 

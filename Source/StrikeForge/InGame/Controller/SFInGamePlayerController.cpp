@@ -720,6 +720,14 @@ void ASFInGamePlayerController::HandleSelectionDragCompleted()
 
 void ASFInGamePlayerController::HandleMoveInput()
 {
+    if (
+        IsValid(InGameHUDWidget) &&
+        InGameHUDWidget->IsPointerOverHUDPanel()
+        )
+    {
+        return;
+    }
+
     PendingUnitCommandMode = ESFUnitCommandMode::None;
     bCommandClickConsumed = false;
 
@@ -740,6 +748,14 @@ void ASFInGamePlayerController::HandleMoveInput()
 
 void ASFInGamePlayerController::HandleConfirmBuildInput()
 {
+    if (
+        IsValid(InGameHUDWidget) &&
+        InGameHUDWidget->IsPointerOverHUDPanel()
+        )
+    {
+        return;
+    }
+
     UE_LOG(LogTemp, Warning, TEXT("BuildingMode:: Clicked."));
 
     if (!IsValid(SpawnedBuildingRef))
@@ -1433,6 +1449,35 @@ void ASFInGamePlayerController::HandleRallyPointInput()
     BeginRallyPointCommand();
 }
 
+void ASFInGamePlayerController::CollectSelectedProductionBuildings(
+    TArray<ASFProductionBuilding*>& OutBuildings
+) const
+{
+    OutBuildings.Reset();
+
+    if (IsValid(InGameHUDWidget))
+    {
+        for (const TObjectPtr<AActor>& Actor :
+            InGameHUDWidget->GetSelectedActors())
+        {
+            ASFProductionBuilding* ProductionBuilding =
+                Cast<ASFProductionBuilding>(Actor.Get());
+
+            if (IsValid(ProductionBuilding))
+            {
+                OutBuildings.AddUnique(ProductionBuilding);
+            }
+        }
+    }
+
+    // 단일 선택 상태이거나, HUD 목록에 주 선택 건물이 빠진 경우도 처리한다.
+    if (ASFProductionBuilding* SingleProductionBuilding =
+        Cast<ASFProductionBuilding>(SelectedActor.Get()))
+    {
+        OutBuildings.AddUnique(SingleProductionBuilding);
+    }
+}
+
 void ASFInGamePlayerController::BeginRallyPointCommand()
 {
     if (CurrentControlMode != ESFControlMode::Gameplay)
@@ -1440,33 +1485,36 @@ void ASFInGamePlayerController::BeginRallyPointCommand()
         return;
     }
 
-    ASFProductionBuilding* ProductionBuilding =
-        Cast<ASFProductionBuilding>(SelectedActor.Get());
+    TArray<ASFProductionBuilding*> ProductionBuildings;
+    CollectSelectedProductionBuildings(ProductionBuildings);
 
-    if (!IsValid(ProductionBuilding))
+    if (ProductionBuildings.IsEmpty())
     {
         SF_LOG(
             Warning,
             "[SFInGamePlayerController] "
-            "Rally point requires a production building."
+            "Rally point requires at least one production building."
         );
         return;
     }
 
-    const UCombatTargetComponent* CombatTarget =
-        ProductionBuilding->FindComponentByClass<
-        UCombatTargetComponent
-        >();
-
-    if (!IsValid(CombatTarget) ||
-        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    for (const ASFProductionBuilding* ProductionBuilding : ProductionBuildings)
     {
-        SF_LOG(
-            Warning,
-            "[SFInGamePlayerController] "
-            "Cannot set rally point on enemy building."
-        );
-        return;
+        const UCombatTargetComponent* CombatTarget =
+            ProductionBuilding->FindComponentByClass<
+            UCombatTargetComponent
+            >();
+
+        if (!IsValid(CombatTarget) ||
+            CombatTarget->GetTeamIndex() != MyTeamIndex)
+        {
+            SF_LOG(
+                Warning,
+                "[SFInGamePlayerController] "
+                "Cannot set rally point on an enemy building."
+            );
+            return;
+        }
     }
 
     PendingUnitCommandMode = ESFUnitCommandMode::None;
@@ -1500,28 +1548,45 @@ bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
         return true;
     }
 
-    ASFProductionBuilding* ProductionBuilding =
-        Cast<ASFProductionBuilding>(SelectedActor.Get());
+    TArray<ASFProductionBuilding*> ProductionBuildings;
+    CollectSelectedProductionBuildings(ProductionBuildings);
 
-    if (!IsValid(ProductionBuilding))
+    if (ProductionBuildings.IsEmpty())
     {
         return true;
     }
 
-    const UCombatTargetComponent* CombatTarget =
-        ProductionBuilding->FindComponentByClass<
-        UCombatTargetComponent
-        >();
+    int32 UpdatedBuildingCount = 0;
 
-    if (!IsValid(CombatTarget) ||
-        CombatTarget->GetTeamIndex() != MyTeamIndex)
+    for (ASFProductionBuilding* ProductionBuilding : ProductionBuildings)
+    {
+        if (!IsValid(ProductionBuilding))
+        {
+            continue;
+        }
+
+        const UCombatTargetComponent* CombatTarget =
+            ProductionBuilding->FindComponentByClass<
+            UCombatTargetComponent
+            >();
+
+        if (!IsValid(CombatTarget) ||
+            CombatTarget->GetTeamIndex() != MyTeamIndex)
+        {
+            continue;
+        }
+
+        ProductionBuilding->SetAssembleVectorPoint(
+            Hit.Location
+        );
+
+        ++UpdatedBuildingCount;
+    }
+
+    if (UpdatedBuildingCount == 0)
     {
         return true;
     }
-
-    ProductionBuilding->SetAssembleVectorPoint(
-        Hit.Location
-    );
 
     if (IsValid(InGameHUDWidget))
     {
@@ -1531,7 +1596,8 @@ bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
     SF_LOG(
         Log,
         "[SFInGamePlayerController] "
-        "Rally point set: %s",
+        "Rally point set for %d buildings: %s",
+        UpdatedBuildingCount,
         *Hit.Location.ToString()
     );
 

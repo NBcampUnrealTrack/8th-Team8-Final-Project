@@ -66,7 +66,7 @@ public:
 
     void SelectActor(AActor* Actor);
 
-    /** 내 소유의 살아 있는 일반 유닛만 모두 선택한다. 커맨더와 건물은 제외한다. */
+    /** 내 소유의 살아 있는 유닛과 지휘관을 모두 선택한다. 건물은 제외한다. */
     UFUNCTION(BlueprintCallable, Category = "SF|Selection")
     void SelectAllOwnedUnits();
 
@@ -371,6 +371,15 @@ protected:
     )
     TObjectPtr<USFProductionBuildingPanelWidget>
         ProductionBuildingPanel = nullptr;
+
+    // 멀티 선택·빌드·생산 패널을 감싸는 가운데 입력 차단 영역.
+    // WBP_SFInGameHUD에서 동일한 이름(CenterPanel)으로 지정한다.
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Input",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> CenterPanel = nullptr;
 
     UPROPERTY(
         BlueprintReadOnly,

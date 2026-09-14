@@ -9,6 +9,7 @@ class ASFCommander;
 class AActor;
 class UBuildingPlacement;
 class ASFBaseBuilding;
+class ASFProductionBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
 class UInputAction;
 class UInputMappingContext;
@@ -202,6 +203,10 @@ private:
     bool IsLocallyControllableActor(const AActor* Actor) const;
 
     void HandleRallyPointInput();
+
+    void CollectSelectedProductionBuildings(
+        TArray<ASFProductionBuilding*>& OutBuildings
+    ) const;
 
     bool ExecutePendingRallyPointUnderCursor();
 

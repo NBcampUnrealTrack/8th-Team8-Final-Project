@@ -141,12 +141,14 @@ void USFMultiSelectionEntryWidget::BindHealthDelegate(AActor* Actor)
         return;
     }
 
-    const FHealthData HealthData =
-        ISFSelectable::Execute_GetHealthData(Actor);
+    // const FHealthData HealthData =
+    //     ISFSelectable::Execute_GetHealthData(Actor);
+    //
+    // UHealthComponent* HealthComponent =
+    //     HealthData.HealthComponent.Get();
 
-    UHealthComponent* HealthComponent =
-        HealthData.HealthComponent.Get();
-
+    UHealthComponent* HealthComponent = Actor->FindComponentByClass<UHealthComponent>();
+    
     if (!IsValid(HealthComponent))
     {
         return;

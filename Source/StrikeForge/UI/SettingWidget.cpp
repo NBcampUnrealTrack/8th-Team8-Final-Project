@@ -1,4 +1,3 @@
-// SettingWidget.cpp
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
@@ -8,10 +7,12 @@
 #include "Sound/SoundMix.h"
 #include "Sound/SoundClass.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Sound/SoundBase.h"
+#include "UI/MouseSensitivitySubsystem.h"
 
 static const TCHAR* ClickSoundPath = TEXT("/Game/Audio/T_SFClick.T_SFClick");
-static constexpr float DefaultMouseSensitivity = 1.0f;
+
 void USettingWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -22,20 +23,19 @@ void USettingWidget::NativeConstruct()
 		BackUi_Btn->OnClicked.AddDynamic(this, &USettingWidget::OnBackUiButtonClicked);
 	}
 
-	// 저장된 볼륨 불러오기 (마스터/BGM/효과음 각각)
 	GConfig->GetFloat(TEXT("Audio"), TEXT("MasterVolume"), CurrentMasterVolume, GGameUserSettingsIni);
 	GConfig->GetFloat(TEXT("Audio"), TEXT("BGMVolume"), CurrentBGMVolume, GGameUserSettingsIni);
 	GConfig->GetFloat(TEXT("Audio"), TEXT("SXVolume"), CurrentSXVolume, GGameUserSettingsIni);
-
-	// 저장된 마우스 감도 불러오기 (없으면 기본값 사용)
-	CurrentMouseSensitivity = DefaultMouseSensitivity;
-	GConfig->GetFloat(TEXT("Input"), TEXT("MouseSensitivity"), CurrentMouseSensitivity, GGameUserSettingsIni);
 
 	InitializeSettingOptions();
 
 	if (IsValid(FullScreenComboBox))
 	{
 		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &USettingWidget::OnFullscreenModeChanged);
+	}
+	if (IsValid(ResolutionComboBox))
+	{
+		ResolutionComboBox->OnSelectionChanged.AddDynamic(this, &USettingWidget::OnResolutionChanged);
 	}
 	if (IsValid(MasterVolumeSlider))
 	{
@@ -55,16 +55,13 @@ void USettingWidget::NativeConstruct()
 	if (IsValid(MouseSensitivitySlider))
 	{
 		MouseSensitivitySlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnMouseSensitivityChanged);
-		MouseSensitivitySlider->SetValue(CurrentMouseSensitivity);
 	}
 
-	// 사운드 믹스를 게임 시작 시 한 번 push 해둬야 override가 먹음
 	if (MasterSoundMix)
 	{
 		UGameplayStatics::PushSoundMixModifier(GetWorld(), MasterSoundMix);
 	}
 
-	// 저장된 볼륨을 즉시 반영 (마스터/BGM/효과음)
 	if (MasterSoundMix)
 	{
 		if (MasterSoundClass)
@@ -144,6 +141,37 @@ void USettingWidget::InitializeSettingOptions()
 			break;
 		}
 	}
+
+	if (IsValid(ResolutionComboBox))
+	{
+		ResolutionComboBox->ClearOptions();
+
+		TArray<FIntPoint> SupportedResolutions;
+		UKismetSystemLibrary::GetSupportedFullscreenResolutions(SupportedResolutions);
+
+		TArray<FString> AddedLabels;
+		for (const FIntPoint& Res : SupportedResolutions)
+		{
+			const FString Label = FString::Printf(TEXT("%dx%d"), Res.X, Res.Y);
+			if (!AddedLabels.Contains(Label))
+			{
+				ResolutionComboBox->AddOption(Label);
+				AddedLabels.Add(Label);
+			}
+		}
+
+		const FIntPoint CurrentRes = Settings->GetScreenResolution();
+		const FString CurrentLabel = FString::Printf(TEXT("%dx%d"), CurrentRes.X, CurrentRes.Y);
+
+		if (AddedLabels.Contains(CurrentLabel))
+		{
+			ResolutionComboBox->SetSelectedOption(CurrentLabel);
+		}
+		else if (AddedLabels.Num() > 0)
+		{
+			ResolutionComboBox->SetSelectedOption(AddedLabels[0]);
+		}
+	}
 }
 
 void USettingWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
@@ -175,6 +203,38 @@ void USettingWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::
 	}
 
 	Settings->SetFullscreenMode(NewMode);
+	Settings->ApplySettings(false);
+	Settings->SaveSettings();
+}
+
+void USettingWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (SelectionType == ESelectInfo::Direct)
+	{
+		return;
+	}
+
+	UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings();
+	if (!Settings)
+	{
+		return;
+	}
+
+	FString WidthStr, HeightStr;
+	if (!SelectedItem.Split(TEXT("x"), &WidthStr, &HeightStr))
+	{
+		return;
+	}
+
+	const int32 Width = FCString::Atoi(*WidthStr);
+	const int32 Height = FCString::Atoi(*HeightStr);
+
+	if (Width <= 0 || Height <= 0)
+	{
+		return;
+	}
+
+	Settings->SetScreenResolution(FIntPoint(Width, Height));
 	Settings->ApplySettings(false);
 	Settings->SaveSettings();
 }
@@ -220,10 +280,11 @@ void USettingWidget::OnSXVolumeChanged(float Value)
 
 void USettingWidget::OnMouseSensitivityChanged(float Value)
 {
-	CurrentMouseSensitivity = Value;
-
-	// ini에 저장 - PlayerController/Character 쪽에서 같은 Section/Key로 읽어서 룩 입력에 곱해주면 됨
-	// 예: GConfig->GetFloat(TEXT("Input"), TEXT("MouseSensitivity"), Sensitivity, GGameUserSettingsIni);
-	GConfig->SetFloat(TEXT("Input"), TEXT("MouseSensitivity"), Value, GGameUserSettingsIni);
-	GConfig->Flush(false, GGameUserSettingsIni);
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UMouseSensitivitySubsystem* MouseSensSubsystem = GI->GetSubsystem<UMouseSensitivitySubsystem>())
+		{
+			MouseSensSubsystem->SetMouseSensitivity(Value);
+		}
+	}
 }

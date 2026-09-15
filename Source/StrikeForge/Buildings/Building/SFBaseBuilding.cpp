@@ -100,6 +100,7 @@ FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
 	BuildingInfo.CurrentHealth = HealthComponent->GetCurrentHealth();
 	BuildingInfo.MaximumHealth = HealthComponent->GetMaxHealth();
 	BuildingInfo.SelectableType = ESFSelectableType::None;
+	BuildingInfo.Tier = CurrentTier + 1;
 	BuildingInfo.bShowAttackPower = false;
 	BuildingInfo.bShowMoveSpeed = false;
 	BuildingInfo.bShowHealth = true;
@@ -107,16 +108,16 @@ FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
 	return BuildingInfo;
 }
 
-const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
-{
-	FHealthData Data;
-	Data.DisplayName = DisplayName;
-	Data.CurrentTier = CurrentTier;
-	Data.HealthComponent = HealthComponent;
-	Data.ConstructCost = GetConstructCost();
-	Data.UpgradeCost = GetUpgradeCost();
-	return Data;
-}
+// const FHealthData ASFBaseBuilding::GetHealthData_Implementation()
+// {
+// 	FHealthData Data;
+// 	Data.DisplayName = DisplayName;
+// 	Data.CurrentTier = CurrentTier;
+// 	Data.HealthComponent = HealthComponent;
+// 	Data.ConstructCost = GetConstructCost();
+// 	Data.UpgradeCost = GetUpgradeCost();
+// 	return Data;
+// }
 
 USoundBase* ASFBaseBuilding::GetSelectionSound_Implementation()
 {

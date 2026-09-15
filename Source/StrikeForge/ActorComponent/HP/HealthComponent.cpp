@@ -49,7 +49,7 @@ void UHealthComponent::InitializeHealth(float InMaxHealth, float InCurrentHealth
 	CurrentHealth = FMath::Clamp(InCurrentHealth, 0.f, MaxHealth);
 	IsDead = CurrentHealth <= 0.f; // 초기화할때 0이면 죽음판정. 지금은 당장 필요없음
 
-	OnHealthValueChanged.Broadcast(PreviousHealth,	CurrentHealth, MaxHealth);
+	OnHealthValueChanged.Broadcast(PreviousHealth, CurrentHealth, MaxHealth);
 }
 
 void UHealthComponent::IncreaseCurrentHealth(float InAmount)

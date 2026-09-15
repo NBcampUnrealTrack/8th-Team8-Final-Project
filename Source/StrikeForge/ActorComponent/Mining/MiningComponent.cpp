@@ -101,6 +101,19 @@ bool UMiningComponent::HasUsableLinkedResource() const
 		!Resource->IsDepleted();
 }
 
+int32 UMiningComponent::GetRemainingDeposit() const
+{
+	AResourceBase* GetLinkedResource = LinkedResource.Get();
+	if (!IsValid(GetLinkedResource)) return 0;
+	
+	return GetLinkedResource->GetResourceDeposit();
+}
+
+float UMiningComponent::GetExtractProgressRatio() const
+{
+	return Tracker.GetRatio();
+}
+
 bool UMiningComponent::IsLinkedResource(const AResourceBase* InResource) const
 {
 	return LinkedResource.Get() == InResource;

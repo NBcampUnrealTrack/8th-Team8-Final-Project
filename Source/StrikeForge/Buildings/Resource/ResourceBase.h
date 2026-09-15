@@ -6,7 +6,8 @@
 #include "Datas/Resource/SFResourceTypes.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "GameFramework/Actor.h"
-#include "Interface/Minable.h"
+#include "Interface/SFBeMinedable.h"
+#include "InGame/SFSelectINfo/SFSelectable.h"
 #include "ResourceBase.generated.h"
 
 class UBoxComponent;
@@ -16,7 +17,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnResourceNodeDepleted, AResource
 UCLASS(Abstract)
 class STRIKEFORGE_API AResourceBase 
 	: public AActor
-	, public IMinable
+	, public ISFSelectable
+	, public IBeMinedable
 {
 	GENERATED_BODY()
 
@@ -27,7 +29,8 @@ public:
 	FSFOnResourceNodeDepleted OnDepleted;
 	
 	virtual int32 Extract(int32 InDigAmount) override;
-	
+	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+	virtual FBeMinedableData GetBeMinedableData() const override;
 	// Getter
 	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
 	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
@@ -40,6 +43,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	
+	void SetBoxExtent();
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneComponent;
@@ -48,12 +53,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoxComponent> BoxComponent;
 	
+	// 자원 타입
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
 	EResourceType ResourceType = EResourceType::Mineral;
+	// 매장량
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
 	int32 ResourceDeposit = 0;
+	// 등급 ( 품질 )
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	int32 ResourceTier = 1;
+	// 한번캘때 요구 작업량
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	float ResourceRequiredWork = 50.f;
 	
@@ -62,5 +71,8 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Resource|Grid")
 	FBuildingGridInfo RegisteredResourceGridInfo;
 	bool bResourceGridRegistered  = false;
+
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Selection|UI")
+	FName SelectionUIDataRowName = NAME_None;
 private:
 };

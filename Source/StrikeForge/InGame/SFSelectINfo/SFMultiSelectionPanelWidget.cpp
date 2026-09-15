@@ -87,6 +87,11 @@ void USFMultiSelectionPanelWidget::ShowSelections(
             &USFMultiSelectionPanelWidget::HandleEntryClicked
         );
 
+        EntryWidget->OnEntryShiftClicked.AddUniqueDynamic(
+            this,
+            &USFMultiSelectionPanelWidget::HandleEntryShiftClicked
+        );
+
         EntryWidgets.Add(EntryWidget);
     }
 
@@ -112,6 +117,11 @@ void USFMultiSelectionPanelWidget::ClearSelections()
             EntryWidget->OnEntryClicked.RemoveDynamic(
                 this,
                 &USFMultiSelectionPanelWidget::HandleEntryClicked
+            );
+
+            EntryWidget->OnEntryShiftClicked.RemoveDynamic(
+                this,
+                &USFMultiSelectionPanelWidget::HandleEntryShiftClicked
             );
         }
     }
@@ -140,4 +150,16 @@ void USFMultiSelectionPanelWidget::NativeDestruct()
 {
     ClearSelections();
     Super::NativeDestruct();
+}
+
+void USFMultiSelectionPanelWidget::HandleEntryShiftClicked(
+    AActor* Actor
+)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    OnRemoveSelectionRequested.Broadcast(Actor);
 }

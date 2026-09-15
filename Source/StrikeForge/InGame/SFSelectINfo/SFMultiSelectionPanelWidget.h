@@ -15,6 +15,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     SelectedActor
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnMultiSelectionRemoveRequested,
+    AActor*,
+    SelectedActor
+);
+
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFMultiSelectionPanelWidget : public UUserWidget
 {
@@ -31,6 +37,8 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Selection")
     FSFOnMultiSelectionPrimaryRequested OnPrimarySelectionRequested;
 
+    UPROPERTY(BlueprintAssignable, Category = "SF|Selection")
+    FSFOnMultiSelectionRemoveRequested OnRemoveSelectionRequested;
 protected:
     virtual void NativeDestruct() override;
 
@@ -49,4 +57,7 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<USFMultiSelectionEntryWidget>> EntryWidgets;
+
+    UFUNCTION()
+    void HandleEntryShiftClicked(AActor* Actor);
 };

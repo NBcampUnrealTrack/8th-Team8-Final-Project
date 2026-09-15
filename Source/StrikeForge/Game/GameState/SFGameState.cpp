@@ -16,18 +16,14 @@ ASFGameState::ASFGameState()
 	StageResult = ESFStageResult::Undetermined;
 }
 
-bool ASFGameState::InitializeStage(
-	FName StageRowName,
+bool ASFGameState::InitializeStage(FName StageRowName, 
 	const TArray<FSFStageBuildingRule>& InBuildingRules
 )
 {
 	if (StageRowName.IsNone())
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameState] "
-			"InitializeStage failed : Stage Row Name is None."
-		);
+		SF_LOG(Warning,	"[SFGameState] "
+						"InitializeStage failed : Stage Row Name is None.");
 
 		return false;
 	}
@@ -42,17 +38,11 @@ bool ASFGameState::InitializeStage(
 		return false;
 	}
 
-	CurrentStageRowName =
-		StageRowName;
+	CurrentStageRowName = StageRowName;
+	CurrentStageBuildingRules =	InBuildingRules;
 
-	CurrentStageBuildingRules =
-		InBuildingRules;
-
-	SF_LOG(
-		Log,
-		"[SFGameState] Stage initialized : %s | BuildingRules: %d",
-		*CurrentStageRowName.ToString(),
-		CurrentStageBuildingRules.Num()
+	SF_LOG(Log, "[SFGameState] Stage initialized : %s | BuildingRules: %d",
+		*CurrentStageRowName.ToString(), CurrentStageBuildingRules.Num()
 	);
 
 	return true;
@@ -62,9 +52,7 @@ bool ASFGameState::BeginRaceDataLoading()
 {
 	if (StageState != ESFStageState::Initializing)
 	{
-		SF_LOG(
-			Warning,
-			"[SFGameState] Race 데이터 로딩을 시작할 수 없는 상태입니다. State=%s",
+		SF_LOG(Warning, "[SFGameState] Race 데이터 로딩을 시작할 수 없는 상태입니다. State=%s",
 			*UEnum::GetValueAsString(StageState));
 
 		return false;

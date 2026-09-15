@@ -318,6 +318,24 @@ struct STRIKEFORGE_API FSFStageIntroNode
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character")
     TSoftObjectPtr<UTexture2D> RightCharacterImage;
 
+    /** 좌우 초상화가 함께 쓸 휘장. None이면 이 노드에서는 휘장을 표시하지 않는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character")
+    TSoftObjectPtr<UTexture2D> PortraitFrameImage;
+
+    /** 공통 확대율에 곱할 값. 1이면 위젯 기본값을 사용한다. 휘장 크기는 바뀌지 않는다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character", meta = (ClampMin = "0.5", ClampMax = "2.0"))
+    float LeftPortraitZoom = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character", meta = (ClampMin = "0.5", ClampMax = "2.0"))
+    float RightPortraitZoom = 1.f;
+
+    /** 휘장 크기에 대한 위치 보정 비율. +X는 오른쪽, +Y는 아래쪽. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character")
+    FVector2D LeftPortraitOffset = FVector2D::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character")
+    FVector2D RightPortraitOffset = FVector2D::ZeroVector;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage Intro|Character")
     ESFStageIntroSpeakerSide SpeakerSide = ESFStageIntroSpeakerSide::None;
 

@@ -33,7 +33,7 @@ struct FMinableData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TWeakObjectPtr<UMiningComponent> MiningComponent;
 	// << MiningComponent에 있는 알림 델리게이트 >>
-	// 이번 타임에 자원을 캔 양				: OnResourceExtracted				-반환파라미터 (EResourceType ResourceType, int32 Amount)
+	// 이번 타임에 자원을 캔 양			: OnResourceExtracted				-반환파라미터 (EResourceType ResourceType, int32 Amount)
 	// 연결된 자원의 남은 양				: OnRemainingDepositChanged			-반환파라미터 (EResourceType ResourceType, int32 Remaining)
 	// 채굴진행도 float 비율 0.0 ~ 1.0	: OnExtractProgressRatioChanged		-반환파라미터 (EResourceType ResourceType, float CurrentExtractRatio)
 	// 고갈시							: OnResourceDepleted				-반환파라미터 없음

@@ -285,6 +285,11 @@ bool ASFBuildingDestructionActor::InitializeDestruction(const UGeometryCollectio
     return true;
 }
 
+void ASFBuildingDestructionActor::SetSurfaceFireEffect(UNiagaraSystem* InEffect)
+{
+    SurfaceFireEffect = InEffect;
+}
+
 void ASFBuildingDestructionActor::ApplyDamageStage(int32 StageIndex, const FBuildingDestruction& StageData)
 {
     if (!bInitialized || bFinalDestructionApplied ||

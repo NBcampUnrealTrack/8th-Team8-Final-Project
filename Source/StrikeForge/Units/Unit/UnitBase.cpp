@@ -40,6 +40,36 @@ static TAutoConsoleVariable<int32> CVarDrawCombatDebug(
 	TEXT("전투 AI 디버그 표시 (0=off, 1=on). 유닛별 설정과 OR 로 동작한다."),
 	ECVF_Cheat);
 
+/**
+ * 이동 명령 응답 소리의 최소 간격(초).
+ *
+ * 여러 기를 선택해 한 번에 움직이면 명령이 유닛 수만큼 들어와 소리가 그만큼
+ * 겹친다. 이 간격 안에 들어온 두 번째 이후를 버려서 한 기만 대답하게 한다.
+ *
+ *   sf.CommandVoiceInterval 0.2   기본. 한 기만 대답
+ *   sf.CommandVoiceInterval 0     제한 없음. 선택한 전원이 대답
+ */
+static TAutoConsoleVariable<float> CVarCommandVoiceInterval(
+	TEXT("sf.CommandVoiceInterval"),
+	0.2f,
+	TEXT("이동 명령 응답 소리의 최소 간격(초). 0 이하면 선택한 전원이 대답한다."),
+	ECVF_Cheat);
+
+namespace
+{
+	/**
+	 * 마지막으로 명령 응답 소리를 낸 월드와 시각.
+	 *
+	 * 월드를 함께 들고 있는 이유는 PIE 를 껐다 켜면 월드가 바뀌기 때문이다.
+	 * 새 세션의 첫 명령이 직전 세션 기록에 막히면 안 된다.
+	 *
+	 * 시각은 월드 시간이 아니라 실시간을 쓴다. 월드 시간은 새 세션에서 0 으로
+	 * 돌아가 직전 기록보다 작아지고, 그러면 간격 계산이 음수가 된다.
+	 */
+	TWeakObjectPtr<UWorld> GLastCommandVoiceWorld;
+	double GLastCommandVoiceTime = 0.0;
+}
+
 AUnitBase::AUnitBase()
 	: bRequireLineOfSight(true)
 	, bDrawCombatDebug(false)
@@ -213,6 +243,9 @@ void AUnitBase::InitStat(const FUnitStatData& InRow)
 	// 선택음은 여기서 한 번만 로드한다.
 	// 지정하지 않은 유닛은 nullptr 로 남고, 그러면 선택해도 소리가 나지 않는다.
 	CachedSelectionSound = InRow.SelectionSound.LoadSynchronous();
+
+	// 이동 명령 응답음도 같은 이유로 여기서 한 번만 로드한다.
+	CachedMoveCommandSound = InRow.MoveCommandSound.LoadSynchronous();
 
 	bStatInitialized = true;
 }
@@ -630,6 +663,45 @@ bool AUnitBase::IsCommandableByPlayer() const
 	return true;
 }
 
+// ─────────────────────────────────────────────────────────
+// 이동 명령 응답음
+//
+// 한 번의 우클릭이 선택한 유닛 수만큼 명령을 낸다. 전원이 대답하면 같은
+// 소리가 겹쳐 뭉개지므로, 짧은 간격 안의 중복을 버려 한 기만 통과시킨다.
+// 같은 프레임에 들어오는 명령들이라 "첫 한 기" 를 고르는 것과 같다.
+//
+// 어느 유닛이 대답할지는 정하지 않는다. 선택 순서가 곧 호출 순서이므로
+// 대체로 먼저 뽑은 유닛이 대답한다.
+// ─────────────────────────────────────────────────────────
+void AUnitBase::PlayMoveCommandVoice()
+{
+	// 소리를 지정하지 않은 유닛은 조용한 것이 정상이다.
+	if (!IsValid(CachedMoveCommandSound)) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const float Interval = CVarCommandVoiceInterval.GetValueOnGameThread();
+
+	if (Interval > 0.f)
+	{
+		const double Now = FPlatformTime::Seconds();
+
+		if (GLastCommandVoiceWorld.Get() == World &&
+			(Now - GLastCommandVoiceTime) < static_cast<double>(Interval))
+		{
+			return;
+		}
+
+		GLastCommandVoiceWorld = World;
+		GLastCommandVoiceTime = Now;
+	}
+
+	// 선택음(ASFInGamePlayerController::PlaySelectionSound)과 같은 방식으로 낸다.
+	// 위치 기반이므로 감쇠(Attenuation)가 걸린 에셋은 카메라 높이에서 작게 들린다.
+	UGameplayStatics::PlaySoundAtLocation(this, CachedMoveCommandSound, GetActorLocation());
+}
+
 bool AUnitBase::HasActivePlayerCommand() const
 {
 	return bHasCommandedDestination || IsValid(ForcedTarget);
@@ -798,6 +870,8 @@ void AUnitBase::CommandMoveTo(const FVector& InDestination)
 	// IMovable 인터페이스와 같은 동작이다.
 	// 컨트롤러가 모든 명령을 Command 계열 이름으로 통일해 부를 수 있게 둔다.
 	MoveToLocation_Implementation(InDestination);
+
+	PlayMoveCommandVoice();
 }
 
 void AUnitBase::CommandAttackMove(const FVector& InDestination)
@@ -813,6 +887,8 @@ void AUnitBase::CommandAttackMove(const FVector& InDestination)
 
 	// 위 호출이 꺼놓은 플래그를 다시 켠다. 순서를 뒤집으면 꺼진다.
 	bCommandIsAttackMove = true;
+
+	PlayMoveCommandVoice();
 
 	SF_LOG(Log, "[Unit] %s : 공격 이동 명령 (%s)", *GetName(), *InDestination.ToString());
 }

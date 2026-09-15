@@ -400,6 +400,19 @@ protected:
 	bool ExecuteNextQueuedCommand();
 
 	/**
+	 * 이동 명령에 대한 응답 소리를 낸다.
+	 *
+	 * 플레이어 명령 창구(CommandMoveTo·CommandAttackMove)에서만 부른다.
+	 * MoveToLocation_Implementation 에 두면 안 된다 — 생산 건물이 집결지로
+	 * 보낼 때 그 함수를 직접 부르므로, 유닛이 생산될 때마다 대답하게 된다.
+	 *
+	 * 여러 기를 한꺼번에 움직이면 선택한 수만큼 명령이 들어와 소리가 겹친다.
+	 * 스타크래프트처럼 한 기만 대답하도록 짧은 간격 안의 중복은 버린다
+	 * (sf.CommandVoiceInterval).
+	 */
+	void PlayMoveCommandVoice();
+
+	/**
 	 * 교전이 성립하는 거리(대상 표면 기준).
 	 *
 	 * 건물은 자기 주변 NavMesh 를 넓게 파먹어서 유닛이 아무리 붙어도
@@ -1057,6 +1070,15 @@ private:
 	 */
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> CachedSelectionSound = nullptr;
+
+	/**
+	 * DT 의 MoveCommandSound 를 InitStat 에서 한 번만 로드해 둔 것.
+	 *
+	 * 지정하지 않은 유닛은 nullptr 로 남고, 그러면 이동 명령에 대답하지 않는다.
+	 * DT 를 거치지 않고 배치된 유닛도 InitStat 이 불리지 않아 비어 있다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> CachedMoveCommandSound = nullptr;
 
 	float AttackCooldownRemaining = 0.f;
 

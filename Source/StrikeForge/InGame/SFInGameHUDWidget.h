@@ -29,11 +29,21 @@ class USoundBase;
 class ASFProductionBuilding;
 class AUnitBase;
 class UTexture2D;
+class USFControlGroupWidget;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
+
+USTRUCT()
+struct FSFControlGroup
+{
+    GENERATED_BODY()
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<AActor>> Actors;
+};
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -115,6 +125,15 @@ public:
 
     bool IsPointerOverHUDPanel();
 
+    void SaveCurrentSelectionToControlGroup(
+        int32 GroupIndex,
+        bool bAppend
+    );
+
+    void SelectControlGroup(
+        int32 GroupIndex
+    );
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -141,7 +160,18 @@ private:
         AActor* DestroyedActor
     );
 
+    UFUNCTION()
+    void HandleControlGroupActorDestroyed(
+        AActor* DestroyedActor
+    );
+
+    void BindControlGroupActorsDestroyed();
+
+    void UnbindControlGroupActorsDestroyed();
+
     void PerformSelectionTrace();
+
+    void AddActorToCurrentSelection(AActor* Actor);
 
     void ApplySelection(
         AActor* NewSelectedActor,
@@ -165,6 +195,8 @@ private:
     );
 
     void RefreshSelectionPanels();
+
+    void RefreshSelectedResourceInfo();
 
     /**
     * 맵에 배치된 Portrait Actor를 저장할 포인터
@@ -209,7 +241,8 @@ private:
 
     void PerformDragSelection(
         FVector2D StartScreenPosition,
-        FVector2D EndScreenPosition
+        FVector2D EndScreenPosition,
+        bool bAddToExistingSelection
     );
 
     bool IsOwnedByLocalPlayer(AActor* Actor) const;
@@ -224,6 +257,9 @@ private:
 
     UFUNCTION()
     void HandlePrimarySelectionRequested(AActor* Actor);
+
+    UFUNCTION()
+    void HandleMultiSelectionRemoveRequested(AActor* Actor);
 
     void CreateRallyPointIndicatorsForBuilding(
         ASFProductionBuilding* ProductionBuilding
@@ -472,6 +508,8 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Rally")
     TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
 
+    UPROPERTY(BlueprintReadOnly,Category = "SF|HUD|ControlGroup",meta = (BindWidgetOptional))
+    TObjectPtr<USFControlGroupWidget> ControlGroupWidget = nullptr;
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -534,4 +572,9 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<UStaticMeshComponent>> RallyPointIndicators;
+
+    bool bAdditiveSelectionDrag = false;
+
+    UPROPERTY(Transient)
+    TArray<FSFControlGroup> ControlGroups;
 };

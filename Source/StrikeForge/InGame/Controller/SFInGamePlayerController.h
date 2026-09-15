@@ -163,6 +163,8 @@ private:
 
     void HandleSelectAllUnitsInput();
 
+    void HandleControlGroupInput(int32 GroupIndex);
+
     void HandleToggleBuildModeInput();
 
     // 생산 슬롯 입력 처리
@@ -193,7 +195,8 @@ private:
         AActor* Actor,
         ESFUnitCommandMode CommandMode,
         const FVector& Location,
-        AActor* Target
+        AActor* Target,
+        bool bAppendToQueue
     ) const;
 
     bool IsValidAttackTarget(const AActor* Actor) const;
@@ -209,6 +212,8 @@ private:
     ) const;
 
     bool ExecutePendingRallyPointUnderCursor();
+
+    bool IsShiftCommandModifierDown() const;
 
     // 선택하면 소리재생 함수
     UFUNCTION(BlueprintCallable)
@@ -333,6 +338,24 @@ protected:
         Category = "SF|Input"
     )
     TObjectPtr<UInputAction> SelectAllUnitsAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup01Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup02Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup03Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup04Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup05Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup06Action = nullptr;
 
     UPROPERTY(
         EditDefaultsOnly,

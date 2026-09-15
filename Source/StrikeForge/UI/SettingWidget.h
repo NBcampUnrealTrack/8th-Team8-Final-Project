@@ -3,12 +3,15 @@
 #include "CommonActivatableWidget.h"
 #include "Input/Reply.h"
 #include "SettingWidget.generated.h"
+
 class UButton;
 class UComboBoxString;
 class UBackgroundBlur;
 class USlider;
 class USoundMix;
 class USoundClass;
+class UMouseSensitivitySubsystem;
+
 UCLASS()
 class STRIKEFORGE_API USettingWidget : public UCommonActivatableWidget
 {
@@ -22,6 +25,8 @@ protected:
 	void OnBackUiButtonClicked();
 	UFUNCTION()
 	void OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION()
+	void OnResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
 	UFUNCTION()
 	void OnMasterVolumeChanged(float Value);
 	UFUNCTION()
@@ -38,6 +43,8 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UComboBoxString* FullScreenComboBox;
 	UPROPERTY(meta = (BindWidget))
+	UComboBoxString* ResolutionComboBox;
+	UPROPERTY(meta = (BindWidget))
 	UBackgroundBlur* BackgroundBlur;
 	UPROPERTY(meta = (BindWidget))
 	USlider* MasterVolumeSlider;
@@ -48,7 +55,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	USlider* MouseSensitivitySlider;
 
-	// 마스터 볼륨 조절용 - 에디터에서 지정 (예: SC_Master 사운드 클래스, 해당 SoundMix)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sound")
 	USoundMix* MasterSoundMix;
 
@@ -64,5 +70,4 @@ protected:
 	float CurrentMasterVolume = 1.0f;
 	float CurrentBGMVolume = 1.0f;
 	float CurrentSXVolume = 1.0f;
-	float CurrentMouseSensitivity = 1.0f;
 };

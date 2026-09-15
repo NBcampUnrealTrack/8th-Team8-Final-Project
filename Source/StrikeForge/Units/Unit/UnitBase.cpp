@@ -1393,8 +1393,20 @@ bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 	const FCollisionShape Probe = FCollisionShape::MakeSphere(LineOfSightRadius);
 
 	FHitResult Hit;
-	const bool bBlocked = GetWorld()->SweepSingleByChannel(
-		Hit, Start, End, FQuat::Identity, ECC_WorldStatic, Probe, Params);
+	// 오브젝트 타입이 실제로 WorldStatic인 대상만 검사한다.
+	// SweepSingleByChannel(ECC_WorldStatic)을 사용하면
+	// WorldStatic 채널을 Block하는 Pawn까지 검사에 걸릴 수 있다.
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+
+	const bool bBlocked = GetWorld()->SweepSingleByObjectType(
+		Hit,
+		Start,
+		End,
+		FQuat::Identity,
+		ObjectQueryParams,
+		Probe,
+		Params);
 
 #if ENABLE_DRAW_DEBUG
 	if (ShouldDrawDebug())
@@ -1423,7 +1435,7 @@ bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 // 시야 페널티와 타겟 고정력이 없으면 아군 전원이 같은 적 하나로 몰려가고,
 // 뒤엉킨 상태에서 최근접 대상이 계속 바뀌면서 제자리 밀치기가 된다.
 // ─────────────────────────────────────────────────────────
-AActor* AUnitBase::FindBestTarget()
+AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 {
 	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
 	if (!Combat) return nullptr;
@@ -1450,6 +1462,12 @@ AActor* AUnitBase::FindBestTarget()
 
 	for (AActor* Candidate : Candidates)
 	{
+		// 슬롯 접근에 실패한 기존 타겟은 이번 재탐색에서 제외한다.
+		if (Candidate == InExcludedTarget)
+		{
+			continue;
+		}
+
 		const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(Candidate);
 		if (!IsValid(Comp)) continue;
 
@@ -2312,79 +2330,123 @@ void AUnitBase::Tick(float DeltaSeconds)
 		// ── 추격 ────────────────────────────────────────
 		SetCombatState(EUnitCombatState::Chasing);
 
-		// 사거리 + SlotActivationRange 안쪽인가.
+		// 타겟을 발견한 순간부터 적의 중심이 아닌
+		// 자신에게 배정된 공격 슬롯을 향해 이동한다.
 		//
-		// 이 구간에서는 NavMesh/DetourCrowd 에 이동을 맡기지 않는다. 여러 유닛이
-		// 한 대상에 몰릴 때 회피가 정체되는 문제가 반복돼서, 붙는 마지막 구간만
-		// SteerTowardSlot 의 직접 조향(추격력 + 분리력)으로 바꿨다.
-		//
-		// 멀리서는 그대로 액터 추적에 맡긴다 — 문제가 있었던 적이 없는 구간이고,
-		// 목표가 계속 움직이는 장거리 추격에서는 경로 추종이 알아서 따라가는
-		// 쪽이 낫다.
-		const bool bCloseQuarters = (Distance <= EffectiveRange + SlotActivationRange);
+		// 유닛마다 서로 다른 슬롯을 추적하므로 이동 경로가
+		// 처음부터 좌우로 나뉘게 된다.
+		AUnitAIController* AI = GetUnitAI();
+		USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
 
-		if (bCloseQuarters)
+		if (AI)
 		{
-			StuckTimer = 0.f;
-			bRangeUnreachableReported = false;
+			FVector SlotLocation;
 
-			AUnitAIController* AI = GetUnitAI();
-			USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+			const bool bHasValidSlot = Combat && AttackSlotIndex != INDEX_NONE && Combat->GetAttackSlotLocation(
+					CurrentTarget,
+					AttackSlotIndex,
+					GetApproachDistance(CurrentTarget),
+					SlotLocation);
 
-			if (AI && Combat)
+			if (bHasValidSlot)
 			{
-				FVector SlotLocation;
+				// 적 중심이 아니라 배정된 슬롯으로 이동한다.
+				AI->RequestMoveToLocation(SlotLocation, SlotAcceptanceRadius, true);
 
-				// 대상 주변에 배정받은 공격 위치가 있다면
-				// Detour Crowd 경로 이동으로 해당 위치까지 우회한다.
-				if (AttackSlotIndex != INDEX_NONE && Combat->GetAttackSlotLocation(
-						CurrentTarget,
-						AttackSlotIndex,
-						GetApproachDistance(CurrentTarget), SlotLocation))
+				const float DistanceToSlot =
+					FVector::Dist2D(
+						GetActorLocation(),
+						SlotLocation);
+
+				// 아직 슬롯에서 멀리 떨어져 있는데 실제 이동 속도가 낮다면
+				// 앞 유닛이나 장애물 때문에 접근하지 못하는 것으로 본다.
+				const bool bSlotApproachBlocked =
+					DistanceToSlot > SlotAcceptanceRadius + 50.f
+					&& GetVelocity().SizeSquared2D()
+					< FMath::Square(CloseQuartersStuckSpeed);
+
+				if (bSlotApproachBlocked)
 				{
-					AI->RequestMoveToLocation(SlotLocation, SlotAcceptanceRadius, true);
+					CloseQuartersStuckTimer += DeltaSeconds;
+
+					if (CloseQuartersStuckTimer
+						>= CloseQuartersStuckDuration)
+					{
+						if (!bRangeUnreachableReported)
+						{
+							bRangeUnreachableReported = true;
+
+							SF_LOG(
+								Warning,
+								"[Unit] %s : 공격 슬롯 접근 정체. "
+								"대상=%s / 슬롯=%d / 슬롯 거리=%.0f / 속도=%.0f",
+								*GetName(),
+								*CurrentTarget->GetName(),
+								AttackSlotIndex,
+								DistanceToSlot,
+								GetVelocity().Size2D());
+						}
+
+						// 플레이어가 직접 지정한 공격 대상은 임의로 변경하지 않는다.
+						if (!ForcedTarget)
+						{
+							AActor* BlockedTarget = CurrentTarget;
+
+							// 접근하지 못한 슬롯을 먼저 반납한다.
+							ReleaseAttackSlot();
+
+							// 기존 타겟을 제외하고 주변의 다른 적을 탐색한다.
+							AActor* AlternativeTarget =
+								FindBestTarget(BlockedTarget);
+
+							if (IsValid(AlternativeTarget))
+							{
+								CurrentTarget = AlternativeTarget;
+								RetargetTimer = RetargetInterval;
+
+								CloseQuartersStuckTimer = 0.f;
+								bRangeUnreachableReported = false;
+
+								AI->ForceRepath();
+
+								SF_LOG(
+									Log,
+									"[Unit] %s : 슬롯 접근 실패로 타겟 변경. %s → %s",
+									*GetName(),
+									*BlockedTarget->GetName(),
+									*AlternativeTarget->GetName());
+
+								return;
+							}
+
+							// 다른 적이 없다면 기존 적을 유지한다.
+							// 슬롯은 다음 틱의 UpdateAttackSlot()에서 다시 요청한다.
+							CurrentTarget = BlockedTarget;
+							RetargetTimer = 0.f;
+
+							CloseQuartersStuckTimer = 0.f;
+							bRangeUnreachableReported = false;
+						}
+					}
 				}
 				else
 				{
-					// 공격 자리가 완전히 찬 경우 앞 유닛을 계속 밀지 않는다.
-					AI->ClearMoveRequest();
-				}
-			}
-		}
-		else
-		{
-			if (AUnitAIController* AI = GetUnitAI())
-			{
-				AI->RequestMoveToActor(CurrentTarget, MoveAcceptanceRadius);
-			}
-
-			// 사거리 밖인데 더 접근할 수도 없는 상태.
-			// NavMesh 가 파여 물리적으로 도달 불가능한 경우이므로
-			// 사거리나 BuildingRangeBonus 를 조정해야 한다.
-			//
-			// 이 구간은 아직 SlotActivationRange 밖이라 슬롯을 쓰지 않으므로,
-			// 여기서 정체가 잡혀도 슬롯을 놓을 필요가 없다 — 그냥 알리기만 한다.
-			if (!bRangeUnreachableReported && GetVelocity().SizeSquared2D() < FMath::Square(20.f))
-			{
-				StuckTimer += DeltaSeconds;
-
-				if (StuckTimer >= StuckThreshold)
-				{
-					bRangeUnreachableReported = true;
-
-					SF_LOG(Warning,
-						"[Unit] %s : %s 에 접근할 수 없습니다. 현재 거리 %.0f / 필요 %.0f. "
-						"BuildingRangeBonus 또는 AttackRange 를 늘리세요.",
-						*GetName(), *CurrentTarget->GetName(), Distance, EffectiveRange);
+					CloseQuartersStuckTimer = 0.f;
+					bRangeUnreachableReported = false;
 				}
 			}
 			else
 			{
-				StuckTimer = 0.f;
+				// 공격 슬롯을 받지 못한 경우 적 중앙으로 들어가지 않는다.
+				//
+				// UpdateAttackSlot()이 다음 틱에도 호출되기 때문에
+				// 빈 슬롯이 생기면 다시 슬롯을 받을 수 있다.
+				AI->ClearMoveRequest();
 			}
 		}
-	}
 
+		StuckTimer = 0.f;
+	}
 }
 
 void AUnitBase::AlertNearbyAllies(AActor* InTarget)

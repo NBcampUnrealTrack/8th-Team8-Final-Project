@@ -1,5 +1,6 @@
 #include "SFStageIntroWidget.h"
 
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -8,6 +9,7 @@
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
+#include "InGame/HUD/Tutorial/SFStageIntroPortraitFrame.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 // TObjectPtr<USoundMix/USoundClass> 를 UObject* 로 넘기려면 완전한 타입이 필요하다.
@@ -93,6 +95,139 @@ void USFStageIntroWidget::ApplyMusicDuck(bool bInDuck)
 
     SF_LOG(Log, "[SFStageIntroWidget] 배경음 감쇠 %s | Volume: %.2f",
         bInDuck ? TEXT("ON") : TEXT("OFF"), DuckVolume);
+}
+
+void USFStageIntroWidget::NativeOnInitialized()
+{
+    // Slate 생성 전에 감싸야 자식 순서와 기존 Canvas/Overlay 슬롯 설정이 유지된다.
+    LeftPortraitFrame = WrapCharacterImage(LeftCharacterImage);
+    RightPortraitFrame = WrapCharacterImage(RightCharacterImage);
+    Super::NativeOnInitialized();
+    CacheConversationLayout();
+}
+
+void USFStageIntroWidget::CacheConversationLayout()
+{
+    for (UWidget* Widget : {static_cast<UWidget*>(StageIntroSwitcher), static_cast<UWidget*>(NextIndicatorImage),
+        static_cast<UWidget*>(SpeakerNameText), static_cast<UWidget*>(DialogueText),
+        static_cast<UWidget*>(LeftPortraitFrame), static_cast<UWidget*>(RightPortraitFrame)})
+    {
+        if (IsValid(Widget))
+        {
+            if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Widget->Slot))
+            {
+                OriginalConversationLayouts.Add(CanvasSlot, CanvasSlot->GetLayout());
+            }
+        }
+    }
+}
+
+void USFStageIntroWidget::RestoreConversationLayout()
+{
+    // 매 노드마다 원본에서 계산한다. 대화를 여러 번 열어도 누적 축소/이동하지 않는다.
+    for (const auto& Entry : OriginalConversationLayouts)
+    {
+        if (IsValid(Entry.Key)) Entry.Key->SetLayout(Entry.Value);
+    }
+}
+
+void USFStageIntroWidget::CompactDialogueLayout(const FText& FullText)
+{
+    UCanvasPanelSlot* PanelSlot = IsValid(StageIntroSwitcher) ? Cast<UCanvasPanelSlot>(StageIntroSwitcher->Slot) : nullptr;
+    UCanvasPanelSlot* BackgroundSlot = IsValid(NextIndicatorImage) ? Cast<UCanvasPanelSlot>(NextIndicatorImage->Slot) : nullptr;
+    UCanvasPanelSlot* TextSlot = IsValid(DialogueText) ? Cast<UCanvasPanelSlot>(DialogueText->Slot) : nullptr;
+    if (!PanelSlot || !BackgroundSlot || !TextSlot) return;
+
+    const FVector2D PanelSize = PanelSlot->GetSize();
+    const FVector2D BackgroundSize = BackgroundSlot->GetSize();
+    // 현재 WBP는 NextIndicatorImage에 대사창 배경을 넣는다. 작은 '다음' 아이콘에는 적용하지 않는다.
+    if (PanelSize.Y <= 0.f || BackgroundSize.X < PanelSize.X * 0.8f || BackgroundSize.Y < PanelSize.Y * 0.8f) return;
+
+    const float Ratio = FMath::Clamp(DialogueHeightScale, 0.5f, 1.f);
+    const FVector2D TextPosition = TextSlot->GetPosition();
+    const FVector2D TextSize = TextSlot->GetSize();
+    const float TextTop = TextPosition.Y * Ratio;
+    const float BottomPadding = FMath::Max(32.f, static_cast<float>(PanelSize.Y - TextPosition.Y - TextSize.Y) * Ratio);
+
+    // 전문을 먼저 측정한다. 타자 효과 도중에는 패널 높이가 변하지 않는다.
+    DialogueText->SetWrapTextAt(TextSize.X);
+    DialogueText->SetText(FullText);
+    DialogueText->ForceLayoutPrepass();
+    const float Height = FMath::Max(static_cast<float>(PanelSize.Y) * Ratio,
+        TextTop + static_cast<float>(DialogueText->GetDesiredSize().Y) + BottomPadding + 8.f);
+    PanelSlot->SetSize(FVector2D(PanelSize.X, Height));
+    BackgroundSlot->SetSize(FVector2D(BackgroundSize.X, Height));
+    TextSlot->SetPosition(FVector2D(TextPosition.X, TextTop));
+    TextSlot->SetSize(FVector2D(TextSize.X, Height - TextTop - BottomPadding));
+
+    if (UCanvasPanelSlot* NameSlot = IsValid(SpeakerNameText) ? Cast<UCanvasPanelSlot>(SpeakerNameText->Slot) : nullptr)
+    {
+        const FVector2D Position = NameSlot->GetPosition();
+        const double HalfHeight = NameSlot->GetSize().Y * 0.5;
+        NameSlot->SetPosition(FVector2D(Position.X, (Position.Y + HalfHeight) * Height / PanelSize.Y - HalfHeight));
+    }
+}
+
+void USFStageIntroWidget::PositionPortraitFrames(bool bHasFrame)
+{
+    // 기본은 WBP 배치를 그대로 둔다.
+    //
+    // 여기서 캔버스 슬롯을 다시 계산하면, 대사창이 스트레치 앵커일 때
+    // GetSize() 가 크기가 아니라 우/하 여백을 돌려주므로 계산이 전부 어긋나고
+    // 휘장 칸이 0 이나 음수가 되어 휘장과 초상화가 함께 사라진다.
+    // 켜고 싶으면 bAutoPositionPortraitFrames 를 켠다.
+    if (!bAutoPositionPortraitFrames || !bHasFrame || !IsValid(StageIntroSwitcher)) return;
+    const UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(StageIntroSwitcher->Slot);
+    if (!PanelSlot) return;
+
+    // Offsets 를 위치·크기로 읽을 수 있는 것은 점 앵커일 때뿐이다.
+    const FAnchors PanelAnchors = PanelSlot->GetAnchors();
+    if (!PanelAnchors.Minimum.Equals(PanelAnchors.Maximum))
+    {
+        SF_LOG(Warning, "[SFStageIntroWidget] 대사창이 스트레치 앵커라 휘장 자동 배치를 건너뜁니다.");
+        return;
+    }
+
+    const FVector2D PanelSize = PanelSlot->GetSize();
+    if (PanelSize.X <= 0. || PanelSize.Y <= 0.) return;
+    const FVector2D PanelPosition = PanelSlot->GetPosition();
+    const FVector2D PanelAlignment = PanelSlot->GetAlignment();
+    const UPanelWidget* PanelParent = StageIntroSwitcher->GetParent();
+    auto PositionFrame = [&](USFStageIntroPortraitFrame* Frame, bool bLeft)
+    {
+        UCanvasPanelSlot* CanvasSlot = IsValid(Frame) ? Cast<UCanvasPanelSlot>(Frame->Slot) : nullptr;
+        if (!CanvasSlot) return;
+        // 같은 캔버스 안에 있을 때만 대사창 좌표를 그대로 쓸 수 있다.
+        if (Frame->GetParent() != PanelParent) return;
+        CanvasSlot->SetAnchors(PanelAnchors);
+        CanvasSlot->SetAutoSize(false);
+        CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+        CanvasSlot->SetSize(PortraitFrameSize);
+        const double X = PanelPosition.X - PanelSize.X * PanelAlignment.X
+            + (bLeft ? PortraitInsetFromPanelEdge : PanelSize.X - PortraitInsetFromPanelEdge);
+        const double Y = PanelPosition.Y - PanelSize.Y * PanelAlignment.Y + PortraitDialogueOverlap;
+        CanvasSlot->SetPosition(FVector2D(X, Y));
+    };
+    PositionFrame(LeftPortraitFrame, true);
+    PositionFrame(RightPortraitFrame, false);
+}
+
+USFStageIntroPortraitFrame* USFStageIntroWidget::WrapCharacterImage(UImage* Image)
+{
+    if (!IsValid(WidgetTree) || !IsValid(Image) || !IsValid(Image->GetParent()))
+    {
+        return nullptr;
+    }
+
+    UPanelWidget* Parent = Image->GetParent();
+    UPanelSlot* OriginalSlot = Image->Slot;
+    const int32 ChildIndex = Parent->GetChildIndex(Image);
+    USFStageIntroPortraitFrame* Frame = WidgetTree->ConstructWidget<USFStageIntroPortraitFrame>();
+    Frame->SetVisibility(Image->GetVisibility());
+    Image->RemoveFromParent();
+    Parent->InsertChildAt(ChildIndex, Frame, OriginalSlot);
+    Frame->SetContent(Image);
+    return Frame;
 }
 
 void USFStageIntroWidget::NativeConstruct()
@@ -282,6 +417,8 @@ void USFStageIntroWidget::ShowNode(int32 NodeIndex)
     CurrentNodeIndex = NodeIndex;
     const FSFStageIntroNode& Node = ActiveNodes[CurrentNodeIndex];
 
+    RestoreConversationLayout();
+
     switch (Node.NodeType)
     {
     case ESFStageIntroNodeType::Dialogue:
@@ -322,6 +459,8 @@ void USFStageIntroWidget::ShowDialogueNode(const FSFStageIntroNode& Node)
     {
         SpeakerNameText->SetText(Node.TitleText);
     }
+
+    CompactDialogueLayout(Node.BodyText);
 
     // 선택지·조작 설명 노드가 이 이미지를 Collapsed 로 만들어 두므로
     // 대사 노드로 돌아올 때마다 되살려야 한다.
@@ -376,6 +515,11 @@ void USFStageIntroWidget::ShowChoiceNode(const FSFStageIntroNode& Node)
     {
         UpdateCharacterImages(Node);
     }
+    else
+    {
+        // 선택지의 초상화 생략은 기존 인물을 유지하지만, 휘장 None은 반드시 반영한다.
+        UpdateCharacterFrames(Node);
+    }
 
     if (IsValid(NextIndicatorImage))
     {
@@ -407,6 +551,15 @@ void USFStageIntroWidget::ShowControlGuideNode(const FSFStageIntroNode& Node)
     if (IsValid(RightCharacterImage))
     {
         RightCharacterImage->SetVisibility(ESlateVisibility::Collapsed);
+    }
+
+    if (IsValid(LeftPortraitFrame))
+    {
+        LeftPortraitFrame->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    if (IsValid(RightPortraitFrame))
+    {
+        RightPortraitFrame->SetVisibility(ESlateVisibility::Collapsed);
     }
 
     if (IsValid(PreviousGuideButton))
@@ -711,6 +864,7 @@ void USFStageIntroWidget::UpdateCharacterImages(const FSFStageIntroNode& Node)
 {
     SetImageTexture(LeftCharacterImage, Node.LeftCharacterImage);
     SetImageTexture(RightCharacterImage, Node.RightCharacterImage);
+    UpdateCharacterFrames(Node);
 
     // 그림이 바뀌는 노드는 화면 전환에 가까우므로 보간 없이 즉시 맞춘다.
     // 새 인물이 작은 상태에서 커지면 등장 연출처럼 읽힌다.
@@ -722,6 +876,23 @@ void USFStageIntroWidget::UpdateCharacterImages(const FSFStageIntroNode& Node)
     LastRightCharacterImage = Node.RightCharacterImage;
 
     ApplySpeakerHighlight(Node.SpeakerSide, bPortraitChanged);
+}
+
+void USFStageIntroWidget::UpdateCharacterFrames(const FSFStageIntroNode& Node)
+{
+    UTexture2D* FrameTexture = Node.PortraitFrameImage.LoadSynchronous();
+    auto UpdateFrame = [&](USFStageIntroPortraitFrame* Frame, UImage* Portrait, float Zoom, const FVector2D& Offset)
+    {
+        if (IsValid(Frame) && IsValid(Portrait))
+        {
+            Frame->SetFrame(FrameTexture, PortraitFrameSize, PortraitFrameInset,
+                DefaultPortraitZoom * Zoom, Offset, PortraitBackdropColor);
+            Frame->SetVisibility(Portrait->GetVisibility());
+        }
+    };
+    UpdateFrame(LeftPortraitFrame, LeftCharacterImage, Node.LeftPortraitZoom, Node.LeftPortraitOffset);
+    UpdateFrame(RightPortraitFrame, RightCharacterImage, Node.RightPortraitZoom, Node.RightPortraitOffset);
+    PositionPortraitFrames(IsValid(FrameTexture));
 }
 
 void USFStageIntroWidget::ApplySpeakerHighlight(

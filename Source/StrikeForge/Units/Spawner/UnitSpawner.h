@@ -8,6 +8,7 @@
 
 class AUnitBase;
 class ALanePath;
+class UCombatTargetComponent;
 
 /**
  * 유닛 자동 생성기 (프로토타입 검증용).
@@ -54,6 +55,19 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
 	int32 GetAliveCount() const;
 
+	/**
+	 * 이 스포너를 소유한 건물. 아직 연결되지 않았으면 nullptr.
+	 *
+	 * 건물은 앵커에서 레벨 시작 직후에 생성되므로 BeginPlay 시점에는 아직 없다.
+	 * 그래서 연결은 타이머로 미뤄서 한다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
+	AActor* GetOwnerBuilding() const;
+
+	/** 소유 건물이 파괴돼 영구 정지한 상태인가 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
+	bool IsShutDownByOwnerBuilding() const;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "SF|Spawn")
 	void OnUnitSpawned(AUnitBase* InUnit);
 
@@ -82,6 +96,25 @@ protected:
 
 	void StartSpawnTimer(float InFirstDelay);
 	void StopSpawnTimer();
+
+	/**
+	 * 소유 건물을 찾아 파괴 신호에 연결한다.
+	 *
+	 * ① 어태치 부모(건물에 직접 붙여둔 배치)
+	 * ② 같은 팀 건물 중 반경 안 최근접 (앵커에 붙여둔 배치 — 건물이 자기 위에 선다)
+	 * 찾지 못하면 타임아웃까지 재시도한다.
+	 */
+	void ResolveOwnerBuilding();
+
+	void StartOwnerBuildingResolveTimer();
+	void StopOwnerBuildingResolveTimer();
+
+	void BindOwnerBuilding(UCombatTargetComponent* InTarget);
+	void UnbindOwnerBuilding();
+
+	/** 델리게이트에 바인드하려면 UFUNCTION 이어야 한다 */
+	UFUNCTION()
+	void HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SpawnPoint;
@@ -161,6 +194,48 @@ private:
 
 #pragma endregion
 
+#pragma region Owner Building
+
+	/**
+	 * 소유 건물이 파괴되면 스폰을 영구 정지할지.
+	 *
+	 * 기본이 true 인 이유는 이게 원하는 동작이기 때문이고, 건물을 못 찾은
+	 * 스포너는 예전과 똑같이 계속 돈다(bRequireOwnerBuilding 참고).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Owner Building", meta = (AllowPrivateAccess = true))
+	uint8 bStopWhenOwnerBuildingDestroyed : 1;
+
+	/** 어태치 부모가 건물이 아닐 때 같은 팀 건물을 찾을 반경(cm) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Owner Building",
+		meta = (AllowPrivateAccess = true, ClampMin = "0.0", EditCondition = "bStopWhenOwnerBuildingDestroyed"))
+	float OwnerBuildingSearchRadius = 800.f;
+
+	/**
+	 * 건물을 찾을 때까지 재시도하는 시간(초).
+	 *
+	 * 건물은 SFGameMode 가 에셋 비동기 로딩을 마친 뒤에 세우므로 스포너보다
+	 * 늦게 나타난다. 실측 0.6초 남짓이지만 로딩이 길어지는 경우가 있어 넉넉히 둔다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Owner Building",
+		meta = (AllowPrivateAccess = true, ClampMin = "0.0", EditCondition = "bStopWhenOwnerBuildingDestroyed"))
+	float OwnerBuildingResolveTimeout = 15.f;
+
+	/**
+	 * 건물을 끝내 못 찾았을 때 스폰을 막을지.
+	 *
+	 * 기본이 false 인 이유는 기존 전투 테스트 맵 때문이다. 건물 없이 놓아둔
+	 * 스포너가 이 기능 때문에 통째로 조용해지면 안 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Owner Building",
+		meta = (AllowPrivateAccess = true, EditCondition = "bStopWhenOwnerBuildingDestroyed"))
+	uint8 bRequireOwnerBuilding : 1;
+
+	/** 소유 건물이 파괴됐는가. 한 번 서면 다시 내려가지 않는다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Owner Building", meta = (AllowPrivateAccess = true))
+	uint8 bOwnerBuildingDestroyed : 1;
+
+#pragma endregion
+
 #pragma region State
 
 	/** 지정하면 생성된 유닛이 이 라인을 따라 전진한다 */
@@ -176,6 +251,18 @@ private:
 #pragma endregion
 
 	FTimerHandle SpawnTimerHandle;
+
+	FTimerHandle OwnerBuildingResolveTimerHandle;
+
+	/** 재시도 누적 시간(초) */
+	float OwnerBuildingResolveElapsed = 0.f;
+
+	/**
+	 * 약참조라 건물이 파괴되면 자동으로 무효가 된다.
+	 * TWeakObjectPtr 은 리플렉션에 올리지 않는다.
+	 */
+	TWeakObjectPtr<AActor> OwnerBuilding;
+	TWeakObjectPtr<UCombatTargetComponent> OwnerBuildingTarget;
 
 	/** 약참조라 유닛이 파괴되면 자동으로 무효가 된다 */
 	UPROPERTY(Transient)

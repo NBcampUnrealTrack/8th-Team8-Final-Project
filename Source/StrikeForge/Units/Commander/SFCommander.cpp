@@ -140,9 +140,10 @@ void ASFCommander::LoadPlayerController()
 			// IMovable called when clicked commander and clicked floor
 			SFPC->RegisterCommander(this);
 			// 유닛별 체력이 있듯이
-			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 100으로 초기설정합니다.
+			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 300으로 초기설정합니다.
 			HealthComponent->InitializeHealth(300.f);
 			// TargetComponent에서 체력을 초기화하는 로직이 있습니다.
+			// 데이터테이블에서 관리하는듯한데 추가되면 InitializeHealth 삭제되야합니다.
 			
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");

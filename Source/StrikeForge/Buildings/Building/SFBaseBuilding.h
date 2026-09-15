@@ -107,7 +107,7 @@ public:
 
 	virtual void TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	virtual const FHealthData GetHealthData_Implementation() override;
+	//virtual const FHealthData GetHealthData_Implementation() override;
 	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 프리뷰 색상 갱신 */
 	void ApplyPreviewMaterial(bool bCanPlace);

@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InGame/SFSelectINfo/SFSelectable.h"
-#include "Interfaces/Units/Damagable.h"
 #include "Units/Interfaces/Movable.h"
 #include "SFCommander.generated.h"
 
@@ -13,6 +12,7 @@ class ASFInGamePlayerController;
 class UAnimationAsset;
 class USFBuffComponent;
 class UHealthComponent;
+class UCombatTargetComponent;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -42,7 +42,6 @@ class STRIKEFORGE_API ASFCommander
 	: public ACharacter
 	, public ISFSelectable
 	, public IMovable
-	, public IDamagable
 {
 	GENERATED_BODY()
 
@@ -52,8 +51,6 @@ public:
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
-	// Add: 데미지 교환 인터페이스 ( 전투가능클래스선별+상호작용 )
-	virtual void TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo) override;
 	
 	// 건설명령 함수. Center=건물좌표, Bounds=건물바운드, Rotation=회전값.
 	// 스태틱메시의 GetBounds()를 가져와 Bounds에 등록해주세요.
@@ -101,6 +98,8 @@ protected:
 	TObjectPtr<USFBuffComponent> BuffComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<UHealthComponent> HealthComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
+	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.

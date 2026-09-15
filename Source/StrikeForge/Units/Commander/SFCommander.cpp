@@ -10,6 +10,7 @@
 #include "Engine/OverlapResult.h"
 #include "Units/Unit/UnitBase.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/HP/HealthComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -28,14 +29,29 @@ ASFCommander::ASFCommander()
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
+	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
+	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>(TEXT("CombatTargetComponent"));
 }
 
 FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 {
 	FSFSelectableInfo Info;
 	Info.SelectableType = ESFSelectableType::Commander;
-	Info.DataRowName    = "";      // 행 이름 필드 추가 필요
+	Info.DataRowName    = TEXT("Commander");
+	Info.CurrentHealth = HealthComponent->GetCurrentHealth();
+	Info.MaximumHealth = HealthComponent->GetMaxHealth();
 	Info.PortraitAnimation = PortraitIdleAnimation;
+	// 이동속도의 유일한 출처는 이동 컴포넌트다. UnitBase.cpp:488 과 같은 방식.
+	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Info.MoveSpeed = Move->MaxWalkSpeed;
+	}
+	
+	Info.bShowAttackPower = true;
+	Info.bShowHealth = true;
+	Info.bShowMoveSpeed = true;
+	Info.bShowSkillIcons = true;
+
 	return Info;
 }
 
@@ -47,17 +63,6 @@ void ASFCommander::MoveToLocation_Implementation(const FVector& InDestination)
 void ASFCommander::StopMove_Implementation()
 {
 	StopMoving();
-}
-
-void ASFCommander::TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo)
-{
-	// FSFDamageInfo:: HitActor = weakptr 때린사람
-	//				:: Damage	= float 데미지 양
-	
-	// HitActor의 nullptr검사는 하지않습니다.
-	// 화살이 도착하는 시간에 유닛이 destroy되서 Nullptr이 되도
-	// 화살은 유효하고 데미지가 적용되어야 하기 때문입니다
-	HealthComponent->ApplyDamage(DamageInfo.Damage);
 }
 
 // Called when the game starts or when spawned
@@ -136,7 +141,8 @@ void ASFCommander::LoadPlayerController()
 			SFPC->RegisterCommander(this);
 			// 유닛별 체력이 있듯이
 			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 100으로 초기설정합니다.
-			HealthComponent->InitializeHealth(100.f);
+			HealthComponent->InitializeHealth(300.f);
+			// TargetComponent에서 체력을 초기화하는 로직이 있습니다.
 			
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");

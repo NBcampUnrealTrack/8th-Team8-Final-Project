@@ -1257,16 +1257,16 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
 
     FSFSelectableInfo SelectableInfo = ISFSelectable::Execute_GetSelectableInfo(Actor);
 
-    const bool bIsBuilding =
-        SelectableInfo.SelectableType == ESFSelectableType::MainBuilding ||
-        SelectableInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
-        SelectableInfo.SelectableType == ESFSelectableType::ResourceBuilding;
-
-    if (bIsBuilding)
-    {
-        const FHealthData HealthData = ISFSelectable::Execute_GetHealthData(Actor);
-        SelectableInfo.Tier = HealthData.CurrentTier + 1;
-    }
+    // const bool bIsBuilding =
+    //     SelectableInfo.SelectableType == ESFSelectableType::MainBuilding ||
+    //     SelectableInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+    //     SelectableInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+    //
+    // if (bIsBuilding)
+    // {
+    //     const FHealthData HealthData = ISFSelectable::Execute_GetHealthData(Actor);
+    //     SelectableInfo.Tier = HealthData.CurrentTier + 1;
+    // }
 
     ApplySelectionUIData(Actor, SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
@@ -1593,9 +1593,8 @@ void USFInGameHUDWidget::BindSelectedHealthDelegate(AActor* Actor)
         return;
     }
 
-    const FHealthData HealthData = ISFSelectable::Execute_GetHealthData(Actor);
-    UHealthComponent* HealthComponent = HealthData.HealthComponent.Get();
-
+    UHealthComponent* HealthComponent = Actor->FindComponentByClass<UHealthComponent>();
+    
     if (!IsValid(HealthComponent))
     {
         SF_LOG(Warning, "[SFInGameHUDWidget] Selected actor has no HealthComponent.");
@@ -2438,19 +2437,19 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
     FSFSelectableInfo NewSelectedInfo =
         ISFSelectable::Execute_GetSelectableInfo(Actor);
 
-    const bool bIsBuilding =
-        NewSelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
-        NewSelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
-        NewSelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
-        NewSelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
-
-    if (bIsBuilding)
-    {
-        const FHealthData HealthData =
-            ISFSelectable::Execute_GetHealthData(Actor);
-
-        NewSelectedInfo.Tier = HealthData.CurrentTier + 1;
-    }
+    // const bool bIsBuilding =
+    //     NewSelectedInfo.SelectableType == ESFSelectableType::MainBuilding ||
+    //     NewSelectedInfo.SelectableType == ESFSelectableType::NormalBuilding ||
+    //     NewSelectedInfo.SelectableType == ESFSelectableType::ProductionBuilding ||
+    //     NewSelectedInfo.SelectableType == ESFSelectableType::ResourceBuilding;
+    //
+    // if (bIsBuilding)
+    // {
+    //     const FHealthData HealthData =
+    //         ISFSelectable::Execute_GetHealthData(Actor);
+    //
+    //     NewSelectedInfo.Tier = HealthData.CurrentTier + 1;
+    // }
 
     ApplySelectionUIData(
         Actor,
@@ -3139,11 +3138,11 @@ HandleSelectedProductionBuildingTierActivated(
     FSFSelectableInfo UpdatedInfo =
         ISFSelectable::Execute_GetSelectableInfo(Actor);
 
-    const FHealthData HealthData =
-        ISFSelectable::Execute_GetHealthData(Actor);
-
-    UpdatedInfo.Tier =
-        HealthData.CurrentTier + 1;
+    // const FHealthData HealthData =
+    //     ISFSelectable::Execute_GetHealthData(Actor);
+    //
+    // UpdatedInfo.Tier =
+    //     HealthData.CurrentTier + 1;
 
     ApplySelectionUIData(
         Actor,

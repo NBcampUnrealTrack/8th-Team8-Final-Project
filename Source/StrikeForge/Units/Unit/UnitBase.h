@@ -127,7 +127,7 @@ public:
 	 * 두 테이블 모두 UnitRowName 을 키로 쓴다.
 	 */
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	virtual const FHealthData GetHealthData_Implementation() override;
+	//virtual const FHealthData GetHealthData_Implementation() override;
 	/**
 	 * 유닛을 선택했을 때 재생할 소리를 돌려준다.
 	 *

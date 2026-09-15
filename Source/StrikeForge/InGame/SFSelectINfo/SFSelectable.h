@@ -6,7 +6,7 @@
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFSelectable.generated.h"
 
-class UHealthComponent;
+//class UHealthComponent;
 class USoundBase;
 
 UINTERFACE(BlueprintType)
@@ -15,22 +15,22 @@ class STRIKEFORGE_API USFSelectable : public UInterface
     GENERATED_BODY()
 };
 
-USTRUCT(BlueprintType)
-struct FHealthData
-{
-    GENERATED_BODY()
-    
-    UPROPERTY()
-    FText DisplayName;
-    UPROPERTY()
-    int32 CurrentTier = 0;
-    UPROPERTY()
-    FResources ConstructCost;
-    UPROPERTY()
-    FResources UpgradeCost;
-    UPROPERTY()
-    TWeakObjectPtr<UHealthComponent> HealthComponent;
-};
+// USTRUCT(BlueprintType)
+// struct FHealthData
+// {
+//     GENERATED_BODY()
+//     
+//     UPROPERTY()
+//     FText DisplayName;
+//     UPROPERTY()
+//     int32 CurrentTier = 0;
+//     UPROPERTY()
+//     FResources ConstructCost;
+//     UPROPERTY()
+//     FResources UpgradeCost;
+//     UPROPERTY()
+//     TWeakObjectPtr<UHealthComponent> HealthComponent;
+// };
 
 class STRIKEFORGE_API ISFSelectable
 
@@ -44,11 +44,11 @@ public:
         Category = "SF|Selection")
     FSFSelectableInfo GetSelectableInfo();
     
-    UFUNCTION(
-    BlueprintNativeEvent,
-    BlueprintCallable,
-    Category = "SF|Selection")
-    const FHealthData GetHealthData();
+    // UFUNCTION(
+    // BlueprintNativeEvent,
+    // BlueprintCallable,
+    // Category = "SF|Selection")
+    // const FHealthData GetHealthData();
 
     UFUNCTION(
         BlueprintNativeEvent,

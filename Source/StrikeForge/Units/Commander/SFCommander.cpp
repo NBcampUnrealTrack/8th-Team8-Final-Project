@@ -10,6 +10,8 @@
 #include "Engine/OverlapResult.h"
 #include "Units/Unit/UnitBase.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "ActorComponent/HP/HealthComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
@@ -27,14 +29,29 @@ ASFCommander::ASFCommander()
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
+	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
+	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>(TEXT("CombatTargetComponent"));
 }
 
 FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 {
 	FSFSelectableInfo Info;
 	Info.SelectableType = ESFSelectableType::Commander;
-	Info.DataRowName    = "";      // 행 이름 필드 추가 필요
+	Info.DataRowName    = TEXT("Commander");
+	Info.CurrentHealth = HealthComponent->GetCurrentHealth();
+	Info.MaximumHealth = HealthComponent->GetMaxHealth();
 	Info.PortraitAnimation = PortraitIdleAnimation;
+	// 이동속도의 유일한 출처는 이동 컴포넌트다. UnitBase.cpp:488 과 같은 방식.
+	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Info.MoveSpeed = Move->MaxWalkSpeed;
+	}
+	
+	Info.bShowAttackPower = true;
+	Info.bShowHealth = true;
+	Info.bShowMoveSpeed = true;
+	Info.bShowSkillIcons = true;
+
 	return Info;
 }
 
@@ -62,6 +79,8 @@ void ASFCommander::BeginPlay()
 			true,
 			0.f);
 	}
+	
+	// 지휘관을 컨트롤러에 등록할때 체력을 초기화합니다.
 }
 
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -120,7 +139,12 @@ void ASFCommander::LoadPlayerController()
 			// add : cached commander
 			// IMovable called when clicked commander and clicked floor
 			SFPC->RegisterCommander(this);
-
+			// 유닛별 체력이 있듯이
+			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 300으로 초기설정합니다.
+			HealthComponent->InitializeHealth(300.f);
+			// TargetComponent에서 체력을 초기화하는 로직이 있습니다.
+			// 데이터테이블에서 관리하는듯한데 추가되면 InitializeHealth 삭제되야합니다.
+			
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");
 		}

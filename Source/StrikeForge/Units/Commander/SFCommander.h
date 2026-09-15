@@ -11,6 +11,8 @@
 class ASFInGamePlayerController;
 class UAnimationAsset;
 class USFBuffComponent;
+class UHealthComponent;
+class UCombatTargetComponent;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -94,7 +96,11 @@ protected:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;
-
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
+	TObjectPtr<UHealthComponent> HealthComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
+	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
 

@@ -171,28 +171,40 @@ USFProductionBuildingPanelWidget::GetProductionBuilding() const
     return CurrentProductionBuilding.Get();
 }
 
-bool USFProductionBuildingPanelWidget::RequestProductionBySlot(int32 SlotIndex)
+bool USFProductionBuildingPanelWidget::RequestProductionBySlot(
+    int32 SlotIndex
+)
 {
-    if (!CurrentProductionBuilding.IsValid())
-    {
-        return false;
-    }
+    const FName UnitRowName =
+        GetUnitRowNameBySlot(SlotIndex);
 
+    return RequestProductionOnBuilding(
+        CurrentProductionBuilding.Get(),
+        UnitRowName
+    );
+}
+
+FName USFProductionBuildingPanelWidget::GetUnitRowNameBySlot(
+    int32 SlotIndex
+) const
+{
     if (!CurrentProductableUnitRowNames.IsValidIndex(SlotIndex))
     {
-        return false;
+        return NAME_None;
     }
 
-    const FName UnitRowName =
-        CurrentProductableUnitRowNames[SlotIndex];
+    return CurrentProductableUnitRowNames[SlotIndex];
+}
 
-    if (UnitRowName.IsNone())
-    {
-        return false;
-    }
-
-    HandleProductionUnitClicked(UnitRowName);
-    return true;
+bool USFProductionBuildingPanelWidget::RequestProductionOnBuilding(
+    AActor* InProductionBuilding,
+    FName UnitRowName
+)
+{
+    return TryRequestProduction(
+        InProductionBuilding,
+        UnitRowName
+    );
 }
 
 void USFProductionBuildingPanelWidget::RefreshProductionUnitEntries(
@@ -278,12 +290,20 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
     FName UnitRowName
 )
 {
-    AActor* ProductionBuilding =
-        CurrentProductionBuilding.Get();
+    TryRequestProduction(
+        CurrentProductionBuilding.Get(),
+        UnitRowName
+    );
+}
 
-    if (!IsValid(ProductionBuilding))
+bool USFProductionBuildingPanelWidget::TryRequestProduction(
+    AActor* ProductionBuilding,
+    FName UnitRowName
+)
+{
+    if (!IsValid(ProductionBuilding) || UnitRowName.IsNone())
     {
-        return;
+        return false;
     }
 
     if (
@@ -292,7 +312,17 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         )
         )
     {
-        return;
+        return false;
+    }
+
+    const FProductableData ProductableData =
+        IProductable::Execute_GetProductableData(
+            ProductionBuilding
+        );
+
+    if (!ProductableData.ProductableUnitFNames.Contains(UnitRowName))
+    {
+        return false;
     }
 
     ASFRootBase* RootBuilding =
@@ -311,7 +341,7 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         ? DataTableManager->GetDataRow<FUnitStatData>(
             EDataTableType::Unit,
             UnitRowName,
-            TEXT("HandleProductionUnitClicked")
+            TEXT("TryRequestProduction")
         )
         : nullptr;
 
@@ -329,25 +359,17 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         const int32 TeamIndex =
             RootBuilding->GetTeamIndex();
 
-        const bool bCanAfford =
-            GameState->CanAffordResource(
+        if (
+            !GameState->CanAffordResource(
                 TeamIndex,
                 UnitStatsRow->UnitProductionCost
-            );
-
-        if (!bCanAfford)
+            )
+            )
         {
             OnProductionResourceWarningRequested.Broadcast();
-            return;
+            return false;
         }
     }
-
-    SF_LOG(
-        Log,
-        "[SFProductionBuildingPanelWidget] "
-        "Production Requested: %s",
-        *UnitRowName.ToString()
-    );
 
     if (IsValid(UnitProductionClickSound))
     {
@@ -361,6 +383,8 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
         ProductionBuilding,
         UnitRowName
     );
+
+    return true;
 }
 
 void USFProductionBuildingPanelWidget::BindProductComponent(

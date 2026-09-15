@@ -53,7 +53,7 @@ FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
 {
 	FSFSelectableInfo Info = Super::GetSelectableInfo_Implementation();
 	SF_LOG(Warning, "MiningBuilding Selected.");
-	Info.SelectableType = ESFSelectableType::NormalBuilding;
+	Info.SelectableType = ESFSelectableType::ResourceBuilding;
 	return Info;
 }
 

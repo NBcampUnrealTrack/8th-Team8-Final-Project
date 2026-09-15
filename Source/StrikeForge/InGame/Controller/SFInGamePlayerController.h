@@ -9,6 +9,7 @@ class ASFCommander;
 class AActor;
 class UBuildingPlacement;
 class ASFBaseBuilding;
+class ASFProductionBuilding;
 class UEnhancedInputLocalPlayerSubsystem;
 class UInputAction;
 class UInputMappingContext;
@@ -78,7 +79,7 @@ public:
     ESFControlMode GetSFControlMode() const;
     // building
     FORCEINLINE void SetSpawnedBuildingRef(ASFBaseBuilding* InBuildingRef) { SpawnedBuildingRef = InBuildingRef; }
-    
+
     /**
      * 사전 로딩된 Tier 0 에셋을 검증하고 건물 배치를 준비한다.
      * Catalog Entry 클릭에서 호출되며 고스트 건물 생성과
@@ -160,6 +161,10 @@ private:
 
     void HandleToggleSettingsInput();
 
+    void HandleSelectAllUnitsInput();
+
+    void HandleControlGroupInput(int32 GroupIndex);
+
     void HandleToggleBuildModeInput();
 
     // 생산 슬롯 입력 처리
@@ -190,7 +195,8 @@ private:
         AActor* Actor,
         ESFUnitCommandMode CommandMode,
         const FVector& Location,
-        AActor* Target
+        AActor* Target,
+        bool bAppendToQueue
     ) const;
 
     bool IsValidAttackTarget(const AActor* Actor) const;
@@ -201,12 +207,18 @@ private:
 
     void HandleRallyPointInput();
 
+    void CollectSelectedProductionBuildings(
+        TArray<ASFProductionBuilding*>& OutBuildings
+    ) const;
+
     bool ExecutePendingRallyPointUnderCursor();
-    
+
+    bool IsShiftCommandModifierDown() const;
+
     // 선택하면 소리재생 함수
     UFUNCTION(BlueprintCallable)
     void PlaySelectionSound(AActor* SelectedTarget);
-    
+
     // Async
 
     // 변수 영역
@@ -323,6 +335,31 @@ protected:
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
+        Category = "SF|Input"
+    )
+    TObjectPtr<UInputAction> SelectAllUnitsAction = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup01Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup02Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup03Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup04Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup05Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> ControlGroup06Action = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
         Category = "SF|Input",
         meta = (AllowPrivateAccess = "true")
     )
@@ -416,7 +453,7 @@ private:
 
     // team
     int32 MyTeamIndex = 0;
-    
+
     // Delegate 변수는 최하단
 public:
     UPROPERTY(

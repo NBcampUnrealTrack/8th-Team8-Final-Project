@@ -65,7 +65,10 @@ public:
 	/** 건물 완성 시 GC와 Root Proxy 및 Chaos 시뮬레이션을 준비한다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	bool InitializeDestruction(const UGeometryCollection* InCollection);
-
+	
+	// 건물 DA에서 지정한 표면 불꽃 이펙트를 받는다.
+	void SetSurfaceFireEffect(UNiagaraSystem* InEffect);
+	
 	/** 동일하거나 이전 단계는 다시 적용하지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building|Destruction")
 	void ApplyDamageStage(int32 StageIndex, const FBuildingDestruction& StageData);

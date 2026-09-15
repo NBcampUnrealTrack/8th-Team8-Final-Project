@@ -1200,21 +1200,24 @@ void ASFBaseBuilding::PlayConstructionCompleteSound()
 
 void ASFBaseBuilding::PlayDestroyEffect()
 {
-	const FVector EffectLocation = GetActorLocation();
+	const FTransform EffectLocation = GetActorTransform();
 	
+	SF_LOG(Warning, "EffectLocation : %s", *EffectLocation.GetLocation().ToString());
+	
+	const FVector MeshCompScale = StaticMeshComponent->GetComponentScale();
 	if (IsValid(PlayVFXComponent))
 	{
-		PlayVFXComponent->PlayOneShotAtLocation(
+		PlayVFXComponent->PlayDestroyNiagaraEffect(
 			DestroyedEffect,
 			EffectLocation,
-			GetActorRotation());
+			MeshCompScale);
 	}
 	
 	if (DestroyedSound)
 		UGameplayStatics::PlaySoundAtLocation(
 			this,
 			DestroyedSound,
-			EffectLocation);
+			EffectLocation.GetLocation());
 }
 #pragma endregion
 
@@ -1415,6 +1418,9 @@ bool ASFBaseBuilding::EnsureDestructionActor()
 		return false;
 	}
 
+	// 추가: 이 건물의 DA에서 읽은 불꽃 에셋을 전달한다.
+	SpawnedActor->SetSurfaceFireEffect(DamagedBurningEffect.Get());
+	
 	if (!SpawnedActor->InitializeDestruction(Collection))
 	{
 		SpawnedActor->Destroy();

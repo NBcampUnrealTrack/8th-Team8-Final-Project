@@ -18,6 +18,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     SelectedActor
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnMultiSelectionEntryShiftClicked,
+    AActor*,
+    SelectedActor
+);
+
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFMultiSelectionEntryWidget : public UUserWidget
 {
@@ -40,6 +46,8 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|Selection")
     FSFOnMultiSelectionEntryClicked OnEntryClicked;
 
+    UPROPERTY(BlueprintAssignable, Category = "SF|Selection")
+    FSFOnMultiSelectionEntryShiftClicked OnEntryShiftClicked;
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;

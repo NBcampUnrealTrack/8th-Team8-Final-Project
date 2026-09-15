@@ -29,11 +29,21 @@ class USoundBase;
 class ASFProductionBuilding;
 class AUnitBase;
 class UTexture2D;
+class USFControlGroupWidget;
 struct FSFSelectionUIDataRow;
 class ASFBaseBuilding;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
+
+USTRUCT()
+struct FSFControlGroup
+{
+    GENERATED_BODY()
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<AActor>> Actors;
+};
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
@@ -55,7 +65,7 @@ public:
         Category = "SF|HUD|Building"
     )
     void CloseBuildingMode();
-    
+
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Settings"
@@ -65,6 +75,10 @@ public:
     void ShowResultWidget(bool bIsWin);
 
     void SelectActor(AActor* Actor);
+
+    /** 내 소유의 살아 있는 유닛과 지휘관을 모두 선택한다. 건물은 제외한다. */
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
+    void SelectAllOwnedUnits();
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     void ToggleBuildingMode();
@@ -111,6 +125,15 @@ public:
 
     bool IsPointerOverHUDPanel();
 
+    void SaveCurrentSelectionToControlGroup(
+        int32 GroupIndex,
+        bool bAppend
+    );
+
+    void SelectControlGroup(
+        int32 GroupIndex
+    );
+
 protected:
     virtual void NativeConstruct() override;
 
@@ -137,7 +160,18 @@ private:
         AActor* DestroyedActor
     );
 
+    UFUNCTION()
+    void HandleControlGroupActorDestroyed(
+        AActor* DestroyedActor
+    );
+
+    void BindControlGroupActorsDestroyed();
+
+    void UnbindControlGroupActorsDestroyed();
+
     void PerformSelectionTrace();
+
+    void AddActorToCurrentSelection(AActor* Actor);
 
     void ApplySelection(
         AActor* NewSelectedActor,
@@ -161,6 +195,8 @@ private:
     );
 
     void RefreshSelectionPanels();
+
+    void RefreshSelectedResourceInfo();
 
     /**
     * 맵에 배치된 Portrait Actor를 저장할 포인터
@@ -205,7 +241,8 @@ private:
 
     void PerformDragSelection(
         FVector2D StartScreenPosition,
-        FVector2D EndScreenPosition
+        FVector2D EndScreenPosition,
+        bool bAddToExistingSelection
     );
 
     bool IsOwnedByLocalPlayer(AActor* Actor) const;
@@ -220,6 +257,13 @@ private:
 
     UFUNCTION()
     void HandlePrimarySelectionRequested(AActor* Actor);
+
+    UFUNCTION()
+    void HandleMultiSelectionRemoveRequested(AActor* Actor);
+
+    void CreateRallyPointIndicatorsForBuilding(
+        ASFProductionBuilding* ProductionBuilding
+    );
 
     void TryStartStageIntro();
 
@@ -266,7 +310,7 @@ private:
     );
 
     void HandleStageIntroDeactivated();
-    
+
     FName ResolveStageIntroRowName() const;
 
     UFUNCTION()
@@ -364,6 +408,15 @@ protected:
     TObjectPtr<USFProductionBuildingPanelWidget>
         ProductionBuildingPanel = nullptr;
 
+    // 멀티 선택·빌드·생산 패널을 감싸는 가운데 입력 차단 영역.
+    // WBP_SFInGameHUD에서 동일한 이름(CenterPanel)으로 지정한다.
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Input",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> CenterPanel = nullptr;
+
     UPROPERTY(
         BlueprintReadOnly,
         Category = "SF|HUD|Building",
@@ -392,7 +445,7 @@ protected:
     )
     TObjectPtr<UBorder> SelectionDragBox = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Result")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Result")
     TSubclassOf<UResultWidget> ResultWidgetClass;
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|HUD|Settings", meta = (BindWidget))
@@ -428,19 +481,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
     FName StageIntroFallbackRowName = NAME_None;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildModeOpenSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildModeCloseSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> BuildStartSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|HUD|Sound")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
     TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Command|Feedback")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
@@ -450,11 +503,13 @@ protected:
     float RallyPathIndicatorWidth = 30.f;
 
     UPROPERTY(Transient)
-    TObjectPtr<UStaticMeshComponent> RallyPathIndicator = nullptr;
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPathIndicators;
 
-    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Rally")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Rally")
     TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
 
+    UPROPERTY(BlueprintReadOnly,Category = "SF|HUD|ControlGroup",meta = (BindWidgetOptional))
+    TObjectPtr<USFControlGroupWidget> ControlGroupWidget = nullptr;
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -516,5 +571,10 @@ private:
         SelectedBuildingForTierDelegate;
 
     UPROPERTY(Transient)
-    TObjectPtr<UStaticMeshComponent> RallyPointIndicator = nullptr;
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPointIndicators;
+
+    bool bAdditiveSelectionDrag = false;
+
+    UPROPERTY(Transient)
+    TArray<FSFControlGroup> ControlGroups;
 };

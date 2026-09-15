@@ -10,6 +10,7 @@
 #include "Engine/OverlapResult.h"
 #include "Units/Unit/UnitBase.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
+#include "ActorComponent/HP/HealthComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
@@ -48,6 +49,17 @@ void ASFCommander::StopMove_Implementation()
 	StopMoving();
 }
 
+void ASFCommander::TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo)
+{
+	// FSFDamageInfo:: HitActor = weakptr 때린사람
+	//				:: Damage	= float 데미지 양
+	
+	// HitActor의 nullptr검사는 하지않습니다.
+	// 화살이 도착하는 시간에 유닛이 destroy되서 Nullptr이 되도
+	// 화살은 유효하고 데미지가 적용되어야 하기 때문입니다
+	HealthComponent->ApplyDamage(DamageInfo.Damage);
+}
+
 // Called when the game starts or when spawned
 void ASFCommander::BeginPlay()
 {
@@ -62,6 +74,8 @@ void ASFCommander::BeginPlay()
 			true,
 			0.f);
 	}
+	
+	// 지휘관을 컨트롤러에 등록할때 체력을 초기화합니다.
 }
 
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -120,7 +134,10 @@ void ASFCommander::LoadPlayerController()
 			// add : cached commander
 			// IMovable called when clicked commander and clicked floor
 			SFPC->RegisterCommander(this);
-
+			// 유닛별 체력이 있듯이
+			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 100으로 초기설정합니다.
+			HealthComponent->InitializeHealth(100.f);
+			
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");
 		}

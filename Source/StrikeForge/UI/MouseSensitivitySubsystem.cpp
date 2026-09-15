@@ -1,14 +1,6 @@
-#include "MouseSensitivitySubsystem.h"
+#include "UI/MouseSensitivitySubsystem.h"
 
-void UMouseSensitivitySubsystem::Initialize(FSubsystemCollectionBase& Collection)
+void UMouseSensitivitySubsystem::SetMouseSensitivity(float NewSensitivity)
 {
-	Super::Initialize(Collection);
-	GConfig->GetFloat(TEXT("Input"), TEXT("MouseSensitivity"), CurrentSensitivity, GGameUserSettingsIni);
-}
-
-void UMouseSensitivitySubsystem::SetSensitivity(float NewSensitivity)
-{
-	CurrentSensitivity = NewSensitivity;
-	GConfig->SetFloat(TEXT("Input"), TEXT("MouseSensitivity"), NewSensitivity, GGameUserSettingsIni);
-	GConfig->Flush(false, GGameUserSettingsIni);
+	MouseSensitivity = FMath::Clamp(NewSensitivity, MinSensitivity, MaxSensitivity);
 }

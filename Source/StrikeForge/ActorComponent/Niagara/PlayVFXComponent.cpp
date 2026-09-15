@@ -119,22 +119,34 @@ void UPlayVFXComponent::StopBurningEffects(bool bImmediate)
 	ActiveBurningEffects.Reset();
 }
 
-void UPlayVFXComponent::PlayOneShotAtLocation(UNiagaraSystem* NiagaraSystem, const FVector& Location,
-                                              const FRotator& Rotation) const
+void UPlayVFXComponent::PlayDestroyNiagaraEffect(
+	UNiagaraSystem* NiagaraSystem,
+	const FTransform& Transform,
+	const FVector& MeshCompScale) const
 {
 	if (!IsValid(NiagaraSystem))
 	{
 		return;
 	}
 
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+	SF_LOG(Warning, "DestroyEffect Location : %s", *Transform.GetLocation().ToString());
+	SF_LOG(Warning, "MeshCompScale : %s", *MeshCompScale.ToString());
+	
+	UNiagaraComponent* SpawnedNiagaraEffect = 
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 		this,
 		NiagaraSystem,
-		Location,
-		Rotation,
+		Transform.GetLocation(),
+		Transform.Rotator(),
 		FVector::OneVector,
 		true,  // 재생 완료 후 자동 제거
-		true); // 즉시 재생
+		false); // 즉시 재생
+	
+	SpawnedNiagaraEffect->SetVariableVec3(
+		SFVFXParameters::BuildingScale, MeshCompScale);
+	
+	SpawnedNiagaraEffect->Activate(true);
+	
 }
 
 void UPlayVFXComponent::StopConstructionEffect()

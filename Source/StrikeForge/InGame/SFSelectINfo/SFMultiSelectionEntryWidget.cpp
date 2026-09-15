@@ -235,8 +235,8 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
         // 정상: 청록색
         HealthColor = FLinearColor(
             0.02f,
-            0.72f,
             0.85f,
+            0.72f,
             1.0f
         );
     }
@@ -250,13 +250,13 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
             1.0f
         );
     }
-    else
+    else 
     {
         // 위험: 빨간색
         HealthColor = FLinearColor(
-            0.98f,
-            0.06f,
-            0.04f,
+            1.0f,
+            0.0f,
+            0.0f,
             1.0f
         );
     }

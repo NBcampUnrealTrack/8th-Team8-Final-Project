@@ -332,6 +332,7 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 
 	CurrentTarget = nullptr;
 	ForcedTarget = nullptr;
+	CommandQueue.Reset();
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	ReleaseAttackSlot();
@@ -629,10 +630,84 @@ bool AUnitBase::IsCommandableByPlayer() const
 	return true;
 }
 
-void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocation, AActor* InTarget)
+bool AUnitBase::HasActivePlayerCommand() const
 {
-	if (!IsCommandableByPlayer()) return;
+	return bHasCommandedDestination || IsValid(ForcedTarget);
+}
 
+void AUnitBase::ExecuteCommand(
+	ESFUnitCommand InCommand,
+	const FVector& InLocation,
+	AActor* InTarget
+)
+{
+	ExecuteCommandWithQueue(
+		InCommand,
+		InLocation,
+		InTarget,
+		false
+	);
+}
+
+void AUnitBase::ExecuteCommandWithQueue(
+	ESFUnitCommand InCommand,
+	const FVector& InLocation,
+	AActor* InTarget,
+	bool bAppendToQueue
+)
+{
+	if (!IsCommandableByPlayer())
+	{
+		return;
+	}
+
+	const bool bHasCurrentCommand =
+		HasActivePlayerCommand() ||
+		CommandQueue.Num() > 0;
+
+	if (bAppendToQueue && bHasCurrentCommand)
+	{
+		FSFQueuedUnitCommand& QueuedCommand =
+			CommandQueue.Emplace_GetRef();
+
+		QueuedCommand.Command = InCommand;
+		QueuedCommand.Location = InLocation;
+		QueuedCommand.Target = InTarget;
+		QueuedCommand.bTargetRequired =
+			InCommand == ESFUnitCommand::Attack &&
+			IsValid(InTarget);
+
+		SF_LOG(
+			Log,
+			"[Unit] %s : 명령 예약 | Command: %d | QueueCount: %d",
+			*GetName(),
+			static_cast<int32>(InCommand),
+			CommandQueue.Num()
+		);
+
+		return;
+	}
+
+	// 일반 명령은 기존 예약을 모두 지운다.
+	if (!bAppendToQueue)
+	{
+		CommandQueue.Reset();
+	}
+
+	// 현재 명령이 없으면 Shift 명령도 즉시 실행한다.
+	ExecuteCommandImmediately(
+		InCommand,
+		InLocation,
+		InTarget
+	);
+}
+
+void AUnitBase::ExecuteCommandImmediately(
+	ESFUnitCommand InCommand,
+	const FVector& InLocation,
+	AActor* InTarget
+)
+{
 	switch (InCommand)
 	{
 	case ESFUnitCommand::Move:
@@ -644,14 +719,13 @@ void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocati
 		break;
 
 	case ESFUnitCommand::Attack:
-		// 대상을 못 찍었으면 그 지점으로 공격 이동한다.
-		// A 를 누르고 빈 땅을 찍는 것과 같은 동작이다.
 		if (IsValid(InTarget))
 		{
 			CommandAttackTarget(InTarget);
 		}
 		else
 		{
+			// 땅을 클릭한 A 명령은 공격 이동으로 처리
 			CommandAttackMove(InLocation);
 		}
 		break;
@@ -665,14 +739,58 @@ void AUnitBase::ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocati
 		break;
 
 	default:
-		// 열거형이 늘었는데 여기를 안 고친 경우다. 조용히 넘기면
-		// "키를 눌렀는데 아무 일도 없다" 로만 나타난다.
-		SF_LOG(Warning, "[Unit] %s : 처리하지 않은 명령입니다 (%d)",
-			*GetName(), static_cast<int32>(InCommand));
+		SF_LOG(
+			Warning,
+			"[Unit] %s : 처리하지 않은 명령입니다 (%d)",
+			*GetName(),
+			static_cast<int32>(InCommand)
+		);
 		break;
 	}
 }
 
+bool AUnitBase::ExecuteNextQueuedCommand()
+{
+	while (CommandQueue.Num() > 0)
+	{
+		const FSFQueuedUnitCommand NextCommand =
+			CommandQueue[0];
+
+		CommandQueue.RemoveAt(0);
+
+		// 예약해둔 공격 대상이 이미 죽었다면 건너뛴다.
+		if (
+			NextCommand.bTargetRequired &&
+			!IsTargetUsable(NextCommand.Target.Get())
+			)
+		{
+			SF_LOG(
+				Log,
+				"[Unit] %s : 이미 사라진 예약 공격 대상을 건너뜁니다.",
+				*GetName()
+			);
+
+			continue;
+		}
+
+		ExecuteCommandImmediately(
+			NextCommand.Command,
+			NextCommand.Location,
+			NextCommand.Target.Get()
+		);
+
+		SF_LOG(
+			Log,
+			"[Unit] %s : 다음 예약 명령 실행 | 남은 큐: %d",
+			*GetName(),
+			CommandQueue.Num()
+		);
+
+		return true;
+	}
+
+	return false;
+}
 void AUnitBase::CommandMoveTo(const FVector& InDestination)
 {
 	if (!IsCommandableByPlayer()) return;
@@ -745,6 +863,8 @@ void AUnitBase::CommandStop()
 {
 	if (!IsCommandableByPlayer()) return;
 
+	CommandQueue.Reset();
+
 	// StopMove 가 ForcedTarget·공격 이동·제자리 고수를 함께 정리한다.
 	StopMove_Implementation();
 
@@ -762,6 +882,8 @@ void AUnitBase::CommandHoldGround()
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	ForcedTarget = nullptr;
+
+	CommandQueue.Reset();
 
 	bHoldGround = true;
 
@@ -1513,6 +1635,11 @@ void AUnitBase::Advance(float DeltaSeconds)
 			SF_LOG(Log, "[Unit] %s : 명령 지점 도착", *GetName());
 
 			NotifyTutorialCommandArrived();
+
+			if (ExecuteNextQueuedCommand())
+			{
+				return;
+			}
 		}
 		else if (DistToCommand <= CommandFinalApproachRange)
 		{
@@ -1555,6 +1682,11 @@ void AUnitBase::Advance(float DeltaSeconds)
 					// 여기서 안 알리면 지형에 걸린 유닛 하나 때문에
 					// 튜토리얼이 다음으로 넘어가지 못한다.
 					NotifyTutorialCommandArrived();
+
+					if (ExecuteNextQueuedCommand())
+					{
+						return;
+					}
 				}
 			}
 			else
@@ -1930,6 +2062,11 @@ void AUnitBase::Tick(float DeltaSeconds)
 			ForcedTarget = nullptr;
 			CurrentTarget = nullptr;
 			RetargetTimer = 0.f;
+
+			if (ExecuteNextQueuedCommand())
+			{
+				return;
+			}
 		}
 	}
 

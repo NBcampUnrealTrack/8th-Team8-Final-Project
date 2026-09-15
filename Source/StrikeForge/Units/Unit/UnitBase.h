@@ -56,6 +56,14 @@ enum class ESFUnitCommand : uint8
 	HoldGround		UMETA(DisplayName = "제자리 고수")
 };
 
+struct FSFQueuedUnitCommand
+{
+	ESFUnitCommand Command = ESFUnitCommand::Move;
+	FVector Location = FVector::ZeroVector;
+	TWeakObjectPtr<AActor> Target;
+	bool bTargetRequired = false;
+};
+
 /**
  * 명령이 없을 때 유닛이 스스로 무엇을 할지.
  *
@@ -228,6 +236,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Command")
 	void ExecuteCommand(ESFUnitCommand InCommand, const FVector& InLocation, AActor* InTarget);
 
+	void ExecuteCommandWithQueue(ESFUnitCommand InCommand,const FVector& InLocation,AActor* InTarget,bool bAppendToQueue);
+
 	/**
 	 * 이동(우클릭). IMovable::MoveToLocation 과 같은 동작이다.
 	 * 컨트롤러가 세 명령을 같은 방식으로 부를 수 있도록 이름을 맞춰뒀다.
@@ -378,6 +388,16 @@ protected:
 	 * 유닛이 아니면" 으로 판정하므로 진영 분기가 아니다.
 	 */
 	bool IsCommandableByPlayer() const;
+
+	bool HasActivePlayerCommand() const;
+
+	void ExecuteCommandImmediately(
+		ESFUnitCommand InCommand,
+		const FVector& InLocation,
+		AActor* InTarget
+	);
+
+	bool ExecuteNextQueuedCommand();
 
 	/**
 	 * 교전이 성립하는 거리(대상 표면 기준).
@@ -978,6 +998,8 @@ private:
 
 	/** 플레이어가 지정한 목적지 */
 	FVector CommandedDestination = FVector::ZeroVector;
+
+	TArray<FSFQueuedUnitCommand> CommandQueue;
 
 	/** 위 목적지가 유효한가 */
 	uint8 bHasCommandedDestination : 1;

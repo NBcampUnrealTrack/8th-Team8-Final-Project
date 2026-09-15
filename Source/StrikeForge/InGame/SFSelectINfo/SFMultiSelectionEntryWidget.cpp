@@ -7,6 +7,8 @@
 #include "Components/ProgressBar.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
+#include "InputCoreTypes.h"
+#include "GameFramework/PlayerController.h"
 #include "SFSelectable.h"
 
 void USFMultiSelectionEntryWidget::NativeConstruct()
@@ -90,20 +92,41 @@ int32 USFMultiSelectionEntryWidget::GetSelectionIndex() const
 
 void USFMultiSelectionEntryWidget::HandleEntryClicked()
 {
-    if (IsValid(RepresentedActor))
+    if (!IsValid(RepresentedActor))
     {
-        if (IsValid(SelectionClickSound))
-        {
-            UGameplayStatics::PlaySound2D(
-                this,
-                SelectionClickSound
-            );
-        }
+        return;
+    }
 
-        OnEntryClicked.Broadcast(
-            RepresentedActor.Get()
+    if (IsValid(SelectionClickSound))
+    {
+        UGameplayStatics::PlaySound2D(
+            this,
+            SelectionClickSound
         );
     }
+
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    const bool bShiftPressed =
+        PlayerController != nullptr &&
+        (
+            PlayerController->IsInputKeyDown(EKeys::LeftShift) ||
+            PlayerController->IsInputKeyDown(EKeys::RightShift)
+            );
+
+    if (bShiftPressed)
+    {
+        OnEntryShiftClicked.Broadcast(
+            RepresentedActor.Get()
+        );
+
+        return;
+    }
+
+    OnEntryClicked.Broadcast(
+        RepresentedActor.Get()
+    );
 }
 
 void USFMultiSelectionEntryWidget::BindHealthDelegate(AActor* Actor)

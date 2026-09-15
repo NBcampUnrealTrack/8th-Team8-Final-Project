@@ -6,6 +6,8 @@
 #include "Units/Commander/SFCommander.h"
 #include "Units/Unit/UnitBase.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
+#include "Interfaces/Building/Productable.h"
+#include "InputCoreTypes.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "SFSelectInfo/SFSelectable.h"
 #include "SFSelectInfo/SFSelectionPanelWidget.h"
@@ -16,6 +18,7 @@
 #include "UI/ResultWidget.h"
 
 #include "HUD/Portrait/SFUnitPortraitActor.h"
+#include "HUD/ControlGroup/SFControlGroupWidget.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/Widget.h"
@@ -28,7 +31,11 @@
 #include "CommonActivatableWidget.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 
+#include "Algo/Reverse.h"
+
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Buildings/Resource/ResourceBase.h"
+#include "Buildings/Resource/Interface/SFMinable.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
@@ -58,6 +65,8 @@
 void USFInGameHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    ControlGroups.SetNum(6);
 
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
@@ -173,6 +182,16 @@ void USFInGameHUDWidget::NativeConstruct()
             &USFInGameHUDWidget::HandlePrimarySelectionRequested
         );
 
+        MultiSelectionPanel->OnRemoveSelectionRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleMultiSelectionRemoveRequested
+        );
+
+        MultiSelectionPanel->OnRemoveSelectionRequested.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleMultiSelectionRemoveRequested
+        );
+
         MultiSelectionPanel->ClearSelections();
 
         SF_LOG(Log, "[SFInGameHUDWidget] Multi selection delegate binding completed.");
@@ -258,6 +277,8 @@ void USFInGameHUDWidget::NativeDestruct()
 
     UnbindSelectedActorsDestroyed();
 
+    UnbindControlGroupActorsDestroyed();
+
     UnbindSelectedHealthDelegate();
 
     ASFInGamePlayerController* PlayerController =
@@ -301,6 +322,11 @@ void USFInGameHUDWidget::NativeDestruct()
         MultiSelectionPanel->OnPrimarySelectionRequested.RemoveDynamic(
             this,
             &USFInGameHUDWidget::HandlePrimarySelectionRequested
+        );
+
+        MultiSelectionPanel->OnRemoveSelectionRequested.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleMultiSelectionRemoveRequested
         );
     }
 
@@ -467,6 +493,20 @@ void USFInGameHUDWidget::PerformSelectionTrace()
 
     if (TryHandleUnitDoubleClick(HitActor))
     {
+        return;
+    }
+
+    const bool bShiftPressed =
+        PlayerController->IsInputKeyDown(EKeys::LeftShift) ||
+        PlayerController->IsInputKeyDown(EKeys::RightShift);
+
+    if (bShiftPressed)
+    {
+        if (IsOwnedByLocalPlayer(HitActor))
+        {
+            AddActorToCurrentSelection(HitActor);
+        }
+
         return;
     }
 
@@ -770,6 +810,8 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         );
     }
 
+    RefreshSelectedResourceInfo();
+
     FResources UpgradeCost{};
 
     if (ASFBaseBuilding* SelectedBuilding =
@@ -821,6 +863,53 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     }
 
     ProductionBuildingPanel->HideProductionBuilding();
+}
+
+void USFInGameHUDWidget::RefreshSelectedResourceInfo()
+{
+    if (!IsValid(SelectionPanel))
+    {
+        return;
+    }
+
+    AActor* Actor = SelectedActor.Get();
+
+    if (!IsValid(Actor))
+    {
+        SelectionPanel->ClearMiningResourceAmount();
+        return;
+    }
+
+    // 광물/에테르 광맥
+    if (AResourceBase* ResourceNode =
+        Cast<AResourceBase>(Actor))
+    {
+        SelectionPanel->SetMiningResourceAmount(
+            ResourceNode->GetResourceDeposit()
+        );
+
+        return;
+    }
+
+    // 광산 건물
+    if (Actor->GetClass()->ImplementsInterface(
+        UMinable::StaticClass()
+    ))
+    {
+        if (IMinable* Minable = Cast<IMinable>(Actor))
+        {
+            const FMinableData MinableData =
+                Minable->GetMinableData();
+
+            SelectionPanel->SetMiningResourceAmount(
+                MinableData.ResourceLeftAmount
+            );
+
+            return;
+        }
+    }
+
+    SelectionPanel->ClearMiningResourceAmount();
 }
 
 void USFInGameHUDWidget::RefreshSelectedPortrait()
@@ -1762,6 +1851,16 @@ void USFInGameHUDWidget::HandleSelectionDragStarted(
     FVector2D StartScreenPosition
 )
 {
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    bAdditiveSelectionDrag =
+        IsValid(PlayerController) &&
+        (
+            PlayerController->IsInputKeyDown(EKeys::LeftShift) ||
+            PlayerController->IsInputKeyDown(EKeys::RightShift)
+            );
+
     SelectionDragStartPosition = StartScreenPosition;
     bIsSelectionDragging = true;
 
@@ -1794,6 +1893,11 @@ void USFInGameHUDWidget::HandleSelectionDragCompleted(
         EndScreenPosition
     );
 
+    const bool bAddToExistingSelection =
+        bAdditiveSelectionDrag;
+
+    bAdditiveSelectionDrag = false;
+
     if (DragDistance <= 8.f)
     {
         return;
@@ -1803,7 +1907,8 @@ void USFInGameHUDWidget::HandleSelectionDragCompleted(
 
     PerformDragSelection(
         StartScreenPosition,
-        EndScreenPosition
+        EndScreenPosition,
+        bAddToExistingSelection
     );
 }
 
@@ -1813,6 +1918,7 @@ void USFInGameHUDWidget::NativeTick(
 )
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
+    RefreshSelectedResourceInfo();
 
     if (!bIsSelectionDragging || !IsValid(SelectionDragBox))
     {
@@ -1880,7 +1986,8 @@ void USFInGameHUDWidget::UpdateSelectionDragBox(
 
 void USFInGameHUDWidget::PerformDragSelection(
     FVector2D StartScreenPosition,
-    FVector2D EndScreenPosition
+    FVector2D EndScreenPosition,
+    bool bAddToExistingSelection
 )
 {
     APlayerController* PlayerController =
@@ -2073,9 +2180,46 @@ void USFInGameHUDWidget::PerformDragSelection(
         FoundActors.SetNum(30);
     }
 
+    if (bAddToExistingSelection)
+    {
+        TArray<AActor*> CombinedActors;
+
+        for (const TObjectPtr<AActor>& ExistingActor :
+            SelectedActors)
+        {
+            AActor* Actor = ExistingActor.Get();
+
+            if (IsValid(Actor) &&
+                IsOwnedByLocalPlayer(Actor))
+            {
+                CombinedActors.AddUnique(Actor);
+            }
+        }
+
+        for (AActor* Actor : FoundActors)
+        {
+            if (IsValid(Actor))
+            {
+                CombinedActors.AddUnique(Actor);
+            }
+        }
+
+        if (CombinedActors.Num() > 30)
+        {
+            CombinedActors.SetNum(30);
+        }
+
+        FoundActors = MoveTemp(CombinedActors);
+    }
+
     if (!FoundActors.IsEmpty())
     {
         ApplyMultipleSelection(FoundActors);
+        return;
+    }
+
+    if (bAddToExistingSelection)
+    {
         return;
     }
 
@@ -2769,14 +2913,115 @@ void USFInGameHUDWidget::HandleStageIntroDeactivated()
     );
 }
 
-bool USFInGameHUDWidget::RequestProductionBySlot(int32 SlotIndex)
+bool USFInGameHUDWidget::RequestProductionBySlot(
+    int32 SlotIndex
+)
 {
     if (!IsValid(ProductionBuildingPanel))
     {
         return false;
     }
 
-    return ProductionBuildingPanel->RequestProductionBySlot(SlotIndex);
+    TArray<ASFProductionBuilding*> SelectedProductionBuildings;
+
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        ASFProductionBuilding* ProductionBuilding =
+            Cast<ASFProductionBuilding>(ActorPtr.Get());
+
+        if (IsValid(ProductionBuilding))
+        {
+            SelectedProductionBuildings.AddUnique(
+                ProductionBuilding
+            );
+        }
+    }
+
+    if (SelectedProductionBuildings.IsEmpty())
+    {
+        ASFProductionBuilding* FallbackProductionBuilding =
+            Cast<ASFProductionBuilding>(
+                SelectedProductionBuilding.Get()
+            );
+
+        if (!IsValid(FallbackProductionBuilding))
+        {
+            FallbackProductionBuilding =
+                Cast<ASFProductionBuilding>(
+                    ProductionBuildingPanel->GetProductionBuilding()
+                );
+        }
+
+        if (IsValid(FallbackProductionBuilding))
+        {
+            SelectedProductionBuildings.Add(
+                FallbackProductionBuilding
+            );
+        }
+    }
+
+    if (SelectedProductionBuildings.IsEmpty())
+    {
+        return false;
+    }
+
+    // Q/W/E 슬롯은 주 선택 생산 건물 기준
+    ASFProductionBuilding* PrimaryProductionBuilding =
+        Cast<ASFProductionBuilding>(
+            SelectedActor.Get()
+        );
+
+    if (!IsValid(PrimaryProductionBuilding))
+    {
+        PrimaryProductionBuilding =
+            SelectedProductionBuildings[0];
+    }
+
+    if (!IsValid(PrimaryProductionBuilding))
+    {
+        return false;
+    }
+
+    const FProductableData ProductableData =
+        IProductable::Execute_GetProductableData(
+            PrimaryProductionBuilding
+        );
+
+    if (!ProductableData.ProductableUnitFNames.IsValidIndex(SlotIndex))
+    {
+        return false;
+    }
+
+    const FName UnitRowName =
+        ProductableData.ProductableUnitFNames[SlotIndex];
+
+    if (UnitRowName.IsNone())
+    {
+        return false;
+    }
+
+    bool bRequestedProduction = false;
+
+    // SelectedActors에 들어있는 순서대로 생산 요청
+    for (
+        ASFProductionBuilding* ProductionBuilding :
+        SelectedProductionBuildings
+        )
+    {
+        if (!IsValid(ProductionBuilding))
+        {
+            continue;
+        }
+
+        bRequestedProduction =
+            ProductionBuildingPanel->
+            RequestProductionOnBuilding(
+                ProductionBuilding,
+                UnitRowName
+            ) || bRequestedProduction;
+    }
+
+    return bRequestedProduction;
 }
 
 void USFInGameHUDWidget::PlayBuildStartSound()
@@ -3424,4 +3669,360 @@ bool USFInGameHUDWidget::IsPointerOverHUDPanel()
     }
 
     return false;
+}
+
+void USFInGameHUDWidget::SaveCurrentSelectionToControlGroup(
+    int32 GroupIndex,
+    bool bAppend
+)
+{
+    if (!ControlGroups.IsValidIndex(GroupIndex))
+    {
+        return;
+    }
+
+    // 기존 액터들의 바인딩 제거
+    UnbindControlGroupActorsDestroyed();
+
+    FSFControlGroup& ControlGroup =
+        ControlGroups[GroupIndex];
+
+    if (!bAppend)
+    {
+        ControlGroup.Actors.Reset();
+    }
+
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (IsValid(Actor) &&
+            IsOwnedByLocalPlayer(Actor))
+        {
+            ControlGroup.Actors.AddUnique(Actor);
+        }
+    }
+
+    // 액터를 실제로 추가한 뒤 다시 바인딩
+    BindControlGroupActorsDestroyed();
+
+    if (!IsValid(ControlGroupWidget))
+    {
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT(
+                "[SFInGameHUDWidget] "
+                "ControlGroupWidget is invalid."
+            )
+        );
+    }
+    else
+    {
+        ControlGroupWidget->UpdateControlGroupSlot(
+            GroupIndex,
+            SelectedInfo.PortraitImage,
+            ControlGroup.Actors.Num()
+        );
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT(
+                "[SFInGameHUDWidget] "
+                "Control group UI updated | Index: %d | Count: %d"
+            ),
+            GroupIndex,
+            ControlGroup.Actors.Num()
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Control group %d saved | Count: %d",
+        GroupIndex + 1,
+        ControlGroup.Actors.Num()
+    );
+}
+
+void USFInGameHUDWidget::SelectControlGroup(
+    int32 GroupIndex
+)
+{
+    if (!ControlGroups.IsValidIndex(GroupIndex))
+    {
+        return;
+    }
+
+    TArray<AActor*> ValidActors;
+    FSFControlGroup& ControlGroup =
+        ControlGroups[GroupIndex];
+
+    for (int32 Index = ControlGroup.Actors.Num() - 1;
+        Index >= 0;
+        --Index)
+    {
+        AActor* Actor =
+            ControlGroup.Actors[Index].Get();
+
+        if (!IsValid(Actor) ||
+            !IsOwnedByLocalPlayer(Actor))
+        {
+            ControlGroup.Actors.RemoveAt(Index);
+            continue;
+        }
+
+        ValidActors.Add(Actor);
+    }
+
+    if (ValidActors.IsEmpty())
+    {
+        return;
+    }
+
+    Algo::Reverse(ValidActors);
+
+    ApplyMultipleSelection(ValidActors);
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Control group %d selected | Count: %d",
+        GroupIndex + 1,
+        ValidActors.Num()
+    );
+}
+
+void USFInGameHUDWidget::AddActorToCurrentSelection(
+    AActor* Actor
+)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    if (!IsOwnedByLocalPlayer(Actor))
+    {
+        return;
+    }
+
+    for (const TObjectPtr<AActor>& ExistingActorPtr : SelectedActors)
+    {
+        if (ExistingActorPtr.Get() == Actor)
+        {
+            return;
+        }
+    }
+
+    TArray<AActor*> CombinedActors;
+    CombinedActors.Reserve(SelectedActors.Num() + 1);
+
+    for (const TObjectPtr<AActor>& ExistingActorPtr : SelectedActors)
+    {
+        AActor* ExistingActor = ExistingActorPtr.Get();
+
+        if (IsValid(ExistingActor))
+        {
+            CombinedActors.Add(ExistingActor);
+        }
+    }
+
+    CombinedActors.Add(Actor);
+
+    ApplyMultipleSelection(CombinedActors);
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Shift-click added actor | Count: %d",
+        CombinedActors.Num()
+    );
+}
+
+void USFInGameHUDWidget::BindControlGroupActorsDestroyed()
+{
+    for (const FSFControlGroup& Group : ControlGroups)
+    {
+        for (const TObjectPtr<AActor>& ActorPtr : Group.Actors)
+        {
+            AActor* Actor = ActorPtr.Get();
+
+            if (!IsValid(Actor))
+            {
+                continue;
+            }
+
+            Actor->OnDestroyed.AddUniqueDynamic(
+                this,
+                &USFInGameHUDWidget::HandleControlGroupActorDestroyed
+            );
+        }
+    }
+}
+
+void USFInGameHUDWidget::UnbindControlGroupActorsDestroyed()
+{
+    for (const FSFControlGroup& Group : ControlGroups)
+    {
+        for (const TObjectPtr<AActor>& ActorPtr : Group.Actors)
+        {
+            AActor* Actor = ActorPtr.Get();
+
+            if (!IsValid(Actor))
+            {
+                continue;
+            }
+
+            Actor->OnDestroyed.RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleControlGroupActorDestroyed
+            );
+        }
+    }
+}
+
+void USFInGameHUDWidget::HandleControlGroupActorDestroyed(
+    AActor* DestroyedActor
+)
+{
+    if (DestroyedActor == nullptr)
+    {
+        return;
+    }
+
+    for (
+        int32 GroupIndex = 0;
+        GroupIndex < ControlGroups.Num();
+        ++GroupIndex
+        )
+    {
+        FSFControlGroup& Group =
+            ControlGroups[GroupIndex];
+
+        const int32 OldCount =
+            Group.Actors.Num();
+
+        Group.Actors.RemoveAll(
+            [DestroyedActor](
+                const TObjectPtr<AActor>& ActorPtr
+                )
+            {
+                AActor* Actor =
+                    ActorPtr.Get();
+
+                return
+                    Actor == DestroyedActor ||
+                    !IsValid(Actor);
+            }
+        );
+
+        if (Group.Actors.Num() == OldCount)
+        {
+            continue;
+        }
+
+        if (Group.Actors.IsEmpty())
+        {
+            if (IsValid(ControlGroupWidget))
+            {
+                ControlGroupWidget->RemoveControlGroupSlot(
+                    GroupIndex
+                );
+            }
+
+            SF_LOG(
+                Log,
+                "[SFInGameHUDWidget] "
+                "Control group %d became empty.",
+                GroupIndex + 1
+            );
+        }
+        else
+        {
+            if (IsValid(ControlGroupWidget))
+            {
+                ControlGroupWidget->UpdateControlGroupSlotCount(
+                    GroupIndex,
+                    Group.Actors.Num()
+                );
+            }
+        }
+    }
+
+    DestroyedActor->OnDestroyed.RemoveDynamic(
+        this,
+        &USFInGameHUDWidget::HandleControlGroupActorDestroyed
+    );
+}
+
+void USFInGameHUDWidget::HandleMultiSelectionRemoveRequested(
+    AActor* Actor
+)
+{
+    if (!IsValid(Actor))
+    {
+        return;
+    }
+
+    const int32 RemovedIndex =
+        SelectedActors.IndexOfByPredicate(
+            [Actor](const TObjectPtr<AActor>& ActorPtr)
+            {
+                return ActorPtr.Get() == Actor;
+            }
+        );
+
+    if (RemovedIndex == INDEX_NONE)
+    {
+        return;
+    }
+
+    const bool bWasPrimary =
+        SelectedActor.Get() == Actor;
+
+    Actor->OnDestroyed.RemoveDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedActorDestroyed
+    );
+
+    HideSelectionIndicator(Actor);
+
+    SelectedActors.RemoveAt(RemovedIndex);
+
+    if (SelectedActors.IsEmpty())
+    {
+        SelectedActor = nullptr;
+        SelectedInfo = FSFSelectableInfo();
+
+        ClearSelection();
+        return;
+    }
+
+    if (bWasPrimary)
+    {
+        UnbindSelectedHealthDelegate();
+
+        SelectedActor = nullptr;
+        SelectedInfo = FSFSelectableInfo();
+
+        // 남은 첫 번째 액터를 내부적으로 새 대표 액터로 설정
+        // 사용자가 클릭한 것처럼 포커스하지는 않음
+        HandlePrimarySelectionRequested(
+            SelectedActors[0].Get()
+        );
+
+        return;
+    }
+
+    RefreshMultiSelectionPanel();
+    RefreshRallyPointIndicator();
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT(
+            "[SFInGameHUDWidget] "
+            "Shift-click removed actor | Remaining: %d"
+        ),
+        SelectedActors.Num()
+    );
 }

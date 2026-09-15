@@ -2,6 +2,7 @@
 
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/Widget.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
@@ -169,11 +170,50 @@ void USFSelectionPanelWidget::ClearSelection()
     SetCommandButtonsVisible(false);
     SetRallyPointButtonVisible(false);
     SetTierUpStageLocked(false);
+
+    ClearMiningResourceAmount();
 }
 
 bool USFSelectionPanelWidget::HasSelection() const
 {
     return bHasSelection;
+}
+
+void USFSelectionPanelWidget::SetMiningResourceAmount(
+    int32 RemainingResourceAmount
+)
+{
+    if (!IsValid(MiningResourceAmountText))
+    {
+        return;
+    }
+
+    MiningResourceAmountText->SetText(
+        FText::Format(
+            NSLOCTEXT(
+                "SFSelectionPanel",
+                "RemainingResourceFormat",
+                "남은 자원: {0}"
+            ),
+            FText::AsNumber(
+                FMath::Max(0, RemainingResourceAmount)
+            )
+        )
+    );
+
+    MiningResourceAmountText->SetVisibility(
+        ESlateVisibility::Visible
+    );
+}
+
+void USFSelectionPanelWidget::ClearMiningResourceAmount()
+{
+    if (IsValid(MiningResourceAmountText))
+    {
+        MiningResourceAmountText->SetVisibility(
+            ESlateVisibility::Collapsed
+        );
+    }
 }
 
 void USFSelectionPanelWidget::NativeDestruct()

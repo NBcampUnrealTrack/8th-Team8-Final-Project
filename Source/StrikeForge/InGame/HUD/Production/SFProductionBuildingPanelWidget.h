@@ -114,6 +114,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Production")
     bool RequestProductionBySlot(int32 SlotIndex);
 
+    UFUNCTION(BlueprintPure, Category = "SF|Production")
+    FName GetUnitRowNameBySlot(int32 SlotIndex) const;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Production")
+    bool RequestProductionOnBuilding(
+        AActor* InProductionBuilding,
+        FName UnitRowName
+    );
+
     UPROPERTY(
         BlueprintAssignable,
         Category = "SF|Production|Sound"
@@ -133,6 +142,11 @@ private:
 
     UFUNCTION()
     void HandleProductionUnitClicked(
+        FName UnitRowName
+    );
+
+    bool TryRequestProduction(
+        AActor* InProductionBuilding,
         FName UnitRowName
     );
 

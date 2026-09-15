@@ -192,7 +192,7 @@ public:
 
 	/** 역할별 공격 우선순위에 따라 대상 탐색 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
-	AActor* FindBestTarget();
+	AActor* FindBestTarget(const AActor* InExcludedTarget = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void PerformAttack(AActor* InTarget);

@@ -7,6 +7,7 @@
 // 모듈 밖에서 열 수 없다 (C1083). 공개 위치는 "Input/UIActionBindingHandle.h" 인데,
 // 엔진 버전에 따라 경로가 바뀐 적이 있어 부모 헤더에 맡긴다.
 #include "Containers/Ticker.h"
+#include "Components/CanvasPanelSlot.h"
 #include "SFStageIntroData.h"
 #include "SFStageIntroWidget.generated.h"
 
@@ -19,6 +20,7 @@ class USoundBase;
 class USoundClass;
 class USoundMix;
 class UWidgetSwitcher;
+class USFStageIntroPortraitFrame;
 
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFStageIntroWidget : public UCommonActivatableWidget
@@ -48,6 +50,7 @@ protected:
      */
     virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 
+    virtual void NativeOnInitialized() override;
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
@@ -82,6 +85,12 @@ private:
     void ShowWaitForObjectiveNode(const FSFStageIntroNode& Node);
     void ShowInteractiveGuideNode(const FSFStageIntroNode& Node);
     void UpdateCharacterImages(const FSFStageIntroNode& Node);
+    USFStageIntroPortraitFrame* WrapCharacterImage(UImage* Image);
+    void UpdateCharacterFrames(const FSFStageIntroNode& Node);
+    void CacheConversationLayout();
+    void RestoreConversationLayout();
+    void CompactDialogueLayout(const FText& FullText);
+    void PositionPortraitFrames(bool bHasFrame);
     void SetImageTexture(UImage* TargetImage, const TSoftObjectPtr<UTexture2D>& Texture);
     void UpdateGuidePageText();
     void FinishStageIntro();
@@ -212,6 +221,38 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|Stage Intro", meta = (BindWidget))
     TObjectPtr<UButton> NextGuideButton = nullptr;
+
+    /** 모든 유닛과 좌우 초상화에 공통으로 적용하는 휘장 크기(UMG 단위). */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Portrait Frame",
+        meta = (ClampMin = "1.0"))
+    FVector2D PortraitFrameSize = FVector2D(320.f, 480.f);
+
+    /** 휘장 크기에 대한 안쪽 여백 비율. 초상화는 이 사각형 안에 비율을 유지해서 들어간다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Portrait Frame")
+    FMargin PortraitFrameInset = FMargin(0.17f, 0.13f, 0.17f, 0.23f);
+
+    /** 초상화만 확대한다. 노드별 Left/Right Portrait Zoom을 여기에 곱한다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Portrait Frame", meta = (ClampMin = "0.5", ClampMax = "3.0"))
+    float DefaultPortraitZoom = 1.6f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Portrait Frame")
+    FLinearColor PortraitBackdropColor = FLinearColor(0.025f, 0.04f, 0.065f, 1.f);
+
+    /** 기존 대사창 높이에 대한 비율. 긴 대사는 전문을 측정해 자동으로 높인다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+    float DialogueHeightScale = 0.75f;
+
+    /** 휘장을 대사창 양 끝에 코드로 붙인다. 끄면 WBP 에 잡아둔 Image 칸을 그대로 쓴다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout")
+    bool bAutoPositionPortraitFrames = false;
+
+    /** 휘장의 중심을 대사창 양 끝에서 안쪽으로 넣는 거리(UMG 단위). */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout")
+    float PortraitInsetFromPanelEdge = 40.f;
+
+    /** 휘장 하단이 대사창 상단과 겹치는 거리. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout")
+    float PortraitDialogueOverlap = 24.f;
 
     // ── 화자 강조 설정 ──────────────────────────────────
     //
@@ -372,6 +413,15 @@ protected:
     int32 SoundEveryNCharacters = 3;
 
 private:
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<UCanvasPanelSlot>, FAnchorData> OriginalConversationLayouts;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFStageIntroPortraitFrame> LeftPortraitFrame = nullptr;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFStageIntroPortraitFrame> RightPortraitFrame = nullptr;
+
     UPROPERTY(Transient)
     TArray<FSFStageIntroNode> ActiveNodes;
 

@@ -77,80 +77,276 @@ void USFBuildingDefinition::GetUIAssetPaths(TArray<FSoftObjectPath>& OutPaths) c
     OutPaths);
 }
 
-bool USFBuildingDefinition::GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoftObjectPath>& OutPaths) const
+bool USFBuildingDefinition::GetRuntimeAssetPaths(
+    int32 InTierIndex,
+    TArray<FSoftObjectPath>& OutPaths) const
 {
-    const FSFBuildingTierData* Tier = FindTier(InTierIndex);
+    TArray<FSoftObjectPath> RequiredPaths;
+    TArray<FSoftObjectPath> OptionalPaths;
 
-    if (!Tier ||
-        BuildingClass.IsNull() ||
-        Tier->Visual.CompletedMesh.IsNull())// ||
-        //Tier->Visual.DestroyedMesh.IsNull())
+    if (!CollectRuntimeAssetPaths(
+        InTierIndex, RequiredPaths, OptionalPaths, true))
     {
         return false;
     }
 
-    // 건물 클래스와 공통 리소스를 OutPath에 몰아넣기
-    AddSoftPath(BuildingClass.ToSoftObjectPath(), OutPaths);
-    AddSoftPath(PreviewMaterial.ToSoftObjectPath(), OutPaths);
-    AddSoftPath(UnderConstructionSelectionSound.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(CompletedSelectionSound.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(DestroyedSound.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(ConstructEffect.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(DestroyEffect.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(DamagedBurningEffect.ToSoftObjectPath(),OutPaths);
-
-    // 티어별 메시
-    for (const FBuildingStage& Stage : Tier->Visual.ConstructionStages)
+    // 요청할 때는 지정된 필수·선택 에셋을 모두 포함한다.
+    for (const FSoftObjectPath& Path : RequiredPaths)
     {
-        if (Stage.Mesh.IsNull())
-        {
-            return false;
-        }
-
-        AddSoftPath(Stage.Mesh.ToSoftObjectPath(),OutPaths);
+        OutPaths.AddUnique(Path);
     }
 
-    // for (const FBuildingStage& Stage : Tier->Visual.DamageStages)
-    // {
-    //     if (Stage.Mesh.IsNull())
-    //     {
-    //         return false;
-    //     }
-    //
-    //     AddSoftPath(Stage.Mesh.ToSoftObjectPath(),OutPaths);
-    // }
-
-    AddSoftPath(Tier->Visual.CompletedMesh.ToSoftObjectPath(),OutPaths);
-    //AddSoftPath(Tier->Visual.DestroyedMesh.ToSoftObjectPath(),OutPaths);
-
-    // 선택 사항
-    AddSoftPath(Tier->Visual.DestructionCollection.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(Tier->Audio.ConstructionStart.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(Tier->Audio.ConstructionComplete.ToSoftObjectPath(),OutPaths);
+    for (const FSoftObjectPath& Path : OptionalPaths)
+    {
+        OutPaths.AddUnique(Path);
+    }
 
     return true;
 }
 
-bool USFBuildingDefinition::AreRuntimeAssetsLoaded(int32 InTierIndex) const
+bool USFBuildingDefinition::AreRuntimeAssetsLoaded(int32 InTierIndex, bool bLogFailures) const
 {
-    TArray<FSoftObjectPath> RuntimeAssetPaths;
+    // TArray<FSoftObjectPath> RuntimeAssetPaths;
+    //
+    // if (!GetRuntimeAssetPaths(InTierIndex, RuntimeAssetPaths))
+    // {
+    //     return false;
+    // }
+    //
+    // // 전부 로딩을 마쳤는지 + 에셋이 존재하는지 검사
+    // for (const FSoftObjectPath& AssetPath : RuntimeAssetPaths)
+    // {   // soft에서 로딩을 마치고 Object로 저장소에 등록이 되어있다면 주소를 반환, 없다면 Null
+    //     // 쉽게말해 로딩됬으면 주소반환, 안됐으면 Null
+    //     // 경로에 대해 전체 로딩이 성공해야함 true를 반환하기때문에
+    //     // 하나라도 에셋지정을 안한다면 콜백함수가 불리지않는다.
+    //     if (!IsValid(AssetPath.ResolveObject()))
+    //     {
+    //         return false;
+    //     }
+    // }
+    //
+    // return true;
+    TArray<FSoftObjectPath> RequiredPaths;
+    TArray<FSoftObjectPath> OptionalPaths;
 
-    if (!GetRuntimeAssetPaths(InTierIndex, RuntimeAssetPaths))
+    // 경로 수집 시 출력한 미지정 경고를 반복하지 않는다.
+    if (!CollectRuntimeAssetPaths(
+        InTierIndex, RequiredPaths, OptionalPaths, false))
     {
+        if (bLogFailures)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[%s] Tier %d 필수 에셋 설정이 유효하지 않습니다."),
+                *GetPathName(), InTierIndex);
+        }
         return false;
     }
 
-    // 전부 로딩을 마쳤는지 + 에셋이 존재하는지 검사
-    for (const FSoftObjectPath& AssetPath : RuntimeAssetPaths)
-    {   // soft에서 로딩을 마치고 Object로 저장소에 등록이 되어있다면 주소를 반환, 없다면 Null
-        // 쉽게말해 로딩됬으면 주소반환, 안됐으면 Null
-        // 경로에 대해 전체 로딩이 성공해야함 true를 반환하기때문에
-        // 하나라도 에셋지정을 안한다면 콜백함수가 불리지않는다.
-        if (!IsValid(AssetPath.ResolveObject()))
+    bool bRequiredAssetsLoaded = true;
+
+    for (const FSoftObjectPath& Path : RequiredPaths)
+    {
+        if (!IsValid(Path.ResolveObject()))
         {
-            return false;
+            bRequiredAssetsLoaded = false;
+
+            if (bLogFailures)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[%s] Tier %d 필수 에셋 로드 실패: %s"),
+                    *GetPathName(), InTierIndex, *Path.ToString());
+            }
         }
     }
 
-    return true;
+    if (bLogFailures)
+    {
+        for (const FSoftObjectPath& Path : OptionalPaths)
+        {
+            if (!IsValid(Path.ResolveObject()))
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[%s] Tier %d 선택 에셋 로드 실패: %s. 생략합니다."),
+                    *GetPathName(), InTierIndex, *Path.ToString());
+            }
+        }
+    }
+
+    // 선택 에셋 실패는 전체 성공 여부에 영향을 주지 않는다.
+    return bRequiredAssetsLoaded;
+    
+}
+
+bool USFBuildingDefinition::ValidateAllTierAssetSettings() const
+{
+    const int32 TierCount = GetTierCount();
+
+    if (TierCount <= 0)
+    {
+        UE_LOG(LogTemp, Error,
+            TEXT("[%s] 건물 Tier 데이터가 비어 있습니다."),
+            *GetPathName());
+
+        return false;
+    }
+
+    bool bAllTiersValid = true;
+
+    TArray<FSoftObjectPath> RequiredPaths;
+    TArray<FSoftObjectPath> OptionalPaths;
+
+    for (int32 TierIndex = 0; TierIndex < TierCount; ++TierIndex)
+    {
+        // 기존 필수·선택 분류와 검증 규칙을 그대로 사용한다.
+        // 이 함수는 경로만 수집하며 에셋을 로딩하지 않는다.
+        const bool bTierValid = CollectRuntimeAssetPaths(
+            TierIndex,
+            RequiredPaths,
+            OptionalPaths,
+            true);
+
+        if (!bTierValid)
+        {
+            bAllTiersValid = false;
+        }
+    }
+
+    return bAllTiersValid;
+}
+
+bool USFBuildingDefinition::CollectRuntimeAssetPaths(int32 InTierIndex, TArray<FSoftObjectPath>& OutRequiredPaths,
+                                                     TArray<FSoftObjectPath>& OutOptionalPaths, bool bLogIssues) const
+{
+    OutRequiredPaths.Reset();
+    OutOptionalPaths.Reset();
+
+    const FSFBuildingTierData* Tier = FindTier(InTierIndex);
+    if (!Tier)
+    {
+        if (bLogIssues)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[%s] Tier %d 데이터가 없습니다."),
+                *GetPathName(), InTierIndex);
+        }
+        return false;
+    }
+
+    bool bValid = true;
+
+    auto AddRequired = [&](
+        const FSoftObjectPath& Path,
+        const TCHAR* FieldName)
+    {
+        if (Path.IsNull())
+        {
+            bValid = false;
+
+            if (bLogIssues)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[%s] Tier %d 필수 에셋 미지정: %s"),
+                    *GetPathName(), InTierIndex, FieldName);
+            }
+            return;
+        }
+
+        OutRequiredPaths.AddUnique(Path);
+    };
+
+    auto AddOptional = [&](
+        const FSoftObjectPath& Path,
+        const TCHAR* FieldName)
+    {
+        if (Path.IsNull())
+        {
+            if (bLogIssues)
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[%s] Tier %d 선택 에셋 미지정: %s. 생략합니다."),
+                    *GetPathName(), InTierIndex, FieldName);
+            }
+            return;
+        }
+
+        OutOptionalPaths.AddUnique(Path);
+    };
+
+    // 필수 에셋
+    AddRequired(
+        BuildingClass.ToSoftObjectPath(),
+        TEXT("BuildingClass"));
+
+    AddRequired(
+        Tier->Visual.CompletedMesh.ToSoftObjectPath(),
+        TEXT("CompletedMesh"));
+
+    AddRequired(
+        Tier->Visual.DestructionCollection.ToSoftObjectPath(),
+        TEXT("DestructionCollection"));
+
+    if (Tier->Visual.ConstructionStages.IsEmpty())
+    {
+        bValid = false;
+
+        if (bLogIssues)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[%s] Tier %d ConstructionStages가 비어 있습니다."),
+                *GetPathName(), InTierIndex);
+        }
+    }
+
+    for (int32 Index = 0;
+         Index < Tier->Visual.ConstructionStages.Num();
+         ++Index)
+    {
+        const FString FieldName = FString::Printf(
+            TEXT("ConstructionStages[%d].Mesh"), Index);
+
+        AddRequired(
+            Tier->Visual.ConstructionStages[Index].Mesh.ToSoftObjectPath(),
+            *FieldName);
+    }
+
+    // 선택 프리뷰 머티리얼
+    AddOptional(
+        PreviewMaterial.ToSoftObjectPath(),
+        TEXT("PreviewMaterial"));
+
+    // 선택 사운드
+    AddOptional(
+        UnderConstructionSelectionSound.ToSoftObjectPath(),
+        TEXT("UnderConstructionSelectionSound"));
+
+    AddOptional(
+        CompletedSelectionSound.ToSoftObjectPath(),
+        TEXT("CompletedSelectionSound"));
+
+    AddOptional(
+        DestroyedSound.ToSoftObjectPath(),
+        TEXT("DestroyedSound"));
+
+    AddOptional(
+        Tier->Audio.ConstructionStart.ToSoftObjectPath(),
+        TEXT("Audio.ConstructionStart"));
+
+    AddOptional(
+        Tier->Audio.ConstructionComplete.ToSoftObjectPath(),
+        TEXT("Audio.ConstructionComplete"));
+
+    // 선택 이펙트
+    AddOptional(
+        ConstructEffect.ToSoftObjectPath(),
+        TEXT("ConstructEffect"));
+
+    AddOptional(
+        DestroyEffect.ToSoftObjectPath(),
+        TEXT("DestroyEffect"));
+
+    AddOptional(
+        DamagedBurningEffect.ToSoftObjectPath(),
+        TEXT("DamagedBurningEffect"));
+
+    return bValid;
 }

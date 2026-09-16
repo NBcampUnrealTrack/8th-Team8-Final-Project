@@ -1091,18 +1091,19 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 	//NewAssets.DestroyedMesh = Visual.DestroyedMesh.Get();
 	
 	
-	if (!Visual.DestructionCollection.IsNull())
+	NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
+
+	if (Visual.ConstructionStages.IsEmpty() ||
+		!bConstructionMeshesLoaded ||
+		!IsValid(NewAssets.CompletedMesh) ||
+		!IsValid(NewAssets.DestructionCollection))
 	{
-		NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
-	}
-	
-	// CACHED failed return false
-	if (!bConstructionMeshesLoaded ||
-		//!bDamageMeshesLoaded ||
-		!IsValid(NewAssets.CompletedMesh))// ||
-		//!IsValid(NewAssets.DestroyedMesh))
-	{
-		SF_LOG(Error, "ASFBaseBuilding::PrepareLoadedTier: required meshes are not loaded");
+		SF_LOG(Error,
+			"[%s] Tier %d 준비 실패: "
+			"건설 단계 메시, 완성 메시 또는 GC가 유효하지 않습니다.",
+			*GetNameSafe(BuildingDefinition),
+			TierIndex);
+
 		return false;
 	}
 

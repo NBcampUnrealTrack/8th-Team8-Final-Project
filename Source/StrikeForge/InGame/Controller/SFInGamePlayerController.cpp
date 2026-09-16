@@ -80,6 +80,18 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
         return false;
     }
 
+    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex);
+    if (CurrentNexusTier < Definition->RequiredNexusTier)
+    {
+        SF_LOG(Warning,
+            "[SFPC] 넥서스 티어 부족: %s (필요=%d, 현재=%d)",
+            *Definition->BuildingId.ToString(),
+            Definition->RequiredNexusTier,
+            CurrentNexusTier);
+
+        return false;
+    }
+
     constexpr int32 PlacementTierIndex = 0;
 
     const FSFBuildingTierData* FirstTier = Definition->FindTier(PlacementTierIndex);

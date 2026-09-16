@@ -7,12 +7,11 @@
 
 namespace SFVFXParameters
 {
-	const FName BuildingScale(
-		TEXT("User.BuildingScale"));
-	const FName BurnStage(
-		TEXT("User.BurnStage"));
-	const FName SpawnBoxSize(
-		TEXT("User.SpawnBoxSize"));
+	const FName BuildingScale(TEXT("User.BuildingScale"));
+	// const FName BurnStage(
+	// 	TEXT("User.BurnStage"));
+	// const FName SpawnBoxSize(
+	// 	TEXT("User.SpawnBoxSize"));
 }
 
 UPlayVFXComponent::UPlayVFXComponent()
@@ -32,7 +31,7 @@ void UPlayVFXComponent::PlayConstructionEffect(
 	}
 
 	FVector SpawnLocation = TargetMesh->Bounds.Origin;
-	SpawnLocation.Z += AdjustZLocationValue;
+	SpawnLocation.Z = AdjustZLocationValue;
 
 	UNiagaraComponent* NewEffect =
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
@@ -60,64 +59,64 @@ void UPlayVFXComponent::PlayConstructionEffect(
 	NewEffect->Activate(true);
 }
 
-void UPlayVFXComponent::PlayBurningEffect(UNiagaraSystem* NiagaraSystem, const FTransform& SpawnTransform,
-	const FVector& SpawnBoxSize, int32 BurnStage)
-{
-	if (!IsValid(NiagaraSystem) ||
-	   BurnStage <= 0 ||
-	   SpawnBoxSize.X <= 0.f ||
-	   SpawnBoxSize.Y <= 0.f)
-	{
-		return;
-	}
-
-	UNiagaraComponent* NewEffect =
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
-			NiagaraSystem,
-			SpawnTransform.GetLocation(),
-			SpawnTransform.Rotator(),
-			FVector::OneVector,
-			true,   // 완료 후 자동 제거
-			false); // 파라미터 설정 후 활성화
-
-	if (!IsValid(NewEffect))
-	{
-		return;
-	}
-
-	NewEffect->SetVariableInt(SFVFXParameters::BurnStage, BurnStage);
-
-	NewEffect->SetVariableVec3(SFVFXParameters::SpawnBoxSize, SpawnBoxSize);
-
-	ActiveBurningEffects.Add(NewEffect);
-
-	NewEffect->Activate(true);
-}
-
-void UPlayVFXComponent::StopBurningEffects(bool bImmediate)
-{
-	for (TObjectPtr<UNiagaraComponent>& Effect : ActiveBurningEffects)
-	{
-		UNiagaraComponent* EffectComponent = Effect.Get();
-
-		if (!IsValid(EffectComponent))
-		{
-			continue;
-		}
-
-		if (bImmediate || !EffectComponent->IsActive())
-		{
-			EffectComponent->DestroyComponent();
-		}
-		else
-		{
-			EffectComponent->Deactivate();
-		}
-	}
-
-	ActiveBurningEffects.Reset();
-}
+// void UPlayVFXComponent::PlayBurningEffect(UNiagaraSystem* NiagaraSystem, const FTransform& SpawnTransform,
+// 	const FVector& SpawnBoxSize, int32 BurnStage)
+// {
+// 	if (!IsValid(NiagaraSystem) ||
+// 	   BurnStage <= 0 ||
+// 	   SpawnBoxSize.X <= 0.f ||
+// 	   SpawnBoxSize.Y <= 0.f)
+// 	{
+// 		return;
+// 	}
+//
+// 	UNiagaraComponent* NewEffect =
+// 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+// 			this,
+// 			NiagaraSystem,
+// 			SpawnTransform.GetLocation(),
+// 			SpawnTransform.Rotator(),
+// 			FVector::OneVector,
+// 			true,   // 완료 후 자동 제거
+// 			false); // 파라미터 설정 후 활성화
+//
+// 	if (!IsValid(NewEffect))
+// 	{
+// 		return;
+// 	}
+//
+// 	NewEffect->SetVariableInt(SFVFXParameters::BurnStage, BurnStage);
+//
+// 	NewEffect->SetVariableVec3(SFVFXParameters::SpawnBoxSize, SpawnBoxSize);
+//
+// 	ActiveBurningEffects.Add(NewEffect);
+//
+// 	NewEffect->Activate(true);
+// }
+//
+// void UPlayVFXComponent::StopBurningEffects(bool bImmediate)
+// {
+// 	for (TObjectPtr<UNiagaraComponent>& Effect : ActiveBurningEffects)
+// 	{
+// 		UNiagaraComponent* EffectComponent = Effect.Get();
+//
+// 		if (!IsValid(EffectComponent))
+// 		{
+// 			continue;
+// 		}
+//
+// 		if (bImmediate || !EffectComponent->IsActive())
+// 		{
+// 			EffectComponent->DestroyComponent();
+// 		}
+// 		else
+// 		{
+// 			EffectComponent->Deactivate();
+// 		}
+// 	}
+//
+// 	ActiveBurningEffects.Reset();
+// }
 
 void UPlayVFXComponent::PlayDestroyNiagaraEffect(
 	UNiagaraSystem* NiagaraSystem,
@@ -169,7 +168,7 @@ void UPlayVFXComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		StopManagedEffect(Channel, bImmediate);
 	}
 
-	StopBurningEffects(bImmediate);
+	//StopBurningEffects(bImmediate);
 
 	Super::EndPlay(EndPlayReason);
 }

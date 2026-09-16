@@ -1671,12 +1671,9 @@ void USFInGameHUDWidget::ToggleSettings()
     }
 
     ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
-    ActiveSettingsWidget->OnDeactivated().AddUObject(
-        this,
-        &USFInGameHUDWidget::HandleSettingsDeactivated
-    );
+    ActiveSettingsWidget->OnDeactivated().AddUObject(this,&USFInGameHUDWidget::HandleSettingsDeactivated);
 
-    UGameplayStatics::SetGamePaused(this, true);
+    UGameplayStatics::SetGamePaused(this,true);
 
     APlayerController* PlayerController = GetOwningPlayer();
 

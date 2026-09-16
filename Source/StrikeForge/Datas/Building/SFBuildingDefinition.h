@@ -84,9 +84,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement")
     TSoftObjectPtr<UMaterialInterface> PreviewMaterial;
     
-    // 추후 티어별 해금이 있다면 사용할 멤버변수
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Requirement", meta = (ClampMin = "1"))
-    int32 RequiredNexusTier = 1;
+    /**
+     * 이 건물을 건설하려면 필요한 넥서스 티어(0 기반).
+     * 일반 건물은 0, 특수 생산소는 2로 두어 넥서스 2티어 이후에만 해금한다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Requirement", meta = (ClampMin = "0"))
+    int32 RequiredNexusTier = 0;
     
     // 건설중 상태 sound
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio|Selection")

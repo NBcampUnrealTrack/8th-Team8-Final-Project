@@ -83,8 +83,8 @@ bool USFBuildingDefinition::GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoft
 
     if (!Tier ||
         BuildingClass.IsNull() ||
-        Tier->Visual.CompletedMesh.IsNull() ||
-        Tier->Visual.DestroyedMesh.IsNull())
+        Tier->Visual.CompletedMesh.IsNull())// ||
+        //Tier->Visual.DestroyedMesh.IsNull())
     {
         return false;
     }
@@ -110,18 +110,18 @@ bool USFBuildingDefinition::GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoft
         AddSoftPath(Stage.Mesh.ToSoftObjectPath(),OutPaths);
     }
 
-    for (const FBuildingStage& Stage : Tier->Visual.DamageStages)
-    {
-        if (Stage.Mesh.IsNull())
-        {
-            return false;
-        }
-
-        AddSoftPath(Stage.Mesh.ToSoftObjectPath(),OutPaths);
-    }
+    // for (const FBuildingStage& Stage : Tier->Visual.DamageStages)
+    // {
+    //     if (Stage.Mesh.IsNull())
+    //     {
+    //         return false;
+    //     }
+    //
+    //     AddSoftPath(Stage.Mesh.ToSoftObjectPath(),OutPaths);
+    // }
 
     AddSoftPath(Tier->Visual.CompletedMesh.ToSoftObjectPath(),OutPaths);
-    AddSoftPath(Tier->Visual.DestroyedMesh.ToSoftObjectPath(),OutPaths);
+    //AddSoftPath(Tier->Visual.DestroyedMesh.ToSoftObjectPath(),OutPaths);
 
     // 선택 사항
     AddSoftPath(Tier->Visual.DestructionCollection.ToSoftObjectPath(),OutPaths);

@@ -132,14 +132,15 @@ struct STRIKEFORGE_API FBuildingVisualData
 	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
 	TSoftObjectPtr<UStaticMesh> CompletedMesh;
 
+#pragma region GC로대체
 	/* 가벼운 손상부터 심각한 손상 순서로 사용한다.
 	* 런타임에서 Threshold 내림차순으로 정렬한다.*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
-	TArray<FBuildingStage> DamageStages;
-	
-	UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
-	TSoftObjectPtr<UStaticMesh> DestroyedMesh;
-	
+	// UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	// TArray<FBuildingStage> DamageStages;
+	//
+	// UPROPERTY(EditAnywhere,	BlueprintReadOnly,	Category = "Visual")
+	// TSoftObjectPtr<UStaticMesh> DestroyedMesh;
+#pragma endregion 
 	/**
 	* 해당 Tier의 파괴 연출에 사용할 GC.
 	*/
@@ -188,27 +189,29 @@ struct STRIKEFORGE_API FBuildingVisualData
 
 		return Result;
 	}
-	int32 FindDamageStageIndex(float HealthRatio) const
-	{
-		HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);
-		
-		if (HealthRatio >= 1.f)
-		{	// 풀피
-			return INDEX_NONE;
-		}
-
-		int32 Result = INDEX_NONE;
-
-		for (int32 Index = 0; Index < DamageStages.Num(); ++Index)
-		{
-			if (HealthRatio <= DamageStages[Index].Threshold)
-			{
-				Result = Index;
-			}
-		}
-
-		return Result;
-	}
+#pragma region GC로대체
+	// int32 FindDamageStageIndex(float HealthRatio) const
+	// {
+	// 	HealthRatio = FMath::Clamp(HealthRatio, 0.f, 1.f);
+	// 	
+	// 	if (HealthRatio >= 1.f)
+	// 	{	// 풀피
+	// 		return INDEX_NONE;
+	// 	}
+	//
+	// 	int32 Result = INDEX_NONE;
+	//
+	// 	for (int32 Index = 0; Index < DamageStages.Num(); ++Index)
+	// 	{
+	// 		if (HealthRatio <= DamageStages[Index].Threshold)
+	// 		{
+	// 			Result = Index;
+	// 		}
+	// 	}
+	//
+	// 	return Result;
+	// }
+#pragma endregion 
 	int32 FindDestructionStageIndex(float HealthRatio) const
 	{
 		HealthRatio = FMath::Clamp(

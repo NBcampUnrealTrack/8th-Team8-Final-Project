@@ -238,26 +238,27 @@ void ASFBaseBuilding::UpdateDamageVisual(float PreviousHealthRatio, float Curren
 		 */
 	}
 
+	// GC로 대체됨
 	// GC가 없는 건물은 기존 DamageMesh를 사용한다.
-	const int32 PreviousMeshStage =
-		Tier->Visual.FindDamageStageIndex(PreviousHealthRatio);
-
-	const int32 CurrentMeshStage =
-		Tier->Visual.FindDamageStageIndex(CurrentHealthRatio);
-
-	if (PreviousMeshStage == CurrentMeshStage)
-	{
-		return;
-	}
-
-	RefreshVisual();
-	PlayBurningEffect(CurrentMeshStage);
-
-	if (CurrentMeshStage != INDEX_NONE)
-	{
-		SF_LOG(Warning, "[%s] Damage mesh stage entered: %d",
-			*GetName(),	CurrentMeshStage);
-	}
+	// const int32 PreviousMeshStage =
+	// 	Tier->Visual.FindDamageStageIndex(PreviousHealthRatio);
+	//
+	// const int32 CurrentMeshStage =
+	// 	Tier->Visual.FindDamageStageIndex(CurrentHealthRatio);
+	//
+	// if (PreviousMeshStage == CurrentMeshStage)
+	// {
+	// 	return;
+	// }
+	//
+	// RefreshVisual();
+	// PlayBurningEffect(CurrentMeshStage);
+	//
+	// if (CurrentMeshStage != INDEX_NONE)
+	// {
+	// 	SF_LOG(Warning, "[%s] Damage mesh stage entered: %d",
+	// 		*GetName(),	CurrentMeshStage);
+	// }
 }
 
 // 체력이 0일시 broadcast되는 델리게이트와 연결됨
@@ -457,7 +458,7 @@ void ASFBaseBuilding::EnterDestroyedState()
 	// 이동한 GC 위치에서 최종 Strain이 계산되는 것을 방지
 	StopHitReaction();
 	PlayVFXComponent->StopConstructionEffect();
-	PlayVFXComponent->StopBurningEffects();
+	//PlayVFXComponent->StopBurningEffects();
 	
 	SF_LOG(Warning, "EnterDestroyedState");
 	//CombatTargetComponent->SetTargetingEnabled(false);
@@ -508,26 +509,27 @@ void ASFBaseBuilding::EnterDestroyedState()
 		}
 	}
 
-	if (bUseGeometryCollection)
-	{
-		BoxComponent->SetCollisionEnabled(
-			ECollisionEnabled::NoCollision);
-	}
-	else if (bCanPlayCompletedGC)
-	{
-		// 완성 건물이지만 GC가 없을 때만 파괴 메시 사용
-		RefreshVisual();
-		BoxComponent->SetCollisionProfileName(
-			TEXT("DestroyedBuilding"));
-		SetBoxExtent();
-	}
-	else
-	{
-		// 건설 중 파괴: 완성 GC와 파괴 완료 메시 모두 사용하지 않는다.
-		BoxComponent->SetCollisionEnabled(
-			ECollisionEnabled::NoCollision);
-	}
-
+	// if (bUseGeometryCollection)
+	// {
+	// 	BoxComponent->SetCollisionEnabled(
+	// 		ECollisionEnabled::NoCollision);
+	// }
+	// else if (bCanPlayCompletedGC)
+	// {
+	// 	// 완성 건물이지만 GC가 없을 때만 파괴 메시 사용
+	// 	RefreshVisual();
+	// 	BoxComponent->SetCollisionProfileName(
+	// 		TEXT("DestroyedBuilding"));
+	// 	SetBoxExtent();
+	// }
+	// else
+	// {
+	// 	// 건설 중 파괴: 완성 GC와 파괴 완료 메시 모두 사용하지 않는다.
+	// 	BoxComponent->SetCollisionEnabled(
+	// 		ECollisionEnabled::NoCollision);
+	// }
+	BoxComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
 	PlayDestroyEffect();
 	//성윤 미니맵 마커제작
 	Tags.Remove(
@@ -585,55 +587,54 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 	}
 
 	case EBuildingState::Completed:
-		return ResolveDamageMesh(ActiveTierAssets);
+		//return ResolveDamageMesh(ActiveTierAssets);
+		return ActiveTierAssets.CompletedMesh;
 
 	case EBuildingState::Destroyed:
-	{
-		const FBuildingTierRuntimeAssets& DestroyedAssets =
-			ActiveTierAssets.TierIndex != INDEX_NONE
-				? ActiveTierAssets
-				: PendingTierAssets;
-
-		if (IsValid(DestroyedAssets.DestroyedMesh))
-		{
-			return DestroyedAssets.DestroyedMesh.Get();
-		}
+		return nullptr;
+		// const FBuildingTierRuntimeAssets& DestroyedAssets =
+		// 	ActiveTierAssets.TierIndex != INDEX_NONE
+		// 		? ActiveTierAssets
+		// 		: PendingTierAssets;
+		// if (IsValid(DestroyedAssets.DestroyedMesh))
+		// {
+		// 	return DestroyedAssets.DestroyedMesh.Get();
+		// }
 
 		// 예상치 못한 에셋 누락 시 마지막 피해 메시로 대체한다.
-		return ResolveDamageMesh(DestroyedAssets);
-	}
+		// return ResolveDamageMesh(DestroyedAssets);
 	default:
 		return nullptr;
 	}
 }
 
-UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
-{
-	const FSFBuildingTierData* Tier =
-	GetTierInfo(Assets.TierIndex);
+// UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
+// {
+// 	const FSFBuildingTierData* Tier =
+// 	GetTierInfo(Assets.TierIndex);
+//
+// 	if (!Tier || !IsValid(HealthComponent))
+// 	{
+// 		return Assets.CompletedMesh;
+// 	}
 
-	if (!Tier || !IsValid(HealthComponent))
-	{
-		return Assets.CompletedMesh;
-	}
+	// const int32 DamageIndex =
+	// 	Tier->Visual.FindDamageStageIndex(
+	// 		HealthComponent->GetHealthPercent());
 
-	const int32 DamageIndex =
-		Tier->Visual.FindDamageStageIndex(
-			HealthComponent->GetHealthPercent());
+	// if (Assets.DamageMeshes.IsValidIndex(DamageIndex))
+	// {
+	// 	UStaticMesh* DamageMesh =
+	// 		Assets.DamageMeshes[DamageIndex];
+	//
+	// 	if (IsValid(DamageMesh))
+	// 	{
+	// 		return DamageMesh;
+	// 	}
+	// }
 
-	if (Assets.DamageMeshes.IsValidIndex(DamageIndex))
-	{
-		UStaticMesh* DamageMesh =
-			Assets.DamageMeshes[DamageIndex];
-
-		if (IsValid(DamageMesh))
-		{
-			return DamageMesh;
-		}
-	}
-
-	return Assets.CompletedMesh;
-}
+// 	return Assets.CompletedMesh;
+// }
 
 const FSFBuildingTierData* ASFBaseBuilding::GetCurrentTierInfo() const
 {
@@ -975,10 +976,12 @@ bool ASFBaseBuilding::CacheLoadedDefinitionData()
 			{
 				return Left.Threshold < Right.Threshold;
 			});
-		CachedTier.Visual.DamageStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
-			{
-				return Left.Threshold > Right.Threshold;
-			});
+#pragma region GC로대체
+		// CachedTier.Visual.DamageStages.Sort([](const FBuildingStage& Left, const FBuildingStage& Right)
+		// 	{
+		// 		return Left.Threshold > Right.Threshold;
+		// 	});
+#pragma endregion 
 		CachedTier.Visual.DestructionStages.Sort([](const FBuildingDestruction& Left, const FBuildingDestruction& Right)
 			{
 				return Left.HealthThreshold >  Right.HealthThreshold;
@@ -1035,14 +1038,15 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 			TierIndex);
 		return false;
 	}
-	if (Visual.DestroyedMesh.IsNull())
-	{
-		UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d DestroyedMesh가 없습니다."),
-			*GetNameSafe(BuildingDefinition),
-			TierIndex);
-		return false;
-	}
-	
+#pragma region GC로대체
+	// if (Visual.DestroyedMesh.IsNull())
+	// {
+	// 	UE_LOG(LogTemp, Error, TEXT("[%s] Tier %d DestroyedMesh가 없습니다."),
+	// 		*GetNameSafe(BuildingDefinition),
+	// 		TierIndex);
+	// 	return false;
+	// }
+#pragma endregion 
 	// DEFINE lamda function CACHED Meshes
 	auto LoadStageMeshes = [this, TierIndex](
 		const TArray<FBuildingStage>& Stages,
@@ -1075,28 +1079,31 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 		TEXT("ConstructionStage"));
 	
 	// CACHED damaged_meshes using lamda function(LoadStageMeshes)
-	const bool bDamageMeshesLoaded = LoadStageMeshes(
-		Visual.DamageStages,
-		NewAssets.DamageMeshes,
-		TEXT("DamageStage"));
+	// GC로 대체
+	// const bool bDamageMeshesLoaded = LoadStageMeshes(
+	// 	Visual.DamageStages,
+	// 	NewAssets.DamageMeshes,
+	// 	TEXT("DamageStage"));
 	
 	// CACHED completed_mesh
 	NewAssets.CompletedMesh = Visual.CompletedMesh.Get();
-	NewAssets.DestroyedMesh = Visual.DestroyedMesh.Get();
+	//GC로대체
+	//NewAssets.DestroyedMesh = Visual.DestroyedMesh.Get();
 	
 	
-	if (!Visual.DestructionCollection.IsNull())
-	{
-		NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
-	}
-	
-	// CACHED failed return false
-	if (!bConstructionMeshesLoaded ||
-		!bDamageMeshesLoaded ||
+	NewAssets.DestructionCollection = Visual.DestructionCollection.Get();
+
+	if (Visual.ConstructionStages.IsEmpty() ||
+		!bConstructionMeshesLoaded ||
 		!IsValid(NewAssets.CompletedMesh) ||
-		!IsValid(NewAssets.DestroyedMesh))
+		!IsValid(NewAssets.DestructionCollection))
 	{
-		SF_LOG(Error, "ASFBaseBuilding::PrepareTier: no completedmesh no destroymesh");
+		SF_LOG(Error,
+			"[%s] Tier %d 준비 실패: "
+			"건설 단계 메시, 완성 메시 또는 GC가 유효하지 않습니다.",
+			*GetNameSafe(BuildingDefinition),
+			TierIndex);
+
 		return false;
 	}
 
@@ -1451,10 +1458,10 @@ void ASFBaseBuilding::ClearDestructionVisual()
 	 */
 	StopHitReaction();
 
-	if (IsValid(PlayVFXComponent))
-	{
-		PlayVFXComponent->StopBurningEffects(true);
-	}
+	// if (IsValid(PlayVFXComponent))
+	// {
+	// 	PlayVFXComponent->StopBurningEffects(true);
+	// }
 	
 	if (IsValid(DestructionActor))
 	{
@@ -1478,52 +1485,52 @@ const FSFBuildingTierData* ASFBaseBuilding::GetCostTierInfo() const
 	return GetTierInfo(CostTier);
 }
 
-void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
-{
-	if (DamageStageIndex < 0 ||
-		!IsValid(PlayVFXComponent) ||
-		!IsValid(DamagedBurningEffect) ||
-		!IsValid(StaticMeshComponent))
-	{
-		return;
-	}
-
-	FVector LocalMin;
-	FVector LocalMax;
-
-	StaticMeshComponent->GetLocalBounds(
-		LocalMin,
-		LocalMax);
-
-	const FVector LocalBottomCenter(
-		(LocalMin.X + LocalMax.X) * 0.5f,
-		(LocalMin.Y + LocalMax.Y) * 0.5f,
-		LocalMin.Z);
-
-	const FTransform MeshTransform =
-		StaticMeshComponent->GetComponentTransform();
-
-	const FVector ComponentScale =
-		MeshTransform.GetScale3D().GetAbs();
-
-	FVector SpawnBoxSize =
-		(LocalMax - LocalMin) * ComponentScale;
-
-	// 건물 바닥의 가로·세로 영역만 사용한다.
-	// SpawnBoxSize.Z = 0.f;
-
-	const FTransform SpawnTransform(
-		MeshTransform.GetRotation(),
-		MeshTransform.TransformPosition(
-			LocalBottomCenter),
-		FVector::OneVector);
-
-	PlayVFXComponent->PlayBurningEffect(
-		DamagedBurningEffect,
-		SpawnTransform,
-		SpawnBoxSize,
-		DamageStageIndex + 1);
-}
+// void ASFBaseBuilding::PlayBurningEffect(int32 DamageStageIndex)
+// {
+// 	if (DamageStageIndex < 0 ||
+// 		!IsValid(PlayVFXComponent) ||
+// 		!IsValid(DamagedBurningEffect) ||
+// 		!IsValid(StaticMeshComponent))
+// 	{
+// 		return;
+// 	}
+//
+// 	FVector LocalMin;
+// 	FVector LocalMax;
+//
+// 	StaticMeshComponent->GetLocalBounds(
+// 		LocalMin,
+// 		LocalMax);
+//
+// 	const FVector LocalBottomCenter(
+// 		(LocalMin.X + LocalMax.X) * 0.5f,
+// 		(LocalMin.Y + LocalMax.Y) * 0.5f,
+// 		LocalMin.Z);
+//
+// 	const FTransform MeshTransform =
+// 		StaticMeshComponent->GetComponentTransform();
+//
+// 	const FVector ComponentScale =
+// 		MeshTransform.GetScale3D().GetAbs();
+//
+// 	FVector SpawnBoxSize =
+// 		(LocalMax - LocalMin) * ComponentScale;
+//
+// 	// 건물 바닥의 가로·세로 영역만 사용한다.
+// 	// SpawnBoxSize.Z = 0.f;
+//
+// 	const FTransform SpawnTransform(
+// 		MeshTransform.GetRotation(),
+// 		MeshTransform.TransformPosition(
+// 			LocalBottomCenter),
+// 		FVector::OneVector);
+//
+// 	PlayVFXComponent->PlayBurningEffect(
+// 		DamagedBurningEffect,
+// 		SpawnTransform,
+// 		SpawnBoxSize,
+// 		DamageStageIndex + 1);
+// }
 
 void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
 {

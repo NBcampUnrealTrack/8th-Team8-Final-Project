@@ -119,21 +119,26 @@ void USFBuildingAssetSubsystem::RequestBuildingAssetsAsync(
     const FString RequestKey = MakeBuildingAssetRequestKey(InDefinition, InTierIndex);
 	
 	// Map에 있어서 중복처리
-    if (ActiveBuildingHandles.Contains(RequestKey))
-    {
-    	// 티어 건물정의의 데이터가 로드완료라면
-        if (InDefinition->AreRuntimeAssetsLoaded(InTierIndex))
-        {
-        	// 곧바로 델리게이트와 바인딩된 함수 실행
-            OnComplete.ExecuteIfBound(InDefinition, InTierIndex, true);
-        }
-        else
-        {
-        	// 로딩 신호를 보냈으나 로딩중에 콜백함수 요청이 와서 Add
-            PendingBuildingCallbacks.FindOrAdd(RequestKey).Add(MoveTemp(OnComplete));
-        }
-        return;
-    }
+	if (ActiveBuildingHandles.Contains(RequestKey))
+	{
+		if (TArray<FSFOnBuildingAssetsReady>* PendingCallbacks =
+			PendingBuildingCallbacks.Find(RequestKey))
+		{
+			// 이 요청은 아직 완료 처리 전이다.
+			// 선택 에셋까지 로딩 시도가 끝난 뒤 함께 통지한다.
+			PendingCallbacks->Add(MoveTemp(OnComplete));
+		}
+		else
+		{
+			// 완료된 요청이다. 필수 에셋의 준비 상태를 전달한다.
+			const bool bSuccess =
+				InDefinition->AreRuntimeAssetsLoaded(InTierIndex);
+
+			OnComplete.ExecuteIfBound(InDefinition,	InTierIndex, bSuccess);
+		}
+
+		return;
+	}
 
 	// Map에 없어서 신규등록 > 비동기 실행해야함
     PendingBuildingCallbacks.FindOrAdd(RequestKey).Add(MoveTemp(OnComplete));
@@ -155,9 +160,9 @@ void USFBuildingAssetSubsystem::RequestBuildingAssetsAsync(
                     USFBuildingDefinition* Definition =
                         WeakDefinition.Get();
 
-                    const bool bSuccess =
-                        IsValid(Definition) &&
-                        Definition->AreRuntimeAssetsLoaded(InTierIndex);
+                	const bool bSuccess =
+						IsValid(Definition) &&
+						Definition->AreRuntimeAssetsLoaded(InTierIndex, true);
 
                     CompleteBuildingRequest(
                         RequestKey, // key와 연결되있는 Map에 델리게이트가 TArray로 존재
@@ -376,7 +381,30 @@ void USFBuildingAssetSubsystem::HandleDefinitionsLoaded(ESFRace InRace)
         CompleteRaceRequest(InRace, false);
         return;
     }
+#pragma region CheckEssentialAssets
+	// 선택된 종족의 Nexus와 건설 가능 건물 전체를 검사한다.
+	// Anchor 배치 여부나 초기 로딩 대상 티어에 제한하지 않는다.
+	bool bAllDefinitionsValid = true;
 
+	for (const TObjectPtr<USFBuildingDefinition>& Definition
+		: LoadedData->Definitions)
+	{
+		if (!Definition->ValidateAllTierAssetSettings())
+		{
+			bAllDefinitionsValid = false;
+		}
+	}
+	if (!bAllDefinitionsValid)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[SFBuildingAssetSubsystem] 종족 건물중 필수설정이 누락되있습니다. ( 건설중메쉬, 건설완료메쉬, GC )를 체크해주세요. Race=%s"),
+			*UEnum::GetValueAsString(InRace));
+
+		CompleteRaceRequest(InRace, false);
+		return;
+	}
+#pragma endregion 
+	
     TArray<FSoftObjectPath> UIAssetPaths;
 
     for (const TObjectPtr<USFBuildingDefinition>& Definition : LoadedData->Definitions)

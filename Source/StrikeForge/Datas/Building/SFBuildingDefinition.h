@@ -41,8 +41,11 @@ public:
     // 현재Tier의 softRef 경로수집
     bool GetRuntimeAssetPaths(int32 InTierIndex, TArray<FSoftObjectPath>& OutPaths) const;
 
-    /** 지정 Tier의 필수 리소스가 모두 메모리에 있는지 검사한다. 비동기 완료 시 호출되며 CompleteBuildingRequest로 이어진다. */
-    bool AreRuntimeAssetsLoaded(int32 InTierIndex) const;
+    /** 필수 런타임 에셋의 로드 여부를 검사한다. bLogFailures는 로딩 완료 후 결과를 진단할 때만 사용한다. */
+    bool AreRuntimeAssetsLoaded(int32 InTierIndex, bool bLogFailures = false) const;
+    
+    /** 모든 티어의 필수 에셋 지정 여부를 검사한다. 실제 에셋을 로딩하지 않는다. */
+    bool ValidateAllTierAssetSettings() const;
 public:
     // 전체 건물 Definition에서 고유해야 하는 ID. 종족을 포함한 이름을 권장한다. ex) HumanHouse, AnimalHouse
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,  AssetRegistrySearchable, Category = "Identity")
@@ -111,4 +114,12 @@ public:
     /** 손상 단계에서 파단면에 붙일 불꽃 Effect.* Infinite 루프 시스템이어야 한다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect|Niagara")
     TSoftObjectPtr<UNiagaraSystem> DamagedBurningEffect;
+    
+private:
+    /** 필수·선택 분류를 한 곳에서 관리한다. */
+    bool CollectRuntimeAssetPaths(
+        int32 InTierIndex,
+        TArray<FSoftObjectPath>& OutRequiredPaths,
+        TArray<FSoftObjectPath>& OutOptionalPaths,
+        bool bLogIssues) const;
 };

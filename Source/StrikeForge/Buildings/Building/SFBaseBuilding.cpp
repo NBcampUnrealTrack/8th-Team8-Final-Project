@@ -21,6 +21,7 @@
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Engine/GameInstance.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -1264,18 +1265,30 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 void ASFBaseBuilding::NotifyActorBeginCursorOver()
 {
 	Super::NotifyActorBeginCursorOver();
+
 	if (CurrentBuildingState == EBuildingState::Preview) return;
-	
-	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-	if (!PC) return;
-	
-	ASFInGamePlayerController* SFPC = Cast<ASFInGamePlayerController>(PC);
-	if (!SFPC) return;
-	
-	if (SFPC->GetMyTeamIndex() != GetTeamIndex()) return;
-	
+	if (!IsValid(WidgetComponent)) return;
+
+	UBuildingHealthBar* HealthWidget =
+		Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
+
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+
+	if (IsValid(HealthWidget) && IsValid(Combat))
+	{
+		// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
+		const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
+			GetTeamIndex(),	Combat->GetLocalPlayerTeam()
+		);
+		
+		if (bIsEnemy)
+		{
+			HealthWidget->SetHealthBarColor(FLinearColor::Red);
+		}
+		
+	}
+
 	WidgetComponent->SetVisibility(true);
-	SF_LOG(Warning, "NotifyActorBeginOverlap");
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()

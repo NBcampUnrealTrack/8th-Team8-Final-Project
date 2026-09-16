@@ -31,7 +31,7 @@ void UPlayVFXComponent::PlayConstructionEffect(
 	}
 
 	FVector SpawnLocation = TargetMesh->Bounds.Origin;
-	SpawnLocation.Z += AdjustZLocationValue;
+	SpawnLocation.Z = AdjustZLocationValue;
 
 	UNiagaraComponent* NewEffect =
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(

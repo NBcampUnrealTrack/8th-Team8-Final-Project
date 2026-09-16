@@ -8,3 +8,11 @@ void UBuildingHealthBar::SetHealthBar(float InBeforeHP, float InCurrentHP, float
 	HealthBar->SetPercent(Ratio);
 	
 }
+
+void UBuildingHealthBar::SetHealthBarColor(const FLinearColor& InColor)
+{
+	if (IsValid(HealthBar))
+	{
+		HealthBar->SetFillColorAndOpacity(InColor);
+	}
+}

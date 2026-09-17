@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "SFBuildingStatWidget.generated.h"
 
+class UOverlay;
 class FHealthValueChanged;
 class USFHealthBarWidget;
 class UProgressBar;
@@ -30,4 +31,7 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> ProgressBar;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UOverlay> ProgressBarOverlay;
+	
 };

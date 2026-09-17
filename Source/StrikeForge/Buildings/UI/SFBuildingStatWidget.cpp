@@ -1,5 +1,6 @@
 ﻿#include "SFBuildingStatWidget.h"
 #include "SFHealthBarWidget.h"
+#include "Components/Overlay.h"
 #include "Components/ProgressBar.h"
 
 void USFBuildingStatWidget::SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP)
@@ -36,6 +37,6 @@ void USFBuildingStatWidget::SetProgressVisible(bool bInVisible)
 	if (!IsValid(ProgressBar))	return;
 
 	// Collapsed가 아니라 Hidden. 칸을 유지해야 체력바가 위아래로 안 움직인다.
-	ProgressBar->SetVisibility(
+	ProgressBarOverlay->SetVisibility(
 		bInVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 }

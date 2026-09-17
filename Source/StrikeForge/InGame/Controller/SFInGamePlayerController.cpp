@@ -1003,52 +1003,236 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         return;
     }
 
-    // 명령 대상 수집은 이동·공격·정지에서 같은 함수를 사용한다.
-    // HUD 다중 선택과 기존 단일 선택을 합치되, 적/중립 액터는 제외한다.
     TArray<AActor*> Commandables;
     CollectLocallyControllableActors(Commandables);
 
     if (Commandables.Num() == 0)
     {
-        SF_LOG(
-            Log,
-            "[SFInGamePlayerController] Move command ignored: no locally controlled movable selected."
-        );
+        SF_LOG(Log, "[SFInGamePlayerController] Move command ignored: no locally controlled movable selected.");
+
         return;
     }
 
-    const bool bAppendToQueue =
-        IsShiftCommandModifierDown();
+    const bool bAppendToQueue = IsShiftCommandModifierDown();
 
-    // 실제로 조종할 대상이 확인된 뒤에만 UI/BP 쪽 이동 이벤트를 알린다.
-    //OnMoveInput.Broadcast(Destination);
+    // 선택된 유닛 중 한 기라도 교전 또는 추격 중이면,
+    // 이번 우클릭은 선택 부대 전체의 강제 이동으로 처리한다.
+    bool bForceGroupMove = false;
 
-    // 같은 좌표를 여러 기에 주면 한 점에 몰려 서로 밀친다.
-    // MoveAcceptanceRadius 가 50cm 라 도착 판정이 겹치기 때문이다.
-    // 원형으로 흩어 놓아 각자 다른 지점을 목표로 삼게 한다.
+    for (AActor* Actor : Commandables)
+    {
+        const AUnitBase* Unit = Cast<AUnitBase>(Actor);
+
+        if (!IsValid(Unit))
+        {
+            continue;
+        }
+
+        const EUnitCombatState State = Unit->GetCombatState();
+
+        if (State == EUnitCombatState::Chasing || State == EUnitCombatState::Attacking || Unit->IsWaitingForGroupMove())
+        {
+            bForceGroupMove = true;
+            break;
+        }
+    }
+
+    FSFForcedMoveGroup NewGroup;
+
+    if (bForceGroupMove)
+    {
+        NewGroup.GroupId = NextForcedMoveGroupId++;
+
+        // 후퇴 명령은 기존 명령 뒤에 예약하면 안 된다.
+        // 즉시 전투를 취소해야 하므로 Shift 여부와 관계없이 즉시 실행한다.
+        SF_LOG(Log, "[SFInGamePlayerController] 교전 중 우클릭 — 부대 강제 이동 시작 | Group=%d | Count=%d", NewGroup.GroupId, Commandables.Num());
+    }
+
     const int32 Count = Commandables.Num();
 
     for (AActor* Actor : Commandables)
     {
-        ExecuteUnitCommandForActor(
-            Actor,
-            ESFUnitCommandMode::Move,
-            Destination,
-            nullptr,
-            bAppendToQueue
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        FVector Goal = Destination;
+
+        AUnitBase* Unit =
+            Cast<AUnitBase>(Actor);
+
+        if (!IsValid(Unit))
+        {
+            IMovable::Execute_MoveToLocation(
+                Actor,
+                Goal
+            );
+
+            continue;
+        }
+
+        RemoveUnitFromForcedMoveGroups(
+            Unit,
+            false
         );
+
+        if (bForceGroupMove)
+        {
+            Unit->SetWaitingForGroupMove(
+                true
+            );
+
+            NewGroup.Units.Add(
+                Unit
+            );
+
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::Move,
+                Goal,
+                nullptr,
+                false
+            );
+        }
+        else
+        {
+            Unit->SetWaitingForGroupMove(
+                false
+            );
+
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::AttackMove,
+                Goal,
+                nullptr,
+                bAppendToQueue
+            );
+        }
+    }
+
+    if (bForceGroupMove && NewGroup.Units.Num() > 0)
+    {
+        ActiveForcedMoveGroups.Add(MoveTemp(NewGroup));
+
+        // 이미 검사 타이머가 동작 중이면
+        // 새로 생성하지 않는다.
+        if (!GetWorldTimerManager().IsTimerActive(ForcedMoveGroupCheckTimer))
+        {
+            GetWorldTimerManager().SetTimer(ForcedMoveGroupCheckTimer, this, &ASFInGamePlayerController::CheckForcedMoveGroups, 0.1f, true);
+        }
     }
 
     if (IsValid(InGameHUDWidget))
     {
-        InGameHUDWidget->ShowMoveDestinationIndicator(
-            Destination,
-            false
-        );
+        InGameHUDWidget->ShowMoveDestinationIndicator(Destination, false);
     }
 
-    SF_LOG(Log, "[SFInGamePlayerController] Move command | Count: %d | Location: %s",
-        Count, *Destination.ToString());
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Move command | Count: %d | "
+        "ForcedGroupMove: %s | Location: %s",
+        Count,
+        bForceGroupMove
+        ? TEXT("true")
+        : TEXT("false"),
+        *Destination.ToString()
+    );
+}
+
+void ASFInGamePlayerController::RemoveUnitFromForcedMoveGroups(AUnitBase* Unit, bool bReleaseWaitingState)
+{
+    if (!IsValid(Unit))
+    {
+        return;
+    }
+
+    for (int32 GroupIndex = ActiveForcedMoveGroups.Num() - 1; GroupIndex >= 0; --GroupIndex)
+    {
+        FSFForcedMoveGroup& Group = ActiveForcedMoveGroups[GroupIndex];
+
+        Group.Units.RemoveAll([Unit](const TWeakObjectPtr<AUnitBase>&UnitPtr)
+            {
+                return !UnitPtr.IsValid() || UnitPtr.Get() == Unit;
+            }
+        );
+
+        if (Group.Units.IsEmpty())
+        {
+            ActiveForcedMoveGroups.RemoveAt(GroupIndex);
+        }
+    }
+
+    if (bReleaseWaitingState)
+    {
+        Unit->SetWaitingForGroupMove(false);
+    }
+
+    if (ActiveForcedMoveGroups.IsEmpty())
+    {
+        GetWorldTimerManager().ClearTimer(ForcedMoveGroupCheckTimer);
+    }
+}
+
+void ASFInGamePlayerController::CheckForcedMoveGroups()
+{
+    for (int32 GroupIndex = ActiveForcedMoveGroups.Num() - 1; GroupIndex >= 0; --GroupIndex)
+    {
+        FSFForcedMoveGroup& Group = ActiveForcedMoveGroups[GroupIndex];
+
+        bool bAllCompleted = true;
+
+        for (const TWeakObjectPtr<AUnitBase>&UnitPtr : Group.Units)
+        {
+            AUnitBase* Unit = UnitPtr.Get();
+
+            // 제거된 유닛은 완료로 처리한다.
+            if (!IsValid(Unit))
+            {
+                continue;
+            }
+
+            // 이동 중 사망한 유닛 때문에
+            // 그룹 전체가 영원히 기다리지 않게 한다.
+            if (Unit->GetCombatState() == EUnitCombatState::Dead)
+            {
+                continue;
+            }
+
+            // 한 기라도 이동 중이면
+            // 아직 그룹을 해제하지 않는다.
+            if (!Unit->HasCompletedGroupMove())
+            {
+                bAllCompleted = false;
+                break;
+            }
+        }
+
+        if (!bAllCompleted)
+        {
+            continue;
+        }
+
+        const int32 CompletedGroupId = Group.GroupId;
+
+        // 먼저 모든 유닛의 대기 상태를
+        // 동시에 해제한다.
+        for (const TWeakObjectPtr<AUnitBase>&UnitPtr : Group.Units)
+        {
+            if (AUnitBase* Unit = UnitPtr.Get())
+            {
+                Unit->SetWaitingForGroupMove(false);
+            }
+        }
+
+        ActiveForcedMoveGroups.RemoveAt(GroupIndex);
+
+        SF_LOG(Log, "[SFInGamePlayerController] 부대 강제 이동 완료 — 자동 전투 재개 | Group=%d", CompletedGroupId);
+    }
+
+    if (ActiveForcedMoveGroups.IsEmpty())
+    {
+        GetWorldTimerManager().ClearTimer(ForcedMoveGroupCheckTimer);
+    }
 }
 
 void ASFInGamePlayerController::BeginAttackCommand()
@@ -1107,11 +1291,9 @@ void ASFInGamePlayerController::StopSelectedUnits()
 
         if (AUnitBase* Unit = Cast<AUnitBase>(Actor))
         {
-            Unit->ExecuteCommand(
-                ESFUnitCommand::Stop,
-                Actor->GetActorLocation(),
-                nullptr
-            );
+            RemoveUnitFromForcedMoveGroups(Unit, true);
+
+            Unit->ExecuteCommand(ESFUnitCommand::Stop, Actor->GetActorLocation(), nullptr);
         }
         else
         {
@@ -1390,7 +1572,7 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
     const FVector& Location,
     AActor* Target,
     bool bAppendToQueue
-) const
+)
 {
     if (!IsValid(Actor) || !IsLocallyControllableActor(Actor))
     {
@@ -1400,6 +1582,13 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
     if (AUnitBase* Unit = Cast<AUnitBase>(Actor))
     {
         ESFUnitCommand UnitCommand = ESFUnitCommand::Move;
+
+        if (CommandMode == ESFUnitCommandMode::Attack)
+        {
+            // A키 공격 명령은 사용자의 새로운 선택이므로
+            // 기존 부대 후퇴 대기를 해제한다.
+            RemoveUnitFromForcedMoveGroups(Unit, true);
+        }
 
         switch (CommandMode)
         {

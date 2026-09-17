@@ -15,6 +15,7 @@ class UInputAction;
 class UInputMappingContext;
 class USFInGameHUDWidget;
 class USFBuildingDefinition;
+class AUnitBase;
 
 UENUM(BlueprintType)
 enum class ESFControlMode : uint8
@@ -53,6 +54,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 );
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnSkillInput, int32, SkillTier);
+
+struct FSFForcedMoveGroup
+{
+    int32 GroupId = INDEX_NONE;
+    TArray<TWeakObjectPtr<AUnitBase>> Units;
+};
 
 UCLASS(Blueprintable)
 class STRIKEFORGE_API ASFInGamePlayerController
@@ -199,7 +206,7 @@ private:
         const FVector& Location,
         AActor* Target,
         bool bAppendToQueue
-    ) const;
+    );
 
     bool IsValidAttackTarget(const AActor* Actor) const;
 
@@ -216,6 +223,21 @@ private:
     bool ExecutePendingRallyPointUnderCursor();
 
     bool IsShiftCommandModifierDown() const;
+
+    /** 교전 중 우클릭으로 생성된 이동 그룹들의 완료 여부를 검사한다 */
+    void CheckForcedMoveGroups();
+
+    /** 유닛을 기존 강제 이동 그룹에서 제거한다 */
+    void RemoveUnitFromForcedMoveGroups(AUnitBase* Unit, bool bReleaseWaitingState);
+
+    /** 동시에 진행 중인 부대 강제 이동 그룹들 */
+    TArray<FSFForcedMoveGroup> ActiveForcedMoveGroups;
+
+    /** 그룹 식별 번호 */
+    int32 NextForcedMoveGroupId = 1;
+
+    /** 그룹 이동 완료 검사 타이머 */
+    FTimerHandle ForcedMoveGroupCheckTimer;
 
     // 선택하면 소리재생 함수
     UFUNCTION(BlueprintCallable)

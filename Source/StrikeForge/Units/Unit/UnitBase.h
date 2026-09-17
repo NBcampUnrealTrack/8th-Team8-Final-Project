@@ -322,6 +322,17 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE bool HasMoveCommand() const { return bHasCommandedDestination != 0; }
 
+	/** 부대 강제 이동이 끝난 뒤 다른 유닛의 도착을 기다리는 중인가 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Command")
+	FORCEINLINE bool IsWaitingForGroupMove() const { return bWaitingForGroupMoveRelease != 0; }
+
+	/** 이 유닛의 강제 이동이 완료됐는가. 도착 또는 접근 정체 모두 완료로 처리된다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Command")
+	FORCEINLINE bool HasCompletedGroupMove() const { return bWaitingForGroupMoveRelease && !bHasCommandedDestination; }
+
+	/** 컨트롤러가 부대 강제 이동 시작·해제를 알린다 */
+	void SetWaitingForGroupMove(bool bWaiting);
+
 	void GetCommandPathLocations(
 		TArray<FVector>& OutLocations
 	) const;
@@ -962,6 +973,9 @@ private:
 
 	/** 진격 목표 로그를 한 번만 찍기 위한 플래그 */
 	uint8 bAdvanceTargetReported : 1;
+
+	/** 자기 이동 완료 후 선택 부대 전체가 도착할 때까지 전투를 재개하지 않는다 */
+	uint8 bWaitingForGroupMoveRelease : 1;
 
 	/**
 	 * 명령이 없을 때의 행동. 런타임 값이다.

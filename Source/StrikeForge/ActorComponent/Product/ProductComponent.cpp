@@ -1,10 +1,12 @@
 ﻿#include "ProductComponent.h"
 
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/SFRootBase.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFDataTableManager.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Interfaces/Units/Targetable.h"
 #include "Units/Unit/SFUnitSpawnLibrary.h"
 #include "Units/Unit/UnitBase.h"
@@ -354,9 +356,32 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 	// AssemblePoint == 현재 할당된 집결지 벡터
 	AUnitBase* UnitRef = USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
 	
-	if (bSetAssemblePoint && UnitRef->Implements<UMovable>())
+	if (IsValid(UnitRef))
 	{
-		UnitRef->MoveToLocation_Implementation(AssemblePoint);
+		if (bSetAssemblePoint && UnitRef->Implements<UMovable>())
+		{
+			UnitRef->MoveToLocation_Implementation(AssemblePoint);
+		}
+
+		// Produced.Tier1/2 는 Produced 의 자식 태그다. 따라서 상위 목표는
+		// 티어와 무관하게 통과하고, 티어를 요구하는 목표는 정확히 구분된다.
+		FGameplayTag TutorialTag = TAG_SF_Tutorial_Unit_Produced;
+		if (const ASFBaseBuilding* OwnerBuilding = Cast<ASFBaseBuilding>(GetOwner()))
+		{
+			switch (OwnerBuilding->GetCurrentTier())
+			{
+			case 0:
+				TutorialTag = TAG_SF_Tutorial_Unit_Produced_Tier1;
+				break;
+			case 1:
+				TutorialTag = TAG_SF_Tutorial_Unit_Produced_Tier2;
+				break;
+			default:
+				break;
+			}
+		}
+
+		USFTutorialSubsystem::NotifyObjective(this, TutorialTag);
 	}
 	
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());

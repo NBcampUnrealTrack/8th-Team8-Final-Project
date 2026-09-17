@@ -141,12 +141,14 @@ void USFMultiSelectionEntryWidget::BindHealthDelegate(AActor* Actor)
         return;
     }
 
-    const FHealthData HealthData =
-        ISFSelectable::Execute_GetHealthData(Actor);
+    // const FHealthData HealthData =
+    //     ISFSelectable::Execute_GetHealthData(Actor);
+    //
+    // UHealthComponent* HealthComponent =
+    //     HealthData.HealthComponent.Get();
 
-    UHealthComponent* HealthComponent =
-        HealthData.HealthComponent.Get();
-
+    UHealthComponent* HealthComponent = Actor->FindComponentByClass<UHealthComponent>();
+    
     if (!IsValid(HealthComponent))
     {
         return;
@@ -233,8 +235,8 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
         // 정상: 청록색
         HealthColor = FLinearColor(
             0.02f,
-            0.72f,
             0.85f,
+            0.72f,
             1.0f
         );
     }
@@ -248,13 +250,13 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
             1.0f
         );
     }
-    else
+    else 
     {
         // 위험: 빨간색
         HealthColor = FLinearColor(
-            0.98f,
-            0.06f,
-            0.04f,
+            0.7f,
+            0.05f,
+            0.05f,
             1.0f
         );
     }

@@ -58,11 +58,11 @@ struct FBuildingTierRuntimeAssets
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> CompletedMesh = nullptr;
 
-	UPROPERTY()
-	TArray<TObjectPtr<UStaticMesh>> DamageMeshes;
-
-	UPROPERTY()
-	TObjectPtr<UStaticMesh> DestroyedMesh = nullptr;
+	// UPROPERTY()
+	// TArray<TObjectPtr<UStaticMesh>> DamageMeshes;
+	//
+	// UPROPERTY()
+	// TObjectPtr<UStaticMesh> DestroyedMesh = nullptr;
 	// gc
 	UPROPERTY()
 	TObjectPtr<UGeometryCollection> DestructionCollection = nullptr;
@@ -84,9 +84,9 @@ struct FBuildingTierRuntimeAssets
 		
 		ConstructionMeshes.Reset();
 		CompletedMesh = nullptr;
-		DestroyedMesh = nullptr;
+		//DestroyedMesh = nullptr;
 		DestructionCollection = nullptr; // gc
-		DamageMeshes.Reset();
+		//DamageMeshes.Reset();
 		
 		ConstructionStartSound = nullptr;
 		ConstructionCompleteSound = nullptr;
@@ -107,7 +107,7 @@ public:
 
 	virtual void TakeDamaged_Implementation(const FSFDamageInfo& DamageInfo) override;
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
-	virtual const FHealthData GetHealthData_Implementation() override;
+	//virtual const FHealthData GetHealthData_Implementation() override;
 	virtual USoundBase* GetSelectionSound_Implementation() override;
 	/** 프리뷰 색상 갱신 */
 	void ApplyPreviewMaterial(bool bCanPlace);
@@ -263,7 +263,7 @@ private:
 	void HandleConstructionProgress(float PreviousRatio, float CurrentRatio);
 	void RefreshVisual();
 	UStaticMesh* ResolveMesh() const;
-	UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
+	// UStaticMesh* ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const;
 
 	/** GC 액터를 생성하고 Root Proxy가 준비되면 기존 StaticMesh만 숨긴다. */
 	bool EnsureDestructionActor();
@@ -275,7 +275,7 @@ private:
 	const FSFBuildingTierData* GetCostTierInfo() const;
 	
 	/** 완성 메시의 바닥 영역을 기준으로 단계별 불꽃을 생성한다. */
-	void PlayBurningEffect(int32 DamageStageIndex);
+	//void PlayBurningEffect(int32 DamageStageIndex);
 	
 	// async
 	/** 업그레이드 리소스 로드 결과를 검증하고 비용을 차감한다. Subsystem 콜백으로 호출되며 PrepareLoadedTier와 BeginConstruction으로 이어진다. */

@@ -94,7 +94,7 @@ protected:
         Category = "SF|Camera",
         meta = (ClampMin = "100.0")
     )
-    float CameraMoveSpeed = 1800.0f;
+    float CameraMoveSpeed = 2600.0f;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -116,14 +116,14 @@ protected:
         BlueprintReadOnly,
         Category = "SF|Camera"
     )
-    float MinimumCameraDistance = 700.0f;
+    float MinimumCameraDistance = 1000.0f;
 
     UPROPERTY(
         EditDefaultsOnly,
         BlueprintReadOnly,
         Category = "SF|Camera"
     )
-    float MaximumCameraDistance = 2500.0f;
+    float MaximumCameraDistance = 3000.0f;
 
     UPROPERTY(
         EditDefaultsOnly,

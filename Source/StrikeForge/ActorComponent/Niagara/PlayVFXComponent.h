@@ -31,14 +31,14 @@ public:
  * 새로운 손상 단계의 불꽃 효과를 생성한다.
  * 이전 단계에서 생성한 불꽃은 변경하지 않는다.
  */
-	void PlayBurningEffect(
-		UNiagaraSystem* NiagaraSystem,
-		const FTransform& SpawnTransform,
-		const FVector& SpawnBoxSize,
-		int32 BurnStage);
-
-	/** 생성된 모든 불꽃 효과를 종료한다. */
-	void StopBurningEffects(bool bImmediate = false);
+	// void PlayBurningEffect(
+	// 	UNiagaraSystem* NiagaraSystem,
+	// 	const FTransform& SpawnTransform,
+	// 	const FVector& SpawnBoxSize,
+	// 	int32 BurnStage);
+	//
+	// /** 생성된 모든 불꽃 효과를 종료한다. */
+	// void StopBurningEffects(bool bImmediate = false);
 	
 	/**
  * 소유 건물과 독립적으로 재생되는 일회성 이펙트.
@@ -66,8 +66,8 @@ private:
 	ActiveEffects;
 
 	/** 손상 단계별로 생성된 불꽃 효과들. */
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UNiagaraComponent>> ActiveBurningEffects;
+	// UPROPERTY(Transient)
+	// TArray<TObjectPtr<UNiagaraComponent>> ActiveBurningEffects;
 	
 	UPROPERTY(
 		EditDefaultsOnly,

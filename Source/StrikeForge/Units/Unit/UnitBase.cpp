@@ -76,6 +76,7 @@ AUnitBase::AUnitBase()
 	, bStatInitialized(false)
 	, bNoTargetReported(false)
 	, bAdvanceTargetReported(false)
+	, bWaitingForGroupMoveRelease(false)
 	, bHasCommandedDestination(false)
 	, bCommandIsAttackMove(false)
 	, bHoldGround(false)
@@ -532,14 +533,14 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 	return Info;
 }
 
-const FHealthData AUnitBase::GetHealthData_Implementation()
-{
-	FHealthData Data;
-	Data.DisplayName = FText::FromString(TEXT("NeedSetName"));
-	Data.CurrentTier = -1;
-	Data.HealthComponent = HealthComponent;
-	return Data;
-}
+// const FHealthData AUnitBase::GetHealthData_Implementation()
+// {
+// 	FHealthData Data;
+// 	Data.DisplayName = FText::FromString(TEXT("NeedSetName"));
+// 	Data.CurrentTier = -1;
+// 	Data.HealthComponent = HealthComponent;
+// 	return Data;
+// }
 
 USoundBase* AUnitBase::GetSelectionSound_Implementation()
 {
@@ -1036,6 +1037,24 @@ bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
 
 	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
+
+void AUnitBase::SetWaitingForGroupMove(bool bWaiting)
+{
+	bWaitingForGroupMoveRelease = bWaiting;
+
+	if (!bWaiting)
+	{
+		return;
+	}
+
+	// 그룹 이동 중에는 기존 전투를 완전히 해제한다.
+	ForcedTarget = nullptr;
+	CurrentTarget = nullptr;
+	ReleaseAttackSlot();
+
+	AttackAnimHoldRemaining = 0.f;
+	StopAttackMontage();
 }
 
 bool AUnitBase::IsBuildingTarget(const AActor* InTarget) const
@@ -2112,6 +2131,27 @@ void AUnitBase::Tick(float DeltaSeconds)
 		{
 			StopAttackMontage();
 		}
+	}
+
+	// ── 부대 강제 이동 완료 후 대기 ─────────────────────
+	//
+	// 자기 목적지에는 도착했지만 부대의 다른 유닛이 아직 이동 중이다.
+	// 컨트롤러가 선택 부대 전체의 도착을 확인할 때까지 전투를 재개하지 않는다.
+	if (bWaitingForGroupMoveRelease &&
+		!bHasCommandedDestination)
+	{
+		CurrentTarget = nullptr;
+		ForcedTarget = nullptr;
+		ReleaseAttackSlot();
+
+		SetCombatState(EUnitCombatState::Advancing);
+
+		if (AUnitAIController* AI = GetUnitAI())
+		{
+			AI->ClearMoveRequest();
+		}
+
+		return;
 	}
 
 	// ── 0. 플레이어 명령 우선 ───────────────────────────

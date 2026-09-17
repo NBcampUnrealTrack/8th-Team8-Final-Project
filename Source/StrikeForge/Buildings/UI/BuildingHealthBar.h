@@ -14,7 +14,7 @@ public:
 	
 	UFUNCTION()
 	void SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP);
-	
+	void SetHealthBarColor(const FLinearColor& InColor);
 private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UProgressBar> HealthBar;

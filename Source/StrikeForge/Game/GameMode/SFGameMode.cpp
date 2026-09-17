@@ -23,6 +23,9 @@ ASFGameMode::ASFGameMode()
 	// GameMode가 사용할 GameState 클래스 지정
 	// World Setting에서 별도로 잘못 설정하는 상황 방지
 	GameStateClass = ASFGameState::StaticClass();
+
+	// DT_SFStage의 Stage01이 ProtoType 맵을 가리킨다.
+	StartingMineralOverrides.Add(TEXT("Stage01"), 300);
 }
 
 void ASFGameMode::PostLogin(APlayerController* NewPlayer)
@@ -945,7 +948,11 @@ bool ASFGameMode::StartStage()
 	SF_SCREEN_LOG(Log, 5.0f, FColor::Green, "[SFGameMode] Stage started.");
 
 	// 플레이어 초기자원 입력 - 디버그용(건물짓기, 유닛뽑기)
-	SFGameState->AddResource(PlayerTeamIndex, EResourceType::Mineral, StartingMineral);
+	const int32 InitialMineral = StartingMineralOverrides.FindRef(BootstrapStageRowName);
+	SFGameState->AddResource(
+		PlayerTeamIndex,
+		EResourceType::Mineral,
+		InitialMineral > 0 ? InitialMineral : StartingMineral);
 	SFGameState->AddResource(PlayerTeamIndex, EResourceType::Ether, StartingEther);
 	return true;
 }

@@ -153,7 +153,10 @@ private:
 
 	/** 플레이어 팀의 시작 자원 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	int32 StartingMineral = 200;
+	int32 StartingMineral = 205;
+	/** 스테이지 행별 시작 광물. 등록되지 않은 스테이지는 StartingMineral을 사용한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
+	TMap<FName, int32> StartingMineralOverrides;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 StartingEther = 100;
 

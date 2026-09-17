@@ -80,7 +80,7 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
         return false;
     }
 
-    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex);
+    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex) + 1;
     if (CurrentNexusTier < Definition->RequiredNexusTier)
     {
         SF_LOG(Warning,
@@ -1028,28 +1028,12 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
     // 원형으로 흩어 놓아 각자 다른 지점을 목표로 삼게 한다.
     const int32 Count = Commandables.Num();
 
-    for (int32 Index = 0; Index < Count; ++Index)
+    for (AActor* Actor : Commandables)
     {
-        FVector Goal = Destination;
-
-        if (Count > 1)
-        {
-            const float Angle = 2.f * PI * Index / Count;
-            const float Radius =
-                FormationSpacing *
-                FMath::Sqrt(static_cast<float>(Count));
-
-            Goal += FVector(
-                FMath::Cos(Angle),
-                FMath::Sin(Angle),
-                0.f
-            ) * Radius;
-        }
-
         ExecuteUnitCommandForActor(
-            Commandables[Index],
+            Actor,
             ESFUnitCommandMode::Move,
-            Goal,
+            Destination,
             nullptr,
             bAppendToQueue
         );
@@ -1711,18 +1695,102 @@ void ASFInGamePlayerController::HandleControlGroupInput(
             GroupIndex,
             false
         );
+
+        // 저장 입력은 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else if (bShiftPressed)
+
+    if (bShiftPressed)
     {
         InGameHUDWidget->SaveCurrentSelectionToControlGroup(
             GroupIndex,
             true
         );
+
+        // 추가 입력도 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else
+
+    const double CurrentTime =
+        GetWorld()
+        ? GetWorld()->GetTimeSeconds()
+        : 0.0;
+
+    const bool bDoublePressed =
+        LastControlGroupIndex == GroupIndex &&
+        CurrentTime - LastControlGroupInputTime
+        <= ControlGroupDoubleTapWindow;
+
+    // 첫 번째 숫자 입력에서도 부대를 선택한다.
+    InGameHUDWidget->SelectControlGroup(GroupIndex);
+
+    // 같은 숫자를 짧은 시간 안에 다시 누르면 카메라 이동
+    if (bDoublePressed)
     {
-        InGameHUDWidget->SelectControlGroup(GroupIndex);
+        FocusCameraOnCurrentControlGroup();
     }
+
+    LastControlGroupIndex = GroupIndex;
+    LastControlGroupInputTime = CurrentTime;
+}
+
+void ASFInGamePlayerController::FocusCameraOnCurrentControlGroup()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    FVector FocusLocation = FVector::ZeroVector;
+    int32 ValidActorCount = 0;
+
+    for (
+        const TObjectPtr<AActor>& ActorPtr :
+        InGameHUDWidget->GetSelectedActors()
+        )
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        FocusLocation += Actor->GetActorLocation();
+        ++ValidActorCount;
+    }
+
+    if (ValidActorCount == 0)
+    {
+        return;
+    }
+
+    FocusLocation /= static_cast<float>(ValidActorCount);
+
+    ASFRTSCameraPawn* CameraPawn =
+        Cast<ASFRTSCameraPawn>(GetPawn());
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    CameraPawn->FocusOnWorldLocation(
+        FocusLocation
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Control group camera focused | Location: %s",
+        *FocusLocation.ToString()
+    );
 }
 
 bool ASFInGamePlayerController::IsShiftCommandModifierDown() const

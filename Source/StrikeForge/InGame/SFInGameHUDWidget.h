@@ -134,19 +134,31 @@ public:
         int32 GroupIndex
     );
 
+    UFUNCTION()
+    void HandleControlGroupResetRequested(
+        int32 GroupIndex
+    );
+
 protected:
     virtual void NativeConstruct() override;
+
+    virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime) override;
 
     virtual void NativeDestruct() override;
 
     UFUNCTION()
     void HandleSelectedHealthChanged(float BeforeHP, float CurrentHP, float MaxHP);
 
+    UFUNCTION()
+    void HandleSelectedUnitStatsChanged(float AttackPower,float MoveSpeed);
+
+    void BindSelectedUnitStatsDelegate(AActor* Actor);
+
+    void UnbindSelectedUnitStatsDelegate();
+
     void BindSelectedHealthDelegate(AActor* Actor);
 
     void UnbindSelectedHealthDelegate();
-
-    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
     UFUNCTION()
@@ -159,6 +171,9 @@ private:
     void HandleSelectedActorDestroyed(
         AActor* DestroyedActor
     );
+
+    UFUNCTION()
+    void HandleControlGroupClicked(int32 GroupIndex);
 
     UFUNCTION()
     void HandleControlGroupActorDestroyed(
@@ -328,6 +343,19 @@ private:
     void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
 
     void HideRallyPointIndicator();
+
+    void RefreshQueuedMovePathIndicators();
+
+    void HideQueuedMovePathIndicators();
+
+    void BindSelectedCommandPathDelegates();
+
+    void UnbindSelectedCommandPathDelegates();
+
+    UFUNCTION()
+    void HandleSelectedUnitCommandPathChanged();
+
+    void UpdateQueuedMovePathStartPoints();
 
     // ==================== Variables ====================
 
@@ -508,6 +536,26 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Rally")
     TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
 
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>>
+        QueuedMovePathIndicators;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>>
+        QueuedMovePathLiveSegments;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathIndicatorWidth = 24.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathWaypointSize = 70.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathZOffset = 30.f;
+
     UPROPERTY(BlueprintReadOnly,Category = "SF|HUD|ControlGroup",meta = (BindWidgetOptional))
     TObjectPtr<USFControlGroupWidget> ControlGroupWidget = nullptr;
 private:
@@ -553,6 +601,9 @@ private:
 
     UPROPERTY(Transient)
     TWeakObjectPtr<UHealthComponent> SelectedHealthComponent;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AUnitBase> SelectedStatsUnit;
 
     UPROPERTY(Transient)
     TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;

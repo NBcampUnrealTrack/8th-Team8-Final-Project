@@ -68,6 +68,31 @@ void USFInGameHUDWidget::NativeConstruct()
 
     ControlGroups.SetNum(6);
 
+    if (IsValid(ControlGroupWidget))
+    {
+        ControlGroupWidget->OnControlGroupClicked.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleControlGroupClicked
+        );
+
+        ControlGroupWidget->OnControlGroupClicked.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleControlGroupClicked
+        );
+
+        ControlGroupWidget->OnControlGroupResetRequested
+            .RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleControlGroupResetRequested
+            );
+
+        ControlGroupWidget->OnControlGroupResetRequested
+            .AddUniqueDynamic(
+                this,
+                &USFInGameHUDWidget::HandleControlGroupResetRequested
+            );
+    }
+
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
             GetOwningPlayer()
@@ -276,10 +301,9 @@ void USFInGameHUDWidget::NativeDestruct()
     }
 
     UnbindSelectedActorsDestroyed();
-
     UnbindControlGroupActorsDestroyed();
-
     UnbindSelectedHealthDelegate();
+    UnbindSelectedUnitStatsDelegate();
 
     ASFInGamePlayerController* PlayerController =
         Cast<ASFInGamePlayerController>(
@@ -359,7 +383,60 @@ void USFInGameHUDWidget::NativeDestruct()
         TutorialSubsystem->CancelObjectiveWait();
     }
 
+    if (IsValid(ControlGroupWidget))
+    {
+        ControlGroupWidget->OnControlGroupClicked.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleControlGroupClicked
+        );
+
+        ControlGroupWidget->OnControlGroupResetRequested
+            .RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleControlGroupResetRequested
+            );
+    }
+
+    UnbindSelectedCommandPathDelegates();
+    HideQueuedMovePathIndicators();
+
     Super::NativeDestruct();
+}
+
+void USFInGameHUDWidget::NativeTick(
+    const FGeometry& MyGeometry,
+    float InDeltaTime
+)
+{
+    Super::NativeTick(
+        MyGeometry,
+        InDeltaTime
+    );
+
+    UpdateQueuedMovePathStartPoints();
+
+    RefreshSelectedResourceInfo();
+
+    if (!bIsSelectionDragging ||
+        !IsValid(SelectionDragBox))
+    {
+        return;
+    }
+
+    APlayerController* PlayerController = GetOwningPlayer();
+    if (!IsValid(PlayerController))
+    {
+        return;
+    }
+
+    FVector2D CurrentScreenPosition;
+    if (PlayerController->GetMousePosition(
+        CurrentScreenPosition.X,
+        CurrentScreenPosition.Y
+    ))
+    {
+        UpdateSelectionDragBox(CurrentScreenPosition);
+    }
 }
 
 void USFInGameHUDWidget::HandleSelectInput()
@@ -431,6 +508,7 @@ void USFInGameHUDWidget::HandleSelectedActorDestroyed(AActor* DestroyedActor)
         return;
     }
 
+    RefreshQueuedMovePathIndicators();
     RefreshRallyPointIndicator();
     RefreshMultiSelectionPanel();
 
@@ -537,9 +615,12 @@ void USFInGameHUDWidget::ApplySelection(
 
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
+    UnbindSelectedUnitStatsDelegate();
     HideAllSelectionIndicators();
     HideRallyPointIndicator();
     UnbindSelectedProductionBuilding();
+    UnbindSelectedCommandPathDelegates();
+    HideQueuedMovePathIndicators();
 
     SelectedActor = NewSelectedActor;
     RefreshRallyPointIndicator();
@@ -574,12 +655,16 @@ void USFInGameHUDWidget::ApplySelection(
     SelectedActors.Add(NewSelectedActor);
     SelectedInfo = NewSelectedInfo;
 
+    BindSelectedCommandPathDelegates();
+    RefreshQueuedMovePathIndicators();
+
     if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
     {
         PlayerController->SetSelectedActor(SelectedActor.Get());
     }
 
     BindSelectedHealthDelegate(SelectedActor.Get());
+    BindSelectedUnitStatsDelegate(SelectedActor.Get());
 
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
@@ -965,6 +1050,7 @@ void USFInGameHUDWidget::RefreshSelectedPortrait()
 void USFInGameHUDWidget::ClearSelection()
 {
 
+    HideQueuedMovePathIndicators();
     HideAllSelectionIndicators();
     HideRallyPointIndicator();
 
@@ -973,8 +1059,10 @@ void USFInGameHUDWidget::ClearSelection()
         UnitPortraitActor->ClearPortrait();
     }
 
+    UnbindSelectedCommandPathDelegates();
     UnbindSelectedActorsDestroyed();
     UnbindSelectedHealthDelegate();
+    UnbindSelectedUnitStatsDelegate();
     UnbindSelectedProductionBuilding();
 
     SelectedActor = nullptr;
@@ -1649,6 +1737,88 @@ void USFInGameHUDWidget::HandleSelectedHealthChanged(float BeforeHP, float Curre
     SF_LOG(Log, "[SFInGameHUDWidget] Health changed | %.1f -> %.1f / %.1f", BeforeHP, CurrentHP, MaxHP);
 }
 
+void USFInGameHUDWidget::BindSelectedUnitStatsDelegate(
+    AActor* Actor
+)
+{
+    UnbindSelectedUnitStatsDelegate();
+
+    AUnitBase* Unit =
+        Cast<AUnitBase>(Actor);
+
+    if (!IsValid(Unit))
+    {
+        return;
+    }
+
+    SelectedStatsUnit =
+        Unit;
+
+    Unit->OnUnitStatsChanged.RemoveDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedUnitStatsChanged
+    );
+
+    Unit->OnUnitStatsChanged.AddUniqueDynamic(
+        this,
+        &USFInGameHUDWidget::HandleSelectedUnitStatsChanged
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Unit stats delegate binding completed."
+    );
+}
+
+void USFInGameHUDWidget::UnbindSelectedUnitStatsDelegate()
+{
+    AUnitBase* Unit =
+        SelectedStatsUnit.Get();
+
+    if (IsValid(Unit))
+    {
+        Unit->OnUnitStatsChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedUnitStatsChanged
+        );
+    }
+
+    SelectedStatsUnit.Reset();
+}
+
+void USFInGameHUDWidget::HandleSelectedUnitStatsChanged(
+    float AttackPower,
+    float MoveSpeed
+)
+{
+    if (!SelectedStatsUnit.IsValid())
+    {
+        return;
+    }
+
+    SelectedInfo.AttackPower =
+        AttackPower;
+
+    SelectedInfo.MoveSpeed =
+        MoveSpeed;
+
+    if (IsValid(SelectionPanel))
+    {
+        SelectionPanel->ShowSelection(
+            SelectedInfo
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Unit stats changed | Attack: %.1f | MoveSpeed: %.1f",
+        AttackPower,
+        MoveSpeed
+    );
+}
+
 void USFInGameHUDWidget::ToggleSettings()
 {
     if (IsValid(ActiveSettingsWidget) && ActiveSettingsWidget->IsActivated())
@@ -1906,35 +2076,6 @@ void USFInGameHUDWidget::HandleSelectionDragCompleted(
         EndScreenPosition,
         bAddToExistingSelection
     );
-}
-
-void USFInGameHUDWidget::NativeTick(
-    const FGeometry& MyGeometry,
-    float InDeltaTime
-)
-{
-    Super::NativeTick(MyGeometry, InDeltaTime);
-    RefreshSelectedResourceInfo();
-
-    if (!bIsSelectionDragging || !IsValid(SelectionDragBox))
-    {
-        return;
-    }
-
-    APlayerController* PlayerController = GetOwningPlayer();
-    if (!IsValid(PlayerController))
-    {
-        return;
-    }
-
-    FVector2D CurrentScreenPosition;
-    if (PlayerController->GetMousePosition(
-        CurrentScreenPosition.X,
-        CurrentScreenPosition.Y
-    ))
-    {
-        UpdateSelectionDragBox(CurrentScreenPosition);
-    }
 }
 
 void USFInGameHUDWidget::UpdateSelectionDragBox(
@@ -2301,6 +2442,9 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         return;
     }
 
+    UnbindSelectedCommandPathDelegates();
+    HideQueuedMovePathIndicators();
+
     SelectActor(PrimaryActor);
 
     SelectedActors.Reset();
@@ -2317,6 +2461,8 @@ void USFInGameHUDWidget::ApplyMultipleSelection(
         ShowSelectionIndicator(Actor);
     }
 
+    BindSelectedCommandPathDelegates();
+    RefreshQueuedMovePathIndicators();
     RefreshRallyPointIndicator();
     BindSelectedActorsDestroyed();
     RefreshMultiSelectionPanel();
@@ -2428,6 +2574,7 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
     }
 
     UnbindSelectedHealthDelegate();
+    UnbindSelectedUnitStatsDelegate();
 
     SelectedActor = Actor;
 
@@ -2466,6 +2613,7 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
     }
 
     BindSelectedHealthDelegate(SelectedActor.Get());
+    BindSelectedUnitStatsDelegate(SelectedActor.Get());
     RefreshBuildModeOpenButtonVisibility();
 
     if (IsValid(SelectionPanel))
@@ -2480,6 +2628,7 @@ void USFInGameHUDWidget::HandlePrimarySelectionRequested(AActor* Actor)
 
     RefreshSelectedPortrait();
     RefreshRallyPointIndicator();
+    RefreshQueuedMovePathIndicators();
     RefreshMultiSelectionPanel();
 
     SF_LOG(
@@ -3491,6 +3640,20 @@ void USFInGameHUDWidget::HideRallyPointIndicator()
     RallyPathIndicators.Empty();
 }
 
+void USFInGameHUDWidget::HideQueuedMovePathIndicators()
+{
+    for (UStaticMeshComponent* Indicator :
+        QueuedMovePathIndicators)
+    {
+        if (IsValid(Indicator))
+        {
+            Indicator->DestroyComponent();
+        }
+    }
+
+    QueuedMovePathIndicators.Empty();
+}
+
 bool USFInGameHUDWidget::IsPointerOverHUDPanel()
 {
     const FGeometry ViewportGeometry =
@@ -3741,6 +3904,22 @@ void USFInGameHUDWidget::SaveCurrentSelectionToControlGroup(
     );
 }
 
+void USFInGameHUDWidget::HandleControlGroupClicked(
+    int32 GroupIndex
+)
+{
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Control group slot clicked | Index: %d",
+        GroupIndex + 1
+    );
+
+    SelectControlGroup(
+        GroupIndex
+    );
+}
+
 void USFInGameHUDWidget::SelectControlGroup(
     int32 GroupIndex
 )
@@ -3980,6 +4159,15 @@ void USFInGameHUDWidget::HandleMultiSelectionRemoveRequested(
         &USFInGameHUDWidget::HandleSelectedActorDestroyed
     );
 
+    if (AUnitBase* RemovedUnit =
+        Cast<AUnitBase>(Actor))
+    {
+        RemovedUnit->OnCommandPathChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSelectedUnitCommandPathChanged
+        );
+    }
+
     HideSelectionIndicator(Actor);
 
     SelectedActors.RemoveAt(RemovedIndex);
@@ -4009,6 +4197,7 @@ void USFInGameHUDWidget::HandleMultiSelectionRemoveRequested(
         return;
     }
 
+    RefreshQueuedMovePathIndicators();
     RefreshMultiSelectionPanel();
     RefreshRallyPointIndicator();
 
@@ -4020,5 +4209,381 @@ void USFInGameHUDWidget::HandleMultiSelectionRemoveRequested(
             "Shift-click removed actor | Remaining: %d"
         ),
         SelectedActors.Num()
+    );
+}
+
+void USFInGameHUDWidget::RefreshQueuedMovePathIndicators()
+{
+    HideQueuedMovePathIndicators();
+
+    QueuedMovePathLiveSegments.SetNum(
+        SelectedActors.Num()
+    );
+
+    UStaticMesh* PlaneMesh = RallyIndicatorMesh.Get();
+
+    if (!IsValid(PlaneMesh))
+    {
+        return;
+    }
+
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        AUnitBase* Unit =
+            Cast<AUnitBase>(ActorPtr.Get());
+
+        if (!IsValid(Unit))
+        {
+            continue;
+        }
+
+        TArray<FVector> PathLocations;
+        Unit->GetCommandPathLocations(PathLocations);
+
+        if (PathLocations.IsEmpty())
+        {
+            continue;
+        }
+
+        USceneComponent* UnitRoot =
+            Unit->GetRootComponent();
+
+        if (!IsValid(UnitRoot))
+        {
+            continue;
+        }
+
+        auto CreatePathMesh =
+            [
+                Unit,
+                UnitRoot,
+                PlaneMesh
+            ](
+                UMaterialInterface* InMaterial,
+                const FVector& InScale,
+                const FVector& InLocation,
+                const FRotator& InRotation,
+                int32 InSortPriority
+                ) -> UStaticMeshComponent*
+            {
+                if (!IsValid(InMaterial))
+                {
+                    return nullptr;
+                }
+
+                UStaticMeshComponent* Indicator =
+                    NewObject<UStaticMeshComponent>(Unit);
+
+                if (!IsValid(Indicator))
+                {
+                    return nullptr;
+                }
+
+                Unit->AddInstanceComponent(Indicator);
+
+                Indicator->SetupAttachment(UnitRoot);
+
+                Indicator->SetAbsolute(
+                    true,
+                    true,
+                    true
+                );
+
+                Indicator->SetMobility(
+                    EComponentMobility::Movable
+                );
+
+                Indicator->SetStaticMesh(
+                    PlaneMesh
+                );
+
+                Indicator->SetMaterial(
+                    0,
+                    InMaterial
+                );
+
+                Indicator->SetCollisionEnabled(
+                    ECollisionEnabled::NoCollision
+                );
+
+                Indicator->SetGenerateOverlapEvents(
+                    false
+                );
+
+                Indicator->SetCastShadow(
+                    false
+                );
+
+                Indicator->SetReceivesDecals(
+                    false
+                );
+
+                Indicator->SetTranslucentSortPriority(
+                    InSortPriority
+                );
+
+                Indicator->RegisterComponent();
+
+                Indicator->SetWorldLocation(
+                    InLocation
+                );
+
+                Indicator->SetWorldRotation(
+                    InRotation
+                );
+
+                Indicator->SetWorldScale3D(
+                    InScale
+                );
+
+                return Indicator;
+            };
+
+        FVector PathStart =
+            IsValid(Unit->GetMesh())
+            ? Unit->GetMesh()->GetComponentLocation()
+            : Unit->GetActorLocation();
+
+        for (const FVector& Destination : PathLocations)
+        {
+            FVector SegmentStart =
+                PathStart;
+
+            FVector SegmentEnd =
+                Destination;
+
+            const float IndicatorZ =
+                SegmentEnd.Z + QueuedMovePathZOffset;
+
+            SegmentStart.Z = IndicatorZ;
+            SegmentEnd.Z = IndicatorZ;
+
+            const FVector2D Delta(
+                SegmentEnd.X - SegmentStart.X,
+                SegmentEnd.Y - SegmentStart.Y
+            );
+
+            const float PathLength =
+                Delta.Size();
+
+            if (PathLength > KINDA_SMALL_NUMBER)
+            {
+                const float PathYaw =
+                    FMath::RadiansToDegrees(
+                        FMath::Atan2(
+                            Delta.Y,
+                            Delta.X
+                        )
+                    );
+
+                if (UStaticMeshComponent* PathMesh =
+                    CreatePathMesh(
+                        RallyPathIndicatorMaterial,
+                        FVector(
+                            PathLength / 100.f,
+                            QueuedMovePathIndicatorWidth / 100.f,
+                            1.f
+                        ),
+                        (SegmentStart + SegmentEnd) * 0.5f,
+                        FRotator(
+                            0.f,
+                            PathYaw,
+                            0.f
+                        ),
+                        21
+                    ))
+                {
+                    QueuedMovePathIndicators.Add(
+                        PathMesh
+                    );
+                }
+            }
+
+            if (UStaticMeshComponent* WaypointMesh =
+                CreatePathMesh(
+                    RallyPointIndicatorMaterial,
+                    FVector(
+                        QueuedMovePathWaypointSize / 100.f,
+                        QueuedMovePathWaypointSize / 100.f,
+                        1.f
+                    ),
+                    SegmentEnd,
+                    FRotator::ZeroRotator,
+                    22
+                ))
+            {
+                QueuedMovePathIndicators.Add(
+                    WaypointMesh
+                );
+            }
+
+            PathStart =
+                Destination;
+        }
+    }
+}
+
+void USFInGameHUDWidget::UpdateQueuedMovePathStartPoints()
+{
+    if (QueuedMovePathLiveSegments.IsEmpty())
+    {
+        return;
+    }
+
+    for (int32 SelectedIndex = 0;
+        SelectedIndex < SelectedActors.Num();
+        ++SelectedIndex)
+    {
+        if (!QueuedMovePathLiveSegments.IsValidIndex(
+            SelectedIndex))
+        {
+            continue;
+        }
+
+        AUnitBase* Unit =
+            Cast<AUnitBase>(
+                SelectedActors[SelectedIndex].Get()
+            );
+
+        UStaticMeshComponent* PathMesh =
+            QueuedMovePathLiveSegments[SelectedIndex].Get();
+
+        if (!IsValid(Unit) ||
+            !IsValid(PathMesh))
+        {
+            continue;
+        }
+
+        TArray<FVector> PathLocations;
+        Unit->GetCommandPathLocations(PathLocations);
+
+        if (PathLocations.IsEmpty())
+        {
+            PathMesh->SetVisibility(false);
+            continue;
+        }
+
+        FVector SegmentStart =
+            IsValid(Unit->GetMesh())
+            ? Unit->GetMesh()->GetComponentLocation()
+            : Unit->GetActorLocation();
+
+        FVector SegmentEnd =
+            PathLocations[0];
+
+        const float IndicatorZ =
+            SegmentEnd.Z + QueuedMovePathZOffset;
+
+        SegmentStart.Z = IndicatorZ;
+        SegmentEnd.Z = IndicatorZ;
+
+        const FVector2D Delta(
+            SegmentEnd.X - SegmentStart.X,
+            SegmentEnd.Y - SegmentStart.Y
+        );
+
+        const float PathLength =
+            Delta.Size();
+
+        if (PathLength <= KINDA_SMALL_NUMBER)
+        {
+            PathMesh->SetVisibility(false);
+            continue;
+        }
+
+        const float PathYaw =
+            FMath::RadiansToDegrees(
+                FMath::Atan2(
+                    Delta.Y,
+                    Delta.X
+                )
+            );
+
+        PathMesh->SetVisibility(true);
+
+        PathMesh->SetWorldLocation(
+            (SegmentStart + SegmentEnd) * 0.5f
+        );
+
+        PathMesh->SetWorldRotation(
+            FRotator(
+                0.f,
+                PathYaw,
+                0.f
+            )
+        );
+
+        PathMesh->SetWorldScale3D(
+            FVector(
+                PathLength / 100.f,
+                QueuedMovePathIndicatorWidth / 100.f,
+                1.f
+            )
+        );
+    }
+}
+
+void USFInGameHUDWidget::BindSelectedCommandPathDelegates()
+{
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        if (AUnitBase* Unit =
+            Cast<AUnitBase>(ActorPtr.Get()))
+        {
+            Unit->OnCommandPathChanged.AddUniqueDynamic(
+                this,
+                &USFInGameHUDWidget::HandleSelectedUnitCommandPathChanged
+            );
+        }
+    }
+}
+
+void USFInGameHUDWidget::UnbindSelectedCommandPathDelegates()
+{
+    for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
+    {
+        if (AUnitBase* Unit =
+            Cast<AUnitBase>(ActorPtr.Get()))
+        {
+            Unit->OnCommandPathChanged.RemoveDynamic(
+                this,
+                &USFInGameHUDWidget::HandleSelectedUnitCommandPathChanged
+            );
+        }
+    }
+}
+
+void USFInGameHUDWidget::HandleSelectedUnitCommandPathChanged()
+{
+    RefreshQueuedMovePathIndicators();
+}
+
+void USFInGameHUDWidget::HandleControlGroupResetRequested(
+    int32 GroupIndex
+)
+{
+    if (!ControlGroups.IsValidIndex(GroupIndex))
+    {
+        return;
+    }
+
+    UnbindControlGroupActorsDestroyed();
+
+    ControlGroups[GroupIndex].Actors.Reset();
+
+    BindControlGroupActorsDestroyed();
+
+    if (IsValid(ControlGroupWidget))
+    {
+        ControlGroupWidget->RemoveControlGroupSlot(
+            GroupIndex
+        );
+    }
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] "
+        "Control group reset requested | Index: %d",
+        GroupIndex + 1
     );
 }

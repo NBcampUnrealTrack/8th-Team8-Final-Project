@@ -76,6 +76,7 @@ AUnitBase::AUnitBase()
 	, bStatInitialized(false)
 	, bNoTargetReported(false)
 	, bAdvanceTargetReported(false)
+	, bShowCommandPath(false)
 	, bHasCommandedDestination(false)
 	, bCommandIsAttackMove(false)
 	, bHoldGround(false)
@@ -248,6 +249,8 @@ void AUnitBase::InitStat(const FUnitStatData& InRow)
 	CachedMoveCommandSound = InRow.MoveCommandSound.LoadSynchronous();
 
 	bStatInitialized = true;
+
+	NotifyUnitStatsChanged();
 }
 
 bool AUnitBase::InitStatFromTable(FName InRowName)
@@ -342,6 +345,55 @@ float AUnitBase::GetGroundSpeed() const
 	return GetVelocity().Size2D();
 }
 
+float AUnitBase::GetCurrentAttackPower() const
+{
+	return Attack * AttackMultiplier;
+}
+
+float AUnitBase::GetCurrentMoveSpeed() const
+{
+	const UCharacterMovementComponent* Move =
+		GetCharacterMovement();
+
+	return Move
+		? Move->MaxWalkSpeed
+		: 0.f;
+}
+
+void AUnitBase::NotifyUnitStatsChanged()
+{
+	const float NewAttackPower =
+		GetCurrentAttackPower();
+
+	const float NewMoveSpeed =
+		GetCurrentMoveSpeed();
+
+	if (
+		FMath::IsNearlyEqual(
+			LastNotifiedAttackPower,
+			NewAttackPower
+		) &&
+		FMath::IsNearlyEqual(
+			LastNotifiedMoveSpeed,
+			NewMoveSpeed
+		)
+		)
+	{
+		return;
+	}
+
+	LastNotifiedAttackPower =
+		NewAttackPower;
+
+	LastNotifiedMoveSpeed =
+		NewMoveSpeed;
+
+	OnUnitStatsChanged.Broadcast(
+		NewAttackPower,
+		NewMoveSpeed
+	);
+}
+
 AUnitAIController* AUnitBase::GetUnitAI() const
 {
 	return Cast<AUnitAIController>(GetController());
@@ -366,6 +418,8 @@ void AUnitBase::HandleDeath(UCombatTargetComponent* InTarget)
 	CurrentTarget = nullptr;
 	ForcedTarget = nullptr;
 	CommandQueue.Reset();
+	bShowCommandPath = false;
+	OnCommandPathChanged.Broadcast();
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	ReleaseAttackSlot();
@@ -482,13 +536,9 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 		Info.MaximumHealth = HealthComponent->GetMaxHealth();
 	}
 
-	// 지휘관 버프 등이 적용된 실제 공격력을 보여준다
-	Info.AttackPower = Attack * AttackMultiplier;
-
-	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
-	{
-		Info.MoveSpeed = Move->MaxWalkSpeed;
-	}
+	// 지휘관 버프 등이 적용된 실제 공격력을 보여준다 성윤 선택정보도 Getter를 쓰도록 변경
+	Info.AttackPower = GetCurrentAttackPower();
+	Info.MoveSpeed = GetCurrentMoveSpeed();
 
 	// ── 테이블 값 ───────────────────────────────────────
 	const UWorld* World = GetWorld();
@@ -614,6 +664,8 @@ void AUnitBase::MoveToLocation_Implementation(const FVector& InDestination)
 	bAdvanceTargetReported = false;
 	bNoTargetReported = false;
 
+	OnCommandPathChanged.Broadcast();
+
 	SF_LOG(Log, "[Unit] %s : 이동 명령 수신 (%s)", *GetName(), *InDestination.ToString());
 }
 
@@ -634,6 +686,12 @@ void AUnitBase::StopMove_Implementation()
 	// 세운 자리가 새 대기 지점이 된다.
 	// 안 그러면 정지시켜 둔 유닛이 슬금슬금 원래 자리로 돌아간다.
 	SetHoldLocationToCurrent();
+
+	if (CommandQueue.IsEmpty())
+	{
+		bShowCommandPath = false;
+		OnCommandPathChanged.Broadcast();
+	}
 
 	if (AUnitAIController* AI = GetUnitAI())
 	{
@@ -707,6 +765,54 @@ bool AUnitBase::HasActivePlayerCommand() const
 	return bHasCommandedDestination || IsValid(ForcedTarget);
 }
 
+void AUnitBase::GetCommandPathLocations(
+	TArray<FVector>& OutLocations
+) const
+{
+	OutLocations.Reset();
+
+	if (!bShowCommandPath || CombatState == EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	if (bHasCommandedDestination)
+	{
+		OutLocations.Add(CommandedDestination);
+	}
+	else if (IsValid(ForcedTarget))
+	{
+		OutLocations.Add(
+			ForcedTarget->GetActorLocation()
+		);
+	}
+
+	for (const FSFQueuedUnitCommand& QueuedCommand : CommandQueue)
+	{
+		if (QueuedCommand.Command == ESFUnitCommand::Move || QueuedCommand.Command == ESFUnitCommand::AttackMove)
+		{
+			OutLocations.Add(
+				QueuedCommand.Location
+			);
+		}
+
+		else if (QueuedCommand.Command == ESFUnitCommand::Attack)
+		{
+			if (QueuedCommand.bTargetRequired &&
+				!IsValid(QueuedCommand.Target.Get()))
+			{
+				continue;
+			}
+
+			OutLocations.Add(
+				IsValid(QueuedCommand.Target.Get())
+				? QueuedCommand.Target->GetActorLocation()
+				: QueuedCommand.Location
+			);
+		}
+	}
+}
+
 void AUnitBase::ExecuteCommand(
 	ESFUnitCommand InCommand,
 	const FVector& InLocation,
@@ -749,6 +855,10 @@ void AUnitBase::ExecuteCommandWithQueue(
 			InCommand == ESFUnitCommand::Attack &&
 			IsValid(InTarget);
 
+		bShowCommandPath = true;
+
+		OnCommandPathChanged.Broadcast();
+
 		SF_LOG(
 			Log,
 			"[Unit] %s : 명령 예약 | Command: %d | QueueCount: %d",
@@ -760,10 +870,19 @@ void AUnitBase::ExecuteCommandWithQueue(
 		return;
 	}
 
-	// 일반 명령은 기존 예약을 모두 지운다.
+	// 일반 명령은 기존 예약을 모두 지운다. 성윤 Shift 명령은 예약을 유지한다. 예약이 있으면 즉시 실행하지 않고 큐에 넣는다.
 	if (!bAppendToQueue)
 	{
 		CommandQueue.Reset();
+
+		bShowCommandPath = false;
+		OnCommandPathChanged.Broadcast();
+	}
+
+	else
+	{
+		// 현재 명령이 없어도 첫 Shift 명령은 표시
+		bShowCommandPath = true;
 	}
 
 	// 현재 명령이 없으면 Shift 명령도 즉시 실행한다.
@@ -861,6 +980,9 @@ bool AUnitBase::ExecuteNextQueuedCommand()
 		return true;
 	}
 
+	bShowCommandPath = false;
+	OnCommandPathChanged.Broadcast();
+
 	return false;
 }
 void AUnitBase::CommandMoveTo(const FVector& InDestination)
@@ -932,6 +1054,8 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 	bAdvanceTargetReported = false;
 	bNoTargetReported = false;
 
+	OnCommandPathChanged.Broadcast();
+
 	SF_LOG(Log, "[Unit] %s : 강제 공격 명령 — 대상 %s", *GetName(), *InTarget->GetName());
 }
 
@@ -960,6 +1084,9 @@ void AUnitBase::CommandHoldGround()
 	ForcedTarget = nullptr;
 
 	CommandQueue.Reset();
+
+	bShowCommandPath = false;
+	OnCommandPathChanged.Broadcast();
 
 	bHoldGround = true;
 
@@ -1291,7 +1418,23 @@ void AUnitBase::SteerTowardCommandPoint(float DeltaSeconds)
 
 	if (!SmoothedSteerDirection.IsNearlyZero())
 	{
-		AddMovementInput(SmoothedSteerDirection, 1.f);
+		const float InputStrength =
+			FMath::GetMappedRangeValueClamped(
+				FVector2D(
+					CommandArrivalRadius,
+					CommandFinalApproachRange
+				),
+				FVector2D(
+					0.25f,
+					1.f
+				),
+				ToDestination.Size2D()
+			);
+
+		AddMovementInput(
+			SmoothedSteerDirection,
+			InputStrength
+		);
 	}
 }
 
@@ -1726,6 +1869,14 @@ void AUnitBase::Advance(float DeltaSeconds)
 			// NavMesh 가 계속 밀어 유닛이 지점을 지나쳐 간다.
 			AI->ClearMoveRequest();
 
+			if (UCharacterMovementComponent* Movement =
+				GetCharacterMovement())
+			{
+				Movement->StopMovementImmediately();
+			}
+
+			SmoothedSteerDirection = FVector::ZeroVector;
+
 			SF_LOG(Log, "[Unit] %s : 명령 지점 도착", *GetName());
 
 			NotifyTutorialCommandArrived();
@@ -2082,7 +2233,10 @@ void AUnitBase::Tick(float DeltaSeconds)
 	// 어느 분기로 빠지든 표시되도록 맨 앞에서 그린다
 	DrawCombatDebug();
 
-	if (CombatState == EUnitCombatState::Dead) return;
+	NotifyUnitStatsChanged();
+
+	if (CombatState == EUnitCombatState::Dead)
+		return;
 
 	if (AttackCooldownRemaining > 0.f)
 	{

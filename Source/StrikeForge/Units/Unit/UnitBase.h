@@ -64,6 +64,16 @@ struct FSFQueuedUnitCommand
 	bool bTargetRequired = false;
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnCommandPathChanged);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FSFOnUnitStatsChanged,
+	float,
+	AttackPower,
+	float,
+	MoveSpeed
+);
+
 /**
  * 명령이 없을 때 유닛이 스스로 무엇을 할지.
  *
@@ -312,6 +322,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE bool HasMoveCommand() const { return bHasCommandedDestination != 0; }
 
+	void GetCommandPathLocations(
+		TArray<FVector>& OutLocations
+	) const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	float GetCurrentAttackPower() const;
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
+	float GetCurrentMoveSpeed() const;
+
+	void NotifyUnitStatsChanged();
+
 	/** 이 유닛이 차지하는 인구수. 데이터테이블에서 주입된다 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Unit")
 	FORCEINLINE int32 GetPopulationCost() const { return PopulationCost; }
@@ -335,6 +357,12 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "SF|Unit")
 	void OnUnitDied();
+
+	UPROPERTY(BlueprintAssignable, Category = "SF|Command")
+	FSFOnCommandPathChanged OnCommandPathChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "SF|Unit")
+	FSFOnUnitStatsChanged OnUnitStatsChanged;
 
 #pragma region Properties
 
@@ -625,7 +653,7 @@ private:
 	 * 눈으로는 "찍은 자리에 정확히 섰다" 로 보인다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "10.0"))
-	float CommandArrivalRadius = 40.f;
+	float CommandArrivalRadius = 60.0f;
 
 	/**
 	 * 명령 목적지까지 남은 거리가 이 값 안이면 NavMesh 를 놓고 직접 조향한다.
@@ -634,7 +662,7 @@ private:
 	 * 추종이 낫고, 마지막에 정확히 붙는 일만 직접 계산이 낫다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
-	float CommandFinalApproachRange = 250.f;
+	float CommandFinalApproachRange = 0.0f;
 
 	/**
 	 * 마지막 구간에서 이만큼(초) 제자리면 그 자리를 도착으로 친다.
@@ -992,6 +1020,10 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float LeashRadius = 800.f;
 
+	//성윤 델리게이트를 위한 변수
+	float LastNotifiedAttackPower = -1.f;
+	float LastNotifiedMoveSpeed = -1.f;
+
 	/** 제자리 유지 모드에서 돌아갈 자리 */
 	FVector HoldLocation = FVector::ZeroVector;
 
@@ -1013,6 +1045,8 @@ private:
 	FVector CommandedDestination = FVector::ZeroVector;
 
 	TArray<FSFQueuedUnitCommand> CommandQueue;
+
+	uint8 bShowCommandPath : 1;
 
 	/** 위 목적지가 유효한가 */
 	uint8 bHasCommandedDestination : 1;

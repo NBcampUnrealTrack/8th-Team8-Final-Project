@@ -518,7 +518,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 
 			const float SkillRadius = 750.f; // 버프가 적용되는 스킬 반경
 			const float AtkMul = 1.3;	// 공격력 배율
-			const float DefMul = 1.5;	// 방어력 배율
+			const float HPMul = 1.5;	// 최대체력 증가 배율
 			//-------------------
 
 			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
@@ -543,14 +543,14 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, AtkMul, DefMul]()	// BuffInterval 주기로 반복 실행(Tick)
+						[TG, AtkMul, HPMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							//GEngine->AddOnScreenDebugMessage(2, 0.f, FColor::White, FString::Printf(TEXT("[%s] AtkDefUp Buff Tick..."), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->Current_Status.AtkMul *= AtkMul;
-							TG.BuffCompPtr->Current_Status.DefMul *= DefMul;
+							TG.BuffCompPtr->Current_Status.DefMul *= HPMul;
 						},
-						[TG, DefMul]()	// 버프 시작 시 실행(Begin)
+						[TG, HPMul]()	// 버프 시작 시 실행(Begin)
 						{
 							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] AtkDefUp Buff Begin"), *TG.ActorPtr->GetName()));
 
@@ -558,12 +558,12 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							if (TGHealthComp.IsValid())
 							{
 								const float HealthRatio = TGHealthComp->GetHealthPercent();
-								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() + TG.BuffCompPtr->GetOriginStatus().MaxHealth * (DefMul - 1.f);
+								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() + TG.BuffCompPtr->GetOriginStatus().MaxHealth * (HPMul - 1.f);
 								float ApplyCurrentHealth = TGHealthComp->GetHealthPercent() * ApplyMaxHealth;
 								TGHealthComp->InitializeHealth(ApplyMaxHealth, FMath::Max(1.f, ApplyCurrentHealth));
 							}
 						},
-						[TG, DefMul]()	// 버프 종료 시 실행(End)
+						[TG, HPMul]()	// 버프 종료 시 실행(End)
 						{
 							//GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] AtkDefUp Buff End"), *TG.ActorPtr->GetName()));
 
@@ -571,7 +571,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							if (TGHealthComp.IsValid())
 							{
 								const float HealthRatio = TGHealthComp->GetHealthPercent();
-								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() - TG.BuffCompPtr->GetOriginStatus().MaxHealth * (DefMul - 1.f);
+								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() - TG.BuffCompPtr->GetOriginStatus().MaxHealth * (HPMul - 1.f);
 								float ApplyCurrentHealth = TGHealthComp->GetHealthPercent() * ApplyMaxHealth;
 								TGHealthComp->InitializeHealth(ApplyMaxHealth, FMath::Max(1.f, ApplyCurrentHealth));
 							}

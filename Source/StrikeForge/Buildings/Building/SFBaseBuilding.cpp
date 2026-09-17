@@ -929,6 +929,26 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void ASFBaseBuilding::OnBuildingDefinitionLoaded()
+{
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+
+	if (IsValid(StatHUD) && IsValid(Combat))
+	{
+		// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
+		const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
+			GetTeamIndex(),	Combat->GetLocalPlayerTeam()
+		);
+		
+		if (bIsEnemy)
+		{
+			StatHUD->SetHealthBarColor(FLinearColor::Red);
+		}
+	}
+}
+
 bool ASFBaseBuilding::CacheLoadedDefinitionData()
 {
 	if (!IsValid(BuildingDefinition))
@@ -1277,23 +1297,6 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 	if (!IsValid(WidgetComponent)) return;
 
 	USFBuildingStatWidget* StatHUD = GetStatWidget();
-	
-	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
-
-	if (IsValid(StatHUD) && IsValid(Combat))
-	{
-		// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
-		const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
-			GetTeamIndex(),	Combat->GetLocalPlayerTeam()
-		);
-		
-		if (bIsEnemy)
-		{
-			StatHUD->SetHealthBarColor(FLinearColor::Red);
-		}
-		
-	}
-
 	StatHUD->SetHeathBarVisible(true);
 }
 

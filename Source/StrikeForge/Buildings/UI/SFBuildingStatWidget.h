@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "SFBuildingStatWidget.generated.h"
 
+class UImage;
 class UOverlay;
 class FHealthValueChanged;
 class USFHealthBarWidget;
@@ -24,6 +25,7 @@ public:
 	/** 진행도는 소비자가 생산 건물뿐이라 분리하지 않는다. */
 	void SetProgressRatio(float InRatio);
 	void SetProgressVisible(bool bInVisible);
+	void SetProgressBarColor(const FLinearColor& InColor);
 private:
 	/** WBP 안에 USFHealthBarWidget 파생 BP를 같은 이름으로 배치한다. */
 	UPROPERTY(meta = (BindWidget))
@@ -31,6 +33,8 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> ProgressBar;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> ProgressBarBackground;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UOverlay> ProgressBarOverlay;
 	

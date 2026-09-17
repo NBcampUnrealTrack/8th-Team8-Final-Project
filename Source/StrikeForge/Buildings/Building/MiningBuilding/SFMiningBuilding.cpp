@@ -92,6 +92,8 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
+	
+	SetProgressColorByResourceType(GetMineResourceType());
 }
 
 void ASFMiningBuilding::OnTierActivated()
@@ -131,6 +133,32 @@ void ASFMiningBuilding::OnTierDeactivated()
 	Super::OnTierDeactivated();
 	
 	RefreshMiningState();
+}
+
+void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceType)
+{
+	switch (InResourceType)
+	{
+	case EResourceType::Ether:
+		{
+			USFBuildingStatWidget* StatHUD = GetStatWidget();
+			if (!IsValid(StatHUD)) return;
+	
+			StatHUD->SetProgressBarColor(FLinearColor::Blue);;
+		}
+	case EResourceType::Mineral:
+		{
+			USFBuildingStatWidget* StatHUD = GetStatWidget();
+			if (!IsValid(StatHUD)) return;
+	
+			StatHUD->SetProgressBarColor(FLinearColor::Yellow);
+			break;
+		}
+	default:
+		{
+			break;
+		}
+	}
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const

@@ -30,7 +30,8 @@ public:
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
-
+	
+	void SetProgressColorByResourceType(EResourceType InResourceType);
 	// Minable
 	virtual bool CanAcceptResource(const AResourceBase* InResource) const override;
 	virtual bool TryLinkResource(AResourceBase* InResource) override;

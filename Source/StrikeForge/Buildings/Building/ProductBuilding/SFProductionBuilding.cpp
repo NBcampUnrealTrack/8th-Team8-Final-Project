@@ -60,6 +60,7 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 	ProductComponent->AllClearProductLine();
 
 }
+
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
 	TryAddUnitProductLine(InUnitName);
@@ -133,6 +134,16 @@ void ASFProductionBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASFProductionBuilding::OnBuildingDefinitionLoaded()
+{
+	Super::OnBuildingDefinitionLoaded();
+	
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	if (!IsValid(StatHUD)) return;
+	
+	StatHUD->SetProgressBarColor(FLinearColor::Green);
 }
 
 bool ASFProductionBuilding::HasRallyPoint() const

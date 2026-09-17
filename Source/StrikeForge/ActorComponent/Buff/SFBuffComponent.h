@@ -6,6 +6,8 @@
 #include "Components/ActorComponent.h"
 #include "SFBuffComponent.generated.h"
 
+class AUnitBase;
+
 DECLARE_MULTICAST_DELEGATE(FOnBuffEvent);
 
 UCLASS()
@@ -19,7 +21,7 @@ public:
 
     void ExecuteBuff(); // 버프 작동. 액터컴포넌트에서 AddBuff 시 함께 실행됨. 만지지 말 것
 
-    void FinishBuff();  // 버프 종료. 해당 버프의 종료이벤트를 실행하고 삭제함.
+    void FinishBuff(bool bCallEndEvent);  // 버프 종료. 매개변수: 해당 버프의 종료이벤트 실행여부
     
     const float GetTimeRate(); // 버프 남은시간 비율(0~1)로 가져오기.
 
@@ -36,12 +38,25 @@ public:
     UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
     float TickInterval; // 효과발생 주기. (0이면 매 프레임 지속)
 
-    FTimerHandle BuffTimerHandle_End;
-    FTSTicker::FDelegateHandle BuffTickerHandle;
+    float RemainTime;       // 현재 남은 시간
+    float RemainInterval;   // 현재 남은 주기
 
     FOnBuffEvent OnBuffTickEvent;
     FOnBuffEvent OnBuffBeginEvent;
     FOnBuffEvent OnBuffEndEvent;
+};
+
+// 버프 컴포넌트에서 관리하고 적용하는 값들을 모아놓은 구조체
+USTRUCT()
+struct FStatusData
+{
+    GENERATED_BODY()
+
+    float Speed;
+    float MaxHealth;
+    float AtkMul = 1.f;
+    float DefMul = 1.f;
+    float DmgMul = 1.f;
 };
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -57,14 +72,23 @@ public:
     void ClearBuff();   // 모든 버프 제거
 
     const TArray<TObjectPtr<UBuffData>> GetBuffList(); // 해당 액터가 보유중인 모든 버프 가져오기.
+    FORCEINLINE const FStatusData GetOriginStatus() { return Origin_Status; };
 
 protected:
 	USFBuffComponent();
 
+    virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+public:
+    FStatusData Current_Status;
 
 protected:
     /** 버프 리스트*/
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta = (AllowPrivateAccess = true))
     TArray<TObjectPtr<UBuffData>> BuffList;
+
+    // 해당 오너가 가지고 있는 스피드
+    FStatusData Origin_Status;
 };

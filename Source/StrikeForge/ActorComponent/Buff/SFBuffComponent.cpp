@@ -1,79 +1,34 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ActorComponent/Buff/SFBuffComponent.h"
+#include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "ActorComponent/HP/HealthComponent.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Units/Unit/UnitBase.h"
 #include "Containers/Ticker.h"
 
 void UBuffData::ExecuteBuff()
 {
-	TWeakObjectPtr<UWorld> World = GetWorld();
-	if (!World.IsValid())
-		return;
-
 	// 버프를 받은 직후 실행
 	if (OnBuffBeginEvent.IsBound())
 	{
 		OnBuffBeginEvent.Broadcast();
 	}
 
-	// 버프가 끝나면 실행
-	World->GetTimerManager().SetTimer(
-		BuffTimerHandle_End,
-		[this]()
-		{
-			if (OnBuffEndEvent.IsBound())
-			{
-				OnBuffEndEvent.Broadcast();
-			}
+	// 버프 종료까지 남은 시간
+	RemainTime = InitialTime;
 
-			if (BuffTickerHandle.IsValid())
-			{
-				FTSTicker::GetCoreTicker().RemoveTicker(BuffTickerHandle);
-				BuffTickerHandle.Reset();
-			}
-			this->ConditionalBeginDestroy();
-		},
-		InitialTime,
-		false);
-
-	// 버프가 진행되는 동안 정해진 주기마다 실행
-	if (TickInterval <= 0.f)
-	{
-		BuffTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda(
-				[TickEvent = OnBuffTickEvent, EndHandler = BuffTimerHandle_End](float DeltaTime)
-				{
-					if (TickEvent.IsBound())
-					{
-						TickEvent.Broadcast();
-						return true;
-					}
-					else
-					{
-						return false;
-					}
-				}),
-			TickInterval);
-	}
+	// 버프효과가 적용되는 주기
+	RemainInterval = TickInterval;
 }
 
-void UBuffData::FinishBuff()
+void UBuffData::FinishBuff(bool bCallEndEvent)
 {
-	TWeakObjectPtr<UWorld> World = GetWorld();
-	if (World.IsValid() && World->GetTimerManager().TimerExists(BuffTimerHandle_End))
+	// 버프종료 이벤트 실행
+	if (bCallEndEvent == true || OnBuffEndEvent.IsBound())
 	{
-		// 버프종료 이벤트 실행 및 타이머 해제
-		if (OnBuffEndEvent.IsBound())
-		{
-			OnBuffEndEvent.Broadcast();
-		}
-		World->GetTimerManager().ClearTimer(BuffTimerHandle_End);
-
-		// 버프 틱 이벤트 해제
-		if (BuffTickerHandle.IsValid())
-		{
-			FTSTicker::GetCoreTicker().RemoveTicker(BuffTickerHandle);
-			BuffTickerHandle.Reset();
-		}
+		OnBuffEndEvent.Broadcast();
 	}
 	this->ConditionalBeginDestroy();
 }
@@ -84,7 +39,7 @@ const float UBuffData::GetTimeRate()
 	if (!World.IsValid())
 		return 0.f;
 
-	return World->GetTimerManager().GetTimerRemaining(BuffTimerHandle_End) / World->GetTimerManager().GetTimerRate(BuffTimerHandle_End);
+	return RemainTime / InitialTime;
 }
 
 void UBuffData::BeginDestroy()
@@ -93,17 +48,6 @@ void UBuffData::BeginDestroy()
 	OnBuffBeginEvent.Clear();
 	OnBuffEndEvent.Clear();
 
-	TWeakObjectPtr<UWorld> World = GetWorld();
-	if (World.IsValid())
-	{
-		World->GetTimerManager().ClearTimer(BuffTimerHandle_End);
-	}
-	if (BuffTickerHandle.IsValid())
-	{
-		FTSTicker::GetCoreTicker().RemoveTicker(BuffTickerHandle);
-		BuffTickerHandle.Reset();
-	}
-
 	Super::BeginDestroy();
 }
 
@@ -111,7 +55,26 @@ void UBuffData::BeginDestroy()
 
 USFBuffComponent::USFBuffComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+}
+
+void USFBuffComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	TWeakObjectPtr<ACharacter> SFChar = GetOwner<ACharacter>();
+	if (SFChar.IsValid())
+	{
+		TWeakObjectPtr<UCharacterMovementComponent> SFMovement = SFChar->GetCharacterMovement();
+		if (SFMovement.IsValid())
+		{
+			Origin_Status.Speed = SFMovement->MaxWalkSpeed;
+		}
+	}
+	TWeakObjectPtr<UHealthComponent> SFHealthComp = GetOwner()->GetComponentByClass<UHealthComponent>();
+	if (SFHealthComp.IsValid())
+	{
+		Origin_Status.MaxHealth = SFHealthComp->GetMaxHealth();
+	}
 }
 
 void USFBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -120,13 +83,89 @@ void USFBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	/* 버프 컴포넌트에서 관리중인 값 초기화 */
+	Current_Status = Origin_Status;
+
+	/* 각 버프의 이벤트 실행 */
+	for (TWeakObjectPtr<UBuffData> Buff : BuffList)
+	{
+		if (!Buff.IsValid())
+		{
+			continue;
+		}
+		if (Buff->InitialTime >= 0.f)
+		{
+			Buff->RemainTime -= DeltaTime;
+		}
+		Buff->RemainInterval -= DeltaTime;
+
+		// 버프가 끝나면 실행 (InitialTime이 음수라면 버프가 자연적으로 끝내지 않음)
+		if (Buff->InitialTime >= 0.f && Buff->RemainTime <= 0.f)
+		{
+			if (Buff->OnBuffEndEvent.IsBound())
+			{
+				Buff->OnBuffEndEvent.Broadcast();
+			}
+
+			Buff->ConditionalBeginDestroy();
+			continue;
+		}
+
+		// 버프가 진행되는 동안 정해진 주기마다 실행
+		if (Buff->RemainInterval <= 0.f)
+		{
+			if (Buff->OnBuffTickEvent.IsBound())
+			{
+				Buff->OnBuffTickEvent.Broadcast();
+			}
+			Buff->RemainInterval = Buff->TickInterval;
+		}
+	}
+
+	/* 이번 프레임 내에 적용된 버프 종합 적용 */
+	TWeakObjectPtr<ACharacter> SFChar = GetOwner<ACharacter>();
+	if (SFChar.IsValid())
+	{
+		TWeakObjectPtr<UCharacterMovementComponent> SFMovement = SFChar->GetCharacterMovement();
+		if (SFMovement.IsValid())
+		{
+			SFMovement->MaxWalkSpeed = Current_Status.Speed;
+		}
+	}
+
+	TWeakObjectPtr<AUnitBase> SFUnit = GetOwner<AUnitBase>();
+	if (SFUnit.IsValid())
+	{
+		SFUnit->AttackMultiplier = Current_Status.AtkMul;
+	}
+
+	TWeakObjectPtr<UHealthComponent> SFHealthComp = GetOwner()->GetComponentByClass<UHealthComponent>();
+	if (SFHealthComp.IsValid())
+	{
+		if (SFHealthComp->GetCurrentHealth() > 0.f)
+		{
+			SFHealthComp->InitializeHealth(Origin_Status.MaxHealth * Current_Status.DefMul, SFHealthComp->GetCurrentHealth());
+		}
+	}
+
+	TWeakObjectPtr<UCombatTargetComponent> SFCombatComp = GetOwner()->GetComponentByClass<UCombatTargetComponent>();
+	if (SFCombatComp.IsValid())
+	{
+		SFCombatComp->SetDamagerMultiplier(Current_Status.DmgMul);
+	}
+}
+
 void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval)
 {
 	for (UBuffData* BD : BuffList)
 	{
 		if (BD->KeyName == _KeyName)
 		{
-			BD->FinishBuff();
+			BD->FinishBuff(false);
 			BuffList.Remove(BD);
 			break;
 		}
@@ -154,7 +193,7 @@ void USFBuffComponent::ClearBuff()
 {
 	for (UBuffData* BD : BuffList)
 	{
-		BD->FinishBuff();
+		BD->FinishBuff(true);
 	}
 	BuffList.Empty();
 }

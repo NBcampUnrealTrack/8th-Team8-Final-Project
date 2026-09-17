@@ -24,6 +24,12 @@
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 
+namespace SFOverheadWidget
+{
+	/** 모든 건물이 공유하는 바 세로 두께. 픽셀 단위. */
+	constexpr float BarHeight = 40.f;
+}
+
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -1276,6 +1282,9 @@ void ASFBaseBuilding::SetBoxExtent()
 	
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
+	
+	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
+	ApplyOverheadWidgetTransform();
 }
 
 #pragma region Getter
@@ -1283,6 +1292,40 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 {
 	return StaticMeshComponent->CalcBounds(
 		StaticMeshComponent->GetRelativeTransform());
+}
+
+void ASFBaseBuilding::ApplyOverheadWidgetTransform()
+{
+	if (!IsValid(WidgetComponent))	return;
+	if (!IsValid(BuildingDefinition))	return;
+
+	// ── 위치 ──
+	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, BuildingDefinition->AnchorZ));
+
+	// ── 크기 ──
+	// 가로: 메시 바운즈 폭에서 계산. 세로: 모든 건물 공통 상수.
+	float FinalWidth = BuildingDefinition->WidgetWidthRange.X;
+
+	if (IsValid(StaticMeshComponent))
+	{
+		// 회전은 빼고 스케일만 적용한다.
+		// 월드 바운즈를 쓰면 45도로 배치된 건물의 폭이 부풀어 오른다.
+		const FBoxSphereBounds ScaledBounds = StaticMeshComponent->CalcBounds(
+			FTransform(
+				FQuat::Identity,
+				FVector::ZeroVector,
+				StaticMeshComponent->GetComponentScale()));
+
+		const float WorldWidth = ScaledBounds.BoxExtent.X;
+
+		FinalWidth = FMath::Clamp(
+			WorldWidth * BuildingDefinition->WidgetWidthRatio,
+			BuildingDefinition->WidgetWidthRange.X,
+			BuildingDefinition->WidgetWidthRange.Y);
+	}
+
+	WidgetComponent->SetDrawSize(
+		FVector2D(FinalWidth, SFOverheadWidget::BarHeight));
 }
 
 
@@ -1297,6 +1340,7 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 	if (!IsValid(WidgetComponent)) return;
 
 	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	if (!IsValid(StatHUD)) return;
 	StatHUD->SetHeathBarVisible(true);
 }
 
@@ -1306,7 +1350,6 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 
 	USFBuildingStatWidget* StatHUD = GetStatWidget();
 	if (!IsValid(StatHUD)) return;
-	
 	StatHUD->SetHeathBarVisible(false);
 
 	Super::NotifyActorEndCursorOver();

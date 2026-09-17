@@ -46,8 +46,9 @@ void USFBuildingStatWidget::SetProgressBarColor(const FLinearColor& InColor)
 {
 	if (!IsValid(ProgressBar))	return;
 	ProgressBar->SetFillColorAndOpacity(InColor);
+	
+	if (!IsValid(ProgressBarOverlay))	return;
 	FLinearColor BackgroundColor = InColor * 0.3f;
 	BackgroundColor.A = 0.5f;
-	
 	ProgressBarBackground->SetColorAndOpacity(BackgroundColor);
 }

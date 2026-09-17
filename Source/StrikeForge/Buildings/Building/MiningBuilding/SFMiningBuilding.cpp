@@ -145,6 +145,7 @@ void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceT
 			if (!IsValid(StatHUD)) return;
 	
 			StatHUD->SetProgressBarColor(FLinearColor::Blue);;
+			break;
 		}
 	case EResourceType::Mineral:
 		{

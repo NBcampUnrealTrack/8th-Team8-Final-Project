@@ -148,7 +148,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
-	
+	/** Definition 값으로 오버헤드 위젯의 위치와 크기를 맞춘다. */
+	void ApplyOverheadWidgetTransform();
+
 	UFUNCTION(BlueprintPure, Category = "SF|Building|Definition")
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
@@ -373,8 +375,12 @@ protected:
 	void StopHitReaction();
 	
 	FVector HitLocalDirection = FVector::ForwardVector;
-
 #pragma endregion 
+	
+	/** Definition이 크기를 지정하지 않았을 때 쓰는 공통 기본 크기. 픽셀 단위. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
+	FVector2D DefaultOverheadWidgetSize = FVector2D(160.f, 40.f);
+	
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()
 	FIntPoint ConfiguredGridSize = FIntPoint(1, 1);

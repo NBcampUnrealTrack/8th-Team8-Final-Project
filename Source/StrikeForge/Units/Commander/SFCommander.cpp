@@ -493,10 +493,12 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 						[TG]()	// 버프 시작 시 실행(Begin)
 						{
 							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] SpeedUp Buff Begin"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
 						},
 						[TG]()	// 버프 종료 시 실행(End)
 						{
 							//GEngine->AddOnScreenDebugMessage(1, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] SpeedUp Buff End"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
 						},
 						BuffTime,
 						BuffInterval);
@@ -548,33 +550,21 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							//GEngine->AddOnScreenDebugMessage(2, 0.f, FColor::White, FString::Printf(TEXT("[%s] AtkDefUp Buff Tick..."), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->Current_Status.AtkMul *= AtkMul;
-							TG.BuffCompPtr->Current_Status.DefMul *= HPMul;
+							TG.BuffCompPtr->Current_Status.HPMul *= HPMul;
 						},
 						[TG, HPMul]()	// 버프 시작 시 실행(Begin)
 						{
 							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] AtkDefUp Buff Begin"), *TG.ActorPtr->GetName()));
 
-							TWeakObjectPtr<UHealthComponent> TGHealthComp = TG.ActorPtr->GetComponentByClass<UHealthComponent>();
-							if (TGHealthComp.IsValid())
-							{
-								const float HealthRatio = TGHealthComp->GetHealthPercent();
-								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() + TG.BuffCompPtr->GetOriginStatus().MaxHealth * (HPMul - 1.f);
-								float ApplyCurrentHealth = TGHealthComp->GetHealthPercent() * ApplyMaxHealth;
-								TGHealthComp->InitializeHealth(ApplyMaxHealth, FMath::Max(1.f, ApplyCurrentHealth));
-							}
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
 						},
 						[TG, HPMul]()	// 버프 종료 시 실행(End)
 						{
 							//GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] AtkDefUp Buff End"), *TG.ActorPtr->GetName()));
 
-							TWeakObjectPtr<UHealthComponent> TGHealthComp = TG.ActorPtr->GetComponentByClass<UHealthComponent>();
-							if (TGHealthComp.IsValid())
-							{
-								const float HealthRatio = TGHealthComp->GetHealthPercent();
-								float ApplyMaxHealth = TGHealthComp->GetMaxHealth() - TG.BuffCompPtr->GetOriginStatus().MaxHealth * (HPMul - 1.f);
-								float ApplyCurrentHealth = TGHealthComp->GetHealthPercent() * ApplyMaxHealth;
-								TGHealthComp->InitializeHealth(ApplyMaxHealth, FMath::Max(1.f, ApplyCurrentHealth));
-							}
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
 						},
 						BuffTime,
 						BuffInterval);
@@ -628,10 +618,12 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 						[TG]()	// 버프 시작 시 실행(Begin)
 						{
 							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff Begin"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						[TG]()	// 버프 종료 시 실행(End)
 						{
 							//GEngine->AddOnScreenDebugMessage(3, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff End"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						BuffTime,
 						BuffInterval);

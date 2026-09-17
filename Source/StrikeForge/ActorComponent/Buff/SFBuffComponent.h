@@ -53,11 +53,22 @@ struct FStatusData
     GENERATED_BODY()
 
     float Speed;
-    float MaxHealth;
     float AtkMul = 1.f;
-    float DefMul = 1.f;
+    float HPMul = 1.f;
     float DmgMul = 1.f;
 };
+
+// 버프가 적용되는 시점
+UENUM(meta = (Bitflags))
+enum class EBuffApply : uint8
+{
+    None        = 0,
+    Speed       = 1 << 0, // 1
+    Atk         = 1 << 1, // 2
+    MaxHealth   = 1 << 2, // 4
+    DamageMul   = 1 << 3  // 8
+};
+ENUM_CLASS_FLAGS(EBuffApply);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class STRIKEFORGE_API USFBuffComponent : public UActorComponent
@@ -74,6 +85,9 @@ public:
     const TArray<TObjectPtr<UBuffData>> GetBuffList(); // 해당 액터가 보유중인 모든 버프 가져오기.
     FORCEINLINE const FStatusData GetOriginStatus() { return Origin_Status; };
 
+    // 해당 스탯을 이번 프레임에 갱신하겠다.
+    FORCEINLINE void ApplyBuffFlag(EBuffApply Flags) { EnumAddFlags(Flag_Apply, Flags); }
+
 protected:
 	USFBuffComponent();
 
@@ -89,6 +103,8 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State", meta = (AllowPrivateAccess = true))
     TArray<TObjectPtr<UBuffData>> BuffList;
 
-    // 해당 오너가 가지고 있는 스피드
+    // 해당 오너가 가지고 있는 버프상태
     FStatusData Origin_Status;
+
+    EBuffApply Flag_Apply;   // 이번 프레임 내 특정 스탯의 갱신여부를 저장
 };

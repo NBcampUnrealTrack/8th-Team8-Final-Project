@@ -6,7 +6,6 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Units/Unit/UnitBase.h"
-#include "Containers/Ticker.h"
 
 void UBuffData::ExecuteBuff()
 {
@@ -26,7 +25,7 @@ void UBuffData::ExecuteBuff()
 void UBuffData::FinishBuff(bool bCallEndEvent)
 {
 	// 버프종료 이벤트 실행
-	if (bCallEndEvent == true || OnBuffEndEvent.IsBound())
+	if (bCallEndEvent == true && OnBuffEndEvent.IsBound())
 	{
 		OnBuffEndEvent.Broadcast();
 	}
@@ -61,6 +60,8 @@ USFBuffComponent::USFBuffComponent()
 void USFBuffComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	Flag_Apply = EBuffApply::None;
+
 	TWeakObjectPtr<ACharacter> SFChar = GetOwner<ACharacter>();
 	if (SFChar.IsValid())
 	{
@@ -69,11 +70,6 @@ void USFBuffComponent::BeginPlay()
 		{
 			Origin_Status.Speed = SFMovement->MaxWalkSpeed;
 		}
-	}
-	TWeakObjectPtr<UHealthComponent> SFHealthComp = GetOwner()->GetComponentByClass<UHealthComponent>();
-	if (SFHealthComp.IsValid())
-	{
-		Origin_Status.MaxHealth = SFHealthComp->GetMaxHealth();
 	}
 }
 
@@ -86,6 +82,11 @@ void USFBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (BuffList.Num() == 0)
+	{
+		return;
+	}
 
 	/* 버프 컴포넌트에서 관리중인 값 초기화 */
 	Current_Status = Origin_Status;
@@ -127,36 +128,51 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	}
 
 	/* 이번 프레임 내에 적용된 버프 종합 적용 */
-	TWeakObjectPtr<ACharacter> SFChar = GetOwner<ACharacter>();
-	if (SFChar.IsValid())
+	if (EnumHasAllFlags(Flag_Apply, EBuffApply::Speed))
 	{
-		TWeakObjectPtr<UCharacterMovementComponent> SFMovement = SFChar->GetCharacterMovement();
-		if (SFMovement.IsValid())
+		TWeakObjectPtr<ACharacter> SFChar = GetOwner<ACharacter>();
+		if (SFChar.IsValid())
 		{
-			SFMovement->MaxWalkSpeed = Current_Status.Speed;
+			TWeakObjectPtr<UCharacterMovementComponent> SFMovement = SFChar->GetCharacterMovement();
+			if (SFMovement.IsValid())
+			{
+				SFMovement->MaxWalkSpeed = Current_Status.Speed;
+			}
 		}
 	}
 
-	TWeakObjectPtr<AUnitBase> SFUnit = GetOwner<AUnitBase>();
-	if (SFUnit.IsValid())
+	if (EnumHasAllFlags(Flag_Apply, EBuffApply::Atk))
 	{
-		SFUnit->AttackMultiplier = Current_Status.AtkMul;
-	}
-
-	TWeakObjectPtr<UHealthComponent> SFHealthComp = GetOwner()->GetComponentByClass<UHealthComponent>();
-	if (SFHealthComp.IsValid())
-	{
-		if (SFHealthComp->GetCurrentHealth() > 0.f)
+		TWeakObjectPtr<AUnitBase> SFUnit = GetOwner<AUnitBase>();
+		if (SFUnit.IsValid())
 		{
-			SFHealthComp->InitializeHealth(Origin_Status.MaxHealth * Current_Status.DefMul, SFHealthComp->GetCurrentHealth());
+			SFUnit->AttackMultiplier = Current_Status.AtkMul;
 		}
 	}
 
-	TWeakObjectPtr<UCombatTargetComponent> SFCombatComp = GetOwner()->GetComponentByClass<UCombatTargetComponent>();
-	if (SFCombatComp.IsValid())
+	if (EnumHasAllFlags(Flag_Apply, EBuffApply::MaxHealth))
 	{
-		SFCombatComp->SetDamagerMultiplier(Current_Status.DmgMul);
+		// 최대체력을 갱신해야하는 타이밍
+		TWeakObjectPtr<UHealthComponent> SFHealthComp = GetOwner()->GetComponentByClass<UHealthComponent>();
+		if (SFHealthComp.IsValid())
+		{
+			if (SFHealthComp->GetCurrentHealth() > 0.f)
+			{
+				SFHealthComp->BoostHealth(Current_Status.HPMul);
+			}
+		}
 	}
+
+	if (EnumHasAllFlags(Flag_Apply, EBuffApply::DamageMul))
+	{
+		TWeakObjectPtr<UCombatTargetComponent> SFCombatComp = GetOwner()->GetComponentByClass<UCombatTargetComponent>();
+		if (SFCombatComp.IsValid())
+		{
+			SFCombatComp->SetDamagerMultiplier(Current_Status.DmgMul);
+		}
+	}
+
+	Flag_Apply = EBuffApply::None;
 }
 
 void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval)

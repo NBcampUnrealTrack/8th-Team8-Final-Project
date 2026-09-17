@@ -172,8 +172,5 @@ void ASFProductionBuilding::HandleProductRatioChanged(float InProductRatio)
 
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
-	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
-	{
-		StatHUD->SetProgressVisible(!InProductLine.IsEmpty());
-	}
+	SetOverheadProgressVisible(!InProductLine.IsEmpty());
 }

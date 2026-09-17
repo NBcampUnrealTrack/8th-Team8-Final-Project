@@ -23,6 +23,7 @@
 #include "Engine/GameInstance.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 namespace SFOverheadWidget
 {
@@ -51,7 +52,7 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetGenerateOverlapEvents(false);
 	WidgetComponent->SetWindowFocusable(false);
 	WidgetComponent->SetDrawAtDesiredSize(false);
-	WidgetComponent->SetVisibility(true);
+	WidgetComponent->SetVisibility(false);
 	
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 	
@@ -616,34 +617,6 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 	}
 }
 
-// UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
-// {
-// 	const FSFBuildingTierData* Tier =
-// 	GetTierInfo(Assets.TierIndex);
-//
-// 	if (!Tier || !IsValid(HealthComponent))
-// 	{
-// 		return Assets.CompletedMesh;
-// 	}
-
-	// const int32 DamageIndex =
-	// 	Tier->Visual.FindDamageStageIndex(
-	// 		HealthComponent->GetHealthPercent());
-
-	// if (Assets.DamageMeshes.IsValidIndex(DamageIndex))
-	// {
-	// 	UStaticMesh* DamageMesh =
-	// 		Assets.DamageMeshes[DamageIndex];
-	//
-	// 	if (IsValid(DamageMesh))
-	// 	{
-	// 		return DamageMesh;
-	// 	}
-	// }
-
-// 	return Assets.CompletedMesh;
-// }
-
 const FSFBuildingTierData* ASFBaseBuilding::GetCurrentTierInfo() const
 {
 	return GetTierInfo(CurrentTier);
@@ -686,10 +659,17 @@ void ASFBaseBuilding::BindComponentDelegates()
 		HealthComponent->GetCurrentHealth(),
 		HealthComponent->GetCurrentHealth(),
 		HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
-	// 생성자에서 WidgetComponent를 켜 두었으므로, 체력바 줄은 여기서 숨긴다.
-	// 디버그용으로 현재는 모두 true
+
 	StatHUD->SetHeathBarVisible(false);
 	StatHUD->SetProgressVisible(false);
+	
+	if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
+	{
+		OverheadUIScaleHandle = OverheadUI->OnUIScaleChanged.AddUObject(
+			this, &ASFBaseBuilding::HandleOverheadUIScaleChanged);
+	}
+
+	RefreshOverheadWidgetVisibility();
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
@@ -699,9 +679,18 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
 	
-	USFBuildingStatWidget* StatHUD = Cast<USFBuildingStatWidget>(WidgetComponent->GetUserWidgetObject());
+	// 위젯 유효성 검사보다 먼저 해제한다. 아래 early return에 걸리면 안 된다.
+	if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
+	{
+		OverheadUI->OnUIScaleChanged.Remove(OverheadUIScaleHandle);
+	}
+	OverheadUIScaleHandle.Reset();
+
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
 	if (!IsValid(StatHUD)) return;
-	HealthComponent->OnHealthValueChanged.RemoveDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);}
+
+	HealthComponent->OnHealthValueChanged.RemoveDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);
+}
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
@@ -1328,7 +1317,59 @@ void ASFBaseBuilding::ApplyOverheadWidgetTransform()
 		FVector2D(FinalWidth, SFOverheadWidget::BarHeight));
 }
 
+void ASFBaseBuilding::SetOverheadProgressVisible(bool bInVisible)
+{
+	bOverheadProgressActive = bInVisible;
 
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetProgressVisible(bInVisible);
+	}
+
+	RefreshOverheadWidgetVisibility();
+}
+
+void ASFBaseBuilding::RefreshOverheadWidgetVisibility()
+{
+	if (!IsValid(WidgetComponent))	return;
+
+	const bool bShouldShow =
+		CurrentBuildingState != EBuildingState::Preview &&
+		(bCursorOverBuilding || bOverheadProgressActive);
+
+	if (WidgetComponent->IsVisible() == bShouldShow)	return;
+
+	WidgetComponent->SetVisibility(bShouldShow);
+
+	// 다시 켜질 때 그동안 바뀐 줌 배율을 반영한다.
+	if (bShouldShow)
+	{
+		ApplyOverheadUIScale();
+	}
+}
+
+void ASFBaseBuilding::ApplyOverheadUIScale()
+{
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	if (!IsValid(StatHUD))	return;
+
+	const USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this);
+	if (!IsValid(OverheadUI))	return;
+
+	const float Scale = OverheadUI->GetUIScale();
+
+	// 아래쪽 중앙을 축으로 확대·축소해야 건물 위에 붙은 상태가 유지된다.
+	//StatHUD->SetRenderTransformPivot(FVector2D(0.5f, 1.f));
+	StatHUD->SetRenderScale(FVector2D(Scale, Scale));
+}
+
+void ASFBaseBuilding::HandleOverheadUIScaleChanged(float InScale)
+{
+	// 꺼져 있는 위젯은 지금 건드리지 않는다. 켜질 때 ApplyOverheadUIScale()이 반영한다.
+	if (!IsValid(WidgetComponent) || !WidgetComponent->IsVisible())	return;
+
+	ApplyOverheadUIScale();
+}
 #pragma endregion Getter
 
 #pragma region Widget
@@ -1337,20 +1378,27 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 	Super::NotifyActorBeginCursorOver();
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
-	if (!IsValid(WidgetComponent)) return;
 
-	USFBuildingStatWidget* StatHUD = GetStatWidget();
-	if (!IsValid(StatHUD)) return;
-	StatHUD->SetHeathBarVisible(true);
+	bCursorOverBuilding = true;
+
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetHeathBarVisible(true);
+	}
+
+	RefreshOverheadWidgetVisibility();
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	if (!IsValid(WidgetComponent)) return;
+	bCursorOverBuilding = false;
 
-	USFBuildingStatWidget* StatHUD = GetStatWidget();
-	if (!IsValid(StatHUD)) return;
-	StatHUD->SetHeathBarVisible(false);
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetHeathBarVisible(false);
+	}
+
+	RefreshOverheadWidgetVisibility();
 
 	Super::NotifyActorEndCursorOver();
 }

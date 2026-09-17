@@ -226,10 +226,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		ApplyIncomeRate(0.f);
 		
 		// progressbar는 종료하고 다른 UI를 보여한다
-		if (USFBuildingStatWidget* StatHUD = GetStatWidget())
-		{
-			StatHUD->SetProgressVisible(false);
-		}
+		SetOverheadProgressVisible(false);
 		// TODO:: Alert UI Needed
 		
 		return;
@@ -245,8 +242,9 @@ void ASFMiningBuilding::RefreshMiningState()
 	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
 	{
 		StatHUD->SetProgressRatio(MiningComponent->GetExtractProgressRatio());
-		StatHUD->SetProgressVisible(true);
 	}
+
+	SetOverheadProgressVisible(true);
 }
 
 //getter

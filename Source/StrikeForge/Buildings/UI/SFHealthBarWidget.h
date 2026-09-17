@@ -2,20 +2,22 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "BuildingHealthBar.generated.h"
+#include "SFHealthBarWidget.generated.h"
 
 class UProgressBar;
 
 UCLASS()
-class STRIKEFORGE_API UBuildingHealthBar : public UUserWidget
+class STRIKEFORGE_API USFHealthBarWidget : public UUserWidget
 {
 	GENERATED_BODY()
-public:
 	
+public:
 	UFUNCTION()
 	void SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP);
 	void SetHealthBarColor(const FLinearColor& InColor);
+
 private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UProgressBar> HealthBar;
+	
 };

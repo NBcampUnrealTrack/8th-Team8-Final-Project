@@ -8,6 +8,7 @@
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
 
+class USFBuildingStatWidget;
 class UPlayVFXComponent;
 class UTimelineComponent;
 class UProgressComponent;
@@ -198,6 +199,8 @@ protected:
 	
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
+	/** 건물 머리 위 위젯. 위젯 클래스가 다르면 nullptr. */
+	USFBuildingStatWidget* GetStatWidget() const;
 	
 	const FSFBuildingTierData* GetTierInfo(int32 TierIndex) const;
 	const FSFBuildingTierData* GetCurrentTierInfo() const;

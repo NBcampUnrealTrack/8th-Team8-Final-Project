@@ -10,7 +10,8 @@
 #include "NiagaraSystem.h"
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
-#include "Buildings/UI/BuildingHealthBar.h"
+#include "Buildings/UI/SFBuildingStatWidget.h"
+#include "Buildings/UI/SFHealthBarWidget.h"
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
 #include "Components/WidgetComponent.h"
@@ -44,7 +45,7 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	WidgetComponent->SetGenerateOverlapEvents(false);
 	WidgetComponent->SetWindowFocusable(false);
 	WidgetComponent->SetDrawAtDesiredSize(false);
-	WidgetComponent->SetVisibility(false);
+	WidgetComponent->SetVisibility(true);
 	
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 	
@@ -671,11 +672,18 @@ void ASFBaseBuilding::BindComponentDelegates()
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
 	
-	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-	if (!IsValid(HealthComp)) return;
-	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
-	HealthComp->SetHealthBar(HealthComponent->GetCurrentHealth(),
-	HealthComponent->GetCurrentHealth(),HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	if (!IsValid(StatHUD)) return;
+	
+	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);
+	StatHUD->SetHealthBar(
+		HealthComponent->GetCurrentHealth(),
+		HealthComponent->GetCurrentHealth(),
+		HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
+	// 생성자에서 WidgetComponent를 켜 두었으므로, 체력바 줄은 여기서 숨긴다.
+	// 디버그용으로 현재는 모두 true
+	StatHUD->SetHeathBarVisible(false);
+	StatHUD->SetProgressVisible(false);
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
@@ -685,10 +693,9 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
 	
-	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-	if (!IsValid(HealthComp)) return;
-	HealthComponent->OnHealthValueChanged.RemoveDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
-}
+	USFBuildingStatWidget* StatHUD = Cast<USFBuildingStatWidget>(WidgetComponent->GetUserWidgetObject());
+	if (!IsValid(StatHUD)) return;
+	HealthComponent->OnHealthValueChanged.RemoveDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);}
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 {
@@ -1269,12 +1276,11 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 	if (CurrentBuildingState == EBuildingState::Preview) return;
 	if (!IsValid(WidgetComponent)) return;
 
-	UBuildingHealthBar* HealthWidget =
-		Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	
 	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
 
-	if (IsValid(HealthWidget) && IsValid(Combat))
+	if (IsValid(StatHUD) && IsValid(Combat))
 	{
 		// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
 		const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
@@ -1283,18 +1289,30 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 		
 		if (bIsEnemy)
 		{
-			HealthWidget->SetHealthBarColor(FLinearColor::Red);
+			StatHUD->SetHealthBarColor(FLinearColor::Red);
 		}
 		
 	}
 
-	WidgetComponent->SetVisibility(true);
+	StatHUD->SetHeathBarVisible(true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	WidgetComponent->SetVisibility(false);
+	if (!IsValid(WidgetComponent)) return;
+
+	USFBuildingStatWidget* StatHUD = GetStatWidget();
+	if (!IsValid(StatHUD)) return;
+	
+	StatHUD->SetHeathBarVisible(false);
+
 	Super::NotifyActorEndCursorOver();
+}
+
+USFBuildingStatWidget* ASFBaseBuilding::GetStatWidget() const
+{
+	if (!IsValid(WidgetComponent))	return nullptr;
+	return Cast<USFBuildingStatWidget>(WidgetComponent->GetUserWidgetObject());
 }
 #pragma endregion 
 

@@ -1,15 +1,14 @@
-﻿#include "BuildingHealthBar.h"
+﻿#include "SFHealthBarWidget.h"
 #include "Components/ProgressBar.h"
 #include "Kismet/KismetMathLibrary.h"
 
-void UBuildingHealthBar::SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP)
+void USFHealthBarWidget::SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP)
 {
 	const float Ratio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.0f, 1.0f);
 	HealthBar->SetPercent(Ratio);
-	
 }
 
-void UBuildingHealthBar::SetHealthBarColor(const FLinearColor& InColor)
+void USFHealthBarWidget::SetHealthBarColor(const FLinearColor& InColor)
 {
 	if (IsValid(HealthBar))
 	{

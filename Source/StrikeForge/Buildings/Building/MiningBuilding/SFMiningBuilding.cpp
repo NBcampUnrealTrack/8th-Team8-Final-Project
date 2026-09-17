@@ -2,6 +2,7 @@
 #include "ActorComponent/Mining/MiningComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "Buildings/UI/SFBuildingStatWidget.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
 #include "Logging/SFLog.h"
 
@@ -41,12 +42,15 @@ void ASFMiningBuilding::BindDelegateFunction()
 	
 	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(this, &ThisClass::HandleExtractProgressChanged);
 }
 
 void ASFMiningBuilding::UnBindDelegateFunction()
 {
 	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(this, &ThisClass::HandleExtractProgressChanged);
+	
 }
 
 FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
@@ -191,13 +195,29 @@ void ASFMiningBuilding::RefreshMiningState()
 	{
 		MiningComponent->StopMining();
 		ApplyIncomeRate(0.f);
+		
+		// progressbar는 종료하고 다른 UI를 보여한다
+		if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+		{
+			StatHUD->SetProgressVisible(false);
+		}
+		// TODO:: Alert UI Needed
+		
 		return;
 	}
 
+	// 광질 시작
 	MiningComponent->StartMining();
 
 	ApplyIncomeRate(
 		MiningComponent->GetIncomeRatePerSeconds());
+	
+	// 광질이 시작되면 진행도는 보여야한다.
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetProgressRatio(MiningComponent->GetExtractProgressRatio());
+		StatHUD->SetProgressVisible(true);
+	}
 }
 
 //getter
@@ -232,6 +252,14 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	if (!IsValid(SFGameState)) return;
 	
 	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
+}
+
+void ASFMiningBuilding::HandleExtractProgressChanged(EResourceType InType, float InRatio)
+{
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetProgressRatio(InRatio);
+	}
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

@@ -53,6 +53,9 @@ private:
 	void OnResourceDepletedReceived();
 	UFUNCTION()
 	void OnResourceExtractedReceived(EResourceType InType, int32 InAmount);
+	// progress widget bindfunction
+	UFUNCTION()
+	void HandleExtractProgressChanged(EResourceType InType, float InRatio);
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UMiningComponent> MiningComponent;

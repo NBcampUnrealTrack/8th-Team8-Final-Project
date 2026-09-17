@@ -1,5 +1,6 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "Buildings/UI/SFBuildingStatWidget.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
@@ -108,6 +109,32 @@ void ASFProductionBuilding::ResetSpeedMultiplier()
 	ProductComponent->ResetSpeedMultiplier();
 }
 
+void ASFProductionBuilding::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	// 부모 BeginPlay는 로딩 실패 시 Destroy()를 호출한다.
+	if (IsActorBeingDestroyed())	return;
+	if (!IsValid(ProductComponent))	return;
+
+	ProductComponent->OnProductRatioChanged.AddUniqueDynamic(this, &ThisClass::HandleProductRatioChanged);
+	ProductComponent->OnProductLineChanged.AddUniqueDynamic(this, &ThisClass::HandleProductLineChanged);
+
+	// 현재 대기열 상태로 표시 여부를 한 번 맞춘다.
+	HandleProductLineChanged(ProductComponent->GetProductLine());
+}
+
+void ASFProductionBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsValid(ProductComponent))
+	{
+		ProductComponent->OnProductRatioChanged.RemoveDynamic(this, &ThisClass::HandleProductRatioChanged);
+		ProductComponent->OnProductLineChanged.RemoveDynamic(this, &ThisClass::HandleProductLineChanged);
+	}
+	
+	Super::EndPlay(EndPlayReason);
+}
+
 bool ASFProductionBuilding::HasRallyPoint() const
 {
 	return IsValid(ProductComponent) &&
@@ -122,4 +149,20 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 	}
 
 	return ProductComponent->GetAssemblePoint();
+}
+
+void ASFProductionBuilding::HandleProductRatioChanged(float InProductRatio)
+{
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetProgressRatio(InProductRatio);
+	}
+}
+
+void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
+{
+	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
+	{
+		StatHUD->SetProgressVisible(!InProductLine.IsEmpty());
+	}
 }

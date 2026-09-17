@@ -31,6 +31,9 @@
 #include "Engine/HitResult.h"
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Command_Move, "Tutorial.Command.Move");
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced, "Tutorial.Unit.Produced");
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier1, "Tutorial.Unit.Produced.Tier1");
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier2, "Tutorial.Unit.Produced.Tier2");
 
 void USFTutorialSubsystem::Deinitialize()
 {

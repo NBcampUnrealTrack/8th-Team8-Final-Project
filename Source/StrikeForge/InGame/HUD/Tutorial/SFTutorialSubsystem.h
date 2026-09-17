@@ -17,6 +17,9 @@ class UDataTable;
  * 여기에 둔다 — 이름이 바뀌어도 고칠 곳이 한 군데다.
  */
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced);
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier1);
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier2);
 
 class ASFTutorialGhostActor;
 class USFBuildingDefinition;

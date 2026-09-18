@@ -182,7 +182,9 @@ private:
     void MoveCamera(const FInputActionValue& InputValue);
 
     void ZoomCamera(const FInputActionValue& InputValue);
-
+    /** 현재 SpringArm 길이로 오버헤드 UI 배율을 갱신한다. */
+    void PushOverheadUIScale() const;
+    
     void HandleEdgeScroll();
 
     void ApplyCameraMovement(

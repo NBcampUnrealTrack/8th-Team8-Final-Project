@@ -1,6 +1,6 @@
 ﻿#include "CombatTargetComponent.h"
 
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Interfaces/Units/Damagable.h"
 #include "GameFramework/Pawn.h"

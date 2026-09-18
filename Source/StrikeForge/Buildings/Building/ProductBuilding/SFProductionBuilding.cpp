@@ -1,11 +1,14 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
 {
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
+	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
 }
 
 void ASFProductionBuilding::OnTierActivated()
@@ -59,6 +62,7 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 	ProductComponent->AllClearProductLine();
 
 }
+
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
 	TryAddUnitProductLine(InUnitName);
@@ -108,6 +112,49 @@ void ASFProductionBuilding::ResetSpeedMultiplier()
 	ProductComponent->ResetSpeedMultiplier();
 }
 
+void ASFProductionBuilding::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	// 부모 BeginPlay는 로딩 실패 시 Destroy()를 호출한다.
+	if (IsActorBeingDestroyed())	return;
+	if (!IsValid(ProductComponent))	return;
+
+	// 진행도는 건물을 거치지 않고 상태 컴포넌트가 직접 받는다.
+	ProductComponent->OnProductRatioChanged.AddUniqueDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleProgressRatio);
+	ProductComponent->OnProductLineChanged.AddUniqueDynamic(this, &ThisClass::HandleProductLineChanged);
+
+	// 현재 대기열 상태로 표시 여부를 한 번 맞춘다.
+	HandleProductLineChanged(ProductComponent->GetProductLine());
+}
+
+void ASFProductionBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsValid(ProductComponent))
+	{
+		ProductComponent->OnProductRatioChanged.RemoveDynamic(
+			StatusComponent, &USFOverheadStatusComponent::HandleProgressRatio);
+		ProductComponent->OnProductLineChanged.RemoveDynamic(this, &ThisClass::HandleProductLineChanged);
+	}
+	
+	Super::EndPlay(EndPlayReason);
+}
+
+void ASFProductionBuilding::OnBuildingDefinitionLoaded()
+{
+	Super::OnBuildingDefinitionLoaded();
+
+	const USFProductionBuildingDefinition* Definition =
+		Cast<USFProductionBuildingDefinition>(GetBuildingDefinition());
+
+	if (!IsValid(Definition))	return;
+
+	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
+
+	StatusComponent->SetProgressColor(SFOverheadUIColors::Production);
+}
+
 bool ASFProductionBuilding::HasRallyPoint() const
 {
 	return IsValid(ProductComponent) &&
@@ -122,4 +169,9 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 	}
 
 	return ProductComponent->GetAssemblePoint();
+}
+
+void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
+{
+	ProgressBarUI->SetVisible(!InProductLine.IsEmpty());
 }

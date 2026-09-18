@@ -1,13 +1,16 @@
 ﻿#include "SFMiningBuilding.h"
 #include "ActorComponent/Mining/MiningComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
 {
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
+	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
 }
 
 void ASFMiningBuilding::BeginPlay()
@@ -36,17 +39,21 @@ void ASFMiningBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ASFMiningBuilding::BindDelegateFunction()
 {
-	//need to connect widgetcomponent
-	//MiningComponent->OnExtractProgressRatioChanged
 	
 	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	// 진행도는 건물을 거치지 않고 상태 컴포넌트가 직접 받는다.
+	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
 }
 
 void ASFMiningBuilding::UnBindDelegateFunction()
 {
 	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
+	
 }
 
 FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
@@ -88,6 +95,8 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
+	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
+	SetProgressColorByResourceType(GetMineResourceType());
 }
 
 void ASFMiningBuilding::OnTierActivated()
@@ -127,6 +136,27 @@ void ASFMiningBuilding::OnTierDeactivated()
 	Super::OnTierDeactivated();
 	
 	RefreshMiningState();
+}
+
+void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceType)
+{
+	switch (InResourceType)
+	{
+	case EResourceType::Ether:
+		{
+			StatusComponent->SetProgressColor(SFOverheadUIColors::Ether);
+			break;
+		}
+	case EResourceType::Mineral:
+		{
+			StatusComponent->SetProgressColor(SFOverheadUIColors::Mineral);
+			break;
+		}
+	default:
+		{
+			break;
+		}
+	}
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const
@@ -191,13 +221,22 @@ void ASFMiningBuilding::RefreshMiningState()
 	{
 		MiningComponent->StopMining();
 		ApplyIncomeRate(0.f);
+		
+		// progressbar는 종료하고 다른 UI를 보여한다
+		ProgressBarUI->SetVisible(false);
+		// TODO:: Alert UI Needed
+		
 		return;
 	}
 
+	// 광질 시작
 	MiningComponent->StartMining();
 
 	ApplyIncomeRate(
 		MiningComponent->GetIncomeRatePerSeconds());
+
+	
+	ProgressBarUI->SetVisible(true);
 }
 
 //getter

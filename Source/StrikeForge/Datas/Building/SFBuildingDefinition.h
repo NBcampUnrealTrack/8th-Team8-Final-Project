@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "SFBuildingType.h"
 #include "Engine/DataAsset.h"
+#include "OverHeadUI/SFOverheadUISettings.h"
 #include "SFBuildingDefinition.generated.h"
 
 class ASFBaseBuilding;
@@ -82,6 +83,10 @@ public:
     // * 건물이 점유하는 Grid 크기.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "1"))
     FIntPoint GridSize = FIntPoint(1, 1);
+
+    /** 건물 위 체력바 배치. 앵커는 메시 중심에서 계산되므로 여기에 없다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
+    FSFOverheadUISettings HealthBarSettings;
     
     // 건물 배치 Preview에서 사용할 Material.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement")

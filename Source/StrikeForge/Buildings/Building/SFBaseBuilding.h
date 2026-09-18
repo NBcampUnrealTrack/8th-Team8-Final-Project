@@ -12,10 +12,11 @@ class UPlayVFXComponent;
 class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
+class USFOverheadStatusComponent;
+class USFOverheadUIComponent;
 class UCombatTargetComponent;
 class USFBuffComponent;
 class UNiagaraSystem;
-class UWidgetComponent;
 
 class USFBuildingDefinition;
 // gc
@@ -147,7 +148,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
-	
+
 	UFUNCTION(BlueprintPure, Category = "SF|Building|Definition")
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
@@ -173,7 +174,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
-	virtual void OnBuildingDefinitionLoaded() {}
+	virtual void OnBuildingDefinitionLoaded();
 	// APPLY BUILDING's ABILITY
 	/**
 	 * CurrentTier가 확정된 뒤 호출된다.
@@ -198,7 +199,7 @@ protected:
 	
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
-	
+
 	const FSFBuildingTierData* GetTierInfo(int32 TierIndex) const;
 	const FSFBuildingTierData* GetCurrentTierInfo() const;
 	// React Delegate Function
@@ -295,10 +296,21 @@ private:
 	
 protected:
 	// components
+	// Stat
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
+	// 신규
+	/** 이 액터에 달린 모든 오버헤드 UI. BeginPlay에서 한 번 수집한다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USFOverheadUIComponent>> OverheadUIComponents;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<UWidgetComponent> WidgetComponent;
+	TObjectPtr<USFOverheadUIComponent> HealthBarUI;
+
+	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
+	// Construct Progress
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Mesh")
 	TObjectPtr<UProgressComponent> ProgressComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Combat")
@@ -370,7 +382,6 @@ protected:
 	void StopHitReaction();
 	
 	FVector HitLocalDirection = FVector::ForwardVector;
-
 #pragma endregion 
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()

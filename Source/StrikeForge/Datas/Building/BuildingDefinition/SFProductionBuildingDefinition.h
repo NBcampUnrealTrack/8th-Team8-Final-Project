@@ -30,4 +30,7 @@ public:
 	/** 배열 인덱스 0이 게임의 1티어다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tiers")
 	TArray<FSFProductionBuildingTierData> Tiers;
+	/** 건물 아래에 표시되는 생산 진행도 바 배치. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
+	FSFOverheadUISettings ProgressBarSettings;
 };

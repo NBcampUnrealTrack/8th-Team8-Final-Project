@@ -2,18 +2,18 @@
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Logging/SFLog.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Progress/ProgressComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
-#include "Buildings/UI/BuildingHealthBar.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
-#include "Components/WidgetComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
@@ -22,33 +22,26 @@
 #include "Engine/GameInstance.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-
+	// Stat
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
-	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
-	//CombatTargetComponent->SetTargetingEnabled(false);
-
+	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
-	
-	WidgetComponent->SetupAttachment(GetRootComponent());
-	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
-	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-
-	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WidgetComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	WidgetComponent->SetGenerateOverlapEvents(false);
-	WidgetComponent->SetWindowFocusable(false);
-	WidgetComponent->SetDrawAtDesiredSize(false);
-	WidgetComponent->SetVisibility(false);
-	
+	// OverHead UI	
+	HealthBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("HealthBarUI"));
+		
+	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
-	
+	// effects	
 	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
+	// 머리 위 UI가 볼 상태를 모으는 곳. 값의 출처를 여기서 정규화한다.
+	StatusComponent = CreateDefaultSubobject<USFOverheadStatusComponent>(TEXT("OverheadStatus"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -609,34 +602,6 @@ UStaticMesh* ASFBaseBuilding::ResolveMesh() const
 	}
 }
 
-// UStaticMesh* ASFBaseBuilding::ResolveDamageMesh(const FBuildingTierRuntimeAssets& Assets) const
-// {
-// 	const FSFBuildingTierData* Tier =
-// 	GetTierInfo(Assets.TierIndex);
-//
-// 	if (!Tier || !IsValid(HealthComponent))
-// 	{
-// 		return Assets.CompletedMesh;
-// 	}
-
-	// const int32 DamageIndex =
-	// 	Tier->Visual.FindDamageStageIndex(
-	// 		HealthComponent->GetHealthPercent());
-
-	// if (Assets.DamageMeshes.IsValidIndex(DamageIndex))
-	// {
-	// 	UStaticMesh* DamageMesh =
-	// 		Assets.DamageMeshes[DamageIndex];
-	//
-	// 	if (IsValid(DamageMesh))
-	// 	{
-	// 		return DamageMesh;
-	// 	}
-	// }
-
-// 	return Assets.CompletedMesh;
-// }
-
 const FSFBuildingTierData* ASFBaseBuilding::GetCurrentTierInfo() const
 {
 	return GetTierInfo(CurrentTier);
@@ -671,11 +636,7 @@ void ASFBaseBuilding::BindComponentDelegates()
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
 	
-	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-	if (!IsValid(HealthComp)) return;
-	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
-	HealthComp->SetHealthBar(HealthComponent->GetCurrentHealth(),
-	HealthComponent->GetCurrentHealth(),HealthComponent->GetMaxHealth()); // 처음초기화는 current로만해도됨
+	StatusComponent->BindHealth(HealthComponent);
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
@@ -684,10 +645,8 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	ProgressComponent->OnCompletedProgress.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
-	
-	UBuildingHealthBar* HealthComp = Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-	if (!IsValid(HealthComp)) return;
-	HealthComponent->OnHealthValueChanged.RemoveDynamic(HealthComp, &UBuildingHealthBar::SetHealthBar);
+
+	StatusComponent->UnbindHealth(HealthComponent);
 }
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
@@ -698,6 +657,12 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 	}
 
 	CurrentBuildingState = InState;
+	
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
+	{
+		Overhead->SetSuppressed(InState == EBuildingState::Preview);
+	}
+		
 	ApplyBuildingState(InState);
 }
 
@@ -849,6 +814,14 @@ bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
+		
+	GetComponents(OverheadUIComponents);
+
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
+	{
+		Overhead->Initialize(StaticMeshComponent);
+	}
+
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
@@ -920,6 +893,26 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASFBaseBuilding::OnBuildingDefinitionLoaded()
+{
+	if (IsValid(BuildingDefinition))
+	{
+		HealthBarUI->ApplySettings(BuildingDefinition->HealthBarSettings);
+	}
+
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!IsValid(Combat))	return;
+
+	// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
+	const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
+		GetTeamIndex(), Combat->GetLocalPlayerTeam());
+
+	// 색도 상태의 일부다. 위젯을 직접 만지지 않는다.
+	StatusComponent->SetHealthColor(bIsEnemy
+		? SFOverheadUIColors::EnemyHealth
+		: SFOverheadUIColors::AllyHealth);
 }
 
 bool ASFBaseBuilding::CacheLoadedDefinitionData()
@@ -1249,6 +1242,12 @@ void ASFBaseBuilding::SetBoxExtent()
 	
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
+	
+	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
+	{
+		Overhead->RefreshTransform();
+	}
 }
 
 #pragma region Getter
@@ -1257,8 +1256,6 @@ FBoxSphereBounds ASFBaseBuilding::GetBuildBounds() const
 	return StaticMeshComponent->CalcBounds(
 		StaticMeshComponent->GetRelativeTransform());
 }
-
-
 #pragma endregion Getter
 
 #pragma region Widget
@@ -1267,33 +1264,14 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 	Super::NotifyActorBeginCursorOver();
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
-	if (!IsValid(WidgetComponent)) return;
 
-	UBuildingHealthBar* HealthWidget =
-		Cast<UBuildingHealthBar>(WidgetComponent->GetUserWidgetObject());
-
-	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
-
-	if (IsValid(HealthWidget) && IsValid(Combat))
-	{
-		// GetTeamIndex()는 내부에서 CombatTargetComponent의 팀을 읽습니다.
-		const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
-			GetTeamIndex(),	Combat->GetLocalPlayerTeam()
-		);
-		
-		if (bIsEnemy)
-		{
-			HealthWidget->SetHealthBarColor(FLinearColor::Red);
-		}
-		
-	}
-
-	WidgetComponent->SetVisibility(true);
+	HealthBarUI->SetVisible(true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	WidgetComponent->SetVisibility(false);
+	HealthBarUI->SetVisible(false);
+	
 	Super::NotifyActorEndCursorOver();
 }
 #pragma endregion 
@@ -1556,8 +1534,7 @@ void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefiniti
 
 	if (!bSuccess ||
 		InDefinition != BuildingDefinition ||
-		CurrentBuildingState !=
-			EBuildingState::Completed ||
+		CurrentBuildingState != EBuildingState::Completed ||
 		PendingTier != INDEX_NONE)
 	{
 		return;

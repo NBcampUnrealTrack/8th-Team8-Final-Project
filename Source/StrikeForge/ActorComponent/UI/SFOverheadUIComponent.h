@@ -2,36 +2,21 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
+#include "Datas/Building/OverHeadUI/SFOverheadUISettings.h"
 #include "SFOverheadUIComponent.generated.h"
 
 class UMeshComponent;
-class USFBuildingStatWidget;
+class USFOverheadBarWidget;
+class UUserWidget;
 class UWidgetComponent;
 
-/** 소유자가 넘겨주는 표시 설정. Definition이든 BP 기본값이든 출처는 상관없다. */
-USTRUCT(BlueprintType)
-struct STRIKEFORGE_API FSFOverheadUISettings
-{
-	GENERATED_BODY()
-
-	/** 앵커 높이. 액터 로컬 Z. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	float AnchorZ = 200.f;
-
-	/** 바 가로 길이 = 메시 폭 × 이 값. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead", meta = (ClampMin = "0.01"))
-	float WidthRatio = 0.7f;
-
-	/** 가로 길이의 하한(X)·상한(Y). 픽셀. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	FVector2D WidthRange = FVector2D(50.f, 200.f);
-};
 
 /**
- * 액터 머리 위 체력·진행도 표시를 담당한다.
+ * 액터 머리 위(또는 발밑)에 위젯 하나를 띄운다.
  *
- * 소유자는 "언제 보여줄지"만 알려준다.
- * 위치·크기 계산, 표시 조건 합성, 카메라 줌 반영은 전부 이 컴포넌트가 한다.
+ * 위젯의 내용은 모른다. 배치·가시성·줌 반영만 담당한다.
+ * 체력바와 진행도 바처럼 위치가 달라야 하면 컴포넌트를 두 개 단다.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API USFOverheadUIComponent : public UActorComponent
@@ -41,33 +26,35 @@ class STRIKEFORGE_API USFOverheadUIComponent : public UActorComponent
 public:
 	USFOverheadUIComponent();
 
-	/** 소유자가 BeginPlay에서 한 번 호출한다. */
-	void Initialize(UWidgetComponent* InWidgetComponent, UMeshComponent* InMeshComponent);
-
-	/** 표시 설정을 적용하고 위치·크기를 다시 계산한다. */
+	/** 소유자가 BeginPlay에서 한 번 호출한다. 크기 계산에 쓸 메시를 넘긴다. */
+	void Initialize(UMeshComponent* InMeshComponent);
+	
 	void ApplySettings(const FSFOverheadUISettings& InSettings);
 
 	/** 메시가 바뀌었을 때 호출한다. */
 	void RefreshTransform();
 
-	// ── 표시 조건 ──
-	void SetHovered(bool bInHovered);
-	void SetProgressActive(bool bInActive);
-	/** 프리뷰 고스트처럼 아예 표시하면 안 되는 상태. */
+	/** 이 바를 보여줄지. 조건 해석은 소유자가 한다. */
+	void SetVisible(bool bInVisible);
+
+	/** 프리뷰·사망처럼 조건과 무관하게 막아야 하는 상태. */
 	void SetSuppressed(bool bInSuppressed);
-	/** 켜면 오버나 작업 여부와 무관하게 항상 보인다. 유닛처럼 상시 표시가 필요한 대상용. */
-	void SetAlwaysVisible(bool bInAlways);
+
+	UUserWidget* GetUserWidget() const;
+
+	template<typename T>
+	T* GetWidget() const
+	{
+		return Cast<T>(GetUserWidget());
+	}
+
+	/** 이 바가 띄울 위젯. 비어 있으면 아무것도 만들지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
+	TSubclassOf<USFOverheadBarWidget> WidgetClass;
 	
-	// ── 값 전달 ──
-	void SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP);
-	void SetHealthBarColor(const FLinearColor& InColor);
-	void SetProgressRatio(float InRatio);
-	void SetProgressBarColor(const FLinearColor& InColor);
-
-	USFBuildingStatWidget* GetWidget() const;
-
 protected:
 	virtual void BeginPlay() override;
+	void CreateWidgetComponent();
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -75,34 +62,35 @@ private:
 	void ApplyUIScale();
 	void HandleUIScaleChanged(float InScale);
 
+	/** 상태 컴포넌트의 신호를 받아 위젯에 넘긴다. 위젯 타입은 알 필요가 없다. */
+	void HandleStatusChanged(const FSFOverheadStatus& InStatus);
+
+	/** 체크하면 소유자가 켜지 않아도 항상 보인다. 유닛 체력바처럼 상시 표시용. */
+	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
+	bool bAlwaysVisible = false;
+
+	/**
+	 * 기본 배치값. 소유자가 ApplySettings()를 호출하면 덮어쓴다.
+	 * 건물은 Definition이 덮어쓰므로 여기 값은 쓰이지 않는다.
+	 * DA가 없는 유닛 등이 이 값을 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
+	FSFOverheadUISettings Settings;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> WidgetComponent;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMeshComponent> MeshComponent;
 
-	/** 매번 Cast하지 않도록 캐시한다. */
-	mutable TWeakObjectPtr<USFBuildingStatWidget> CachedWidget;
-	
-	/** 소유자가 ApplySettings()로 덮어쓰지 않으면 이 값을 쓴다. */
-	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
-	FSFOverheadUISettings Settings;
+	mutable TWeakObjectPtr<UUserWidget> CachedWidget;
 
-	/** 체크하면 마우스 오버 없이도 항상 표시한다. */
-	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
-	bool bAlwaysVisible = false;
-
-	bool bHovered = false;
-	bool bProgressActive = false;
+	bool bVisible = false;
 	bool bSuppressed = false;
 
+	/** 메시 높이에서 계산한 화면 세로 오프셋. RefreshTransform()이 갱신한다. */
+	float ComputedScreenOffsetY = 0.f;
+
 	FDelegateHandle UIScaleHandle;
+	FDelegateHandle StatusHandle;
 };
-
-inline void USFOverheadUIComponent::SetAlwaysVisible(bool bInAlways)
-{
-	if (bAlwaysVisible == bInAlways)	return;
-
-	bAlwaysVisible = bInAlways;
-	RefreshVisibility();
-}

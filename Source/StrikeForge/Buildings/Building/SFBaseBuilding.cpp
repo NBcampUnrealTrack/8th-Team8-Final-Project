@@ -11,11 +11,9 @@
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
 #include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
-#include "Buildings/UI/SFBuildingStatWidget.h"
-#include "Buildings/UI/SFHealthBarWidget.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/TimelineComponent.h"
-#include "Components/WidgetComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
@@ -29,29 +27,21 @@
 ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-
+	// Stat
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
-	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>("WidgetComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
-	//CombatTargetComponent->SetTargetingEnabled(false);
-
+	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
-	
-	WidgetComponent->SetupAttachment(GetRootComponent());
-	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, 0.f));
-	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-
-	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WidgetComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	WidgetComponent->SetGenerateOverlapEvents(false);
-	WidgetComponent->SetWindowFocusable(false);
-	WidgetComponent->SetDrawAtDesiredSize(false);
-	WidgetComponent->SetVisibility(false);
-	
+	// OverHead UI	
+	HealthBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("HealthBarUI"));
+		
+	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
-	OverheadUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("OverheadUI"));
+	// effects	
 	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
+	// 머리 위 UI가 볼 상태를 모으는 곳. 값의 출처를 여기서 정규화한다.
+	StatusComponent = CreateDefaultSubobject<USFOverheadStatusComponent>(TEXT("OverheadStatus"));
 }
 
 void ASFBaseBuilding::RefreshVisual()
@@ -646,18 +636,7 @@ void ASFBaseBuilding::BindComponentDelegates()
 		HealthComponent->OnHealthIsZero.AddDynamic(this, &ThisClass::HandleHealthZero);
 	}
 	
-	USFBuildingStatWidget* StatHUD = OverheadUI->GetWidget();
-	ensureMsgf(IsValid(StatHUD),
-		TEXT("[%s] WidgetComponent의 Widget Class가 USFBuildingStatWidget이 아닙니다."), *GetName());
-	if (!IsValid(StatHUD)) return;
-
-	HealthComponent->OnHealthValueChanged.AddUniqueDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);
-
-	OverheadUI->SetHealthBar(
-		HealthComponent->GetCurrentHealth(),
-		HealthComponent->GetCurrentHealth(),
-		HealthComponent->GetMaxHealth());
-	
+	StatusComponent->BindHealth(HealthComponent);
 }
 
 void ASFBaseBuilding::UnbindComponentDelegates()
@@ -666,11 +645,8 @@ void ASFBaseBuilding::UnbindComponentDelegates()
 	ProgressComponent->OnCompletedProgress.RemoveDynamic(this, &ThisClass::HandleCompleteConstruction);
 	HealthComponent->OnHealthValueChanged.RemoveDynamic(this, &ThisClass::HandleHealthChanged);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ThisClass::HandleHealthZero);
-	
-	USFBuildingStatWidget* StatHUD = OverheadUI->GetWidget();
-	if (!IsValid(StatHUD)) return;
 
-	HealthComponent->OnHealthValueChanged.RemoveDynamic(StatHUD, &USFBuildingStatWidget::SetHealthBar);
+	StatusComponent->UnbindHealth(HealthComponent);
 }
 
 void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
@@ -682,11 +658,11 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 
 	CurrentBuildingState = InState;
 	
-	if (IsValid(OverheadUI))
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
 	{
-		OverheadUI->SetSuppressed(InState == EBuildingState::Preview);
+		Overhead->SetSuppressed(InState == EBuildingState::Preview);
 	}
-	
+		
 	ApplyBuildingState(InState);
 }
 
@@ -838,9 +814,14 @@ bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	OverheadUI->Initialize(WidgetComponent, StaticMeshComponent);
-	
+		
+	GetComponents(OverheadUIComponents);
+
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
+	{
+		Overhead->Initialize(StaticMeshComponent);
+	}
+
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
 	// try take info at data table
@@ -918,12 +899,7 @@ void ASFBaseBuilding::OnBuildingDefinitionLoaded()
 {
 	if (IsValid(BuildingDefinition))
 	{
-		FSFOverheadUISettings OverheadSettings;
-		OverheadSettings.AnchorZ    = BuildingDefinition->AnchorZ;
-		OverheadSettings.WidthRatio = BuildingDefinition->WidgetWidthRatio;
-		OverheadSettings.WidthRange = BuildingDefinition->WidgetWidthRange;
-
-		OverheadUI->ApplySettings(OverheadSettings);
+		HealthBarUI->ApplySettings(BuildingDefinition->HealthBarSettings);
 	}
 
 	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
@@ -933,10 +909,10 @@ void ASFBaseBuilding::OnBuildingDefinitionLoaded()
 	const bool bIsEnemy = USFCombatSubsystem::IsHostileTeam(
 		GetTeamIndex(), Combat->GetLocalPlayerTeam());
 
-	if (bIsEnemy)
-	{
-		OverheadUI->SetHealthBarColor(FLinearColor::Red);
-	}
+	// 색도 상태의 일부다. 위젯을 직접 만지지 않는다.
+	StatusComponent->SetHealthColor(bIsEnemy
+		? SFOverheadUIColors::EnemyHealth
+		: SFOverheadUIColors::AllyHealth);
 }
 
 bool ASFBaseBuilding::CacheLoadedDefinitionData()
@@ -1268,7 +1244,10 @@ void ASFBaseBuilding::SetBoxExtent()
 	BoxComponent->SetRelativeLocation(CustomOrigin);
 	
 	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
-	OverheadUI->RefreshTransform();
+	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
+	{
+		Overhead->RefreshTransform();
+	}
 }
 
 #pragma region Getter
@@ -1286,12 +1265,12 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
 
-	OverheadUI->SetHovered(true);
+	HealthBarUI->SetVisible(true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	OverheadUI->SetHovered(false);
+	HealthBarUI->SetVisible(false);
 	
 	Super::NotifyActorEndCursorOver();
 }

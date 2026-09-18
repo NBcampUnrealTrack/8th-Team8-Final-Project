@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "SFBuildingType.h"
 #include "Engine/DataAsset.h"
+#include "OverHeadUI/SFOverheadUISettings.h"
 #include "SFBuildingDefinition.generated.h"
 
 class ASFBaseBuilding;
@@ -82,20 +83,10 @@ public:
     // * 건물이 점유하는 Grid 크기.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "1"))
     FIntPoint GridSize = FIntPoint(1, 1);
-    /** 건물 머리 위 바의 앵커 높이. 액터 로컬 Z. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
-    float AnchorZ = 200.f;
 
-    /** 바 가로 길이 = 메시 월드 폭 × 이 값.
-         * 단위는 "월드 1cm당 픽셀"이다. 0.35면 폭 400cm 건물이 140픽셀이 된다.
-         */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead",
-        meta = (ClampMin = "0.01"))
-    float WidgetWidthRatio = 0.7f;
-
-    /** 계산된 가로 길이의 하한(X)과 상한(Y). 픽셀 단위. */
+    /** 건물 위 체력바 배치. 앵커는 메시 중심에서 계산되므로 여기에 없다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
-    FVector2D WidgetWidthRange = FVector2D(150.f, 400.f);
+    FSFOverheadUISettings HealthBarSettings;
     
     // 건물 배치 Preview에서 사용할 Material.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement")

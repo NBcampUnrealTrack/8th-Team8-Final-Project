@@ -8,16 +8,15 @@
 #include "Interfaces/Units/Damagable.h"
 #include "SFBaseBuilding.generated.h"
 
-class USFBuildingStatWidget;
 class UPlayVFXComponent;
 class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
+class USFOverheadStatusComponent;
 class USFOverheadUIComponent;
 class UCombatTargetComponent;
 class USFBuffComponent;
 class UNiagaraSystem;
-class UWidgetComponent;
 
 class USFBuildingDefinition;
 // gc
@@ -297,13 +296,23 @@ private:
 	
 protected:
 	// components
+	// Stat
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<UWidgetComponent> WidgetComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> OverheadUI;
+	// 신규
+	/** 이 액터에 달린 모든 오버헤드 UI. BeginPlay에서 한 번 수집한다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USFOverheadUIComponent>> OverheadUIComponents;
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadUIComponent> HealthBarUI;
+
+	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadUIComponent> ProgressBarUI;
+	// Construct Progress
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Mesh")
 	TObjectPtr<UProgressComponent> ProgressComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Combat")

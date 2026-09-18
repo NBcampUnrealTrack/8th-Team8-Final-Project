@@ -44,6 +44,7 @@ public:
 	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
 	void ApplySpeedBuff(float InMultiflyValue) const;
 	void ResetSpeedMultiplier();
+	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -59,8 +60,6 @@ protected:
 
 	void TryAddUnitProductLine(FName InUnitName);
 
-	UFUNCTION()
-	void HandleProductRatioChanged(float InProductRatio);
 	UFUNCTION()
 	void HandleProductLineChanged(TArray<FProductInfo> InProductLine);
 	

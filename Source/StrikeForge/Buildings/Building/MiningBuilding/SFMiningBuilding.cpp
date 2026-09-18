@@ -3,13 +3,14 @@
 #include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
-#include "Buildings/UI/SFBuildingStatWidget.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
 {
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
+	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
 }
 
 void ASFMiningBuilding::BeginPlay()
@@ -38,19 +39,20 @@ void ASFMiningBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ASFMiningBuilding::BindDelegateFunction()
 {
-	//need to connect widgetcomponent
-	//MiningComponent->OnExtractProgressRatioChanged
 	
 	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
-	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(this, &ThisClass::HandleExtractProgressChanged);
+	// 진행도는 건물을 거치지 않고 상태 컴포넌트가 직접 받는다.
+	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
 }
 
 void ASFMiningBuilding::UnBindDelegateFunction()
 {
 	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
-	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(this, &ThisClass::HandleExtractProgressChanged);
+	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
 	
 }
 
@@ -93,7 +95,7 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
-	
+	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
 	SetProgressColorByResourceType(GetMineResourceType());
 }
 
@@ -142,12 +144,12 @@ void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceT
 	{
 	case EResourceType::Ether:
 		{
-			OverheadUI->SetProgressBarColor(FLinearColor::Blue);
+			StatusComponent->SetProgressColor(SFOverheadUIColors::Ether);
 			break;
 		}
 	case EResourceType::Mineral:
 		{
-			OverheadUI->SetProgressBarColor(FLinearColor::Yellow);
+			StatusComponent->SetProgressColor(SFOverheadUIColors::Mineral);
 			break;
 		}
 	default:
@@ -221,7 +223,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		ApplyIncomeRate(0.f);
 		
 		// progressbar는 종료하고 다른 UI를 보여한다
-		OverheadUI->SetProgressActive(false);
+		ProgressBarUI->SetVisible(false);
 		// TODO:: Alert UI Needed
 		
 		return;
@@ -232,9 +234,9 @@ void ASFMiningBuilding::RefreshMiningState()
 
 	ApplyIncomeRate(
 		MiningComponent->GetIncomeRatePerSeconds());
+
 	
-	OverheadUI->SetProgressRatio(MiningComponent->GetExtractProgressRatio());
-	OverheadUI->SetProgressActive(true);
+	ProgressBarUI->SetVisible(true);
 }
 
 //getter
@@ -269,11 +271,6 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	if (!IsValid(SFGameState)) return;
 	
 	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
-}
-
-void ASFMiningBuilding::HandleExtractProgressChanged(EResourceType InType, float InRatio)
-{
-	OverheadUI->SetProgressRatio(InRatio);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

@@ -42,7 +42,6 @@ public:
 	int32 GetExtractAmount() const;
 	int32 GetResourceAmount() const;
 	float GetMiningProgressRatio() const;
-	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -54,9 +53,6 @@ private:
 	void OnResourceDepletedReceived();
 	UFUNCTION()
 	void OnResourceExtractedReceived(EResourceType InType, int32 InAmount);
-	// progress widget bindfunction
-	UFUNCTION()
-	void HandleExtractProgressChanged(EResourceType InType, float InRatio);
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UMiningComponent> MiningComponent;

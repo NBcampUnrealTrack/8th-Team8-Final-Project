@@ -1,17 +1,21 @@
 ﻿#include "SFHealthBarWidget.h"
+
 #include "Components/ProgressBar.h"
-#include "Kismet/KismetMathLibrary.h"
 
-void USFHealthBarWidget::SetHealthBar(float InBeforeHP, float InCurrentHP, float InMaxHP)
+void USFHealthBarWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
 {
-	const float Ratio = FMath::Clamp(UKismetMathLibrary::SafeDivide(InCurrentHP, InMaxHP), 0.0f, 1.0f);
-	HealthBar->SetPercent(Ratio);
-}
+	if (!IsValid(HealthBar))	return;
 
-void USFHealthBarWidget::SetHealthBarColor(const FLinearColor& InColor)
-{
-	if (IsValid(HealthBar))
+	// 상태는 어느 필드가 바뀌어도 통째로 온다. 자기가 쓰는 값만 비교해 걸러낸다.
+	if (!FMath::IsNearlyEqual(LastRatio, InStatus.HealthRatio, 0.005f))
 	{
-		HealthBar->SetFillColorAndOpacity(InColor);
+		LastRatio = InStatus.HealthRatio;
+		HealthBar->SetPercent(InStatus.HealthRatio);
+	}
+
+	if (!LastColor.Equals(InStatus.HealthColor))
+	{
+		LastColor = InStatus.HealthColor;
+		HealthBar->SetFillColorAndOpacity(InStatus.HealthColor);
 	}
 }

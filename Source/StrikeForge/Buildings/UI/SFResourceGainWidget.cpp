@@ -7,21 +7,42 @@
 
 void USFResourceGainWidget::Play(EResourceType InResourceType, int32 InAmount)
 {
+	// 아이콘과 테두리 색이 한 자리에 있으니 조회도 한 번이면 된다.
+	const FSFResourceGainVisual* Visual = ResourceVisuals.Find(InResourceType);
+
 	if (IsValid(AmountText))
 	{
 		AmountText->SetText(FText::FromString(FString::Printf(TEXT("+%d"), InAmount)));
 
 		// 진행도 바와 같은 색을 쓴다. 같은 자원이라는 게 색으로 읽혀야 한다.
-		//AmountText->SetColorAndOpacity(
-		//	FSlateColor(SFOverheadUIColors::FromResourceType(InResourceType)));
+		AmountText->SetColorAndOpacity(
+			FSlateColor(SFOverheadUIColors::FromResourceType(InResourceType)));
+
+		/*
+		 * 테두리는 색만 바꾼다.
+		 *
+		 * 폰트 정보를 통째로 받아 OutlineColor 한 필드만 고쳐 되돌려준다.
+		 * 그래야 WBP에 지정한 Outline Size와 폰트, 머티리얼이 그대로 남는다.
+		 */
+		FSlateFontInfo FontInfo = AmountText->GetFont();
+
+		if (!bDefaultOutlineCached)
+		{
+			// 맵에 없는 자원을 만났을 때 돌아갈 자리. 덮어쓰기 전에 잡아둬야 한다.
+			DefaultOutlineColor = FontInfo.OutlineSettings.OutlineColor;
+			bDefaultOutlineCached = true;
+		}
+
+		FontInfo.OutlineSettings.OutlineColor = Visual
+			? Visual->OutlineColor
+			: DefaultOutlineColor;
+
+		AmountText->SetFont(FontInfo);
 	}
 
-	if (IsValid(ResourceIcon))
+	if (IsValid(ResourceIcon) && Visual && IsValid(Visual->Icon))
 	{
-		if (const TObjectPtr<UTexture2D>* Found = ResourceIcons.Find(InResourceType))
-		{
-			ResourceIcon->SetBrushFromTexture(Found->Get());
-		}
+		ResourceIcon->SetBrushFromTexture(Visual->Icon);
 	}
 
 	if (!IsValid(GainAnim))

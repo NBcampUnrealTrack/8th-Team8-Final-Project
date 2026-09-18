@@ -34,9 +34,9 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	// OverHead UI	
-	HealthBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("HealthBarUI"));
+	OverheadUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("OverheadUI"));
 	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
-	HealthBarUI->SetupAttachment(GetRootComponent());
+	OverheadUI->SetupAttachment(GetRootComponent());
 		
 	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
@@ -660,10 +660,7 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 
 	CurrentBuildingState = InState;
 	
-	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
-	{
-		Overhead->SetSuppressed(InState == EBuildingState::Preview);
-	}
+	OverheadUI->SetSuppressed(InState == EBuildingState::Preview);
 		
 	ApplyBuildingState(InState);
 }
@@ -817,12 +814,7 @@ void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
 		
-	GetComponents(OverheadUIComponents);
-
-	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
-	{
-		Overhead->Initialize(StaticMeshComponent);
-	}
+	OverheadUI->Initialize(StaticMeshComponent);
 
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
@@ -901,7 +893,7 @@ void ASFBaseBuilding::OnBuildingDefinitionLoaded()
 {
 	if (IsValid(BuildingDefinition))
 	{
-		HealthBarUI->ApplySettings(BuildingDefinition->HealthBarSettings);
+		OverheadUI->ApplySettings(BuildingDefinition->OverheadUISettings);
 	}
 
 	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
@@ -1246,10 +1238,7 @@ void ASFBaseBuilding::SetBoxExtent()
 	BoxComponent->SetRelativeLocation(CustomOrigin);
 	
 	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
-	for (USFOverheadUIComponent* Overhead : OverheadUIComponents)
-	{
-		Overhead->RefreshTransform();
-	}
+	OverheadUI->RefreshTransform();
 }
 
 #pragma region Getter
@@ -1267,12 +1256,12 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
 
-	HealthBarUI->SetVisible(true);
+	OverheadUI->SetElementVisible(ESFOverheadElement::Health, true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	HealthBarUI->SetVisible(false);
+	OverheadUI->SetElementVisible(ESFOverheadElement::Health, false);
 	
 	Super::NotifyActorEndCursorOver();
 }

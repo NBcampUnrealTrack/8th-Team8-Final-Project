@@ -10,9 +10,6 @@
 ASFMiningBuilding::ASFMiningBuilding()
 {
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
-	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
-	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
-	ProgressBarUI->SetupAttachment(GetRootComponent());
 }
 
 void ASFMiningBuilding::BeginPlay()
@@ -97,7 +94,6 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
-	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
 	SetProgressColorByResourceType(GetMineResourceType());
 }
 
@@ -225,7 +221,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		ApplyIncomeRate(0.f);
 		
 		// progressbar는 종료하고 다른 UI를 보여한다
-		ProgressBarUI->SetVisible(false);
+		OverheadUI->SetElementVisible(ESFOverheadElement::Progress, false);
 		// TODO:: Alert UI Needed
 		
 		return;
@@ -238,7 +234,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		MiningComponent->GetIncomeRatePerSeconds());
 
 	
-	ProgressBarUI->SetVisible(true);
+	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, true);
 }
 
 //getter

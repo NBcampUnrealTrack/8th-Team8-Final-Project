@@ -8,9 +8,6 @@ ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectIni
 	:Super(ObjectInitializer)
 {
 	ProductComponent = CreateDefaultSubobject<UProductComponent>(TEXT("ProductComponent"));
-	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
-	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
-	ProgressBarUI->SetupAttachment(GetRootComponent());
 }
 
 void ASFProductionBuilding::OnTierActivated()
@@ -152,7 +149,6 @@ void ASFProductionBuilding::OnBuildingDefinitionLoaded()
 
 	if (!IsValid(Definition))	return;
 
-	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
 
 	StatusComponent->SetProgressColor(SFOverheadUIColors::Production);
 }
@@ -175,5 +171,5 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
-	ProgressBarUI->SetVisible(!InProductLine.IsEmpty());
+	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, !InProductLine.IsEmpty());
 }

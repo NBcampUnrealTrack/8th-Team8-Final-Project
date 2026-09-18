@@ -7,13 +7,13 @@
 #include "SFOverheadUIComponent.generated.h"
 
 class UMeshComponent;
-class USFOverheadBarWidget;
+class USFOverheadPanelWidget;
 
 /**
- * 액터 머리 위(또는 발밑)에 바 하나를 띄운다.
+ * 액터 머리 위(또는 발밑)에 판 하나를 띄운다. 액터당 하나면 된다.
  *
- * 위젯의 내용은 모른다. 배치·가시성·줌 반영만 담당한다.
- * 체력바와 진행도 바처럼 위치가 달라야 하면 컴포넌트를 두 개 단다.
+ * 판에 무엇이 들어 있는지는 모른다. 배치·가시성·줌 반영만 담당한다.
+ * 요소를 늘릴 때는 이 컴포넌트를 더 다는 게 아니라 ESFOverheadElement와 판 위젯에 추가한다.
  *
  * 띄울 위젯은 부모의 WidgetClass(디테일 패널 User Interface 항목)로 지정한다.
  */
@@ -33,8 +33,13 @@ public:
 	/** 메시가 바뀌었을 때 호출한다. */
 	void RefreshTransform();
 
-	/** 이 바를 보여줄지. 조건 해석은 소유자가 한다. */
-	void SetVisible(bool bInVisible);
+	/**
+	 * 요소 하나를 켜고 끈다. 조건 해석은 소유자가 한다.
+	 *
+	 * 하나라도 켜져 있으면 판이 보이고, 전부 꺼지면 판이 접힌다.
+	 * 접히면 부모가 스스로 틱을 멈춘다.
+	 */
+	void SetElementVisible(ESFOverheadElement InElement, bool bInVisible);
 
 	/** 프리뷰·사망처럼 조건과 무관하게 막아야 하는 상태. */
 	void SetSuppressed(bool bInSuppressed);
@@ -54,12 +59,11 @@ private:
 	void ApplyUIScale();
 	void HandleUIScaleChanged(float InScale);
 
-	/** 상태 컴포넌트의 신호를 받아 위젯에 넘긴다. 위젯 타입은 알 필요가 없다. */
+	/** 상태 컴포넌트의 신호를 받아 판에 넘긴다. 판의 내용은 알 필요가 없다. */
 	void HandleStatusChanged(const FSFOverheadStatus& InStatus);
 
-	/** 체크하면 소유자가 켜지 않아도 항상 보인다. 유닛 체력바처럼 상시 표시용. */
-	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
-	bool bAlwaysVisible = false;
+	/** 위젯이 만들어지거나 설정이 바뀐 뒤, 판 내부 상태(요소 표시·간격)를 한 번에 맞춘다. */
+	void PushPanelState();
 
 	/**
 	 * 기본 배치값. 소유자가 ApplySettings()를 호출하면 덮어쓴다.
@@ -76,11 +80,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
 
-	/**
-	 * 소유자가 요청한 표시 여부.
-	 * 부모의 bVisible(실제 컴포넌트 가시성)과 다르다. 억제가 걸리면 요청이 있어도 안 보인다.
-	 */
-	bool bRequestedVisible = false;
+	/** 켜져 있는 요소 비트. 0이면 판을 접는다. */
+	uint8 ElementMask = 0;
+
 	bool bSuppressed = false;
 
 	/** 메시 높이에서 계산한 화면 세로 오프셋. RefreshTransform()이 갱신한다. */

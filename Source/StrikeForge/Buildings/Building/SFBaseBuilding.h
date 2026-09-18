@@ -300,12 +300,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
 	// 신규
-	/** 이 액터에 달린 모든 오버헤드 UI. BeginPlay에서 한 번 수집한다. */
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<USFOverheadUIComponent>> OverheadUIComponents;
-	
+	/**
+	 * 머리 위 판. 액터당 하나면 된다.
+	 * 요소(체력·진행도 등)를 늘릴 때 컴포넌트를 더 달지 않고 ESFOverheadElement에 추가한다.
+	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> HealthBarUI;
+	TObjectPtr<USFOverheadUIComponent> OverheadUI;
 
 	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")

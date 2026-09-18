@@ -2,8 +2,11 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Components/MeshComponent.h"
-#include "Buildings/UI/SFOverheadBarWidget.h"
+#include "Buildings/UI/SFOverheadPanelWidget.h"
 #include "Game/Subsystem/SFOverheadUISubsystem.h"
+
+static_assert(static_cast<int32>(ESFOverheadElement::MAX) <= 8,
+	"ElementMask가 uint8이다. 요소가 8개를 넘으면 타입을 넓혀야 한다.");
 
 USFOverheadUIComponent::USFOverheadUIComponent()
 {
@@ -12,7 +15,7 @@ USFOverheadUIComponent::USFOverheadUIComponent()
 	SetWindowFocusable(false);
 
 	/*
-	 * 부모의 기본값은 Enabled라서, 바가 접혀 있어도 매 프레임 틱한다.
+	 * 부모의 기본값은 Enabled라서, 판이 접혀 있어도 매 프레임 틱한다.
 	 * Automatic으로 두면 UserWidget이 Collapsed가 되는 순간 부모가 스스로 틱을 끄고,
 	 * 다시 보일 때 되살린다. RefreshVisibility()가 그 방아쇠다.
 	 */
@@ -59,6 +62,9 @@ void USFOverheadUIComponent::BeginPlay()
 		HandleStatusChanged(StatusComponent->GetStatus());
 	}
 
+	// BP 기본값이 무엇이든 코드가 아는 상태로 맞춘다.
+	PushPanelState();
+
 	RefreshTransform();
 	RefreshVisibility();
 }
@@ -85,6 +91,9 @@ void USFOverheadUIComponent::ApplySettings(const FSFOverheadUISettings& InSettin
 {
 	Settings = InSettings;
 	RefreshTransform();
+
+	// 판 안쪽 레이아웃(간격)도 같은 설정에서 나온다.
+	PushPanelState();
 }
 
 void USFOverheadUIComponent::RefreshTransform()
@@ -96,7 +105,6 @@ void USFOverheadUIComponent::RefreshTransform()
 	if (IsValid(MeshComponent))
 	{
 		// 앵커는 메시 중심 하나로 고정한다.
-		// 모든 바가 같은 월드 점에서 투영되어야 시점이 바뀌어도 서로 정렬된다.
 		const FBoxSphereBounds LocalBounds =
 			MeshComponent->CalcBounds(MeshComponent->GetRelativeTransform());
 
@@ -119,19 +127,32 @@ void USFOverheadUIComponent::RefreshTransform()
 		Settings.WidthRange.X,
 		Settings.WidthRange.Y);
 
-	SetDrawSize(FVector2D(FinalWidth, Settings.BarHeight));
+	SetDrawSize(FVector2D(FinalWidth, Settings.PanelHeight));
 
-	// 위아래 배치는 월드가 아니라 화면 픽셀로 준다. 그래야 앵커를 공유한 채 간격만 벌릴 수 있다.
+	// 판의 위아래 위치는 월드가 아니라 화면 픽셀로 준다.
 	ComputedScreenOffsetY = HalfHeight * Settings.VerticalRatio;
 
 	ApplyUIScale();
 }
 
-void USFOverheadUIComponent::SetVisible(bool bInVisible)
+void USFOverheadUIComponent::SetElementVisible(ESFOverheadElement InElement, bool bInVisible)
 {
-	if (bRequestedVisible == bInVisible)	return;
+	const int32 Index = static_cast<int32>(InElement);
+	if (Index < 0 || Index >= static_cast<int32>(ESFOverheadElement::MAX))	return;
 
-	bRequestedVisible = bInVisible;
+	const uint8 Bit = static_cast<uint8>(1 << Index);
+	const bool bWasVisible = (ElementMask & Bit) != 0;
+	if (bWasVisible == bInVisible)	return;
+
+	ElementMask = bInVisible
+		? static_cast<uint8>(ElementMask | Bit)
+		: static_cast<uint8>(ElementMask & ~Bit);
+
+	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	{
+		Panel->SetElementVisible(InElement, bInVisible);
+	}
+
 	RefreshVisibility();
 }
 
@@ -143,9 +164,25 @@ void USFOverheadUIComponent::SetSuppressed(bool bInSuppressed)
 	RefreshVisibility();
 }
 
+void USFOverheadUIComponent::PushPanelState()
+{
+	USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>();
+	if (!IsValid(Panel))	return;
+
+	for (int32 Index = 0; Index < static_cast<int32>(ESFOverheadElement::MAX); ++Index)
+	{
+		const bool bElementOn = (ElementMask & (1 << Index)) != 0;
+		Panel->SetElementVisible(static_cast<ESFOverheadElement>(Index), bElementOn);
+	}
+
+	// 요소 사이 간격도 DA가 정한다. 스페이서가 없는 판이면 무시된다.
+	Panel->SetElementSpacing(Settings.ElementSpacing);
+}
+
 void USFOverheadUIComponent::RefreshVisibility()
 {
-	const bool bShouldShow = !bSuppressed && (bAlwaysVisible || bRequestedVisible);
+	// 켜진 요소가 하나도 없으면 판을 띄울 이유가 없다.
+	const bool bShouldShow = !bSuppressed && ElementMask != 0;
 
 	// UserWidget 가시성을 먼저 맞춘다.
 	// Screen 모드의 IsWidgetVisible()이 이 값을 보고 틱을 끄고 켠다.
@@ -190,7 +227,7 @@ void USFOverheadUIComponent::ApplyUIScale()
 
 void USFOverheadUIComponent::HandleUIScaleChanged(float InScale)
 {
-	// 꺼져 있는 위젯은 지금 건드리지 않는다. 켜질 때 ApplyUIScale()이 반영한다.
+	// 꺼져 있는 판은 지금 건드리지 않는다. 켜질 때 ApplyUIScale()이 반영한다.
 	if (!IsVisible())	return;
 
 	ApplyUIScale();

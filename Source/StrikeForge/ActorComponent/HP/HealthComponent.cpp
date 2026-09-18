@@ -46,8 +46,31 @@ void UHealthComponent::InitializeHealth(float InMaxHealth, float InCurrentHealth
 	const float PreviousHealth = CurrentHealth;
 
 	MaxHealth = FMath::Max(1.f, InMaxHealth);
+	InitialHealth = MaxHealth;
 	CurrentHealth = FMath::Clamp(InCurrentHealth, 0.f, MaxHealth);
 	IsDead = CurrentHealth <= 0.f; // 초기화할때 0이면 죽음판정. 지금은 당장 필요없음
+
+	OnHealthValueChanged.Broadcast(PreviousHealth, CurrentHealth, MaxHealth);
+}
+
+void UHealthComponent::SetHealth(float InMaxHealth, float InCurrentHealth)
+{
+	const float PreviousHealth = CurrentHealth;
+
+	MaxHealth = FMath::Max(1.f, InMaxHealth);
+	CurrentHealth = FMath::Clamp(InCurrentHealth, 0.f, MaxHealth);
+	IsDead = CurrentHealth <= 0.f; // 초기화할때 0이면 죽음판정. 지금은 당장 필요없음
+
+	OnHealthValueChanged.Broadcast(PreviousHealth, CurrentHealth, MaxHealth);
+}
+
+void UHealthComponent::BoostHealth(float HealthMultiplier)
+{
+	const float PreviousHealth = CurrentHealth;
+	const float HealthRatio = GetHealthPercent();
+
+	MaxHealth = FMath::Max(1.f, InitialHealth * HealthMultiplier);
+	CurrentHealth = FMath::Clamp(HealthRatio * MaxHealth, 1.f, MaxHealth);
 
 	OnHealthValueChanged.Broadcast(PreviousHealth, CurrentHealth, MaxHealth);
 }

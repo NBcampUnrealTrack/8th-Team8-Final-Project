@@ -7,8 +7,9 @@ void USFProgressBarWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
 {
 	if (!IsValid(ProgressBar))	return;
 
-	// SetPercent는 레이아웃 무효화를 부른다. 눈에 안 띄는 변화는 건너뛴다.
-	if (!FMath::IsNearlyEqual(LastRatio, InStatus.ProgressRatio, 0.005f))
+	// 상태는 어느 필드가 바뀌어도 통째로 온다. 자기가 쓰는 값만 비교해 걸러낸다.
+	// 상태 컴포넌트가 이미 유효 변화만 걸러 방송하므로, 받은 값을 그대로 비교하면 된다.
+	if (LastRatio != InStatus.ProgressRatio)
 	{
 		LastRatio = InStatus.ProgressRatio;
 		ProgressBar->SetPercent(InStatus.ProgressRatio);

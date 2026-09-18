@@ -35,6 +35,8 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	// OverHead UI	
 	HealthBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("HealthBarUI"));
+	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
+	HealthBarUI->SetupAttachment(GetRootComponent());
 		
 	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));

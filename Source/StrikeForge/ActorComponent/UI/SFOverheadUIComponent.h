@@ -1,25 +1,24 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Components/ActorComponent.h"
+#include "Components/WidgetComponent.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/OverHeadUI/SFOverheadUISettings.h"
 #include "SFOverheadUIComponent.generated.h"
 
 class UMeshComponent;
 class USFOverheadBarWidget;
-class UUserWidget;
-class UWidgetComponent;
-
 
 /**
- * 액터 머리 위(또는 발밑)에 위젯 하나를 띄운다.
+ * 액터 머리 위(또는 발밑)에 바 하나를 띄운다.
  *
  * 위젯의 내용은 모른다. 배치·가시성·줌 반영만 담당한다.
  * 체력바와 진행도 바처럼 위치가 달라야 하면 컴포넌트를 두 개 단다.
+ *
+ * 띄울 위젯은 부모의 WidgetClass(디테일 패널 User Interface 항목)로 지정한다.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class STRIKEFORGE_API USFOverheadUIComponent : public UActorComponent
+class STRIKEFORGE_API USFOverheadUIComponent : public UWidgetComponent
 {
 	GENERATED_BODY()
 
@@ -28,7 +27,7 @@ public:
 
 	/** 소유자가 BeginPlay에서 한 번 호출한다. 크기 계산에 쓸 메시를 넘긴다. */
 	void Initialize(UMeshComponent* InMeshComponent);
-	
+
 	void ApplySettings(const FSFOverheadUISettings& InSettings);
 
 	/** 메시가 바뀌었을 때 호출한다. */
@@ -40,21 +39,14 @@ public:
 	/** 프리뷰·사망처럼 조건과 무관하게 막아야 하는 상태. */
 	void SetSuppressed(bool bInSuppressed);
 
-	UUserWidget* GetUserWidget() const;
-
 	template<typename T>
 	T* GetWidget() const
 	{
-		return Cast<T>(GetUserWidget());
+		return Cast<T>(GetUserWidgetObject());
 	}
 
-	/** 이 바가 띄울 위젯. 비어 있으면 아무것도 만들지 않는다. */
-	UPROPERTY(EditDefaultsOnly, Category = "Overhead")
-	TSubclassOf<USFOverheadBarWidget> WidgetClass;
-	
 protected:
 	virtual void BeginPlay() override;
-	void CreateWidgetComponent();
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -78,14 +70,17 @@ private:
 	FSFOverheadUISettings Settings;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UWidgetComponent> WidgetComponent;
-
-	UPROPERTY(Transient)
 	TObjectPtr<UMeshComponent> MeshComponent;
 
-	mutable TWeakObjectPtr<UUserWidget> CachedWidget;
+	/** BeginPlay에서 한 번 찾아 둔다. EndPlay에서 다시 찾지 않기 위해. */
+	UPROPERTY(Transient)
+	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
 
-	bool bVisible = false;
+	/**
+	 * 소유자가 요청한 표시 여부.
+	 * 부모의 bVisible(실제 컴포넌트 가시성)과 다르다. 억제가 걸리면 요청이 있어도 안 보인다.
+	 */
+	bool bRequestedVisible = false;
 	bool bSuppressed = false;
 
 	/** 메시 높이에서 계산한 화면 세로 오프셋. RefreshTransform()이 갱신한다. */

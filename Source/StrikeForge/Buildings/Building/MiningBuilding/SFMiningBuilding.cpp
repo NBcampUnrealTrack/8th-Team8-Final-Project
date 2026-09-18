@@ -11,6 +11,8 @@ ASFMiningBuilding::ASFMiningBuilding()
 {
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
 	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
+	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
+	ProgressBarUI->SetupAttachment(GetRootComponent());
 }
 
 void ASFMiningBuilding::BeginPlay()

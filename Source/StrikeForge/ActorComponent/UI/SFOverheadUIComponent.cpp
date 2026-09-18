@@ -1,43 +1,43 @@
 ﻿#include "SFOverheadUIComponent.h"
 
+#include "Blueprint/UserWidget.h"
 #include "Components/MeshComponent.h"
-#include "Components/WidgetComponent.h"
 #include "Buildings/UI/SFOverheadBarWidget.h"
 #include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 USFOverheadUIComponent::USFOverheadUIComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	SetWidgetSpace(EWidgetSpace::Screen);
+	SetDrawAtDesiredSize(false);
+	SetWindowFocusable(false);
+
+	/*
+	 * 부모의 기본값은 Enabled라서, 바가 접혀 있어도 매 프레임 틱한다.
+	 * Automatic으로 두면 UserWidget이 Collapsed가 되는 순간 부모가 스스로 틱을 끄고,
+	 * 다시 보일 때 되살린다. RefreshVisibility()가 그 방아쇠다.
+	 */
+	SetTickMode(ETickMode::Automatic);
+
+	SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SetCollisionResponseToAllChannels(ECR_Ignore);
+	SetGenerateOverlapEvents(false);
+	SetCastShadow(false);
+
+	SetVisibility(false);
 }
 
 void USFOverheadUIComponent::Initialize(UMeshComponent* InMeshComponent)
 {
 	MeshComponent = InMeshComponent;
 
-	// WidgetComponent는 BeginPlay의 CreateWidgetComponent()가 만든다.
-	// 순서가 뒤바뀔 수 있으니 이미 만들어져 있을 때만 갱신한다.
-	if (IsValid(WidgetComponent))
-	{
-		RefreshTransform();
-		RefreshVisibility();
-	}
-}
-
-UUserWidget* USFOverheadUIComponent::GetUserWidget() const
-{
-	if (CachedWidget.IsValid())	return CachedWidget.Get();
-	if (!IsValid(WidgetComponent))	return nullptr;
-
-	UUserWidget* Found = WidgetComponent->GetUserWidgetObject();
-	CachedWidget = Found;
-	return Found;
+	RefreshTransform();
+	RefreshVisibility();
 }
 
 void USFOverheadUIComponent::BeginPlay()
 {
+	// 부모가 InitWidget()으로 UserWidget을 만든다. 그 뒤에야 위젯을 만질 수 있다.
 	Super::BeginPlay();
-	
-	CreateWidgetComponent();
 
 	if (USFOverheadUISubsystem* OverheadUISubsystem = USFOverheadUISubsystem::Get(this))
 	{
@@ -46,7 +46,7 @@ void USFOverheadUIComponent::BeginPlay()
 	}
 
 	AActor* Owner = GetOwner();
-	USFOverheadStatusComponent* StatusComponent = IsValid(Owner)
+	StatusComponent = IsValid(Owner)
 		? Owner->FindComponentByClass<USFOverheadStatusComponent>()
 		: nullptr;
 
@@ -58,34 +58,6 @@ void USFOverheadUIComponent::BeginPlay()
 		// 구독 이후의 변화만 오므로 현재 상태를 한 번 반영한다.
 		HandleStatusChanged(StatusComponent->GetStatus());
 	}
-}
-
-void USFOverheadUIComponent::CreateWidgetComponent()
-{
-	AActor* Owner = GetOwner();
-	if (!IsValid(Owner))	return;
-
-	if (!ensureMsgf(WidgetClass != nullptr,
-		TEXT("[%s] %s의 Widget Class가 비어 있습니다."), *Owner->GetName(), *GetName()))
-	{
-		return;
-	}
-
-	WidgetComponent = NewObject<UWidgetComponent>(Owner);
-	if (!IsValid(WidgetComponent))	return;
-
-	WidgetComponent->SetWidgetClass(WidgetClass);
-	WidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	WidgetComponent->SetDrawAtDesiredSize(false);
-	WidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WidgetComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
-	WidgetComponent->SetGenerateOverlapEvents(false);
-	WidgetComponent->SetWindowFocusable(false);
-	WidgetComponent->SetVisibility(false);
-
-	// SetupAttachment는 등록 전에만 유효하다. 순서를 지켜야 한다.
-	WidgetComponent->SetupAttachment(Owner->GetRootComponent());
-	WidgetComponent->RegisterComponent();
 
 	RefreshTransform();
 	RefreshVisibility();
@@ -99,23 +71,13 @@ void USFOverheadUIComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	UIScaleHandle.Reset();
 
-	if (AActor* Owner = GetOwner())
+	if (IsValid(StatusComponent))
 	{
-		if (USFOverheadStatusComponent* StatusComponent =
-			Owner->FindComponentByClass<USFOverheadStatusComponent>())
-		{
-			StatusComponent->OnStatusChanged.Remove(StatusHandle);
-		}
+		StatusComponent->OnStatusChanged.Remove(StatusHandle);
 	}
 	StatusHandle.Reset();
-	
-	if (IsValid(WidgetComponent))
-	{
-		WidgetComponent->DestroyComponent();
-		WidgetComponent = nullptr;
-	}
-	CachedWidget.Reset();
-	
+	StatusComponent = nullptr;
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -127,8 +89,6 @@ void USFOverheadUIComponent::ApplySettings(const FSFOverheadUISettings& InSettin
 
 void USFOverheadUIComponent::RefreshTransform()
 {
-	if (!IsValid(WidgetComponent))	return;
-
 	float AnchorZ = 0.f;
 	float HalfWidth = 0.f;
 	float HalfHeight = 0.f;
@@ -151,15 +111,15 @@ void USFOverheadUIComponent::RefreshTransform()
 		HalfHeight = ScaledBounds.BoxExtent.Z;
 	}
 
-	WidgetComponent->SetRelativeLocation(FVector(0.f, 0.f, AnchorZ));
-	WidgetComponent->SetPivot(Settings.Pivot);
+	SetRelativeLocation(FVector(0.f, 0.f, AnchorZ));
+	SetPivot(Settings.Pivot);
 
 	const float FinalWidth = FMath::Clamp(
 		HalfWidth * Settings.WidthRatio,
 		Settings.WidthRange.X,
 		Settings.WidthRange.Y);
 
-	WidgetComponent->SetDrawSize(FVector2D(FinalWidth, Settings.BarHeight));
+	SetDrawSize(FVector2D(FinalWidth, Settings.BarHeight));
 
 	// 위아래 배치는 월드가 아니라 화면 픽셀로 준다. 그래야 앵커를 공유한 채 간격만 벌릴 수 있다.
 	ComputedScreenOffsetY = HalfHeight * Settings.VerticalRatio;
@@ -169,9 +129,9 @@ void USFOverheadUIComponent::RefreshTransform()
 
 void USFOverheadUIComponent::SetVisible(bool bInVisible)
 {
-	if (bVisible == bInVisible)	return;
+	if (bRequestedVisible == bInVisible)	return;
 
-	bVisible = bInVisible;
+	bRequestedVisible = bInVisible;
 	RefreshVisibility();
 }
 
@@ -185,22 +145,20 @@ void USFOverheadUIComponent::SetSuppressed(bool bInSuppressed)
 
 void USFOverheadUIComponent::RefreshVisibility()
 {
-	if (!IsValid(WidgetComponent))	return;
+	const bool bShouldShow = !bSuppressed && (bAlwaysVisible || bRequestedVisible);
 
-	const bool bShouldShow = !bSuppressed && (bAlwaysVisible || bVisible);
-
-	// UserWidget 가시성은 조기 반환보다 먼저 맞춘다.
-	// Screen 모드의 IsWidgetVisible()이 이 값을 보고 컴포넌트 틱을 끈다.
-	if (UUserWidget* Widget = GetUserWidget())
+	// UserWidget 가시성을 먼저 맞춘다.
+	// Screen 모드의 IsWidgetVisible()이 이 값을 보고 틱을 끄고 켠다.
+	if (UUserWidget* BarWidget = GetUserWidgetObject())
 	{
-		Widget->SetVisibility(bShouldShow
+		BarWidget->SetVisibility(bShouldShow
 			? ESlateVisibility::SelfHitTestInvisible
 			: ESlateVisibility::Collapsed);
 	}
 
-	if (WidgetComponent->IsVisible() == bShouldShow)	return;
+	if (IsVisible() == bShouldShow)	return;
 
-	WidgetComponent->SetVisibility(bShouldShow);
+	SetVisibility(bShouldShow);
 
 	if (bShouldShow)
 	{
@@ -210,8 +168,8 @@ void USFOverheadUIComponent::RefreshVisibility()
 
 void USFOverheadUIComponent::ApplyUIScale()
 {
-	UUserWidget* Widget = GetUserWidget();
-	if (!IsValid(Widget))	return;
+	UUserWidget* BarWidget = GetUserWidgetObject();
+	if (!IsValid(BarWidget))	return;
 
 	const USFOverheadUISubsystem* OverheadUISubsystem = USFOverheadUISubsystem::Get(this);
 	if (!IsValid(OverheadUISubsystem))	return;
@@ -223,17 +181,17 @@ void USFOverheadUIComponent::ApplyUIScale()
 		ComputedScreenOffsetY + Settings.ScreenOffsetAdjust.Y);
 
 	// 배치 Pivot과 같은 축으로 확대·축소해야 앵커에 붙은 상태가 유지된다.
-	Widget->SetRenderTransformPivot(Settings.Pivot);
-	Widget->SetRenderScale(FVector2D(Scale, Scale));
+	BarWidget->SetRenderTransformPivot(Settings.Pivot);
+	BarWidget->SetRenderScale(FVector2D(Scale, Scale));
 
 	// Translation은 Scale과 별도로 합성되므로(Concatenate 순서상 마지막) 직접 곱한다.
-	Widget->SetRenderTranslation(Offset * Scale);
+	BarWidget->SetRenderTranslation(Offset * Scale);
 }
 
 void USFOverheadUIComponent::HandleUIScaleChanged(float InScale)
 {
 	// 꺼져 있는 위젯은 지금 건드리지 않는다. 켜질 때 ApplyUIScale()이 반영한다.
-	if (!IsValid(WidgetComponent) || !WidgetComponent->IsVisible())	return;
+	if (!IsVisible())	return;
 
 	ApplyUIScale();
 }

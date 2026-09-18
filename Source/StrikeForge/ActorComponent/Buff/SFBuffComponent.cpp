@@ -2,7 +2,7 @@
 
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Units/Unit/UnitBase.h"

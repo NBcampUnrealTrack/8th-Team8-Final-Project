@@ -10,6 +10,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Units/Commander/SFCommander.h"
 #include "Units/Unit/UnitBase.h"
@@ -80,7 +81,11 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
         return false;
     }
 
-    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex);
+    // GameState의 넥서스 티어는 0부터 시작하는 내부 인덱스다. 반면
+    // BuildingDefinition의 RequiredNexusTier는 UI에 표시하는 1부터의 티어 번호다.
+    // 인덱스를 그대로 비교하면 시작 넥서스(인덱스 0)가 있는 상태에서도
+    // "티어 1 필요" 건물인 미네랄 광산을 잘못 막게 된다.
+    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex) + 1;
     if (CurrentNexusTier < Definition->RequiredNexusTier)
     {
         SF_LOG(Warning,
@@ -231,6 +236,10 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
     }
 
     SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingSpawnedBuildingRef->GetName());
+
+	// 고스트 위치를 확정한 뒤 지휘관이 도달하지 못했거나 명령이 취소된 경우다.
+	// 이때는 실제 건설이 시작되지 않았으므로, 다시 배치할 수 있게 예약을 푼다.
+	USFTutorialSubsystem::NotifyTutorialBuildingPlacementCancelled(this, PendingSpawnedBuildingRef);
 
     PendingSpawnedBuildingRef->Destroy();
     PendingSpawnedBuildingRef = nullptr;

@@ -9,8 +9,10 @@
 #include "Engine/StaticMesh.h"
 #include "Components/ActorComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "GameFramework/Actor.h"
 #include "InGame/HUD/Tutorial/SFTutorialGhostActor.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
@@ -194,7 +196,7 @@ bool USFTutorialSubsystem::NotifyObjective(const UObject* InWorldContext, FGamep
 
     // 건물이 실제로 올라갔으면 요구 건물 잠금을 푼다.
     // 고르기만 하고 취소한 경우에는 여기까지 오지 않으므로 잠금이 유지된다.
-    Tutorial->ReleaseBuildingLockIfBuilt(InObjectiveTag);
+    Tutorial->ReleaseBuildingLockIfBuilt(InObjectiveTag, InWorldContext);
 
     // 대기 여부와 무관하게 먼저 알린다.
     // 적 스포너처럼 튜토리얼 진행과 별개로 반응해야 하는 쪽이 이걸 듣는다.
@@ -340,7 +342,9 @@ void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
     }
 
     GuideStepIndex = InStepIndex;
-    const FSFStageIntroGuideStep& Step = GuideSteps[GuideStepIndex];
+    FSFStageIntroGuideStep& MutableStep = GuideSteps[GuideStepIndex];
+    SnapPlacementGuideToBuildingGrid(MutableStep);
+    const FSFStageIntroGuideStep& Step = MutableStep;
 
     // 요구 건물은 칸을 넘어서, 안내가 끝난 뒤에도 유지된다.
     //
@@ -596,9 +600,12 @@ void USFTutorialSubsystem::UnlockBuildingSelection()
 
     LockedBuildingRowName = NAME_None;
     LockedBuildingStepIndex = INDEX_NONE;
+    ReservedTutorialBuilding = nullptr;
 }
 
-void USFTutorialSubsystem::ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTag)
+void USFTutorialSubsystem::ReleaseBuildingLockIfBuilt(
+    FGameplayTag InObjectiveTag,
+    const UObject* InWorldContext)
 {
     if (LockedBuildingRowName.IsNone())
     {
@@ -628,6 +635,27 @@ void USFTutorialSubsystem::ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTa
     if (!InObjectiveTag.MatchesTag(BuildRoot))
     {
         return;
+    }
+
+    // 고스트 위치에 실제로 확정한 건물이 있는 동안에는, 그 건물이 보낸
+    // 완료 신호만 잠금을 풀 수 있다. 이미 짓고 있던 다른 건물의 완료가
+    // 끼어들어 튜토리얼 건설 제한을 풀어 버리는 일을 막는다.
+    if (ReservedTutorialBuilding.IsValid())
+    {
+        const AActor* NotifierActor = Cast<AActor>(InWorldContext);
+        if (const UActorComponent* NotifierComponent = Cast<UActorComponent>(InWorldContext))
+        {
+            NotifierActor = NotifierComponent->GetOwner();
+        }
+
+        if (NotifierActor != ReservedTutorialBuilding.Get())
+        {
+            SF_LOG(Log,
+                "[SFTutorialSubsystem] 다른 건물 완료 신호는 튜토리얼 잠금을 유지 | Signal: %s | Reserved: %s",
+                *InObjectiveTag.ToString(),
+                *GetNameSafe(ReservedTutorialBuilding.Get()));
+            return;
+        }
     }
 
     SF_LOG(Log, "[SFTutorialSubsystem] 건설 완료로 잠금 해제 | 신호: %s", *InObjectiveTag.ToString());
@@ -824,6 +852,16 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
         return true;
     }
 
+    // 고스트 자리에 건설을 확정한 뒤에는 건설 중인 그 건물을 포함해 전부 막는다.
+    // 같은 건물을 한 번 더 지어 광물이 부족해지는 문제를 여기서 끊는다.
+    if (Tutorial->ReservedTutorialBuilding.IsValid())
+    {
+        SF_LOG(Log,
+            "[SFTutorialSubsystem] Selection BLOCKED | Tutorial construction in progress: %s | Clicked: %s",
+            *GetNameSafe(Tutorial->ReservedTutorialBuilding.Get()), *InBuildingRowName.ToString());
+        return false;
+    }
+
     // 1순위 — 요구 건물이 잠겨 있으면 그것만 통과시킨다.
     //
     // 안내 칸이 아니라 잠금을 본다. 선택 칸이 그 노드의 마지막 칸이면
@@ -899,6 +937,47 @@ void USFTutorialSubsystem::HidePlacementGhost(const UObject* InWorldContext)
     {
         Tutorial->DestroyPlacementGhost();
     }
+}
+
+void USFTutorialSubsystem::NotifyTutorialBuildingPlacementConfirmed(
+    const UObject* InWorldContext,
+    ASFBaseBuilding* InBuilding)
+{
+    USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial) || !IsValid(InBuilding) || Tutorial->LockedBuildingRowName.IsNone())
+    {
+        return;
+    }
+
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+    if (!IsValid(Definition) || Definition->BuildingId != Tutorial->LockedBuildingRowName)
+    {
+        return;
+    }
+
+    Tutorial->ReservedTutorialBuilding = InBuilding;
+
+    SF_LOG(Log,
+        "[SFTutorialSubsystem] 튜토리얼 건설 예약 | Building: %s | Row: %s",
+        *GetNameSafe(InBuilding), *Tutorial->LockedBuildingRowName.ToString());
+}
+
+void USFTutorialSubsystem::NotifyTutorialBuildingPlacementCancelled(
+    const UObject* InWorldContext,
+    const ASFBaseBuilding* InBuilding)
+{
+    USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+
+    if (!IsValid(Tutorial) || !Tutorial->ReservedTutorialBuilding.IsValid() ||
+        Tutorial->ReservedTutorialBuilding.Get() != InBuilding)
+    {
+        return;
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 취소된 튜토리얼 건설 예약 해제 | Building: %s",
+        *GetNameSafe(InBuilding));
+    Tutorial->ReservedTutorialBuilding = nullptr;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -983,6 +1062,56 @@ bool USFTutorialSubsystem::TryGetNotifierLocation(const UObject* InWorldContext,
     }
 
     return false;
+}
+
+void USFTutorialSubsystem::SnapPlacementGuideToBuildingGrid(
+    FSFStageIntroGuideStep& InOutStep) const
+{
+    // 월드 안내 고스트가 아닌 칸, 또는 어떤 건물인지 모르는 고스트는
+    // 그리드 보정을 할 근거가 없으므로 DT 좌표를 그대로 쓴다.
+    if (!InOutStep.bShowPlacementGhost ||
+        InOutStep.TargetKind != ESFGuideTargetKind::WorldLocation ||
+        InOutStep.GhostBuildingDefinition.IsNull())
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    const USFBuildingDefinition* Definition =
+        InOutStep.GhostBuildingDefinition.LoadSynchronous();
+    USFBuildingGridSubsystem* GridSubsystem =
+        IsValid(World) ? World->GetSubsystem<USFBuildingGridSubsystem>() : nullptr;
+
+    if (!IsValid(Definition) || !IsValid(GridSubsystem))
+    {
+        return;
+    }
+
+    // UBuildingPlacement::UpdatePlacementMode와 같은 변환을 써야 한다.
+    // 특히 1x1이 아닌 오두막/병영은 중심 좌표가 셀 크기의 절반만큼
+    // 달라질 수 있어, DT 원시 좌표에 세운 고스트와 실제 건물이 어긋났다.
+    const FBuildingGridInfo GridInfo = GridSubsystem->WorldCenterToGridInfo(
+        InOutStep.WorldLocation,
+        Definition->GridSize);
+
+    if (!GridInfo.IsValid())
+    {
+        return;
+    }
+
+    FVector SnappedLocation = GridSubsystem->GridInfoToWorldCenter(GridInfo);
+    // 그리드는 XY만 관리한다. 지형 높이는 DT가 보관한 값을 유지한다.
+    SnappedLocation.Z = InOutStep.WorldLocation.Z;
+
+    if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
+    {
+        SF_LOG(Log,
+            "[SFTutorialSubsystem] Placement guide snapped to building grid | Building: %s | %s -> %s",
+            *Definition->BuildingId.ToString(),
+            *InOutStep.WorldLocation.ToString(),
+            *SnappedLocation.ToString());
+        InOutStep.WorldLocation = SnappedLocation;
+    }
 }
 
 void USFTutorialSubsystem::SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep)

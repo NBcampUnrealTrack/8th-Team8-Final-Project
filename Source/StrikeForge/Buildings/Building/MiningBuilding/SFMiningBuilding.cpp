@@ -1,5 +1,6 @@
 ﻿#include "SFMiningBuilding.h"
 #include "ActorComponent/Mining/MiningComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "Buildings/UI/SFBuildingStatWidget.h"
@@ -141,18 +142,12 @@ void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceT
 	{
 	case EResourceType::Ether:
 		{
-			USFBuildingStatWidget* StatHUD = GetStatWidget();
-			if (!IsValid(StatHUD)) return;
-	
-			StatHUD->SetProgressBarColor(FLinearColor::Blue);;
+			OverheadUI->SetProgressBarColor(FLinearColor::Blue);
 			break;
 		}
 	case EResourceType::Mineral:
 		{
-			USFBuildingStatWidget* StatHUD = GetStatWidget();
-			if (!IsValid(StatHUD)) return;
-	
-			StatHUD->SetProgressBarColor(FLinearColor::Yellow);
+			OverheadUI->SetProgressBarColor(FLinearColor::Yellow);
 			break;
 		}
 	default:
@@ -226,7 +221,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		ApplyIncomeRate(0.f);
 		
 		// progressbar는 종료하고 다른 UI를 보여한다
-		SetOverheadProgressVisible(false);
+		OverheadUI->SetProgressActive(false);
 		// TODO:: Alert UI Needed
 		
 		return;
@@ -238,13 +233,8 @@ void ASFMiningBuilding::RefreshMiningState()
 	ApplyIncomeRate(
 		MiningComponent->GetIncomeRatePerSeconds());
 	
-	// 광질이 시작되면 진행도는 보여야한다.
-	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
-	{
-		StatHUD->SetProgressRatio(MiningComponent->GetExtractProgressRatio());
-	}
-
-	SetOverheadProgressVisible(true);
+	OverheadUI->SetProgressRatio(MiningComponent->GetExtractProgressRatio());
+	OverheadUI->SetProgressActive(true);
 }
 
 //getter
@@ -283,10 +273,7 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 
 void ASFMiningBuilding::HandleExtractProgressChanged(EResourceType InType, float InRatio)
 {
-	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
-	{
-		StatHUD->SetProgressRatio(InRatio);
-	}
+	OverheadUI->SetProgressRatio(InRatio);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

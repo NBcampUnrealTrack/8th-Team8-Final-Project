@@ -1,6 +1,6 @@
 #include "SFMultiSelectionEntryWidget.h"
 
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"

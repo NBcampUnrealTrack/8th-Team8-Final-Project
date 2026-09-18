@@ -1,5 +1,6 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Buildings/UI/SFBuildingStatWidget.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 
@@ -139,11 +140,8 @@ void ASFProductionBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ASFProductionBuilding::OnBuildingDefinitionLoaded()
 {
 	Super::OnBuildingDefinitionLoaded();
-	
-	USFBuildingStatWidget* StatHUD = GetStatWidget();
-	if (!IsValid(StatHUD)) return;
-	
-	StatHUD->SetProgressBarColor(FLinearColor::Green);
+
+	OverheadUI->SetProgressBarColor(FLinearColor::Green);
 }
 
 bool ASFProductionBuilding::HasRallyPoint() const
@@ -164,13 +162,10 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 
 void ASFProductionBuilding::HandleProductRatioChanged(float InProductRatio)
 {
-	if (USFBuildingStatWidget* StatHUD = GetStatWidget())
-	{
-		StatHUD->SetProgressRatio(InProductRatio);
-	}
+	OverheadUI->SetProgressRatio(InProductRatio);
 }
 
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
-	SetOverheadProgressVisible(!InProductLine.IsEmpty());
+	OverheadUI->SetProgressActive(!InProductLine.IsEmpty());
 }

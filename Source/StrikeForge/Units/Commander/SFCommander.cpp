@@ -11,7 +11,7 @@
 #include "Units/Unit/UnitBase.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"

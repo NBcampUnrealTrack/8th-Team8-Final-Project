@@ -6,7 +6,6 @@
 
 class UImage;
 class UOverlay;
-class FHealthValueChanged;
 class USFHealthBarWidget;
 class UProgressBar;
 
@@ -38,4 +37,6 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UOverlay> ProgressBarOverlay;
 	
+	// 진행도 스로틀
+	float LastProgressRatio = -1.f;
 };

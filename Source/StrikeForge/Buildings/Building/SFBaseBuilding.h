@@ -13,6 +13,7 @@ class UPlayVFXComponent;
 class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
+class USFOverheadUIComponent;
 class UCombatTargetComponent;
 class USFBuffComponent;
 class UNiagaraSystem;
@@ -148,20 +149,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FBoxSphereBounds GetBuildBounds() const;
-	/** Definition 값으로 오버헤드 위젯의 위치와 크기를 맞춘다. */
-	void ApplyOverheadWidgetTransform();
-	/** 진행도 바 표시 여부. 광산·생산 건물이 호출한다. */
-	void SetOverheadProgressVisible(bool bInVisible);
 
-protected:
-	/** 표시 조건이 바뀔 때마다 호출한다. 컴포넌트 자체를 켜고 끈다. */
-	void RefreshOverheadWidgetVisibility();
-
-	/** 현재 줌 배율을 위젯에 적용한다. */
-	void ApplyOverheadUIScale();
-	/** 카메라 줌 배율을 오버헤드 위젯에 반영한다. */
-	void HandleOverheadUIScaleChanged(float InScale);
-public:
 	UFUNCTION(BlueprintPure, Category = "SF|Building|Definition")
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
@@ -212,9 +200,7 @@ protected:
 	
 	virtual void NotifyActorBeginCursorOver() override;
 	virtual void NotifyActorEndCursorOver() override;
-	/** 건물 머리 위 위젯. 위젯 클래스가 다르면 nullptr. */
-	USFBuildingStatWidget* GetStatWidget() const;
-	
+
 	const FSFBuildingTierData* GetTierInfo(int32 TierIndex) const;
 	const FSFBuildingTierData* GetCurrentTierInfo() const;
 	// React Delegate Function
@@ -315,6 +301,9 @@ protected:
 	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
 	TObjectPtr<UWidgetComponent> WidgetComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadUIComponent> OverheadUI;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Mesh")
 	TObjectPtr<UProgressComponent> ProgressComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Combat")
@@ -387,13 +376,6 @@ protected:
 	
 	FVector HitLocalDirection = FVector::ForwardVector;
 #pragma endregion 
-	bool bCursorOverBuilding = false;
-	bool bOverheadProgressActive = false;
-	FDelegateHandle OverheadUIScaleHandle;
-	/** Definition이 크기를 지정하지 않았을 때 쓰는 공통 기본 크기. 픽셀 단위. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
-	FVector2D DefaultOverheadWidgetSize = FVector2D(160.f, 40.f);
-	
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()
 	FIntPoint ConfiguredGridSize = FIntPoint(1, 1);

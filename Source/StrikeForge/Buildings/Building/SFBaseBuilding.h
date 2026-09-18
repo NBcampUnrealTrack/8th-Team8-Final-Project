@@ -310,8 +310,6 @@ protected:
 	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
 	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> ProgressBarUI;
 	// Construct Progress
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Mesh")
 	TObjectPtr<UProgressComponent> ProgressComponent;

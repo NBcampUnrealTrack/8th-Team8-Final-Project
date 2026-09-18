@@ -66,6 +66,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
 
+	/** 생산 진행도 바. 이 건물만 쓴다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
+	TObjectPtr<USFOverheadUIComponent> ProgressBarUI;
+
 	TArray<FName> StoredSpawnableUnitDatas;
 	
 	// 집결지 위치벡터

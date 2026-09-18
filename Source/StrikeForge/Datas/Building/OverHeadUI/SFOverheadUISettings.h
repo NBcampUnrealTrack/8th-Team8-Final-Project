@@ -18,6 +18,14 @@ enum class ESFOverheadElement : uint8
 	/** 생산·채굴 진행도 바. 일하는 동안만 보인다. */
 	Progress,
 
+	/**
+	 * 자원 획득 배지(+8). 잠깐 떴다 스스로 사라진다.
+	 *
+	 * 다른 요소와 달리 끄는 주체가 소유자가 아니라 애니메이션이다.
+	 * 판이 OnElementFinished로 알리면 컴포넌트가 비트를 내린다.
+	 */
+	ResourceGain,
+
 	MAX UMETA(Hidden)
 };
 

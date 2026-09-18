@@ -171,5 +171,7 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
-	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, !InProductLine.IsEmpty());
+	// 내 건물만 진행도를 보여준다. 적 생산 상황은 노출하지 않는다.
+	OverheadUI->SetElementVisible(ESFOverheadElement::Progress,
+		!InProductLine.IsEmpty() && IsOwnedByLocalPlayer());
 }

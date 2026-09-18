@@ -21,6 +21,12 @@ namespace SFOverheadUIColors
 	inline constexpr FLinearColor Production  = FLinearColor(0.20f, 0.85f, 0.25f, 1.f);
 	inline constexpr FLinearColor Mineral     = FLinearColor(0.9f, 0.9f, 0.1f, 1.f);
 	inline constexpr FLinearColor Ether       = FLinearColor(0.1f, 0.1f, 0.95f, 1.f);
+
+	/** 자원 종류에 대응하는 색. 진행도 바와 획득 배지가 같은 색을 쓴다. */
+	inline FLinearColor FromResourceType(EResourceType InResourceType)
+	{
+		return InResourceType == EResourceType::Ether ? Ether : Mineral;
+	}
 }
 
 /**

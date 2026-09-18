@@ -1265,6 +1265,14 @@ void ASFBaseBuilding::NotifyActorEndCursorOver()
 	
 	Super::NotifyActorEndCursorOver();
 }
+
+bool ASFBaseBuilding::IsOwnedByLocalPlayer() const
+{
+	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+	if (!IsValid(Combat))	return false;
+
+	return GetTeamIndex() == Combat->GetLocalPlayerTeam();
+}
 #pragma endregion 
 
 #pragma region HitReact

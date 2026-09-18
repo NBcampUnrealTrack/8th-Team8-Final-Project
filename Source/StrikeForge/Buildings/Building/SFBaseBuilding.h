@@ -153,6 +153,15 @@ public:
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
 	FORCEINLINE bool IsTierActivated() const { return bIsTierActivated; }
+
+	/**
+	 * 이 건물이 로컬 플레이어의 것인지.
+	 *
+	 * 내 것에만 보여줄 연출(진행도 바, 획득 배지)을 거르는 데 쓴다.
+	 * 게임플레이 판정에는 쓰지 않는다. 그쪽은 팀 인덱스를 직접 비교해야 한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "SF|Team")
+	bool IsOwnedByLocalPlayer() const;
 	
 	// setter
 	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "SF|Building")

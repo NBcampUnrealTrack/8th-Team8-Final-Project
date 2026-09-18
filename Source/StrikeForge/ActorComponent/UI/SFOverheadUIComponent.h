@@ -44,6 +44,13 @@ public:
 	/** 프리뷰·사망처럼 조건과 무관하게 막아야 하는 상태. */
 	void SetSuppressed(bool bInSuppressed);
 
+	/**
+	 * 자원 획득 배지를 띄운다. 애니메이션이 끝나면 스스로 꺼진다.
+	 *
+	 * 켜기와 재생을 따로 부르면 순서를 틀릴 수 있어 여기서 한 번에 처리한다.
+	 */
+	void PlayResourceGain(EResourceType InResourceType, int32 InAmount);
+
 	template<typename T>
 	T* GetWidget() const
 	{
@@ -61,6 +68,9 @@ private:
 
 	/** 상태 컴포넌트의 신호를 받아 판에 넘긴다. 판의 내용은 알 필요가 없다. */
 	void HandleStatusChanged(const FSFOverheadStatus& InStatus);
+
+	/** 일회성 요소가 끝났다는 판의 신호. 비트를 내린다. */
+	void HandleElementFinished(ESFOverheadElement InElement);
 
 	/** 위젯이 만들어지거나 설정이 바뀐 뒤, 판 내부 상태(요소 표시·간격)를 한 번에 맞춘다. */
 	void PushPanelState();
@@ -90,4 +100,5 @@ private:
 
 	FDelegateHandle UIScaleHandle;
 	FDelegateHandle StatusHandle;
+	FDelegateHandle ElementFinishedHandle;
 };

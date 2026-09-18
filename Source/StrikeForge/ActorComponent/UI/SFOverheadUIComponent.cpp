@@ -65,6 +65,13 @@ void USFOverheadUIComponent::BeginPlay()
 	// BP 기본값이 무엇이든 코드가 아는 상태로 맞춘다.
 	PushPanelState();
 
+	// 배지처럼 스스로 끝나는 요소는 판이 끝났다고 알려준다. 그때 비트를 내린다.
+	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	{
+		ElementFinishedHandle = Panel->OnElementFinished.AddUObject(
+			this, &USFOverheadUIComponent::HandleElementFinished);
+	}
+
 	RefreshTransform();
 	RefreshVisibility();
 }
@@ -83,6 +90,12 @@ void USFOverheadUIComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	StatusHandle.Reset();
 	StatusComponent = nullptr;
+
+	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	{
+		Panel->OnElementFinished.Remove(ElementFinishedHandle);
+	}
+	ElementFinishedHandle.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -162,6 +175,27 @@ void USFOverheadUIComponent::SetSuppressed(bool bInSuppressed)
 
 	bSuppressed = bInSuppressed;
 	RefreshVisibility();
+}
+
+void USFOverheadUIComponent::PlayResourceGain(EResourceType InResourceType, int32 InAmount)
+{
+	USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>();
+	if (!IsValid(Panel))	return;
+
+	/*
+	 * 켜는 게 먼저다.
+	 *
+	 * 배지 위젯이 없는 판이면 PlayResourceGain()이 그 자리에서 "끝났다"를 쏜다.
+	 * 그때 비트가 이미 올라가 있어야 제대로 내려간다. 순서를 바꾸면 판이 켜진 채 남는다.
+	 */
+	SetElementVisible(ESFOverheadElement::ResourceGain, true);
+
+	Panel->PlayResourceGain(InResourceType, InAmount);
+}
+
+void USFOverheadUIComponent::HandleElementFinished(ESFOverheadElement InElement)
+{
+	SetElementVisible(InElement, false);
 }
 
 void USFOverheadUIComponent::PushPanelState()

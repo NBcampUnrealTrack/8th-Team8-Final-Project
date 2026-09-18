@@ -367,6 +367,8 @@ void ASFGameMode::BeginStageBootstrap()
 	}
 
 	BootstrapBuildingRules = StageData->BuildingRules;
+	BootstrapStartingMineral = FMath::Max(0, StageData->StartingMineral);
+	BootstrapStartingEther = FMath::Max(0, StageData->StartingEther);
 	BootstrapTeamRaces.Reset();
 	BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
 
@@ -944,9 +946,15 @@ bool ASFGameMode::StartStage()
 
 	SF_SCREEN_LOG(Log, 5.0f, FColor::Green, "[SFGameMode] Stage started.");
 
-	// 플레이어 초기자원 입력 - 디버그용(건물짓기, 유닛뽑기)
-	SFGameState->AddResource(PlayerTeamIndex, EResourceType::Mineral, StartingMineral);
-	SFGameState->AddResource(PlayerTeamIndex, EResourceType::Ether, StartingEther);
+	// DT_SFStage의 해당 행에서 정한 시작 광물을 지급한다.
+	SFGameState->AddResource(
+		PlayerTeamIndex,
+		EResourceType::Mineral,
+		BootstrapStartingMineral);
+	SFGameState->AddResource(
+		PlayerTeamIndex,
+		EResourceType::Ether,
+		BootstrapStartingEther);
 	return true;
 }
 

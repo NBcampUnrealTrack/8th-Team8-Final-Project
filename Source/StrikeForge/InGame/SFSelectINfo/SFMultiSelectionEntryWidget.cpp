@@ -254,9 +254,9 @@ void USFMultiSelectionEntryWidget::RefreshHealthBar(
     {
         // 위험: 빨간색
         HealthColor = FLinearColor(
-            1.0f,
-            0.0f,
-            0.0f,
+            0.7f,
+            0.05f,
+            0.05f,
             1.0f
         );
     }

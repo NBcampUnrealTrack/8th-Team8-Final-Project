@@ -117,7 +117,13 @@ void USFOverheadUIComponent::RefreshTransform()
 
 	if (IsValid(MeshComponent))
 	{
-		// 앵커는 메시 중심 하나로 고정한다.
+		/*
+		 * 앵커는 메시 중심이다.
+		 *
+		 * 윗면에 붙이면 그 점이 건물 꼭대기에 찍히는데, 피치가 기운 카메라에서는
+		 * 그 지점이 건물 실루엣의 시각적 중심에서 벗어나 보인다. 중심을 기준으로 잡고
+		 * 비율로 밀어 올리는 쪽이 눈에 자연스럽고, 건물마다 값으로 조절하기도 쉽다.
+		 */
 		const FBoxSphereBounds LocalBounds =
 			MeshComponent->CalcBounds(MeshComponent->GetRelativeTransform());
 
@@ -142,7 +148,7 @@ void USFOverheadUIComponent::RefreshTransform()
 
 	SetDrawSize(FVector2D(FinalWidth, Settings.PanelHeight));
 
-	// 판의 위아래 위치는 월드가 아니라 화면 픽셀로 준다.
+	// 판의 위아래 위치는 월드가 아니라 화면 픽셀로 준다. 메시가 클수록 더 멀리 띄운다.
 	ComputedScreenOffsetY = HalfHeight * Settings.VerticalRatio;
 
 	ApplyUIScale();
@@ -242,14 +248,20 @@ void USFOverheadUIComponent::ApplyUIScale()
 	UUserWidget* BarWidget = GetUserWidgetObject();
 	if (!IsValid(BarWidget))	return;
 
-	const USFOverheadUISubsystem* OverheadUISubsystem = USFOverheadUISubsystem::Get(this);
-	if (!IsValid(OverheadUISubsystem))	return;
+	/*
+	 * 배율은 서브시스템이 유일하게 들고 있다. 복사해 두지 않고 쓸 때마다 읽는다.
+	 *
+	 * 서브시스템이 없어도 위치는 잡아야 하므로 배율만 기본값으로 떨어뜨린다.
+	 * 여기서 함수 전체를 막으면 세로 오프셋까지 날아가 바가 앵커에 붙어 버린다.
+	 */
+	float Scale = 1.f;
+	if (const USFOverheadUISubsystem* OverheadUISubsystem = USFOverheadUISubsystem::Get(this))
+	{
+		Scale = OverheadUISubsystem->GetUIScale();
+	}
 
-	const float Scale = OverheadUISubsystem->GetUIScale();
-
-	const FVector2D Offset(
-		Settings.ScreenOffsetAdjust.X,
-		ComputedScreenOffsetY + Settings.ScreenOffsetAdjust.Y);
+	// 판은 앵커에 가로 정렬되고, 세로는 VerticalRatio가 계산한 만큼 띄운다.
+	const FVector2D Offset(0.f, ComputedScreenOffsetY);
 
 	// 배치 Pivot과 같은 축으로 확대·축소해야 앵커에 붙은 상태가 유지된다.
 	BarWidget->SetRenderTransformPivot(Settings.Pivot);
@@ -259,9 +271,9 @@ void USFOverheadUIComponent::ApplyUIScale()
 	BarWidget->SetRenderTranslation(Offset * Scale);
 }
 
-void USFOverheadUIComponent::HandleUIScaleChanged(float InScale)
+void USFOverheadUIComponent::HandleUIScaleChanged()
 {
-	// 꺼져 있는 판은 지금 건드리지 않는다. 켜질 때 ApplyUIScale()이 반영한다.
+	// 꺼져 있는 판은 지금 건드리지 않는다. 켜질 때 RefreshVisibility()가 ApplyUIScale()을 부른다.
 	if (!IsVisible())	return;
 
 	ApplyUIScale();
@@ -269,8 +281,8 @@ void USFOverheadUIComponent::HandleUIScaleChanged(float InScale)
 
 void USFOverheadUIComponent::HandleStatusChanged(const FSFOverheadStatus& InStatus)
 {
-	if (USFOverheadBarWidget* Bar = GetWidget<USFOverheadBarWidget>())
+	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
 	{
-		Bar->ApplyStatus(InStatus);
+		Panel->ApplyStatus(InStatus);
 	}
 }

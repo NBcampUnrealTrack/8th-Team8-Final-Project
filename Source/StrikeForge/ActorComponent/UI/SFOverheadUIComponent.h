@@ -59,12 +59,15 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	void RefreshVisibility();
 	void ApplyUIScale();
-	void HandleUIScaleChanged(float InScale);
+
+	/** 배율이 바뀌었다는 신호만 받는다. 값은 ApplyUIScale()이 직접 읽는다. */
+	void HandleUIScaleChanged();
 
 	/** 상태 컴포넌트의 신호를 받아 판에 넘긴다. 판의 내용은 알 필요가 없다. */
 	void HandleStatusChanged(const FSFOverheadStatus& InStatus);
@@ -95,9 +98,8 @@ private:
 
 	bool bSuppressed = false;
 
-	/** 메시 높이에서 계산한 화면 세로 오프셋. RefreshTransform()이 갱신한다. */
+	/** 메시 윗면에서 판을 띄우는 화면 오프셋. RefreshTransform()이 갱신한다. */
 	float ComputedScreenOffsetY = 0.f;
-
 	FDelegateHandle UIScaleHandle;
 	FDelegateHandle StatusHandle;
 	FDelegateHandle ElementFinishedHandle;

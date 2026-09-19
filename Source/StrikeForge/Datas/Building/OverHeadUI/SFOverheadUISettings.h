@@ -45,18 +45,16 @@ struct STRIKEFORGE_API FSFOverheadUISettings
 	 * (0.5, 1) = 앵커 위쪽,  (0.5, 0) = 앵커 아래쪽,  (0.5, 0.5) = 앵커 중앙.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	FVector2D Pivot = FVector2D(0.5f, 1.f);
+	FVector2D Pivot = FVector2D(0.5f, 0.5f);
 
 	/**
 	 * 화면 세로 오프셋 = 메시 반높이 × 이 값. 픽셀.
-	 * 음수면 위로, 양수면 아래로.
+	 *
+	 * 앵커가 메시 중심이므로 음수를 줘야 건물 위로 올라간다. 메시가 클수록 더 멀리
+	 * 띄워지므로 건물 크기가 달라도 같은 값으로 비슷한 자리에 놓인다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	float VerticalRatio = -0.7f;
-
-	/** 계산 결과에 그대로 더하는 보정. 대부분 0으로 둔다. 픽셀. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	FVector2D ScreenOffsetAdjust = FVector2D::ZeroVector;
+	float VerticalRatio = 0.f;
 
 	/** 판 가로 길이 = 메시 반폭 × 이 값. 픽셀. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead", meta = (ClampMin = "0.01"))
@@ -64,7 +62,7 @@ struct STRIKEFORGE_API FSFOverheadUISettings
 
 	/** 가로 길이의 하한(X)·상한(Y). 픽셀. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
-	FVector2D WidthRange = FVector2D(150.f, 400.f);
+	FVector2D WidthRange = FVector2D(100.f, 300.f);
 
 	/**
 	 * 판 세로 크기. 픽셀.

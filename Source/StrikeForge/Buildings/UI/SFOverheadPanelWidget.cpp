@@ -19,18 +19,45 @@ void USFOverheadPanelWidget::NativeOnInitialized()
 
 void USFOverheadPanelWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
 {
-	// 걸러내기는 자식이 한다. 자기가 쓰는 필드가 안 바뀌었으면 자식이 되돌아간다.
+	/*
+	 * 바뀐 필드만 골라 해당 자식에게만 넘긴다.
+	 *
+	 * 여기가 상태 구조체의 종점이다. 자식에게 통째로 넘기면 체력이 바뀔 때마다
+	 * 진행도 바까지 깨어나고, 자식마다 "내 값이 바뀌었나" 판단하는 캐시를 따로 들어야 한다.
+	 * 자식이 어느 필드를 쓰는지는 이 클래스가 이미 안다 — 타입이 박힌 멤버로 들고 있으니까.
+	 */
+	const bool bForce = !bAppliedOnce;
+
 	if (IsValid(HealthBarWidget))
 	{
-		HealthBarWidget->ApplyStatus(InStatus);
+		if (bForce || LastStatus.HealthRatio != InStatus.HealthRatio)
+		{
+			HealthBarWidget->SetRatio(InStatus.HealthRatio);
+		}
+
+		if (bForce || !LastStatus.HealthColor.Equals(InStatus.HealthColor))
+		{
+			HealthBarWidget->SetColor(InStatus.HealthColor);
+		}
 	}
 
 	if (IsValid(ProgressBarWidget))
 	{
-		ProgressBarWidget->ApplyStatus(InStatus);
+		if (bForce || LastStatus.ProgressRatio != InStatus.ProgressRatio)
+		{
+			ProgressBarWidget->SetRatio(InStatus.ProgressRatio);
+		}
+
+		if (bForce || !LastStatus.ProgressColor.Equals(InStatus.ProgressColor))
+		{
+			ProgressBarWidget->SetColor(InStatus.ProgressColor);
+		}
 	}
 
 	// 획득 배지는 상태가 아니라 사건을 그리므로 여기서 제외한다.
+
+	LastStatus = InStatus;
+	bAppliedOnce = true;
 }
 
 void USFOverheadPanelWidget::SetElementVisible(ESFOverheadElement InElement, bool bInVisible)

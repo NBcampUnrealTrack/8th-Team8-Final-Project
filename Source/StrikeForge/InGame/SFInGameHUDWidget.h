@@ -355,8 +355,6 @@ private:
     UFUNCTION()
     void HandleSelectedUnitCommandPathChanged();
 
-    void UpdateQueuedMovePathStartPoints();
-
     // ==================== Variables ====================
 
 protected:
@@ -537,12 +535,7 @@ protected:
     TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
 
     UPROPERTY(Transient)
-    TArray<TObjectPtr<UStaticMeshComponent>>
-        QueuedMovePathIndicators;
-
-    UPROPERTY(Transient)
-    TArray<TObjectPtr<UStaticMeshComponent>>
-        QueuedMovePathLiveSegments;
+    TArray<TObjectPtr<UStaticMeshComponent>> QueuedMovePathIndicators;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
         Category = "SF|HUD|Command Path")
@@ -625,6 +618,8 @@ private:
     TArray<TObjectPtr<UStaticMeshComponent>> RallyPointIndicators;
 
     bool bAdditiveSelectionDrag = false;
+
+    bool bQueuedMovePathRefreshPending = false;
 
     UPROPERTY(Transient)
     TArray<FSFControlGroup> ControlGroups;

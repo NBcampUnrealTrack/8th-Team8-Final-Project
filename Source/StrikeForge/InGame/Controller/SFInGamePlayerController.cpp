@@ -1050,8 +1050,10 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
     const int32 Count = Commandables.Num();
 
-    for (AActor* Actor : Commandables)
+    for (int32 Index = 0; Index < Count; ++Index)
     {
+        AActor* Actor = Commandables[Index];
+
         if (!IsValid(Actor))
         {
             continue;
@@ -1059,8 +1061,26 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
         FVector Goal = Destination;
 
-        AUnitBase* Unit =
-            Cast<AUnitBase>(Actor);
+        // 실제 유닛은 클릭 지점 주변에 원형으로 배치
+        if (Count > 1 && !bAppendToQueue)
+        {
+            const float Angle =
+                2.f * PI * Index / Count;
+
+            const float Radius =
+                FormationSpacing *
+                FMath::Sqrt(
+                    static_cast<float>(Count)
+                );
+
+            Goal += FVector(
+                FMath::Cos(Angle),
+                FMath::Sin(Angle),
+                0.f
+            ) * Radius;
+        }
+
+        AUnitBase* Unit = Cast<AUnitBase>(Actor);
 
         if (!IsValid(Unit))
         {
@@ -1079,13 +1099,9 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
         if (bForceGroupMove)
         {
-            Unit->SetWaitingForGroupMove(
-                true
-            );
+            Unit->SetWaitingForGroupMove(true);
 
-            NewGroup.Units.Add(
-                Unit
-            );
+            NewGroup.Units.Add(Unit);
 
             Unit->ExecuteCommandWithQueue(
                 ESFUnitCommand::Move,
@@ -1096,9 +1112,7 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
         }
         else
         {
-            Unit->SetWaitingForGroupMove(
-                false
-            );
+            Unit->SetWaitingForGroupMove(false);
 
             Unit->ExecuteCommandWithQueue(
                 ESFUnitCommand::AttackMove,

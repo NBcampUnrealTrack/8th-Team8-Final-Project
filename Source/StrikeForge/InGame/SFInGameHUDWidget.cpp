@@ -22,6 +22,7 @@
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/Widget.h"
+#include "Components/CapsuleComponent.h"
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -413,7 +414,13 @@ void USFInGameHUDWidget::NativeTick(
         InDeltaTime
     );
 
-    UpdateQueuedMovePathStartPoints();
+    if (bQueuedMovePathRefreshPending)
+    {
+        bQueuedMovePathRefreshPending =
+            false;
+
+        RefreshQueuedMovePathIndicators();
+    }
 
     RefreshSelectedResourceInfo();
 
@@ -3430,6 +3437,7 @@ void USFInGameHUDWidget::CreateRallyPointIndicatorsForBuilding(
 
     auto CreateRallyMesh =
         [
+            this,
             ProductionBuilding,
             RootComponent,
             PlaneMesh
@@ -3477,10 +3485,38 @@ void USFInGameHUDWidget::CreateRallyPointIndicatorsForBuilding(
             NewIndicator->SetStaticMesh(
                 PlaneMesh
             );
+            UMaterialInterface* MaterialToUse =
+                InMaterial;
+
+            if (InMaterial == RallyPathIndicatorMaterial)
+            {
+                UMaterialInstanceDynamic* DynamicMaterial =
+                    UMaterialInstanceDynamic::Create(
+                        InMaterial,
+                        ProductionBuilding
+                    );
+
+                if (!IsValid(DynamicMaterial))
+                {
+                    NewIndicator->DestroyComponent();
+                    return nullptr;
+                }
+
+                DynamicMaterial->SetScalarParameterValue(
+                    TEXT("PathTiling"),
+                    FMath::Max(
+                        0.01f,
+                        InScale.X
+                    )
+                );
+
+                MaterialToUse =
+                    DynamicMaterial;
+            }
 
             NewIndicator->SetMaterial(
                 0,
-                InMaterial
+                MaterialToUse
             );
 
             NewIndicator->SetCollisionEnabled(
@@ -3645,13 +3681,22 @@ void USFInGameHUDWidget::HideQueuedMovePathIndicators()
     for (UStaticMeshComponent* Indicator :
         QueuedMovePathIndicators)
     {
-        if (IsValid(Indicator))
+        if (!IsValid(Indicator))
         {
-            Indicator->DestroyComponent();
+            continue;
         }
+
+        Indicator->SetVisibility(false);
+
+        if (AActor* Owner = Indicator->GetOwner())
+        {
+            Owner->RemoveInstanceComponent(Indicator);
+        }
+
+        Indicator->DestroyComponent();
     }
 
-    QueuedMovePathIndicators.Empty();
+    QueuedMovePathIndicators.Reset();
 }
 
 bool USFInGameHUDWidget::IsPointerOverHUDPanel()
@@ -4216,17 +4261,21 @@ void USFInGameHUDWidget::RefreshQueuedMovePathIndicators()
 {
     HideQueuedMovePathIndicators();
 
-    QueuedMovePathLiveSegments.SetNum(
-        SelectedActors.Num()
-    );
-
-    UStaticMesh* PlaneMesh = RallyIndicatorMesh.Get();
+    UStaticMesh* PlaneMesh =
+        RallyIndicatorMesh.Get();
 
     if (!IsValid(PlaneMesh))
     {
         return;
     }
 
+    TArray<TArray<FVector>> UnitPaths;
+    TArray<FVector> UnitStartLocations;
+
+    AUnitBase* IndicatorOwner = nullptr;
+    USceneComponent* IndicatorOwnerRoot = nullptr;
+
+    // 선택된 각 유닛의 경로를 수집
     for (const TObjectPtr<AActor>& ActorPtr : SelectedActors)
     {
         AUnitBase* Unit =
@@ -4253,273 +4302,260 @@ void USFInGameHUDWidget::RefreshQueuedMovePathIndicators()
             continue;
         }
 
-        auto CreatePathMesh =
-            [
-                Unit,
-                UnitRoot,
-                PlaneMesh
-            ](
-                UMaterialInterface* InMaterial,
-                const FVector& InScale,
-                const FVector& InLocation,
-                const FRotator& InRotation,
-                int32 InSortPriority
-                ) -> UStaticMeshComponent*
-            {
-                if (!IsValid(InMaterial))
-                {
-                    return nullptr;
-                }
-
-                UStaticMeshComponent* Indicator =
-                    NewObject<UStaticMeshComponent>(Unit);
-
-                if (!IsValid(Indicator))
-                {
-                    return nullptr;
-                }
-
-                Unit->AddInstanceComponent(Indicator);
-
-                Indicator->SetupAttachment(UnitRoot);
-
-                Indicator->SetAbsolute(
-                    true,
-                    true,
-                    true
-                );
-
-                Indicator->SetMobility(
-                    EComponentMobility::Movable
-                );
-
-                Indicator->SetStaticMesh(
-                    PlaneMesh
-                );
-
-                Indicator->SetMaterial(
-                    0,
-                    InMaterial
-                );
-
-                Indicator->SetCollisionEnabled(
-                    ECollisionEnabled::NoCollision
-                );
-
-                Indicator->SetGenerateOverlapEvents(
-                    false
-                );
-
-                Indicator->SetCastShadow(
-                    false
-                );
-
-                Indicator->SetReceivesDecals(
-                    false
-                );
-
-                Indicator->SetTranslucentSortPriority(
-                    InSortPriority
-                );
-
-                Indicator->RegisterComponent();
-
-                Indicator->SetWorldLocation(
-                    InLocation
-                );
-
-                Indicator->SetWorldRotation(
-                    InRotation
-                );
-
-                Indicator->SetWorldScale3D(
-                    InScale
-                );
-
-                return Indicator;
-            };
-
-        FVector PathStart =
-            IsValid(Unit->GetMesh())
-            ? Unit->GetMesh()->GetComponentLocation()
-            : Unit->GetActorLocation();
-
-        for (const FVector& Destination : PathLocations)
+        if (!IsValid(IndicatorOwner))
         {
-            FVector SegmentStart =
-                PathStart;
-
-            FVector SegmentEnd =
-                Destination;
-
-            const float IndicatorZ =
-                SegmentEnd.Z + QueuedMovePathZOffset;
-
-            SegmentStart.Z = IndicatorZ;
-            SegmentEnd.Z = IndicatorZ;
-
-            const FVector2D Delta(
-                SegmentEnd.X - SegmentStart.X,
-                SegmentEnd.Y - SegmentStart.Y
-            );
-
-            const float PathLength =
-                Delta.Size();
-
-            if (PathLength > KINDA_SMALL_NUMBER)
-            {
-                const float PathYaw =
-                    FMath::RadiansToDegrees(
-                        FMath::Atan2(
-                            Delta.Y,
-                            Delta.X
-                        )
-                    );
-
-                if (UStaticMeshComponent* PathMesh =
-                    CreatePathMesh(
-                        RallyPathIndicatorMaterial,
-                        FVector(
-                            PathLength / 100.f,
-                            QueuedMovePathIndicatorWidth / 100.f,
-                            1.f
-                        ),
-                        (SegmentStart + SegmentEnd) * 0.5f,
-                        FRotator(
-                            0.f,
-                            PathYaw,
-                            0.f
-                        ),
-                        21
-                    ))
-                {
-                    QueuedMovePathIndicators.Add(
-                        PathMesh
-                    );
-                }
-            }
-
-            if (UStaticMeshComponent* WaypointMesh =
-                CreatePathMesh(
-                    RallyPointIndicatorMaterial,
-                    FVector(
-                        QueuedMovePathWaypointSize / 100.f,
-                        QueuedMovePathWaypointSize / 100.f,
-                        1.f
-                    ),
-                    SegmentEnd,
-                    FRotator::ZeroRotator,
-                    22
-                ))
-            {
-                QueuedMovePathIndicators.Add(
-                    WaypointMesh
-                );
-            }
-
-            PathStart =
-                Destination;
+            IndicatorOwner = Unit;
+            IndicatorOwnerRoot = UnitRoot;
         }
-    }
-}
 
-void USFInGameHUDWidget::UpdateQueuedMovePathStartPoints()
-{
-    if (QueuedMovePathLiveSegments.IsEmpty())
+        UnitPaths.Add(PathLocations);
+
+        FVector UnitGroundLocation =
+            Unit->GetActorLocation();
+
+        if (const UCapsuleComponent* Capsule =
+            Unit->GetCapsuleComponent())
+        {
+            UnitGroundLocation.Z =
+                Capsule->GetComponentLocation().Z -
+                Capsule->GetScaledCapsuleHalfHeight();
+        }
+
+        UnitStartLocations.Add(
+            UnitGroundLocation
+        );
+    }
+
+    if (!IsValid(IndicatorOwner) ||
+        !IsValid(IndicatorOwnerRoot) ||
+        UnitPaths.IsEmpty())
     {
         return;
     }
 
-    for (int32 SelectedIndex = 0;
-        SelectedIndex < SelectedActors.Num();
-        ++SelectedIndex)
-    {
-        if (!QueuedMovePathLiveSegments.IsValidIndex(
-            SelectedIndex))
+    auto CreatePathMesh =
+        [
+            this,
+            IndicatorOwner,
+            IndicatorOwnerRoot,
+            PlaneMesh
+        ](
+            UMaterialInterface* InMaterial,
+            const FVector& InScale,
+            const FVector& InLocation,
+            const FRotator& InRotation,
+            int32 InSortPriority
+            ) -> UStaticMeshComponent*
         {
-            continue;
-        }
+            if (!IsValid(InMaterial))
+            {
+                return nullptr;
+            }
 
-        AUnitBase* Unit =
-            Cast<AUnitBase>(
-                SelectedActors[SelectedIndex].Get()
+            UStaticMeshComponent* Indicator =
+                NewObject<UStaticMeshComponent>(
+                    IndicatorOwner
+                );
+
+            if (!IsValid(Indicator))
+            {
+                return nullptr;
+            }
+
+            IndicatorOwner->AddInstanceComponent(
+                Indicator
             );
 
-        UStaticMeshComponent* PathMesh =
-            QueuedMovePathLiveSegments[SelectedIndex].Get();
+            Indicator->SetupAttachment(
+                IndicatorOwnerRoot
+            );
 
-        if (!IsValid(Unit) ||
-            !IsValid(PathMesh))
+            Indicator->SetAbsolute(
+                true,
+                true,
+                true
+            );
+
+            Indicator->SetMobility(
+                EComponentMobility::Movable
+            );
+
+            Indicator->SetStaticMesh(
+                PlaneMesh
+            );
+            UMaterialInterface* MaterialToUse =
+                InMaterial;
+
+            if (InMaterial == RallyPathIndicatorMaterial)
+            {
+                UMaterialInstanceDynamic* DynamicMaterial =
+                    UMaterialInstanceDynamic::Create(
+                        InMaterial,
+                        IndicatorOwner
+                    );
+
+                if (!IsValid(DynamicMaterial))
+                {
+                    Indicator->DestroyComponent();
+                    return nullptr;
+                }
+
+                DynamicMaterial->SetScalarParameterValue(
+                    TEXT("PathTiling"),
+                    FMath::Max(
+                        0.01f,
+                        InScale.X
+                    )
+                );
+
+                MaterialToUse =
+                    DynamicMaterial;
+            }
+
+            Indicator->SetMaterial(
+                0,
+                MaterialToUse
+            );
+
+            Indicator->SetCollisionEnabled(
+                ECollisionEnabled::NoCollision
+            );
+
+            Indicator->SetGenerateOverlapEvents(
+                false
+            );
+
+            Indicator->SetCastShadow(
+                false
+            );
+
+            Indicator->SetReceivesDecals(
+                false
+            );
+
+            Indicator->SetTranslucentSortPriority(
+                InSortPriority
+            );
+
+            Indicator->RegisterComponent();
+
+            Indicator->SetWorldLocation(
+                InLocation
+            );
+
+            Indicator->SetWorldRotation(
+                InRotation
+            );
+
+            Indicator->SetWorldScale3D(
+                InScale
+            );
+
+            return Indicator;
+        };
+
+    // 시작점도 선택 유닛들의 중앙으로 계산
+    FVector PathStart = FVector::ZeroVector;
+
+    for (const FVector& StartLocation : UnitStartLocations)
+    {
+        PathStart += StartLocation;
+    }
+
+    PathStart /=
+        static_cast<float>(
+            UnitStartLocations.Num()
+            );
+
+    const TArray<FVector>* CanonicalPath = nullptr;
+
+    for (const TArray<FVector>& PathLocations : UnitPaths)
+    {
+        if (CanonicalPath == nullptr ||
+            PathLocations.Num() > CanonicalPath->Num())
         {
-            continue;
+            CanonicalPath = &PathLocations;
         }
+    }
 
-        TArray<FVector> PathLocations;
-        Unit->GetCommandPathLocations(PathLocations);
+    if (CanonicalPath == nullptr ||
+        CanonicalPath->IsEmpty())
+    {
+        return;
+    }
 
-        if (PathLocations.IsEmpty())
-        {
-            PathMesh->SetVisibility(false);
-            continue;
-        }
-
-        FVector SegmentStart =
-            IsValid(Unit->GetMesh())
-            ? Unit->GetMesh()->GetComponentLocation()
-            : Unit->GetActorLocation();
-
-        FVector SegmentEnd =
-            PathLocations[0];
+    for (const FVector& RawPathEnd : *CanonicalPath)
+    {
+        const FVector RawPathStart = PathStart;
 
         const float IndicatorZ =
-            SegmentEnd.Z + QueuedMovePathZOffset;
+            FMath::Max(
+                RawPathStart.Z,
+                RawPathEnd.Z
+            ) + QueuedMovePathZOffset;
+
+        FVector SegmentStart = RawPathStart;
+        FVector SegmentEnd = RawPathEnd;
 
         SegmentStart.Z = IndicatorZ;
         SegmentEnd.Z = IndicatorZ;
 
-        const FVector2D Delta(
+        const FVector2D PathDelta(
             SegmentEnd.X - SegmentStart.X,
             SegmentEnd.Y - SegmentStart.Y
         );
 
         const float PathLength =
-            Delta.Size();
+            PathDelta.Size();
 
-        if (PathLength <= KINDA_SMALL_NUMBER)
+        if (PathLength > KINDA_SMALL_NUMBER)
         {
-            PathMesh->SetVisibility(false);
-            continue;
+            const float PathYaw =
+                FMath::RadiansToDegrees(
+                    FMath::Atan2(
+                        PathDelta.Y,
+                        PathDelta.X
+                    )
+                );
+
+            if (UStaticMeshComponent* PathMesh =
+                CreatePathMesh(
+                    RallyPathIndicatorMaterial,
+                    FVector(
+                        PathLength / 100.f,
+                        QueuedMovePathIndicatorWidth / 100.f,
+                        1.f
+                    ),
+                    (SegmentStart + SegmentEnd) * 0.5f,
+                    FRotator(
+                        0.f,
+                        PathYaw,
+                        0.f
+                    ),
+                    21
+                ))
+            {
+                QueuedMovePathIndicators.Add(PathMesh);
+            }
         }
 
-        const float PathYaw =
-            FMath::RadiansToDegrees(
-                FMath::Atan2(
-                    Delta.Y,
-                    Delta.X
-                )
-            );
+        if (UStaticMeshComponent* WaypointMesh =
+            CreatePathMesh(
+                RallyPointIndicatorMaterial,
+                FVector(
+                    QueuedMovePathWaypointSize / 100.f,
+                    QueuedMovePathWaypointSize / 100.f,
+                    1.f
+                ),
+                SegmentEnd,
+                FRotator::ZeroRotator,
+                22
+            ))
+        {
+            QueuedMovePathIndicators.Add(WaypointMesh);
+        }
 
-        PathMesh->SetVisibility(true);
-
-        PathMesh->SetWorldLocation(
-            (SegmentStart + SegmentEnd) * 0.5f
-        );
-
-        PathMesh->SetWorldRotation(
-            FRotator(
-                0.f,
-                PathYaw,
-                0.f
-            )
-        );
-
-        PathMesh->SetWorldScale3D(
-            FVector(
-                PathLength / 100.f,
-                QueuedMovePathIndicatorWidth / 100.f,
-                1.f
-            )
-        );
+        PathStart = RawPathEnd;
     }
 }
 
@@ -4555,7 +4591,8 @@ void USFInGameHUDWidget::UnbindSelectedCommandPathDelegates()
 
 void USFInGameHUDWidget::HandleSelectedUnitCommandPathChanged()
 {
-    RefreshQueuedMovePathIndicators();
+    bQueuedMovePathRefreshPending =
+        true;
 }
 
 void USFInGameHUDWidget::HandleControlGroupResetRequested(

@@ -13,6 +13,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     GroupIndex
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnControlGroupResetRequested,
+    int32,
+    GroupIndex
+);
+
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFControlGroupWidget
     : public UUserWidget
@@ -47,6 +53,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "SF|ControlGroup")
     FSFOnControlGroupClicked OnControlGroupClicked;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|ControlGroup")
+    FSFOnControlGroupResetRequested OnControlGroupResetRequested;
 
 protected:
     virtual void NativeConstruct() override;
@@ -98,6 +107,9 @@ protected:
 private:
     UFUNCTION()
     void HandleControlNumClicked(int32 GroupIndex);
+
+    UFUNCTION()
+    void HandleControlNumResetRequested(int32 GroupIndex);
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<USFControlNumWidget>> ControlNumWidgets;

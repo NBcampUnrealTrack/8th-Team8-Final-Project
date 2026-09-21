@@ -172,6 +172,8 @@ private:
 
     void HandleControlGroupInput(int32 GroupIndex);
 
+    void FocusCameraOnCurrentControlGroup();
+
     void HandleToggleBuildModeInput();
 
     // 생산 슬롯 입력 처리
@@ -415,6 +417,14 @@ protected:
     )
     float FormationSpacing = 120.f;
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Control Group",
+        meta = (ClampMin = "0.15", ClampMax = "0.6")
+    )
+    float ControlGroupDoubleTapWindow = 0.3f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> ProduceSlot1Action = nullptr;
 
@@ -472,6 +482,10 @@ private:
     bool bCommandClickConsumed = false;
 
     bool bRallyPointPending = false;
+
+    int32 LastControlGroupIndex = INDEX_NONE;
+
+    double LastControlGroupInputTime = -1.0;
 
     // team
     int32 MyTeamIndex = 0;

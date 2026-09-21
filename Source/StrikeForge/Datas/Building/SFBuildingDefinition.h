@@ -84,9 +84,9 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "1"))
     FIntPoint GridSize = FIntPoint(1, 1);
 
-    /** 건물 위 체력바 배치. 앵커는 메시 중심에서 계산되므로 여기에 없다. */
+    /** 건물 머리 위 판 배치. 앵커는 메시 중심에서 계산되므로 여기에 없다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Overhead")
-    FSFOverheadUISettings HealthBarSettings;
+    FSFOverheadUISettings OverheadUISettings;
     
     // 건물 배치 Preview에서 사용할 Material.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement")

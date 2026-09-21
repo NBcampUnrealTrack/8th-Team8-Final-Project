@@ -18,5 +18,5 @@ void USFOverheadUISubsystem::SetUIScale(float InScale)
 
 	CurrentUIScale = NewScale;
 
-	OnUIScaleChanged.Broadcast(CurrentUIScale);
+	OnUIScaleChanged.Broadcast();
 }

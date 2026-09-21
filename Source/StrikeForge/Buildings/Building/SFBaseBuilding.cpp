@@ -660,7 +660,9 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 
 	CurrentBuildingState = InState;
 	
-	OverheadUI->SetSuppressed(InState == EBuildingState::Preview);
+	const bool bShouldSuppressOverhead =
+		InState == EBuildingState::Preview || InState == EBuildingState::Destroyed;
+	OverheadUI->SetSuppressed(bShouldSuppressOverhead);
 		
 	ApplyBuildingState(InState);
 }

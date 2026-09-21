@@ -66,7 +66,7 @@ void USFOverheadUIComponent::BeginPlay()
 	PushPanelState();
 
 	// 배지처럼 스스로 끝나는 요소는 판이 끝났다고 알려준다. 그때 비트를 내린다.
-	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	if (USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>())
 	{
 		ElementFinishedHandle = Panel->OnElementFinished.AddUObject(
 			this, &USFOverheadUIComponent::HandleElementFinished);
@@ -91,7 +91,7 @@ void USFOverheadUIComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StatusHandle.Reset();
 	StatusComponent = nullptr;
 
-	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	if (USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>())
 	{
 		Panel->OnElementFinished.Remove(ElementFinishedHandle);
 	}
@@ -167,7 +167,7 @@ void USFOverheadUIComponent::SetElementVisible(ESFOverheadElement InElement, boo
 		? static_cast<uint8>(ElementMask | Bit)
 		: static_cast<uint8>(ElementMask & ~Bit);
 
-	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	if (USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>())
 	{
 		Panel->SetElementVisible(InElement, bInVisible);
 	}
@@ -185,7 +185,7 @@ void USFOverheadUIComponent::SetSuppressed(bool bInSuppressed)
 
 void USFOverheadUIComponent::PlayResourceGain(EResourceType InResourceType, int32 InAmount)
 {
-	USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>();
+	USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>();
 	if (!IsValid(Panel))	return;
 
 	/*
@@ -206,7 +206,7 @@ void USFOverheadUIComponent::HandleElementFinished(ESFOverheadElement InElement)
 
 void USFOverheadUIComponent::PushPanelState()
 {
-	USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>();
+	USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>();
 	if (!IsValid(Panel))	return;
 
 	for (int32 Index = 0; Index < static_cast<int32>(ESFOverheadElement::MAX); ++Index)
@@ -224,51 +224,96 @@ void USFOverheadUIComponent::RefreshVisibility()
 	// 켜진 요소가 하나도 없으면 판을 띄울 이유가 없다.
 	const bool bShouldShow = !bSuppressed && ElementMask != 0;
 
-	// UserWidget 가시성을 먼저 맞춘다.
-	// Screen 모드의 IsWidgetVisible()이 이 값을 보고 틱을 끄고 켠다.
-	if (UUserWidget* BarWidget = GetUserWidgetObject())
+	/*
+	 * UserWidget 가시성을 먼저 맞춘다.
+	 * Screen 모드의 IsWidgetVisible()이 이 값을 보고
+	 * 틱을 끄고 켠다.
+	 */
+	if (UUserWidget* PanelWidget = GetUserWidgetObject())
 	{
-		BarWidget->SetVisibility(bShouldShow
-			? ESlateVisibility::SelfHitTestInvisible
-			: ESlateVisibility::Collapsed);
+		PanelWidget->SetVisibility(
+			bShouldShow
+				? ESlateVisibility::SelfHitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 
-	if (IsVisible() == bShouldShow)	return;
+	if (IsVisible() == bShouldShow)
+	{
+		return;
+	}
 
 	SetVisibility(bShouldShow);
 
-	if (bShouldShow)
+	if (!bShouldShow)
 	{
-		ApplyUIScale();
+		return;
 	}
+
+	/*
+	 * 숨겨진 동안 Panel에는 상태를 전달하지 않았으므로,
+	 * 다시 표시되는 순간 StatusComponent의 최신 상태를 적용한다.
+	 *
+	 * 별도 캐시를 만들 필요가 없다.
+	 */
+	if (IsValid(StatusComponent))
+	{
+		HandleStatusChanged(StatusComponent->GetStatus());
+	}
+
+	ApplyUIScale();
 }
 
 void USFOverheadUIComponent::ApplyUIScale()
 {
-	UUserWidget* BarWidget = GetUserWidgetObject();
-	if (!IsValid(BarWidget))	return;
-
+	UUserWidget* PanelWidget = GetUserWidgetObject();
+	if (!IsValid(PanelWidget)) return;
 	/*
 	 * 배율은 서브시스템이 유일하게 들고 있다. 복사해 두지 않고 쓸 때마다 읽는다.
 	 *
 	 * 서브시스템이 없어도 위치는 잡아야 하므로 배율만 기본값으로 떨어뜨린다.
 	 * 여기서 함수 전체를 막으면 세로 오프셋까지 날아가 바가 앵커에 붙어 버린다.
 	 */
-	float Scale = 1.f;
+	float DesiredScale = 1.f;
 	if (const USFOverheadUISubsystem* OverheadUISubsystem = USFOverheadUISubsystem::Get(this))
 	{
-		Scale = OverheadUISubsystem->GetUIScale();
+		DesiredScale = OverheadUISubsystem->GetUIScale();
 	}
 
 	// 판은 앵커에 가로 정렬되고, 세로는 VerticalRatio가 계산한 만큼 띄운다.
 	const FVector2D Offset(0.f, ComputedScreenOffsetY);
-
+	
 	// 배치 Pivot과 같은 축으로 확대·축소해야 앵커에 붙은 상태가 유지된다.
-	BarWidget->SetRenderTransformPivot(Settings.Pivot);
-	BarWidget->SetRenderScale(FVector2D(Scale, Scale));
-
+	PanelWidget->SetRenderTransformPivot(Settings.Pivot);
+	PanelWidget->SetRenderScale(FVector2D(DesiredScale, DesiredScale));
+	
 	// Translation은 Scale과 별도로 합성되므로(Concatenate 순서상 마지막) 직접 곱한다.
-	BarWidget->SetRenderTranslation(Offset * Scale);
+	PanelWidget->SetRenderTranslation(Offset * DesiredScale);
+	
+	// const float BaseWidth = FMath::Max(GetDrawSize().X, 1.f);
+	//
+	// const float MinimumWidth = FMath::Max(
+	// 	1.f,
+	// 	FMath::Min(Settings.WidthRange.X, Settings.WidthRange.Y));
+	//
+	// const float MaximumWidth = FMath::Max(
+	// 	MinimumWidth,
+	// 	FMath::Max(Settings.WidthRange.X, Settings.WidthRange.Y));
+	//
+	// const float MinimumScale = MinimumWidth / BaseWidth;
+	// const float MaximumScale = MaximumWidth / BaseWidth;
+	//
+	// const float EffectiveScale = FMath::Clamp(
+	// 	DesiredScale,
+	// 	MinimumScale,
+	// 	MaximumScale);
+	//
+	// PanelWidget->SetRenderTransformPivot(Settings.Pivot);
+	// PanelWidget->SetRenderScale(
+	// 	FVector2D(EffectiveScale, EffectiveScale));
+	//
+	// const FVector2D ScreenOffset(0.f, ComputedScreenOffsetY);
+	// PanelWidget->SetRenderTranslation(ScreenOffset * EffectiveScale);
+	
 }
 
 void USFOverheadUIComponent::HandleUIScaleChanged()
@@ -281,7 +326,16 @@ void USFOverheadUIComponent::HandleUIScaleChanged()
 
 void USFOverheadUIComponent::HandleStatusChanged(const FSFOverheadStatus& InStatus)
 {
-	if (USFOverheadPanelWidget* Panel = GetWidget<USFOverheadPanelWidget>())
+	/*
+	 * StatusComponent는 숨겨진 동안에도 최신 상태를 보관한다.
+	 * 실제로 보이지 않는 위젯 트리까지 갱신할 필요는 없다.
+	 */
+	if (!IsVisible())
+	{
+		return;
+	}
+	
+	if (USFOverheadPanelWidget* Panel = GetPanelWidget<USFOverheadPanelWidget>())
 	{
 		Panel->ApplyStatus(InStatus);
 	}

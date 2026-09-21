@@ -52,7 +52,7 @@ public:
 	void PlayResourceGain(EResourceType InResourceType, int32 InAmount);
 
 	template<typename T>
-	T* GetWidget() const
+	T* GetPanelWidget() const
 	{
 		return Cast<T>(GetUserWidgetObject());
 	}

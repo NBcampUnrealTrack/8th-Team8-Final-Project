@@ -40,9 +40,17 @@ void USFResourceGainWidget::Play(EResourceType InResourceType, int32 InAmount)
 		AmountText->SetFont(FontInfo);
 	}
 
-	if (IsValid(ResourceIcon) && Visual && IsValid(Visual->Icon))
+	if (IsValid(ResourceIcon))
 	{
-		ResourceIcon->SetBrushFromTexture(Visual->Icon);
+		const bool bHasIcon = Visual && IsValid(Visual->Icon);
+		ResourceIcon->SetVisibility(bHasIcon
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+
+		if (bHasIcon)
+		{
+			ResourceIcon->SetBrushFromTexture(Visual->Icon);
+		}
 	}
 
 	if (!IsValid(GainAnim))

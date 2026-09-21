@@ -4,6 +4,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "InputCoreTypes.h"
 
 void USFControlNumWidget::NativeConstruct()
 {
@@ -217,5 +218,34 @@ void USFControlNumWidget::SetActorCount(int32 NewCount)
         FText::AsNumber(
             FMath::Max(0, NewCount)
         )
+    );
+}
+
+FReply USFControlNumWidget::NativeOnMouseButtonDown(
+    const FGeometry& InGeometry,
+    const FPointerEvent& InMouseEvent
+)
+{
+    if (
+        InMouseEvent.GetEffectingButton()
+        == EKeys::RightMouseButton
+        )
+    {
+        if (
+            bHasControlGroupData &&
+            GroupIndex != INDEX_NONE
+            )
+        {
+            OnControlNumResetRequested.Broadcast(
+                GroupIndex
+            );
+
+            return FReply::Handled();
+        }
+    }
+
+    return Super::NativeOnMouseButtonDown(
+        InGeometry,
+        InMouseEvent
     );
 }

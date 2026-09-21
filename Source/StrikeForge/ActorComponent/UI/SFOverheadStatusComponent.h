@@ -21,6 +21,12 @@ namespace SFOverheadUIColors
 	inline constexpr FLinearColor Production  = FLinearColor(0.20f, 0.85f, 0.25f, 1.f);
 	inline constexpr FLinearColor Mineral     = FLinearColor(0.9f, 0.9f, 0.1f, 1.f);
 	inline constexpr FLinearColor Ether       = FLinearColor(0.1f, 0.1f, 0.95f, 1.f);
+
+	/** 자원 종류에 대응하는 색. 진행도 바와 획득 배지가 같은 색을 쓴다. */
+	inline FLinearColor FromResourceType(EResourceType InResourceType)
+	{
+		return InResourceType == EResourceType::Ether ? Ether : Mineral;
+	}
 }
 
 /**
@@ -51,12 +57,6 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FSFOnOverheadStatusChanged, const FSFOverhea
 
 /**
  * 머리 위 UI가 볼 상태를 한 곳에 모은다.
- *
- * 체력·진행도·색을 각각의 출처에서 받아 하나의 상태로 정규화하고, 변경 신호를 하나만 쏜다.
- * 소유자는 출처를 연결해 주기만 하고 값을 중계하지 않는다.
- *
- * 표시 여부는 여기서 정하지 않는다. 그건 소유자의 정책이고
- * USFOverheadUIComponent::SetVisible()이 담당한다.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API USFOverheadStatusComponent : public UActorComponent

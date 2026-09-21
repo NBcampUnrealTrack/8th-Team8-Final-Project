@@ -56,10 +56,6 @@ private:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UMiningComponent> MiningComponent;
-
-	/** 채굴 진행도 바. 이 건물만 쓴다. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> ProgressBarUI;
 private:
 	float CurrentIncomeRatePerSecond = 0.f;
 };

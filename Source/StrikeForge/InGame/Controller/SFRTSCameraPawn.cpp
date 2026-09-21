@@ -229,8 +229,7 @@ void ASFRTSCameraPawn::MoveCamera(
 }
 
 void ASFRTSCameraPawn::ZoomCamera(
-    const FInputActionValue& InputValue
-)
+    const FInputActionValue& InputValue)
 {
     if (!IsValid(SpringArm))
     {

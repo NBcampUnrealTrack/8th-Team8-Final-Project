@@ -3,25 +3,23 @@
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 
-void USFProgressBarWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
+void USFProgressBarWidget::SetRatio(float InRatio)
 {
 	if (!IsValid(ProgressBar))	return;
 
-	// SetPercent는 레이아웃 무효화를 부른다. 눈에 안 띄는 변화는 건너뛴다.
-	if (!FMath::IsNearlyEqual(LastRatio, InStatus.ProgressRatio, 0.005f))
-	{
-		LastRatio = InStatus.ProgressRatio;
-		ProgressBar->SetPercent(InStatus.ProgressRatio);
-	}
+	ProgressBar->SetPercent(InRatio);
+}
 
-	if (LastColor.Equals(InStatus.ProgressColor))	return;
+void USFProgressBarWidget::SetColor(const FLinearColor& InColor)
+{
+	if (!IsValid(ProgressBar))	return;
 
-	LastColor = InStatus.ProgressColor;
-	ProgressBar->SetFillColorAndOpacity(InStatus.ProgressColor);
+	ProgressBar->SetFillColorAndOpacity(InColor);
 
 	if (IsValid(ProgressBarBackground))
 	{
-		FLinearColor BackgroundColor = InStatus.ProgressColor * 0.3f;
+		// 채워진 색을 어둡게 깔아 같은 자원이라는 게 읽히게 한다.
+		FLinearColor BackgroundColor = InColor * 0.3f;
 		BackgroundColor.A = 0.5f;
 
 		ProgressBarBackground->SetColorAndOpacity(BackgroundColor);

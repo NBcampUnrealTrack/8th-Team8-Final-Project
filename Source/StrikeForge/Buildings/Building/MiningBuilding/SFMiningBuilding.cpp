@@ -10,7 +10,6 @@
 ASFMiningBuilding::ASFMiningBuilding()
 {
 	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
-	ProgressBarUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("ProgressBarUI"));
 }
 
 void ASFMiningBuilding::BeginPlay()
@@ -95,7 +94,6 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
-	ProgressBarUI->ApplySettings(Definition->ProgressBarSettings);
 	SetProgressColorByResourceType(GetMineResourceType());
 }
 
@@ -140,23 +138,8 @@ void ASFMiningBuilding::OnTierDeactivated()
 
 void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceType)
 {
-	switch (InResourceType)
-	{
-	case EResourceType::Ether:
-		{
-			StatusComponent->SetProgressColor(SFOverheadUIColors::Ether);
-			break;
-		}
-	case EResourceType::Mineral:
-		{
-			StatusComponent->SetProgressColor(SFOverheadUIColors::Mineral);
-			break;
-		}
-	default:
-		{
-			break;
-		}
-	}
+	// 색 규칙은 SFOverheadUIColors 한 곳에 있다. 획득 배지도 같은 함수를 쓴다.
+	StatusComponent->SetProgressColor(SFOverheadUIColors::FromResourceType(InResourceType));
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const
@@ -223,7 +206,7 @@ void ASFMiningBuilding::RefreshMiningState()
 		ApplyIncomeRate(0.f);
 		
 		// progressbar는 종료하고 다른 UI를 보여한다
-		ProgressBarUI->SetVisible(false);
+		OverheadUI->SetElementVisible(ESFOverheadElement::Progress, false);
 		// TODO:: Alert UI Needed
 		
 		return;
@@ -236,7 +219,8 @@ void ASFMiningBuilding::RefreshMiningState()
 		MiningComponent->GetIncomeRatePerSeconds());
 
 	
-	ProgressBarUI->SetVisible(true);
+	// 내 광산만 진행도를 보여준다. 적 수입은 노출하지 않는다.
+	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, IsOwnedByLocalPlayer());
 }
 
 //getter
@@ -271,6 +255,17 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	if (!IsValid(SFGameState)) return;
 	
 	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
+
+	/*
+	 * 획득은 상태가 아니라 사건이다.
+	 * 1초 뒤에 물어보면 보여줄 게 없으므로 상태 컴포넌트를 거치지 않고 바로 전달한다.
+	 *
+	 * 자원은 팀과 무관하게 쌓이지만 배지는 내 것만 띄운다.
+	 * 남의 수입은 보여줄 이유가 없고, 시야에 들어온 적 광산의 채굴량이 그대로 노출된다.
+	 */
+	if (!IsOwnedByLocalPlayer())	return;
+
+	OverheadUI->PlayResourceGain(InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

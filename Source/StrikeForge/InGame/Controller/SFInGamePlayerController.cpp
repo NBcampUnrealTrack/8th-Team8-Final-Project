@@ -1070,48 +1070,65 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
         FVector Goal = Destination;
 
-        // 기존 포메이션 목적지 계산은 그대로 유지한다.
-        if (Count > 1)
+        // 실제 유닛은 클릭 지점 주변에 원형으로 배치
+        if (Count > 1 && !bAppendToQueue)
         {
-            const float Angle = 2.f * PI * Index / Count;
+            const float Angle =
+                2.f * PI * Index / Count;
 
-            const float Radius = FormationSpacing * FMath::Sqrt(static_cast<float>(Count));
+            const float Radius =
+                FormationSpacing *
+                FMath::Sqrt(
+                    static_cast<float>(Count)
+                );
 
-            Goal += FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+            Goal += FVector(
+                FMath::Cos(Angle),
+                FMath::Sin(Angle),
+                0.f
+            ) * Radius;
         }
 
         AUnitBase* Unit = Cast<AUnitBase>(Actor);
 
         if (!IsValid(Unit))
         {
-            // 지휘관처럼 UnitBase가 아닌 대상은
-            // 기존 인터페이스 이동을 사용한다.
-            IMovable::Execute_MoveToLocation(Actor, Goal);
+            IMovable::Execute_MoveToLocation(
+                Actor,
+                Goal
+            );
 
             continue;
         }
 
-        // 이 유닛이 이전 그룹에 들어 있었다면
-        // 이전 그룹에서 먼저 제거한다.
-        RemoveUnitFromForcedMoveGroups(Unit, false);
+        RemoveUnitFromForcedMoveGroups(
+            Unit,
+            false
+        );
 
         if (bForceGroupMove)
         {
-            // 그룹 전체가 완료될 때까지
-            // 자동 전투 재개를 막는다.
             Unit->SetWaitingForGroupMove(true);
 
             NewGroup.Units.Add(Unit);
 
-            Unit->ExecuteCommandWithQueue(ESFUnitCommand::Move, Goal, nullptr, false);
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::Move,
+                Goal,
+                nullptr,
+                false
+            );
         }
         else
         {
-            // 평상시 우클릭은 이동 중 적을 만나면
-            // 자동 교전하는 기존 공격 이동이다.
             Unit->SetWaitingForGroupMove(false);
 
-            Unit->ExecuteCommandWithQueue(ESFUnitCommand::AttackMove, Goal, nullptr, bAppendToQueue);
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::AttackMove,
+                Goal,
+                nullptr,
+                bAppendToQueue
+            );
         }
     }
 
@@ -1890,18 +1907,102 @@ void ASFInGamePlayerController::HandleControlGroupInput(
             GroupIndex,
             false
         );
+
+        // 저장 입력은 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else if (bShiftPressed)
+
+    if (bShiftPressed)
     {
         InGameHUDWidget->SaveCurrentSelectionToControlGroup(
             GroupIndex,
             true
         );
+
+        // 추가 입력도 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else
+
+    const double CurrentTime =
+        GetWorld()
+        ? GetWorld()->GetTimeSeconds()
+        : 0.0;
+
+    const bool bDoublePressed =
+        LastControlGroupIndex == GroupIndex &&
+        CurrentTime - LastControlGroupInputTime
+        <= ControlGroupDoubleTapWindow;
+
+    // 첫 번째 숫자 입력에서도 부대를 선택한다.
+    InGameHUDWidget->SelectControlGroup(GroupIndex);
+
+    // 같은 숫자를 짧은 시간 안에 다시 누르면 카메라 이동
+    if (bDoublePressed)
     {
-        InGameHUDWidget->SelectControlGroup(GroupIndex);
+        FocusCameraOnCurrentControlGroup();
     }
+
+    LastControlGroupIndex = GroupIndex;
+    LastControlGroupInputTime = CurrentTime;
+}
+
+void ASFInGamePlayerController::FocusCameraOnCurrentControlGroup()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    FVector FocusLocation = FVector::ZeroVector;
+    int32 ValidActorCount = 0;
+
+    for (
+        const TObjectPtr<AActor>& ActorPtr :
+        InGameHUDWidget->GetSelectedActors()
+        )
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        FocusLocation += Actor->GetActorLocation();
+        ++ValidActorCount;
+    }
+
+    if (ValidActorCount == 0)
+    {
+        return;
+    }
+
+    FocusLocation /= static_cast<float>(ValidActorCount);
+
+    ASFRTSCameraPawn* CameraPawn =
+        Cast<ASFRTSCameraPawn>(GetPawn());
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    CameraPawn->FocusOnWorldLocation(
+        FocusLocation
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Control group camera focused | Location: %s",
+        *FocusLocation.ToString()
+    );
 }
 
 bool ASFInGamePlayerController::IsShiftCommandModifierDown() const

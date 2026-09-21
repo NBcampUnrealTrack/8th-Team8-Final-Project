@@ -42,6 +42,12 @@ void USFControlGroupWidget::NativeConstruct()
                 this,
                 &USFControlGroupWidget::HandleControlNumClicked
             );
+
+        ControlNum->OnControlNumResetRequested
+            .AddUniqueDynamic(
+                this,
+                &USFControlGroupWidget::HandleControlNumResetRequested
+            );
     }
 }
 
@@ -58,6 +64,12 @@ void USFControlGroupWidget::NativeDestruct()
             .RemoveDynamic(
                 this,
                 &USFControlGroupWidget::HandleControlNumClicked
+            );
+
+        ControlNum->OnControlNumResetRequested
+            .RemoveDynamic(
+                this,
+                &USFControlGroupWidget::HandleControlNumResetRequested
             );
     }
 
@@ -163,6 +175,15 @@ void USFControlGroupWidget::HandleControlNumClicked(
 )
 {
     OnControlGroupClicked.Broadcast(GroupIndex);
+}
+
+void USFControlGroupWidget::HandleControlNumResetRequested(
+    int32 GroupIndex
+)
+{
+    OnControlGroupResetRequested.Broadcast(
+        GroupIndex
+    );
 }
 
 void USFControlGroupWidget::RemoveControlGroupSlot(

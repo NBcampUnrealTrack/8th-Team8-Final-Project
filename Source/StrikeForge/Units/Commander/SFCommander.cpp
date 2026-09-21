@@ -719,7 +719,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 			const float SkillRadiusSquared = FMath::Square(SkillRadius);
 			//--------------------------------------------
 			
-			DrawDebugSphere(GetWorld(), GetActorLocation(), SkillRadius, -1,FColor::Red,false, 3.f,0,2);
+			//DrawDebugSphere(GetWorld(), GetActorLocation(), SkillRadius, -1,FColor::Red,false, 3.f,0,2);
 
 			const ASFInGamePlayerController* SFPC =
 					World->GetFirstPlayerController<ASFInGamePlayerController>();
@@ -820,7 +820,7 @@ TArray<FBuffTarget> ASFCommander::GetSkillActors(TWeakObjectPtr<UWorld> World, f
 	FCollisionShape ColShape;
 	ColShape.SetSphere(Radius);
 	World->OverlapMultiByChannel(HitResults, GetActorLocation(), FQuat::Identity, ECC_Pawn, ColShape);
-	DrawDebugSphere(World.Get(), GetActorLocation(), Radius, 16, FColor::Red, false, 5.f);
+	//DrawDebugSphere(World.Get(), GetActorLocation(), Radius, 16, FColor::Red, false, 5.f);
 
 	for (FOverlapResult OverlapResult : HitResults)
 	{

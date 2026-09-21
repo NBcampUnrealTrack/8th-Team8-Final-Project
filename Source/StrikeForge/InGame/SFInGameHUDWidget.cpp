@@ -26,7 +26,7 @@
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
 #include "CommonActivatableWidget.h"

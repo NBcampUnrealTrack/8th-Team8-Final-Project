@@ -151,14 +151,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
 	int32 PlayerTeamIndex = 0;
 
-	/** 플레이어 팀의 시작 자원 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	int32 StartingMineral = 205;
-	/** 스테이지 행별 시작 광물. 등록되지 않은 스테이지는 StartingMineral을 사용한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	TMap<FName, int32> StartingMineralOverrides;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage", meta = (AllowPrivateAccess = "true"))
-	int32 StartingEther = 100;
+	/** BeginStageBootstrap에서 DT_SFStage 행으로부터 읽은 시작 광물. */
+	int32 BootstrapStartingMineral = 0;
+
+	/** BeginStageBootstrap에서 DT_SFStage 행으로부터 읽은 시작 에테르. */
+	int32 BootstrapStartingEther = 0;
 
 	/** 카메라 경계 박스의 두께 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage|Camera Boundary", meta = (AllowPrivateAccess = "true", ClampMin = "1.0"))

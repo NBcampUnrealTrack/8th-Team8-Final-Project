@@ -19,8 +19,14 @@ public:
 	// 최대체력으로 완전히 채워 초기화
 	void InitializeHealth(float InMaxHealth);
 
-	// 최대체력과 현재체력을 각각 지정
+	// 최대체력과 현재체력을 각각 초기화
 	void InitializeHealth(float InMaxHealth, float InCurrentHealth);
+
+	// 최대체력과 현재체력을 설정
+	void SetHealth(float InMaxHealth, float InCurrentHealth);
+
+	// 최대체력 배수증가 (체력비율 유지)
+	void BoostHealth(float HealthMultiplier);
 
 	// 현재체력만 증가. 건물 수리시 적용에정. 
 	void IncreaseCurrentHealth(float InAmount);
@@ -41,7 +47,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Health")
 	FORCEINLINE bool GetIsDead() const { return IsDead; }
 #pragma region Properties
-	
+
 	UPROPERTY(BlueprintAssignable)
 	FHealthValueChanged OnHealthValueChanged;
 	UPROPERTY(BlueprintAssignable)
@@ -53,7 +59,9 @@ private:
 	UPROPERTY()
 	bool IsDead = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
-	float CurrentHealth = 1.f;
+	float InitialHealth = 100.f;	// 순정 상태의 최대체력 (버프의 영향을 받지 않은)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float MaxHealth = 100.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
+	float CurrentHealth = 1.f;
 };

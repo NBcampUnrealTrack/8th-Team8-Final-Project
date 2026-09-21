@@ -1,7 +1,7 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
-#include "ActorComponent/HP/HealthComponent.h"
+#include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"

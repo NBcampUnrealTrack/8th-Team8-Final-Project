@@ -22,6 +22,7 @@ UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier1);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier2);
 
 class ASFTutorialGhostActor;
+class ASFBaseBuilding;
 class USFBuildingDefinition;
 class USoundBase;
 
@@ -197,6 +198,21 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SF|Tutorial|Guide",
         meta = (WorldContext = "InWorldContext"))
     static void HidePlacementGhost(const UObject* InWorldContext);
+
+    /**
+     * 고스트 위치에 요구 건물을 확정 배치했음을 기록한다.
+     *
+     * 이 순간부터 해당 건물이 완공될 때까지는 건설 메뉴의 모든 항목을 막는다.
+     * 선택 제한만으로는 같은 건물을 다시 지어 자원을 소모할 수 있기 때문이다.
+     */
+    static void NotifyTutorialBuildingPlacementConfirmed(
+        const UObject* InWorldContext,
+        ASFBaseBuilding* InBuilding);
+
+    /** 확정 배치가 건설 시작 전에 취소됐을 때, 다시 시도할 수 있도록 예약을 푼다. */
+    static void NotifyTutorialBuildingPlacementCancelled(
+        const UObject* InWorldContext,
+        const ASFBaseBuilding* InBuilding);
 
     // ── 건설 메뉴 ───────────────────────────────────────
 
@@ -400,7 +416,7 @@ private:
      * 고르기만 하고 취소한 경우에는 아무 목표도 기록되지 않으므로 잠금이
      * 그대로 유지된다. 그게 목적이다.
      */
-    void ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTag);
+    void ReleaseBuildingLockIfBuilt(FGameplayTag InObjectiveTag, const UObject* InWorldContext);
 
     /**
      * 목표를 달성한 순간에 성공음을 울린다.
@@ -412,6 +428,14 @@ private:
 
     void SpawnPlacementGhost(const FSFStageIntroGuideStep& InStep);
     void DestroyPlacementGhost();
+
+    /**
+     * 실제 배치 미리보기와 같은 그리드 중심으로 안내 목표를 보정한다.
+     *
+     * 오두막/병영처럼 여러 칸을 차지하는 건물은 임의 월드 좌표를 그대로
+     * 고스트로 쓰면, 플레이어가 선택했을 때 스냅되는 위치와 달라 보인다.
+     */
+    void SnapPlacementGuideToBuildingGrid(FSFStageIntroGuideStep& InOutStep) const;
 
     /**
      * 건물 클래스에서 메시 컴포넌트의 겉모습을 꺼낸다.
@@ -523,6 +547,13 @@ private:
      * 다시 골랐을 때 배치가 끝난 것으로 처리된다.
      */
     int32 LockedBuildingStepIndex = INDEX_NONE;
+
+    /**
+     * 고스트 위치에 확정한 튜토리얼 건물.
+     * 유효한 동안은 같은 건물을 포함해 새 건설을 모두 막고, 이 액터가
+     * 완료 신호를 보낼 때만 잠금을 해제한다.
+     */
+    TWeakObjectPtr<ASFBaseBuilding> ReservedTutorialBuilding;
 
     /** 배치 고스트. 칸이 바뀌거나 안내가 끝나면 파괴한다 */
     UPROPERTY(Transient)

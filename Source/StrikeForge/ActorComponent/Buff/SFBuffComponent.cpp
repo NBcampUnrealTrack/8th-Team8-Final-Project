@@ -168,7 +168,7 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		TWeakObjectPtr<UCombatTargetComponent> SFCombatComp = GetOwner()->GetComponentByClass<UCombatTargetComponent>();
 		if (SFCombatComp.IsValid())
 		{
-			SFCombatComp->SetDamagerMultiplier(Current_Status.DmgMul);
+			SFCombatComp->SetDamageMultiplier(Current_Status.DmgMul);
 		}
 	}
 

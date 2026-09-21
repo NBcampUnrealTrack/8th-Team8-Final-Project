@@ -25,6 +25,7 @@
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
@@ -573,6 +574,17 @@ void USFInGameHUDWidget::ApplySelection(
     SelectedActors.Reset();
     SelectedActors.Add(NewSelectedActor);
     SelectedInfo = NewSelectedInfo;
+
+    // 건설 카탈로그에서의 선택뿐 아니라, 월드에서 이미 지어진 건물을
+    // 클릭한 경우도 튜토리얼 목표로 사용할 수 있게 한다. 현재는 Stage 2의
+    // 넥서스/병영 선택 안내가 이 신호를 기다린다.
+    if (const ASFBaseBuilding* SelectedBuilding = Cast<ASFBaseBuilding>(NewSelectedActor))
+    {
+        if (const USFBuildingDefinition* Definition = SelectedBuilding->GetBuildingDefinition())
+        {
+            USFTutorialSubsystem::NotifyBuildingSelected(this, Definition->BuildingId);
+        }
+    }
 
     if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
     {

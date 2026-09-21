@@ -3,6 +3,7 @@
 #include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
@@ -64,6 +65,12 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
+	if (!USFTutorialSubsystem::IsUnitProductionAllowed(this, this, InUnitName))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[%s] 현재 튜토리얼 임무에서는 광전사만 생산할 수 있습니다."), *GetName());
+		return;
+	}
+
 	TryAddUnitProductLine(InUnitName);
 }
 

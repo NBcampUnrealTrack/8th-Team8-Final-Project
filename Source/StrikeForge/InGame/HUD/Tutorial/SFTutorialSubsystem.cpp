@@ -36,6 +36,7 @@ UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Command_Move, "Tutorial.Command.Move");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced, "Tutorial.Unit.Produced");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier1, "Tutorial.Unit.Produced.Tier1");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier2, "Tutorial.Unit.Produced.Tier2");
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade, "Tutorial.Unit.Produced.AfterBarrackUpgrade");
 
 void USFTutorialSubsystem::Deinitialize()
 {
@@ -714,6 +715,159 @@ bool USFTutorialSubsystem::IsTierUpgradeLocked(const UObject* InWorldContext)
     return IsFeatureLocked(InWorldContext, UpgradeTag);
 }
 
+bool USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(
+    const UObject* InWorldContext,
+    const ASFBaseBuilding* InBuilding)
+{
+    if (!IsValid(InBuilding))
+    {
+        return false;
+    }
+
+    static const FGameplayTag TierUpgradeLockTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Lock.TierUpgrade"), false);
+    static const FGameplayTag NexusUpgradeTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.TierUp.Nexus"), false);
+    static const FGameplayTag BarrackUpgradeTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.TierUp.Barrack"), false);
+
+    // 이 잠금이 없는 일반 스테이지의 기존 동작은 절대 바꾸지 않는다.
+    if (!IsFeatureLocked(InWorldContext, TierUpgradeLockTag))
+    {
+        return true;
+    }
+
+    const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+
+    if (!IsValid(Tutorial) || !IsValid(Definition))
+    {
+        return false;
+    }
+
+    if (Tutorial->PendingObjectiveTag == NexusUpgradeTag)
+    {
+        return Definition->BuildingType == ESFBuildingType::Nexus;
+    }
+
+    if (Tutorial->PendingObjectiveTag == BarrackUpgradeTag)
+    {
+        return Definition->BuildingType == ESFBuildingType::Barracks;
+    }
+
+    return false;
+}
+
+bool USFTutorialSubsystem::IsUnitProductionAllowed(
+    const UObject* InWorldContext,
+    const ASFBaseBuilding* InBuilding,
+    FName InUnitRowName)
+{
+    if (!IsValid(InBuilding))
+    {
+        return false;
+    }
+
+    static const FGameplayTag UnitProductionLockTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Lock.UnitProduction"), false);
+
+    if (!IsFeatureLocked(InWorldContext, UnitProductionLockTag))
+    {
+        return true;
+    }
+
+    const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+
+    return IsValid(Tutorial) &&
+        IsValid(Definition) &&
+        Tutorial->PendingObjectiveTag == TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade &&
+        Definition->BuildingType == ESFBuildingType::Barracks &&
+        InBuilding->GetCurrentTier() >= 1 &&
+        InUnitRowName == TEXT("Berserker");
+}
+
+void USFTutorialSubsystem::NotifyBuildingTierActivated(
+    const UObject* InWorldContext,
+    const ASFBaseBuilding* InBuilding,
+    int32 InActivatedTier)
+{
+    // 시작 앵커의 Tier 0 활성화도 이 경로를 탄다. 행동형 목표(false)로
+    // 보내면 해당 목표를 실제로 기다릴 때만 반응하므로, 시작 직후 미리
+    // 달성 처리되는 일이 없다.
+    if (!IsValid(InBuilding) || InActivatedTier < 1)
+    {
+        return;
+    }
+
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+    if (!IsValid(Definition))
+    {
+        return;
+    }
+
+    FGameplayTag ObjectiveTag;
+    switch (Definition->BuildingType)
+    {
+    case ESFBuildingType::Nexus:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.TierUp.Nexus"), false);
+        break;
+    case ESFBuildingType::Barracks:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.TierUp.Barrack"), false);
+        break;
+    default:
+        return;
+    }
+
+    if (ObjectiveTag.IsValid())
+    {
+        NotifyObjective(InWorldContext, ObjectiveTag, false);
+    }
+}
+
+void USFTutorialSubsystem::NotifyBuildingConstructionCompleted(
+    const UObject* InWorldContext,
+    const ASFBaseBuilding* InBuilding,
+    int32 InActivatedTier)
+{
+    // Tier 1 이상은 기존 건물의 업그레이드다. 건설 목표로 다시 기록하면
+    // 다른 안내 단계가 의도치 않게 미리 완료될 수 있으므로 최초 건설만 보낸다.
+    if (!IsValid(InBuilding) || InActivatedTier != 0)
+    {
+        return;
+    }
+
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+    if (!IsValid(Definition))
+    {
+        return;
+    }
+
+    FGameplayTag ObjectiveTag;
+    switch (Definition->BuildingType)
+    {
+    case ESFBuildingType::EtherMine:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.EtherMine"), false);
+        break;
+    case ESFBuildingType::House:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.House"), false);
+        break;
+    case ESFBuildingType::MineralMine:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.Mining"), false);
+        break;
+    case ESFBuildingType::Barracks:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.Product"), false);
+        break;
+    default:
+        return;
+    }
+
+    if (ObjectiveTag.IsValid())
+    {
+        NotifyObjective(InWorldContext, ObjectiveTag);
+    }
+}
+
 // ─────────────────────────────────────────────────────────
 // 성공 효과음
 //
@@ -878,6 +1032,19 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
             *InBuildingRowName.ToString());
 
         return bMatches;
+    }
+
+    // Stage2처럼 "이번 임무 외 행동 금지"가 필요한 경우에는 건설 임무가
+    // 끝난 뒤에도 새 건설을 열지 않는다. 에테르 광산 선택/건설 단계에서는
+    // 위의 요구 건물 잠금이 먼저 처리하므로 그 건물만 정상적으로 허용된다.
+    static const FGameplayTag BuildingConstructionLockTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Lock.BuildingConstruction"), false);
+    if (IsFeatureLocked(InWorldContext, BuildingConstructionLockTag))
+    {
+        SF_LOG(Log,
+            "[SFTutorialSubsystem] Selection BLOCKED | Current tutorial mission does not allow new construction: %s",
+            *InBuildingRowName.ToString());
+        return false;
     }
 
     SF_LOG(Log, "[SFTutorialSubsystem] 요구 건물 잠금이 없다 | GuideStepIndex: %d",

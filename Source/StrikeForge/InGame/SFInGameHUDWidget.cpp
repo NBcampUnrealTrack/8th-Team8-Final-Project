@@ -26,6 +26,7 @@
 
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
@@ -665,6 +666,17 @@ void USFInGameHUDWidget::ApplySelection(
     BindSelectedCommandPathDelegates();
     RefreshQueuedMovePathIndicators();
 
+    // 건설 카탈로그에서의 선택뿐 아니라, 월드에서 이미 지어진 건물을
+    // 클릭한 경우도 튜토리얼 목표로 사용할 수 있게 한다. 현재는 Stage 2의
+    // 넥서스/병영 선택 안내가 이 신호를 기다린다.
+    if (const ASFBaseBuilding* SelectedBuilding = Cast<ASFBaseBuilding>(NewSelectedActor))
+    {
+        if (const USFBuildingDefinition* Definition = SelectedBuilding->GetBuildingDefinition())
+        {
+            USFTutorialSubsystem::NotifyBuildingSelected(this, Definition->BuildingId);
+        }
+    }
+
     if (ASFInGamePlayerController* PlayerController = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
     {
         PlayerController->SetSelectedActor(SelectedActor.Get());
@@ -854,7 +866,10 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::ProductionBuilding
                 ) &&
-            IsOwnedByLocalPlayer(SelectedActor.Get());
+            IsOwnedByLocalPlayer(SelectedActor.Get()) &&
+            USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(
+                this,
+                Cast<ASFBaseBuilding>(SelectedActor.Get()));
 
         SelectionPanel->SetTierUpButtonVisible(
             bCanTierUp
@@ -1632,6 +1647,12 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         return;
     }
 
+    if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
+    {
+        SF_LOG(Log, "[SFInGameHUDWidget] Tier upgrade blocked by the current tutorial objective.");
+        return;
+    }
+
     ASFGameState* GameState =
         GetWorld()
         ? GetWorld()->GetGameState<ASFGameState>()
@@ -1689,7 +1710,7 @@ void USFInGameHUDWidget::BindSelectedHealthDelegate(AActor* Actor)
     }
 
     UHealthComponent* HealthComponent = Actor->FindComponentByClass<UHealthComponent>();
-    
+
     if (!IsValid(HealthComponent))
     {
         SF_LOG(Warning, "[SFInGameHUDWidget] Selected actor has no HealthComponent.");
@@ -1848,9 +1869,9 @@ void USFInGameHUDWidget::ToggleSettings()
     }
 
     ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
-    ActiveSettingsWidget->OnDeactivated().AddUObject(this,&USFInGameHUDWidget::HandleSettingsDeactivated);
+    ActiveSettingsWidget->OnDeactivated().AddUObject(this, &USFInGameHUDWidget::HandleSettingsDeactivated);
 
-    UGameplayStatics::SetGamePaused(this,true);
+    UGameplayStatics::SetGamePaused(this, true);
 
     APlayerController* PlayerController = GetOwningPlayer();
 

@@ -29,14 +29,18 @@ public:
 	FSFOnResourceNodeDepleted OnDepleted;
 	
 	virtual int32 Extract(int32 InDigAmount) override;
+	int32 ExtractFromCell(int32 ResourceCellIndex, int32 ExtractAmount);
+	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual FBeMinedableData GetBeMinedableData() const override;
 	// Getter
-	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
+	virtual FORCEINLINE EResourceType GetResourceType() const override { return ResourceType; }
 	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
 	FORCEINLINE int32 GetResourceTier() const { return ResourceTier; }
 	FORCEINLINE float GetResourceRequiredWork() const { return ResourceRequiredWork; }
-	
+	FORCEINLINE const FIntPoint& GetResourceGridSize() const { return ResourceGridSize;	}
+	int32 GetCellDeposit(int32 ResourceCellIndex) const;
+
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
 	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
 
@@ -75,4 +79,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Selection|UI")
 	FName SelectionUIDataRowName = NAME_None;
 private:
+	void InitializeCellDeposits();
+	
+	UPROPERTY(
+	VisibleInstanceOnly,
+	BlueprintReadOnly,
+	Category = "Resource|Grid",
+	meta = (AllowPrivateAccess = true))
+	TArray<int32> CellDeposits;
 };

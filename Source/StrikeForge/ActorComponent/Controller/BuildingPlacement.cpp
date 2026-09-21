@@ -88,9 +88,11 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
 		
+		const IMinable* MinableBuilding =
+			Cast<IMinable>(TargetBuilding.Get());
+
 		const bool bUsesResourceGrid =
-			Cast<IMinable>(
-		TargetBuilding.Get()) != nullptr;
+			MinableBuilding != nullptr;
 
 		const bool bCanPlaceOnNavigation =
 			bUsesResourceGrid ||
@@ -104,11 +106,22 @@ void UBuildingPlacement::UpdatePlacementMode()
 			bCanPlaceOnNavigation &&
 			USFTutorialSubsystem::IsBuildLocationAllowed(this, BuildingLocation);
 		
-		CachedGridSubsystem->DebugDrawGridInfo(
-		TargetBuildingGridInfo,
-		BuildingLocation.Z,
-		bCanPlaceCurrentLocation,
-		0.0f);
+		if (MinableBuilding)
+		{
+			CachedGridSubsystem->DebugDrawMiningPlacementGrid(
+				TargetBuildingGridInfo,
+				MinableBuilding->GetResourceSearchGridSize(),
+				BuildingLocation.Z,
+				0.0f);
+		}
+		else
+		{
+			CachedGridSubsystem->DebugDrawGridInfo(
+				TargetBuildingGridInfo,
+				BuildingLocation.Z,
+				bCanPlaceCurrentLocation,
+				0.0f);
+		}
 		
 		TargetBuilding->ApplyPreviewMaterial(
 			bCanPlaceCurrentLocation);

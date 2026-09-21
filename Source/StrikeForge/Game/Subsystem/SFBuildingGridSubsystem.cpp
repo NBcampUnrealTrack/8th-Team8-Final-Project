@@ -18,21 +18,6 @@ void USFBuildingGridSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-// FIntPoint USFBuildingGridSubsystem::WorldCoordinateToGrid(const FVector& WorldLocation) const
-// {
-// 	// startpoint maybe 0,0,0 or maybe 100, 50, 0
-// 	// so -gridorigin == apply pivot point
-// 	const FVector LocalLocation = WorldLocation - GridOrigin;
-//
-// 	const int32 GridX =
-// 		FMath::FloorToInt(LocalLocation.X / CellSize);
-//
-// 	const int32 GridY =
-// 		FMath::FloorToInt(LocalLocation.Y / CellSize);
-//
-// 	return FIntPoint(GridX, GridY);
-// }
-
 FVector USFBuildingGridSubsystem::GridToWorldCoordinate(const FIntPoint& GridCoord) const
 {
 	return GridOrigin + FVector(
@@ -78,15 +63,130 @@ bool USFBuildingGridSubsystem::CanPlacePlayerBuildingGrid(const AActor* Building
 	const IMinable* Consumer =
 		Cast<IMinable>(Building);
 
-	// 일반 건물은 CanRegisterBuildingGrid 결과만 따르면 된다.
+	// 일반 건물은 건물 격자 검사 결과만 사용합니다.
 	if (!Consumer)
 	{
 		return true;
 	}
 
-	// 플레이어가 배치하는 자원 소비 건물은
-	// 반드시 현재 전체 격자에 자원이 존재해야 한다.
-	return IsValid(FindResourceInGrid(Building, GridInfo));
+	// 광산은 중앙 검색 영역에 채굴 가능한 셀이
+	// 하나 이상 있어야 배치할 수 있습니다.
+	TArray<FSFMiningCellTarget> MiningTargets;
+
+	return CollectMiningCellTargets(
+		Building,
+		GridInfo,
+		MiningTargets);
+}
+
+bool USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuilding,
+	const FBuildingGridInfo& BuildingGridInfo, TArray<FSFMiningCellTarget>& OutTargets) const
+{
+	OutTargets.Reset();
+
+	if (!IsValid(MiningBuilding) ||	!BuildingGridInfo.IsValid())
+	{
+		return false;
+	}
+
+	const IMinable* Consumer = Cast<IMinable>(MiningBuilding);
+	if (!Consumer) return false;
+
+	FBuildingGridInfo SearchGridInfo;
+
+	if (!TryMakeCenteredSubGrid(
+			BuildingGridInfo,
+			Consumer->GetResourceSearchGridSize(),
+			SearchGridInfo))
+	{
+		return false;
+	}
+
+	/*
+	 * 같은 종류의 자원은 한 셀에 하나만 존재하므로
+	 * 광산이 취급하는 자원 대상 수도 최대 검색 셀 수입니다.
+	 */
+	OutTargets.Reserve(
+		SearchGridInfo.GridSize.X *
+		SearchGridInfo.GridSize.Y);
+
+	for (int32 Y = 0; Y < SearchGridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < SearchGridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				SearchGridInfo.OriginCell +	FIntPoint(X, Y);
+
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+
+			if (!Cell) continue;
+
+			for (const FSFGridResourceEntry& Entry : Cell->Resources)
+			{
+				AResourceBase* Resource = Entry.ResourceActor.Get();
+				if (!IsValid(Resource))	continue;
+
+				const IBeMinedable* MineableResource = Cast<IBeMinedable>(Resource);
+				if (!MineableResource) continue;
+
+				// 광산이 취급하는 종류와 같은 자원만 수집합니다.
+				if (MineableResource->GetResourceType() !=
+					Consumer->GetMineResourceType())
+				{
+					continue;
+				}
+
+				// 고갈됐거나 잘못된 인덱스는 0을 반환합니다.
+				if (Resource->GetCellDeposit(Entry.ResourceCellIndex) <= 0)
+				{
+					continue;
+				}
+
+				FSFMiningCellTarget Target;
+				Target.ResourceActor = Resource;
+				Target.ResourceCellIndex =	Entry.ResourceCellIndex;
+
+				/*
+				 * AddUnique를 사용하지 않습니다.
+				 * 같은 ResourceActor라도 서로 다른 셀은
+				 * 별개의 채굴 대상입니다.
+				 */
+				OutTargets.Add(MoveTemp(Target));
+			}
+		}
+	}
+
+	/*
+	 * 셀별 남은 매장량이 적은 대상부터 채굴하도록 정렬합니다.
+	 * 매장량은 복사본이 아니라 ResourceBase에서 직접 읽습니다.
+	 */
+	OutTargets.Sort(
+		[](const FSFMiningCellTarget& Left,
+		   const FSFMiningCellTarget& Right)
+		{
+			AResourceBase* LeftResource =
+				Left.ResourceActor.Get();
+
+			AResourceBase* RightResource =
+				Right.ResourceActor.Get();
+
+			if (!IsValid(LeftResource))
+			{
+				return false;
+			}
+
+			if (!IsValid(RightResource))
+			{
+				return true;
+			}
+
+			return LeftResource->GetCellDeposit(
+					   Left.ResourceCellIndex)
+				< RightResource->GetCellDeposit(
+					   Right.ResourceCellIndex);
+		});
+
+	return OutTargets.Num() > 0;
 }
 
 bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
@@ -97,41 +197,68 @@ bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBui
 		return false;
 	}
 	// 점유 등록
+	IMinable* MiningBuilding = Cast<IMinable>(Owner);
+
+	TArray<FSFMiningCellTarget> MiningTargets;
+
+	/*
+	 * 광산이라면 GridCells를 변경하기 전에
+	 * 실제 채굴 가능한 셀을 다시 검사합니다.
+	 *
+	 * Preview 검사 이후 자원 상태가 바뀌었을 수도 있으므로
+	 * 실제 등록 시점에도 재검사하는 것이 안전합니다.
+	 */
+	if (MiningBuilding &&
+		!CollectMiningCellTargets(
+			Owner, GridInfo,MiningTargets))
+	{
+		return false;
+	}
+
+	// 건물 점유 셀을 등록합니다.
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			
-			// 찾거나 추가
-			FSFGridCellData& Cell = GridCells.FindOrAdd(CellCoordinate);
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			FSFGridCellData& Cell =
+				GridCells.FindOrAdd(CellCoordinate);
+
 			Cell.BuildingActor = Owner;
 		}
 	}
 
-	AResourceBase* Resource = FindResourceInGrid(Owner, GridInfo);
-
-	if (IsValid(Resource) && !TryResolveResourceConnection(Owner, Resource))
+	/*
+	 * 일반 건물은 여기서 등록 완료입니다.
+	 * 광산만 수집된 채굴 셀 목록을 전달합니다.
+	 */
+	if (!MiningBuilding)
 	{
-		// 점유는 등록됐지만 연결이 실패했으므로 원상 복구
+		return true;
+	}
+
+	if (!MiningBuilding->SetMiningTargets(MiningTargets))
+	{
+		/*
+		 * 수집 이후 실제 전달 시점에 자원이 고갈되는 등의
+		 * 이유로 등록에 실패했다면 점유 등록을 되돌립니다.
+		 */
 		UnregisterBuildingGrid(Owner, GridInfo);
 		return false;
 	}
-	
+
 	return true;
 }
 
 void USFBuildingGridSubsystem::UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
-	if (!GridInfo.IsValid()) return;
+	if (!IsValid(Owner) || !GridInfo.IsValid()) return;
 	// 자원격자 해제
-	AResourceBase* Resource = FindResourceInGrid(Owner, GridInfo);
-
-	if (IsValid(Resource))
+	if (IMinable* MiningBuilding = Cast<IMinable>(Owner))
 	{
-		DisconnectResourceConnection(
-			Owner,
-			Resource);
+		MiningBuilding->ClearMiningTargets();
 	}
 	
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
@@ -160,12 +287,10 @@ void USFBuildingGridSubsystem::UnregisterBuildingGrid(AActor* Owner, const FBuil
 
 bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
 {
-	if (!CanRegisterResourceGrid(Resource, GridInfo))
-	{
-		return false;
-	}
-	
-	// 실제 등록만 수행
+	// 첫 단계에서 모든 셀을 검사합니다.
+	// 실패하면 GridCells는 전혀 변경되지 않습니다.
+	if (!CanRegisterResourceGrid(Resource, GridInfo)) return false;
+
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
@@ -173,87 +298,104 @@ bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, 
 			const FIntPoint CellCoordinate =
 				GridInfo.OriginCell + FIntPoint(X, Y);
 
-			FSFGridCellData& Cell =
-				GridCells.FindOrAdd(CellCoordinate);
+			const int32 LinearIndex =
+				Y * GridInfo.GridSize.X + X;
 
-			Cell.ResourceActor = Resource;
+			FSFGridResourceEntry NewEntry;
+			NewEntry.ResourceActor = Resource;
+			NewEntry.ResourceType =	Resource->GetResourceType();
+			NewEntry.ResourceCellIndex = LinearIndex;
+
+			FSFGridCellData& Cell =	GridCells.FindOrAdd(CellCoordinate);
+			Cell.Resources.Add(MoveTemp(NewEntry));
 		}
 	}
 
-	AActor* Building = FindBuildingInGrid(GridInfo);
-
-	if (IsValid(Building) && !TryResolveResourceConnection(Building, Resource))
-	{
-		UnregisterResourceGrid(Resource, GridInfo);
-		return false;
-	}
-	
 	return true;
 }
 
 void USFBuildingGridSubsystem::UnregisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo)
 {
-	if (!GridInfo.IsValid()) return;
-	
-	// 건물 격자 해제
-	AActor* Building = FindBuildingInGrid(GridInfo);
+	if (!IsValid(Resource) || !GridInfo.IsValid()) return;
 
-	if (IsValid(Building))
-	{
-		DisconnectResourceConnection(
-			Building,
-			Resource);
-	}
-	
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
 			FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+
 			if (!Cell) continue;
-			// ResourceActor가 등록안돼있거나 등록된게 나자신이면
-			if (!Cell->ResourceActor.IsValid() || Cell->ResourceActor.Get() == Resource)
-			{	// delete value
-				Cell->ResourceActor.Reset();
-			}
-			// 빌딩도 없고 자원도 없다면
+
+			Cell->Resources.RemoveAllSwap(
+				[Resource](const FSFGridResourceEntry& Entry)
+				{
+					return !Entry.ResourceActor.IsValid() ||
+						    Entry.ResourceActor.Get() == Resource;
+				});
+
 			if (Cell->IsEmpty())
-			{	// map요소 삭제
+			{
 				GridCells.Remove(CellCoordinate);
 			}
 		}
 	}
 }
 
-AResourceBase* USFBuildingGridSubsystem::FindResourceInGrid(const AActor* InBuilding,
-	const FBuildingGridInfo& GridInfo) const
+void USFBuildingGridSubsystem::UnregisterResourceCell(
+	const AResourceBase* Resource,
+	const FBuildingGridInfo& GridInfo,
+	int32 ResourceCellIndex)
 {
-	AResourceBase* FoundResource = nullptr;
-	
-	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	if (!IsValid(Resource) || !GridInfo.IsValid())
 	{
-		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
-		{
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
-			if (!Cell) return nullptr; // 하나라도 없으면 끝
-			
-			AResourceBase* CellResource = Cell->ResourceActor.Get();
-			if (!IsValid(CellResource)) return nullptr;
-			
-			if (!FoundResource) // nullptr일때만 값을 set
-			{
-				FoundResource = CellResource;
-			}
-			else if (FoundResource != CellResource) // 
-			{
-				return nullptr;
-			}
-		}
+		return;
 	}
-		
-	return FoundResource;
+
+	const int32 CellCount =
+		GridInfo.GridSize.X * GridInfo.GridSize.Y;
+
+	if (ResourceCellIndex < 0 ||
+		ResourceCellIndex >= CellCount)
+	{
+		return;
+	}
+
+	/*
+	 * 등록할 때 사용했던 공식:
+	 * LinearIndex = Y * GridSize.X + X
+	 *
+	 * 이것을 다시 X, Y로 복원합니다.
+	 */
+	const int32 LocalX =
+		ResourceCellIndex % GridInfo.GridSize.X;
+
+	const int32 LocalY =
+		ResourceCellIndex / GridInfo.GridSize.X;
+
+	const FIntPoint CellCoordinate =
+		GridInfo.OriginCell + FIntPoint(LocalX, LocalY);
+
+	FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+	if (!Cell) return;
+
+	Cell->Resources.RemoveAllSwap(
+		[Resource, ResourceCellIndex](
+			const FSFGridResourceEntry& Entry)
+		{
+			return !Entry.ResourceActor.IsValid() ||
+				(
+					Entry.ResourceActor.Get() == Resource &&
+					Entry.ResourceCellIndex == ResourceCellIndex
+				);
+		});
+
+	if (Cell->IsEmpty())
+	{
+		GridCells.Remove(CellCoordinate);
+	}
 }
 
 FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const
@@ -297,17 +439,54 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 	return Result;
 }
 
-bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+bool USFBuildingGridSubsystem::TryMakeCenteredSubGrid(const FBuildingGridInfo& OuterGridInfo,
+	const FIntPoint& InnerGridSize, FBuildingGridInfo& OutInnerGridInfo) const
 {
-	// 건물 겹침검사
-	if (!CanPlaceBuildingGrid(Owner, GridInfo))
+	// 실패했을 때 Out 값이 유효한 격자로 오해되지 않게 초기화합니다.
+	OutInnerGridInfo.OriginCell = FIntPoint::ZeroValue;
+
+	OutInnerGridInfo.GridSize = FIntPoint::ZeroValue;
+
+	if (!OuterGridInfo.IsValid() || InnerGridSize.X <= 0 ||
+		InnerGridSize.Y <= 0)
 	{
 		return false;
 	}
-	
-	// 겹치지않았으면 실행
-	AResourceBase* FoundResource = nullptr;
-	int32 ResourceCellCount = 0;
+
+	const FIntPoint SizeDifference =
+		OuterGridInfo.GridSize - InnerGridSize;
+
+	// 검색 격자가 건물 격자보다 클 수 없습니다.
+	if (SizeDifference.X < 0 ||	SizeDifference.Y < 0)
+	{
+		return false;
+	}
+
+	/*
+	 * 차이가 홀수이면 양쪽에 같은 수의 셀을 둘 수 없습니다.
+	 *
+	 * 4 - 3 = 1
+	 * 왼쪽 0.5칸, 오른쪽 0.5칸 배치는 불가능합니다.
+	 */
+	if (SizeDifference.X % 2 != 0 || SizeDifference.Y % 2 != 0)
+	{
+		return false;
+	}
+
+	OutInnerGridInfo.GridSize = InnerGridSize;
+
+	OutInnerGridInfo.OriginCell =
+		OuterGridInfo.OriginCell +
+		FIntPoint(SizeDifference.X / 2,	SizeDifference.Y / 2);
+
+	return OutInnerGridInfo.IsValid();
+}
+
+bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+{
+	if (!CanPlaceBuildingGrid(Owner, GridInfo))	return false;
+
+	const bool bIsMiningBuilding = Cast<IMinable>(Owner) != nullptr;
 
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
@@ -318,51 +497,31 @@ bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, cons
 
 			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
 			if (!Cell) continue;
-			
-			AResourceBase* CellResource = Cell->ResourceActor.Get();
-			if (!IsValid(CellResource))	continue;
-			
-			++ResourceCellCount;
 
-			if (!FoundResource)
+			for (const FSFGridResourceEntry& Entry : Cell->Resources)
 			{
-				FoundResource = CellResource;
-			}
-			else if (FoundResource != CellResource)
-			{
-				return false;
+				if (!Entry.ResourceActor.IsValid())	continue;
+				// 일반 건물은 자원과 겹칠 수 없습니다.
+				if (!bIsMiningBuilding)	return false;
 			}
 		}
 	}
 
-	// 자원이 없다면 일반 건물과 광산 모두 등록 가능하다.
-	// 플레이어 광산 배치는 기존 BuildingPlacement에서 자원을 요구한다.
-	if (ResourceCellCount == 0)
-	{
-		return true;
-	}
-
-	const int32 TotalCellCount = GridInfo.GridSize.X * GridInfo.GridSize.Y;
-
-	// 일부 셀만 자원과 겹치는 배치는 허용하지 않는다.
-	if (ResourceCellCount != TotalCellCount)
-	{
-		return false;
-	}
-
-	return CanShareResourceGrid(Owner, FoundResource);
+	return true;
 }
 
 bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Resource,
 	const FBuildingGridInfo& GridInfo) const
 {
-	if (!IsValid(Resource) || !GridInfo.IsValid())
+	if (!IsValid(Resource) ||
+		!GridInfo.IsValid() ||
+		Resource->GetResourceDeposit() <= 0 ||
+		Resource->GetResourceGridSize() != GridInfo.GridSize)
 	{
 		return false;
 	}
 
-	AActor* FoundBuilding = nullptr;
-	int32 BuildingCellCount = 0;
+	const EResourceType NewResourceType = Resource->GetResourceType();
 
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
@@ -372,44 +531,38 @@ bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Reso
 				GridInfo.OriginCell + FIntPoint(X, Y);
 
 			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
+
 			if (!Cell) continue;
 
-			AResourceBase* ExistingResource = Cell->ResourceActor.Get();
-
-			if (IsValid(ExistingResource) && ExistingResource != Resource)
+			/*
+			 * 같은 셀에는 같은 종류의 자원을
+			 * 두 번 등록할 수 없습니다.
+			 *
+			 * 미네랄 + 에테르: 가능
+			 * 미네랄 A + 미네랄 B: 불가능
+			 */
+			for (const FSFGridResourceEntry& Entry : Cell->Resources)
 			{
-				return false;
+				if (!Entry.ResourceActor.IsValid())	continue;
+				if (Entry.ResourceType == NewResourceType) return false;
 			}
 
-			AActor* CellBuilding = Cell->BuildingActor.Get();
-			if (!IsValid(CellBuilding))	continue;
+			/*
+			 * 일반 건물 위에는 자원을 등록하지 않습니다.
+			 * 광산은 서로 다른 자원 종류를 무시할 수 있으므로
+			 * 자원과 Grid를 공유할 수 있습니다.
+			 */
+			AActor* ExistingBuilding = Cell->BuildingActor.Get();
 
-			++BuildingCellCount;
-
-			if (!FoundBuilding)
-			{
-				FoundBuilding = CellBuilding;
-			}
-			else if (FoundBuilding != CellBuilding)
+			if (IsValid(ExistingBuilding) &&
+				Cast<IMinable>(ExistingBuilding) == nullptr)
 			{
 				return false;
 			}
 		}
 	}
 
-	if (BuildingCellCount == 0)
-	{
-		return true;
-	}
-
-	const int32 TotalCellCount = GridInfo.GridSize.X * GridInfo.GridSize.Y;
-
-	if (BuildingCellCount != TotalCellCount)
-	{
-		return false;
-	}
-
-	return CanShareResourceGrid(FoundBuilding, Resource);
+	return true;
 }
 
 // void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
@@ -495,25 +648,27 @@ bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Reso
 void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(World))
+	if (!IsValid(World)) return;
+
+	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f, 10.0f);
+
+	for (const TPair<FIntPoint,	FSFGridCellData>& GridCell : GridCells)
 	{
-		return;
-	}
+		AActor* OccupiedActor =	GridCell.Value.BuildingActor.Get();
 
-	const FVector BoxExtent(
-		CellSize * 0.5f,
-		CellSize * 0.5f,
-		10.0f);
+		if (!IsValid(OccupiedActor))
+		{
+			for (const FSFGridResourceEntry& Entry : GridCell.Value.Resources)
+			{
+				AResourceBase* Resource = Entry.ResourceActor.Get();
 
-	for (const TPair<
-			FIntPoint,
-			FSFGridCellData>& GridCell
-		: GridCells)
-	{
-		AActor* OccupiedActor = (GridCell.Value.BuildingActor.IsValid()) ?
-					GridCell.Value.BuildingActor.Get() : GridCell.Value.ResourceActor.Get();
-
-		// 이미 Destroy된 액터의 오래된 정보는 표시하지 않습니다.
+				if (IsValid(Resource))
+				{
+					OccupiedActor = Resource;
+					break;
+				}
+			}
+		}
 		if (!IsValid(OccupiedActor)) continue;
 
 		FVector CellCenter =
@@ -534,6 +689,83 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 			3.0f);
 	}
 }
+
+void USFBuildingGridSubsystem::DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,
+	const FIntPoint& ResourceSearchGridSize, float WorldZ, float Duration) const
+{
+	if (!BuildingGridInfo.IsValid()) return;
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	const float HalfCell = CellSize * 0.5f;
+
+	const FVector BoxExtent(
+		HalfCell,
+		HalfCell,
+		5.0f);
+
+	auto DrawGridCells =
+		[this, World, WorldZ, Duration, &BoxExtent]
+		(const FBuildingGridInfo& GridInfo,
+			const FColor& Color,
+			float ZOffset,
+			float Thickness)
+		{
+			for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+			{
+				for (int32 X = 0; X < GridInfo.GridSize.X;	++X)
+				{
+					const FIntPoint CellCoordinate =
+						GridInfo.OriginCell + FIntPoint(X, Y);
+
+					FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
+
+					CellCenter.Z =	WorldZ + ZOffset;
+
+					DrawDebugBox(
+						World,
+						CellCenter,
+						BoxExtent,
+						Color,
+						false,
+						Duration,
+						0,
+						Thickness);
+				}
+			}
+		};
+
+	/*
+	 * 먼저 전체 건물 점유 영역을 검정색으로 그립니다.
+	 * 4×6 광산이면 24개 셀이 표시됩니다.
+	 */
+	DrawGridCells(
+		BuildingGridInfo,
+		FColor::Black,
+		5.0f,
+		4.0f);
+
+	FBuildingGridInfo SearchGridInfo;
+
+	if (!TryMakeCenteredSubGrid(
+		BuildingGridInfo,
+		ResourceSearchGridSize,
+		SearchGridInfo))
+	{
+		return;
+	}
+
+	/*
+	 * 검색 영역을 검정색 영역보다 조금 위에 그립니다.
+	 * 두 DebugBox가 겹쳐 깜빡이는 현상을 줄일 수 있습니다.
+	 */
+	DrawGridCells(
+		SearchGridInfo,
+		FColor::Green,
+		8.0f,
+		5.0f);
+}
+
 // 빌딩의 gridsize debug
 void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ, bool bCanPlace,
 	float Duration) const
@@ -576,122 +808,39 @@ void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridIn
 
 void USFBuildingGridSubsystem::DebugDrawResourceCells(EResourceType ResourceType, float Duration) const
 {
-	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f,	10.0f);
-	
-	for (const TPair<FIntPoint,	FSFGridCellData>& GridCell: GridCells)
+	const FVector BoxExtent(CellSize * 0.5f,CellSize * 0.5f,10.0f);
+
+	for (const TPair<FIntPoint, FSFGridCellData>& GridCell : GridCells)
 	{
-		AResourceBase* OccupiedResource = GridCell.Value.ResourceActor.Get();
-		if (!IsValid(OccupiedResource)) continue;
-		
-		if (OccupiedResource->GetResourceType() != ResourceType) continue;
-		// 자원발견 + 같은 타입
-		FVector CellCenter = GridToWorldCoordinate(GridCell.Key);
-		// 점유 중인 건물의 높이를 기준으로 표시
-		CellCenter.Z = OccupiedResource->GetActorLocation().Z + 10.0f;
-		
-		DrawDebugBox(
-		GetWorld(),
-		CellCenter,
-		BoxExtent,
-		FColor::Green,
-		false,
-		Duration,
-		0,
-		3.0f);
-	}
-}
-
-bool USFBuildingGridSubsystem::CanShareResourceGrid(const AActor* Building, const AResourceBase* Resource) const
-{
-	if (!IsValid(Building) || !IsValid(Resource))
-	{
-		return false;
-	}
-
-	const IMinable* Consumer =
-		Cast<IMinable>(Building);
-
-	return Consumer &&
-		Consumer->CanAcceptResource(Resource);
-}
-
-AActor* USFBuildingGridSubsystem::FindBuildingInGrid(const FBuildingGridInfo& GridInfo) const
-{
-	if (!GridInfo.IsValid())
-	{
-		return nullptr;
-	}
-
-	AActor* FoundBuilding = nullptr;
-
-	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
-	{
-		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		for (const FSFGridResourceEntry& Entry : GridCell.Value.Resources)
 		{
-			const FIntPoint CellCoordinate =
-				GridInfo.OriginCell + FIntPoint(X, Y);
+			AResourceBase* Resource = Entry.ResourceActor.Get();
 
-			const FSFGridCellData* Cell =
-				GridCells.Find(CellCoordinate);
-
-			if (!Cell)
+			if (!IsValid(Resource) ||
+				Entry.ResourceType != ResourceType ||
+				Resource->GetCellDeposit(
+					Entry.ResourceCellIndex) <= 0)
 			{
-				return nullptr;
+				continue;
 			}
 
-			AActor* CellBuilding =
-				Cell->BuildingActor.Get();
+			FVector CellCenter = GridToWorldCoordinate(GridCell.Key);
 
-			if (!IsValid(CellBuilding))
-			{
-				return nullptr;
-			}
+			CellCenter.Z = Resource->GetActorLocation().Z + 10.0f;
 
-			if (!FoundBuilding)
-			{
-				FoundBuilding = CellBuilding;
-			}
-			else if (FoundBuilding != CellBuilding)
-			{
-				return nullptr;
-			}
+			DrawDebugBox(
+				GetWorld(),
+				CellCenter,
+				BoxExtent,
+				FColor::Green,
+				false,
+				Duration,
+				0,
+				3.0f);
+
+			// 같은 종류는 셀당 하나만 있으므로
+			// 해당 셀은 더 검사하지 않습니다.
+			break;
 		}
-	}
-
-	return FoundBuilding;
-}
-
-bool USFBuildingGridSubsystem::TryResolveResourceConnection(AActor* Building, AResourceBase* Resource)
-{
-	if (!IsValid(Building) || !IsValid(Resource))
-	{
-		return false;
-	}
-
-	IMinable* Consumer =
-		Cast<IMinable>(Building);
-
-	if (!Consumer ||
-		!Consumer->CanAcceptResource(Resource))
-	{
-		return false;
-	}
-
-	return Consumer->TryLinkResource(Resource);
-}
-
-void USFBuildingGridSubsystem::DisconnectResourceConnection(AActor* Building, const AResourceBase* Resource)
-{
-	if (!IsValid(Building) || !IsValid(Resource))
-	{
-		return;
-	}
-
-	IMinable* Consumer =
-		Cast<IMinable>(Building);
-
-	if (Consumer)
-	{
-		Consumer->UnlinkResource(Resource);
 	}
 }

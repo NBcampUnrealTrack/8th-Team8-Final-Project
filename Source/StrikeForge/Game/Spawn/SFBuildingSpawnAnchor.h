@@ -18,7 +18,7 @@ class STRIKEFORGE_API ASFBuildingSpawnAnchor : public AActor
 public:
 	
 	ASFBuildingSpawnAnchor();
-	
+
 	int32 GetTeamIndex() const { return TeamIndex; }
 	ESFBuildingType GetBuildingType() const { return BuildingType; }
 	/** Anchor가 생성할 건물의 시작 Tier 인덱스다. */

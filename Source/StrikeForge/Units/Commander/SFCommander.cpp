@@ -431,6 +431,23 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 		return;
 	}
 
+	if (IsValid(SkillMontage))
+	{
+		GetMesh()->GetAnimInstance()->Montage_Play(SkillMontage);
+	}
+	switch (SkillTier)
+	{
+	case 1:
+		CurrentSkillSound = SkillSound1;
+		break;
+	case 2:
+		CurrentSkillSound = SkillSound2;
+		break;
+	case 3:
+		CurrentSkillSound = SkillSound3;
+		break;
+	}
+
 	switch (Race)
 	{
 	case ERace::BEAST:
@@ -700,6 +717,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 			const float ProductionSpeedMultiplier = 2.f;
 			const float SkillRadius = 2000.f;
 			const float SkillRadiusSquared = FMath::Square(SkillRadius);
+			//--------------------------------------------
 			
 			DrawDebugSphere(GetWorld(), GetActorLocation(), SkillRadius, -1,FColor::Red,false, 3.f,0,2);
 
@@ -723,18 +741,18 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *Target->GetName()));
 						},
 						[Target, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *Target->GetName()));
 							Target->ApplySpeedBuff(ProductionSpeedMultiplier);
 						},
 						[Target]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *Target->GetName()));
 							Target->ResetSpeedMultiplier();
 						},
 						BuffDuration,

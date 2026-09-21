@@ -762,7 +762,10 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::ProductionBuilding
                 ) &&
-            IsOwnedByLocalPlayer(SelectedActor.Get());
+            IsOwnedByLocalPlayer(SelectedActor.Get()) &&
+            USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(
+                this,
+                Cast<ASFBaseBuilding>(SelectedActor.Get()));
 
         SelectionPanel->SetTierUpButtonVisible(
             bCanTierUp
@@ -1534,6 +1537,12 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
             "Tier upgrade failed: "
             "SelectedActor is not SFBaseBuilding."
         );
+        return;
+    }
+
+    if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
+    {
+        SF_LOG(Log, "[SFInGameHUDWidget] Tier upgrade blocked by the current tutorial objective.");
         return;
     }
 

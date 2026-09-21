@@ -382,6 +382,20 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 		}
 
 		USFTutorialSubsystem::NotifyObjective(this, TutorialTag);
+
+		// 스테이지 2의 마지막 임무는 "병영을 한 번 티어 업한 뒤" 생산한
+		// 유닛만 인정한다. 기존 Tier1/2 태그는 다른 튜토리얼의 호환성을
+		// 위해 그대로 두고, 이 조건만 별도 태그로 명확히 표현한다.
+		if (const ASFBaseBuilding* OwnerBuilding = Cast<ASFBaseBuilding>(GetOwner()))
+		{
+			if (OwnerBuilding->GetCurrentTier() >= 1 && InRowName == TEXT("Berserker"))
+			{
+				USFTutorialSubsystem::NotifyObjective(
+					this,
+					TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade,
+					false);
+			}
+		}
 	}
 	
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());

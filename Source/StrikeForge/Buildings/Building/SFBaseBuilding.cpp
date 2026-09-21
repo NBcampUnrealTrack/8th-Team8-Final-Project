@@ -19,6 +19,7 @@
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
@@ -692,6 +693,12 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
+	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
+	{
+		SF_LOG(Log, "[%s] 현재 튜토리얼 임무에서 허용하지 않은 티어 업입니다.", *GetName());
+		return;
+	}
+
 	if (CurrentBuildingState !=
 			EBuildingState::Completed ||
 		UpgradeValue <= 0 ||
@@ -1169,6 +1176,8 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	OnTierActivated();
 
 	OnBuildingTierActivated.Broadcast(CurrentTier);
+	USFTutorialSubsystem::NotifyBuildingTierActivated(this, this, CurrentTier);
+	USFTutorialSubsystem::NotifyBuildingConstructionCompleted(this, this, CurrentTier);
 
 	return true;
 }

@@ -20,6 +20,7 @@ UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Command_Move);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier1);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier2);
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade);
 
 class ASFTutorialGhostActor;
 class ASFBaseBuilding;
@@ -293,6 +294,41 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Tutorial|Lock",
         meta = (WorldContext = "InWorldContext"))
     static bool IsTierUpgradeLocked(const UObject* InWorldContext);
+
+    /**
+     * 현재 임무에서 이 건물의 티어 업을 허용하는가.
+     *
+     * Tutorial.Lock.TierUpgrade 가 걸린 스테이지에서는 현재 목표가
+     * Nexus/Barrack 티어 업일 때의 해당 건물만 통과한다. UI에서 버튼을
+     * 숨기는 용도와 실제 UpgradeBuilding 호출을 막는 용도로 함께 쓴다.
+     */
+    static bool IsBuildingTierUpgradeAllowed(
+        const UObject* InWorldContext,
+        const ASFBaseBuilding* InBuilding);
+
+    /**
+     * 현재 임무에서 이 생산 건물의 유닛 생산을 허용하는가.
+     *
+     * Tutorial.Lock.UnitProduction 이 걸린 스테이지에서는 "병영 업그레이드
+     * 후 유닛 생산" 목표가 대기 중일 때의 업그레이드된 일반 병영에서
+     * 요구 유닛(스테이지 2는 Berserker)만 허용한다.
+     */
+    static bool IsUnitProductionAllowed(
+        const UObject* InWorldContext,
+        const ASFBaseBuilding* InBuilding,
+        FName InUnitRowName);
+
+    /** 건물 티어 활성화 완료를 튜토리얼 목표 신호로 변환한다. */
+    static void NotifyBuildingTierActivated(
+        const UObject* InWorldContext,
+        const ASFBaseBuilding* InBuilding,
+        int32 InActivatedTier);
+
+    /** Tier 0 건설 완료를 해당 건물의 튜토리얼 목표로 변환한다. */
+    static void NotifyBuildingConstructionCompleted(
+        const UObject* InWorldContext,
+        const ASFBaseBuilding* InBuilding,
+        int32 InActivatedTier);
 
     // ── 성공 효과음 ─────────────────────────────────────
 

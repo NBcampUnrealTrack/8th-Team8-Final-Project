@@ -1,4 +1,5 @@
 ﻿#include "SFBuildingGridSubsystem.h"
+#include "Logging/SFLog.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "GameFramework/Actor.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
@@ -6,14 +7,21 @@
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	// 맵마다 기준점이 0,0,0으로 시작하지않고 각자 다른 중점을 가진다면
-	// 맵마다 중점을 origin에 입력을 해야하는 로직이 필요합니다.
-	UE_LOG(LogTemp,	Log, TEXT("BuildingGridSubsystem Initialized. CellSize: %.1f"),	CellSize);
+
+	GridCells.Reset();
+
+	SF_LOG(Log,
+		"[BuildingGrid] 초기화 완료. CellSize=%.1f",
+		CellSize);
 }
 
 void USFBuildingGridSubsystem::Deinitialize()
 {
-	UE_LOG(LogTemp, Log, TEXT("BuildingGridSubsystem Deinitialized."));
+	SF_LOG(Log,
+		"[BuildingGrid] 종료. 남은 셀=%d",
+		GridCells.Num());
+
+	GridCells.Reset();
 
 	Super::Deinitialize();
 }
@@ -26,7 +34,7 @@ FVector USFBuildingGridSubsystem::GridToWorldCoordinate(const FIntPoint& GridCoo
 	0.f);
 }
 
-bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
+bool USFBuildingGridSubsystem::CanOccupyBuildingCells(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
 {
 	// gridsize = 차지할 공간길이(length) 절대 음수 불가
 	if (!IsValid(Owner) || !GridInfo.IsValid()) return false;
@@ -41,7 +49,7 @@ bool USFBuildingGridSubsystem::CanPlaceBuildingGrid(const AActor* Owner, const F
 			if (!Cell) continue;
 			// TMap에서 존재하면 점유중, 본인이 본인자리에 배치는 가능(예외), 갑자기 nullptr 방지(destroy)
 			// 가장 첫번째 조건을 검사함 > nullptr이면 isvalid 오류남 nullptr검사부터
-			AActor* ExistingBuilding = Cell->BuildingActor.Get();
+			const AActor* ExistingBuilding = Cell->BuildingActor.Get();
 			if (IsValid(ExistingBuilding) && ExistingBuilding != Owner)
 			{
 				return false;
@@ -484,10 +492,22 @@ bool USFBuildingGridSubsystem::TryMakeCenteredSubGrid(const FBuildingGridInfo& O
 
 bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
 {
-	if (!CanPlaceBuildingGrid(Owner, GridInfo))	return false;
+	if (!CanOccupyBuildingCells(Owner, GridInfo))
+	{
+		return false;
+	}
 
-	const bool bIsMiningBuilding = Cast<IMinable>(Owner) != nullptr;
+	/*
+	 * 광산은 자원 셀과 격자를 공유할 수 있습니다.
+	 * 사용할 수 있는 자원이 있는지는
+	 * CollectMiningCellTargets()에서 별도로 검사합니다.
+	 */
+	if (Cast<IMinable>(Owner))
+	{
+		return true;
+	}
 
+	// 일반 건물은 유효한 자원이 있는 셀과 겹칠 수 없습니다.
 	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
@@ -495,14 +515,12 @@ bool USFBuildingGridSubsystem::CanRegisterBuildingGrid(const AActor* Owner, cons
 			const FIntPoint CellCoordinate =
 				GridInfo.OriginCell + FIntPoint(X, Y);
 
-			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
-			if (!Cell) continue;
+			const FSFGridCellData* Cell =
+				GridCells.Find(CellCoordinate);
 
-			for (const FSFGridResourceEntry& Entry : Cell->Resources)
+			if (Cell && Cell->HasValidResource())
 			{
-				if (!Entry.ResourceActor.IsValid())	continue;
-				// 일반 건물은 자원과 겹칠 수 없습니다.
-				if (!bIsMiningBuilding)	return false;
+				return false;
 			}
 		}
 	}
@@ -565,91 +583,17 @@ bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Reso
 	return true;
 }
 
-// void USFBuildingGridSubsystem::DebugDrawRadius(const FVector& WorldLocation, float Radius)
-// {
-// 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
-// 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
-// 	ApplyGridVector.Z += 5.f; // look well
-// 	
-// 	FMatrix Mat = FMatrix::Identity;
-// 	Mat.SetOrigin(ApplyGridVector);
-// 	
-// 	DrawDebugCircle(
-// 		GetWorld(), ApplyGridVector, Radius, 24, FColor::Red,
-// 		false, 5.f, 0, 0.f,
-// 		FVector(1, 0, 0),   // YAxis = 월드 X
-// 		FVector(0, 1, 0),   // ZAxis = 월드 Y
-// 		true
-// 	);
-// 	
-// 	// 유효한 포인트만 표시해보기
-// 	
-// 	//float Normalize = Radius / CellSize;
-// 	const float HalfCell = CellSize * 0.5f;
-// 	const float RadiusSq = Radius * Radius;   // 반지름 미리 제곱
-//
-// 	for (float Y = -Radius; Y <= Radius; Y += CellSize)
-// 	{
-// 		for (float X = -Radius; X <= Radius; X += CellSize)
-// 		{
-// 			const FVector CellCenter(
-// 				ApplyGridVector.X + X,
-// 				ApplyGridVector.Y + Y,
-// 				ApplyGridVector.Z);
-//
-// 			// point = dist currentpoint, pivotpoint
-// 			const FVector2D CenterOffset(X, Y);
-// 			if (CenterOffset.SizeSquared() <= RadiusSq)
-// 			{
-// 				DrawDebugPoint(GetWorld(), CellCenter, 10.f, FColor::Cyan, false, 5.f);
-// 			}
-//
-// 			// square = max distance point
-// 			const FVector2D FarCorner(
-// 				FMath::Abs(X) + HalfCell,
-// 				FMath::Abs(Y) + HalfCell);
-// 			if (FarCorner.SizeSquared() <= RadiusSq)
-// 			{
-// 				DrawDebugBox(
-// 					GetWorld(),
-// 					CellCenter,
-// 					FVector(HalfCell, HalfCell, 5.f),
-// 					FColor::Green,
-// 					false, 5.f, 0, 4.f);
-// 			}
-// 		}
-// 	}
-// }
-
-// void USFBuildingGridSubsystem::DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize)
-// {
-// 	const FIntPoint VecToGrid = WorldCoordinateToGrid(WorldLocation);
-// 	FVector ApplyGridVector = GridToWorldCoordinate(VecToGrid);
-// 	ApplyGridVector.Z = WorldLocation.Z + 5.f; // look well
-// 	
-// 	const float HalfCell = CellSize * 0.5f;
-//
-// 	for (int Y = 0; Y < InGridSize.Y; Y++)
-// 	{
-// 		for (int X = 0; X < InGridSize.X; X++)
-// 		{
-// 			FVector TempGridCenter(ApplyGridVector.X + X * CellSize, ApplyGridVector.Y + Y * CellSize, ApplyGridVector.Z);
-// 			
-// 			DrawDebugBox(
-// 			GetWorld(),
-// 			TempGridCenter,
-// 			FVector(HalfCell, HalfCell, 5.f),
-// 			FColor::Green,
-// 			false, 5.f, 0, 4.f);
-// 		}
-// 	}
-// }
-
-void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
+void USFBuildingGridSubsystem::DebugDrawOccupiedCells() const
 {
 	UWorld* World = GetWorld();
 	if (!IsValid(World)) return;
 
+	/*
+	 * 이전 배치 세션에서 그린 점유 격자를 제거한 뒤,
+	 * 현재 점유 상태를 다시 그립니다.
+	 */
+	FlushPersistentDebugLines(World);
+	
 	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f, 10.0f);
 
 	for (const TPair<FIntPoint,	FSFGridCellData>& GridCell : GridCells)
@@ -683,8 +627,8 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells(float Duration) const
 			CellCenter,
 			BoxExtent,
 			FColor::Red,
-			false,
-			Duration,
+			true,
+			-1,
 			0,
 			3.0f);
 	}

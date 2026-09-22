@@ -20,26 +20,34 @@ public:
 						   FActorComponentTickFunction* ThisTickFunction) override;
 	UFUNCTION(BlueprintCallable)
 	bool StartPlacementMode(ASFBaseBuilding* InTargetBuilding);
-	bool TryConfirmPlacementMode();
-	// = endplacementmode == tick off cachedproperty nullptr
 	
+	bool TryConfirmPlacementMode();
 	void EndPlacementSession();
 private:
 	void UpdatePlacementMode();
+	// 실패처리한곳으로
+	void SetCurrentPlacementInvalid();
 	
 	bool CanPlaceOnCurrentGrid() const;
+	// 공통판정함수
+	bool CanPlaceAtCurrentLocation() const;
 	// nav
-	bool CanPlaceOnNavMeshXY(const FVector& WorldLocation) const;
+	bool CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const;
 
-	UPROPERTY()
+	// 현재 배치 중인 건물입니다.
+	UPROPERTY(Transient)
 	TWeakObjectPtr<ASFBaseBuilding> TargetBuilding;
-	UPROPERTY()
+	// 현재 미리보기 건물이 차지하는 격자 정보입니다.
+	UPROPERTY(Transient)
 	FBuildingGridInfo TargetBuildingGridInfo;
-	UPROPERTY()
+	// 가장 최근 미리보기 위치의 배치 가능 여부입니다.
+	UPROPERTY(Transient)
 	bool bCanPlaceCurrentLocation = false;
 	
-	UPROPERTY()
+	// 현재 배치 입력을 처리하는 컨트롤러입니다.
+	UPROPERTY(Transient)
 	TWeakObjectPtr<APlayerController> OwnerController;
-	UPROPERTY() // should not be deleted by GC
+	// 현재 World에서 사용하는 격자 Subsystem 캐시입니다.
+	UPROPERTY(Transient)
 	TObjectPtr<USFBuildingGridSubsystem> CachedGridSubsystem;
 };

@@ -29,7 +29,7 @@ struct FSFGridCellData
 	// 건물은 같은 셀에 하나만 존재합니다.
 	TWeakObjectPtr<AActor> BuildingActor;
 
-	// 배열 순회하면서 value가 isvalid한지 검사
+	// 배열 순회하면서 자원이 유효한지 검사
 	bool HasValidResource() const
 	{
 		return Resources.ContainsByPredicate(
@@ -39,7 +39,7 @@ struct FSFGridCellData
 			});
 	}
 
-	// Celldata가 비었는지 확인
+	// 격자점유가 비었는지 확인 (자원과 건물체크)
 	bool IsEmpty() const
 	{
 		return !HasValidResource() &&
@@ -56,19 +56,12 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	
-	// // WorldCenterToGridInfo로 전환됨. 현재는 사용x
-	// FIntPoint WorldCoordinateToGrid(const FVector& WorldLocation) const;
 	UFUNCTION(BlueprintCallable)
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
 	// check
 	bool CanPlacePlayerBuildingGrid(const AActor* Building, const FBuildingGridInfo& GridInfo) const;
-	
-	bool CollectMiningCellTargets(
-	const AActor* MiningBuilding,
-	const FBuildingGridInfo& BuildingGridInfo,
-	TArray<FSFMiningCellTarget>& OutTargets) const;
-	
+
 	// building
 	// 점유o이면 x, 점유x면 regist까지 진행
 	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
@@ -82,50 +75,55 @@ public:
 	FVector GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const;
 	// world location -> grid
 	FBuildingGridInfo WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& GridSize) const;
-	/**
-	 * OuterGridInfo 안에 InnerGridSize 크기의 격자를
-	 * 정확히 중앙 정렬하여 반환합니다.
-	 *
-	 * 두 격자 크기의 차이가 홀수라면 정확한 중앙 정렬이
-	 * 불가능하므로 false를 반환합니다.
-	 */
-	bool TryMakeCenteredSubGrid(
-		const FBuildingGridInfo& OuterGridInfo,
-		const FIntPoint& InnerGridSize,
-		FBuildingGridInfo& OutInnerGridInfo) const;
 	
-	// upgrade?
-	//bool TryResizeBuildingGrid(AActor* Owner, const FBuildingGridInfo& OldFootprint, const FBuildingGridInfo& NewFootprint);
 	FORCEINLINE float GetCellSize() const { return CellSize; }
 	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
+
 #pragma region Debug
-	// UFUNCTION(BlueprintCallable)
-	// void DebugDrawRadius(const FVector& WorldLocation, float Radius);
-	// UFUNCTION(BlueprintCallable) 
-	// void DebugDrawGrid(const FVector& WorldLocation, const FIntPoint& InGridSize);
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
-	void DebugDrawOccupiedCells(float Duration = 5.0f) const;
+	void DebugDrawOccupiedCells() const;
 	void DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,const FIntPoint& ResourceSearchGridSize,float WorldZ,float Duration = 0.0f) const;
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
 	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;
 	void DebugDrawResourceCells(EResourceType ResourceType, float Duration = 5.0f) const;
 #pragma endregion 
-private:
 
-	// 건물끼리 겹치는지 검사
-	bool CanPlaceBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
-	// 실제 건물 등록에 적용할 최종 규칙
-	bool CanRegisterBuildingGrid(const AActor* Owner, const FBuildingGridInfo& GridInfo) const;
-	// 실제 자원 등록에 적용할 최종 규칙
-	bool CanRegisterResourceGrid(const AResourceBase* Resource, const FBuildingGridInfo& GridInfo) const;
+private: // functions
+
+	// 광산건물시도시 자원 수집
+	bool CollectMiningCellTargets(
+		const AActor* MiningBuilding,
+		const FBuildingGridInfo& BuildingGridInfo,
+		TArray<FSFMiningCellTarget>& OutTargets) const;
+
+	/**
+	 * 바깥 격자 안에 작은 격자를 중앙 정렬합니다.
+	 * 두 격자의 크기 차이가 홀수이면 중앙 정렬할 수 없습니다.
+	 */
+	bool TryMakeCenteredSubGrid(
+		const FBuildingGridInfo& OuterGridInfo,
+		const FIntPoint& InnerGridSize,
+		FBuildingGridInfo& OutInnerGridInfo) const;
+
+	// 다른 건물과 겹치는지 검사합니다.
+	bool CanOccupyBuildingCells(
+		const AActor* Owner,
+		const FBuildingGridInfo& GridInfo) const;
+
+	// 실제 건물 등록에 사용하는 최종 점유 규칙입니다.
+	bool CanRegisterBuildingGrid(
+		const AActor* Owner,
+		const FBuildingGridInfo& GridInfo) const;
+
+	// 실제 자원 등록에 사용하는 최종 점유 규칙입니다.
+	bool CanRegisterResourceGrid(
+		const AResourceBase* Resource,
+		const FBuildingGridInfo& GridInfo) const;
+
+private: // properties
 	
-private:
-	// size of grid
-	float CellSize = 100.f;
-	// Grid pivot
+	float CellSize = 100.0f;
 	FVector GridOrigin = FVector::ZeroVector;
-	
-	// array of placed grid // (1, 1)
-	// (1, 1) = 1(X) * cellsize + cellsize / 2
-	TMap<FIntPoint, FSFGridCellData> GridCells; 
+
+	TMap<FIntPoint, FSFGridCellData> GridCells;
 };

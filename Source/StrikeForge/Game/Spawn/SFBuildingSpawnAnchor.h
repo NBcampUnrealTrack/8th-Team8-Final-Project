@@ -79,8 +79,20 @@ private:
 	
 #if WITH_EDITOR
 public:
-	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void OnConstruction(
+		const FTransform& Transform) override;
+	virtual void PostEditMove(
+			bool bFinished) override;
 private:
+	bool TryGetBuildingMeshRelativeTransform(
+		const USFBuildingDefinition* Definition,
+		FTransform& OutRelativeTransform) const;
+	
+	void ClearEditorPreview();
+
+	void RefreshEditorGridPreview(
+		const USFBuildingDefinition* Definition);
+
 	void RefreshEditorPreview();
 #endif
 };

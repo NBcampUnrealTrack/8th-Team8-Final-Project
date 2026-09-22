@@ -61,13 +61,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
 	EResourceType ResourceType = EResourceType::Mineral;
 	// 매장량
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
 	int32 ResourceDeposit = 0;
 	// 등급 ( 품질 )
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	int32 ResourceTier = 1;
 	// 한번캘때 요구 작업량
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	float ResourceRequiredWork = 50.f;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource|Grid")

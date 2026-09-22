@@ -1,6 +1,5 @@
 ﻿#include "MiningComponent.h"
 #include "Buildings/Resource/ResourceBase.h"
-#include "Logging/SFLog.h"
 
 UMiningComponent::UMiningComponent()
 {

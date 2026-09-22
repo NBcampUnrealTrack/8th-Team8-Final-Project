@@ -806,30 +806,37 @@ void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridIn
 	}
 }
 
-void USFBuildingGridSubsystem::DebugDrawResourceCells(EResourceType ResourceType, float Duration) const
+void USFBuildingGridSubsystem::DebugDrawResourceCells(
+	EResourceType ResourceType,
+	float Duration) const
 {
-	const FVector BoxExtent(CellSize * 0.5f,CellSize * 0.5f,10.0f);
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
 
-	for (const TPair<FIntPoint, FSFGridCellData>& GridCell : GridCells)
+	const FVector BoxExtent(
+		CellSize * 0.5f,CellSize * 0.5f,10.0f);
+
+	for (const TPair<FIntPoint, FSFGridCellData>& GridCell	: GridCells)
 	{
-		for (const FSFGridResourceEntry& Entry : GridCell.Value.Resources)
+		for (const FSFGridResourceEntry& Entry	: GridCell.Value.Resources)
 		{
 			AResourceBase* Resource = Entry.ResourceActor.Get();
 
-			if (!IsValid(Resource) ||
-				Entry.ResourceType != ResourceType ||
-				Resource->GetCellDeposit(
-					Entry.ResourceCellIndex) <= 0)
+			if (!IsValid(Resource) || Entry.ResourceType != ResourceType)
 			{
 				continue;
 			}
+
+			const int32 RemainingDeposit =
+				Resource->GetCellDeposit(Entry.ResourceCellIndex);
+			if (RemainingDeposit <= 0)	continue;
 
 			FVector CellCenter = GridToWorldCoordinate(GridCell.Key);
 
 			CellCenter.Z = Resource->GetActorLocation().Z + 10.0f;
 
 			DrawDebugBox(
-				GetWorld(),
+				World,
 				CellCenter,
 				BoxExtent,
 				FColor::Green,
@@ -838,8 +845,28 @@ void USFBuildingGridSubsystem::DebugDrawResourceCells(EResourceType ResourceType
 				0,
 				3.0f);
 
-			// 같은 종류는 셀당 하나만 있으므로
-			// 해당 셀은 더 검사하지 않습니다.
+			FVector TextLocation = CellCenter;
+			TextLocation.Z += 30.0f;
+
+			const FString DebugText =
+				FString::Printf(
+					TEXT("Index: %d\nAmount: %d"),
+					Entry.ResourceCellIndex,
+					RemainingDeposit);
+
+			DrawDebugString(
+				World,
+				TextLocation,
+				DebugText,
+				nullptr,
+				FColor::White,
+				Duration,
+				false);
+
+			/*
+			 * 동일한 종류의 자원은 한 셀에
+			 * 하나만 등록될 수 있습니다.
+			 */
 			break;
 		}
 	}

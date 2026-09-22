@@ -24,12 +24,7 @@ bool UBuildingPlacement::StartPlacementMode(ASFBaseBuilding* InTargetBuilding)
 	if (!IsValid(GridSubsystem)) return false;
 	
 	
-	if (InTargetBuilding->IsA<ASFMiningBuilding>())
-	{
-		EResourceType Type = Cast<ASFMiningBuilding>(InTargetBuilding)->GetMineResourceType();
-		GridSubsystem->DebugDrawResourceCells(Type, 10.f);
-	}
-	else
+	if (!InTargetBuilding->IsA<ASFMiningBuilding>())
 	{
 		GridSubsystem->DebugDrawOccupiedCells(5.f);
 	}
@@ -108,6 +103,10 @@ void UBuildingPlacement::UpdatePlacementMode()
 		
 		if (MinableBuilding)
 		{
+			CachedGridSubsystem->DebugDrawResourceCells(
+				MinableBuilding->GetMineResourceType(),
+				0.0f);
+			
 			CachedGridSubsystem->DebugDrawMiningPlacementGrid(
 				TargetBuildingGridInfo,
 				MinableBuilding->GetResourceSearchGridSize(),
@@ -122,6 +121,8 @@ void UBuildingPlacement::UpdatePlacementMode()
 				bCanPlaceCurrentLocation,
 				0.0f);
 		}
+		
+		CachedGridSubsystem->DebugDrawOccupiedCells(0.f);
 		
 		TargetBuilding->ApplyPreviewMaterial(
 			bCanPlaceCurrentLocation);

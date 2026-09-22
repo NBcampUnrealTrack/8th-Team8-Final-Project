@@ -15,6 +15,7 @@
 #include "SFSelectInfo/SFMultiSelectionPanelWidget.h"
 
 #include "HUD/Production/SFProductionBuildingPanelWidget.h"
+#include "HUD/Catalog/SFBuildCatalogPanelWidget.h"
 #include "UI/ResultWidget.h"
 
 #include "HUD/Portrait/SFUnitPortraitActor.h"
@@ -293,6 +294,10 @@ void USFInGameHUDWidget::NativeConstruct()
 
 void USFInGameHUDWidget::NativeDestruct()
 {
+    bEnemyHoverFeedbackActive =
+        false;
+
+    HideEnemyHoverIndicator();
     HideAllSelectionIndicators();
 
     if (IsValid(ActiveBuildingModeWidget))
@@ -424,6 +429,10 @@ void USFInGameHUDWidget::NativeTick(
     }
 
     RefreshSelectedResourceInfo();
+
+    UpdateEnemyHoverIndicator();
+
+    UpdateEnemyHoverAttackFeedback(InDeltaTime);
 
     if (!bIsSelectionDragging ||
         !IsValid(SelectionDragBox))
@@ -1173,6 +1182,57 @@ void USFInGameHUDWidget::ToggleBuildingMode()
     OpenBuildingMode();
 }
 
+bool USFInGameHUDWidget::RequestBuildingBySlot(
+    int32 SlotIndex
+)
+{
+    const bool bBuildingModeActive =
+        IsValid(ActiveBuildingModeWidget) &&
+        ActiveBuildingModeWidget->IsActivated();
+
+    SF_LOG(
+        Log,
+        "[BuildInput] HUD Request Slot=%d Widget=%s Activated=%s",
+        SlotIndex,
+        IsValid(ActiveBuildingModeWidget)
+        ? TEXT("Valid")
+        : TEXT("Invalid"),
+        bBuildingModeActive
+        ? TEXT("true")
+        : TEXT("false")
+    );
+
+    if (!bBuildingModeActive)
+    {
+        return false;
+    }
+
+    UWidget* BuildCatalogWidget =
+        ActiveBuildingModeWidget->GetWidgetFromName(
+            TEXT("BuildCatalogPanel")
+        );
+
+    USFBuildCatalogPanelWidget* BuildCatalogPanel =
+        Cast<USFBuildCatalogPanelWidget>(
+            BuildCatalogWidget
+        );
+
+    if (!IsValid(BuildCatalogPanel))
+    {
+        SF_LOG(
+            Warning,
+            "[SFInGameHUDWidget] "
+            "BuildCatalogPanel을 찾지 못했습니다."
+        );
+
+        return false;
+    }
+
+    return BuildCatalogPanel->RequestBuildingBySlot(
+        SlotIndex
+    );
+}
+
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (
@@ -1228,6 +1288,18 @@ void USFInGameHUDWidget::OpenBuildingMode()
         &USFInGameHUDWidget::HandleBuildingModeDeactivated
     );
 
+    ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(
+            GetOwningPlayer()
+        );
+
+    if (IsValid(PlayerController))
+    {
+        PlayerController->SetBuildModeInputEnabled(
+            true
+        );
+    }
+
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
@@ -1274,6 +1346,7 @@ void USFInGameHUDWidget::HandleBuildingModeDeactivated()
         return;
     }
 
+    PlayerController->SetBuildModeInputEnabled(false);
     PlayerController->ClearSpawnedBuildingRef();
     PlayerController->SetSFControlMode(
         ESFControlMode::Gameplay
@@ -1927,9 +2000,19 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
         return;
     }
 
-    if (!IsValid(SelectionIndicatorMaterial))
+    const bool bIsEnemyTarget =
+        IsValidEnemyHoverTarget(
+            Actor
+        );
+
+    UMaterialInterface* IndicatorMaterial =
+        bIsEnemyTarget &&
+        IsValid(EnemyHoverIndicatorMaterial)
+        ? EnemyHoverIndicatorMaterial
+        : SelectionIndicatorMaterial;
+
+    if (!IsValid(IndicatorMaterial))
     {
-        SF_LOG(Warning, "[SFInGameHUDWidget] SelectionIndicatorMaterial is invalid.");
         return;
     }
 
@@ -1986,9 +2069,13 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
     Indicator->SetupAttachment(RootComponent);
     Indicator->SetAbsolute(false, true, true);
     Indicator->SetMobility(EComponentMobility::Movable);
-    Indicator->SetDecalMaterial(SelectionIndicatorMaterial);
+    Indicator->SetDecalMaterial(IndicatorMaterial);
     Indicator->DecalSize = FVector(32.f, RingRadius, RingRadius);
-    Indicator->SetSortOrder(10);
+    Indicator->SetSortOrder(
+        bIsEnemyTarget
+        ? 30
+        : 10
+    );
     Indicator->RegisterComponent();
     Indicator->SetWorldLocation(IndicatorLocation);
     Indicator->SetWorldRotation(FRotator(-90.f, 0.f, 0.f));
@@ -2039,6 +2126,420 @@ void USFInGameHUDWidget::HideAllSelectionIndicators()
     }
 
     SelectionIndicatorComponents.Empty();
+}
+
+void USFInGameHUDWidget::UpdateEnemyHoverIndicator()
+{
+    if (bEnemyHoverFeedbackActive)
+    {
+        return;
+    }
+
+    APlayerController* PlayerController =
+        GetOwningPlayer();
+
+    if (!IsValid(PlayerController) ||
+        IsPointerOverHUDPanel())
+    {
+        HideEnemyHoverIndicator();
+        return;
+    }
+
+    FHitResult HitResult;
+
+    const ETraceTypeQuery VisibilityTraceType =
+        UEngineTypes::ConvertToTraceType(
+            ECC_Visibility
+        );
+
+    if (!PlayerController->GetHitResultUnderCursorByChannel(
+        VisibilityTraceType,
+        false,
+        HitResult
+    ))
+    {
+        HideEnemyHoverIndicator();
+        return;
+    }
+
+    AActor* CandidateActor =
+        HitResult.GetActor();
+
+    if (!IsValidEnemyHoverTarget(CandidateActor))
+    {
+        HideEnemyHoverIndicator();
+        return;
+    }
+
+    if (HoveredEnemyActor.Get() == CandidateActor &&
+        IsValid(EnemyHoverIndicator))
+    {
+        return;
+    }
+
+    HideEnemyHoverIndicator();
+
+    if (SelectionIndicatorComponents.Contains(CandidateActor))
+    {
+        HoverSuppressedSelectionActor = CandidateActor;
+
+        bHoverSuppressedSelectionIndicator = true;
+
+        HideSelectionIndicator(CandidateActor);
+    }
+
+    ShowEnemyHoverIndicator(CandidateActor);
+}
+
+bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
+    AActor* Actor
+) const
+{
+    AUnitBase* Unit =
+        Cast<AUnitBase>(Actor);
+
+    if (!IsValid(Unit))
+    {
+        return false;
+    }
+
+    if (IsOwnedByLocalPlayer(Unit))
+    {
+        return false;
+    }
+
+    const UCombatTargetComponent* CombatTarget =
+        Unit->FindComponentByClass<
+        UCombatTargetComponent
+        >();
+
+    if (!IsValid(CombatTarget))
+    {
+        return false;
+    }
+
+    if (!CombatTarget->IsAlive())
+    {
+        return false;
+    }
+
+    return CombatTarget->GetTeamIndex() !=
+        Targetable::PlayerTeam;
+}
+
+void USFInGameHUDWidget::ShowEnemyHoverIndicator(
+    AActor* Actor
+)
+{
+    if (!IsValid(Actor) ||
+        !IsValid(EnemyHoverIndicatorMaterial))
+    {
+        return;
+    }
+
+    USceneComponent* RootComponent =
+        Actor->GetRootComponent();
+
+    if (!IsValid(RootComponent))
+    {
+        return;
+    }
+
+    FVector BoundsOrigin;
+    FVector BoundsExtent;
+
+    Actor->GetActorBounds(
+        true,
+        BoundsOrigin,
+        BoundsExtent
+    );
+
+    const float UnitBaseRadius =
+        FMath::Max(
+            BoundsExtent.X,
+            BoundsExtent.Y
+        );
+
+    const float RingRadius =
+        FMath::Clamp(
+            UnitBaseRadius * 0.85f,
+            40.f,
+            180.f
+        );
+
+    const FVector IndicatorLocation(
+        BoundsOrigin.X,
+        BoundsOrigin.Y,
+        BoundsOrigin.Z -
+        BoundsExtent.Z +
+        8.f
+    );
+
+    UDecalComponent* Indicator =
+        NewObject<UDecalComponent>(Actor);
+
+    if (!IsValid(Indicator))
+    {
+        return;
+    }
+
+    Actor->AddInstanceComponent(
+        Indicator
+    );
+
+    Indicator->SetupAttachment(
+        RootComponent
+    );
+
+    Indicator->SetAbsolute(
+        false,
+        true,
+        true
+    );
+
+    Indicator->SetMobility(
+        EComponentMobility::Movable
+    );
+
+    EnemyHoverDynamicMaterial =
+        UMaterialInstanceDynamic::Create(
+            EnemyHoverIndicatorMaterial,
+            this
+        );
+
+    if (!IsValid(EnemyHoverDynamicMaterial))
+    {
+        Indicator->DestroyComponent();
+        return;
+    }
+
+    EnemyHoverDynamicMaterial->
+        SetScalarParameterValue(
+            TEXT("AttackFlash"),
+            0.f
+        );
+
+    Indicator->SetDecalMaterial(
+        EnemyHoverDynamicMaterial
+    );
+
+    Indicator->DecalSize =
+        FVector(
+            32.f,
+            RingRadius,
+            RingRadius
+        );
+
+    EnemyHoverBaseDecalSize = Indicator->DecalSize;
+
+    Indicator->SetSortOrder(
+        30
+    );
+
+    Indicator->RegisterComponent();
+
+    Indicator->SetWorldLocation(
+        IndicatorLocation
+    );
+
+    Indicator->SetWorldRotation(
+        FRotator(
+            -90.f,
+            0.f,
+            0.f
+        )
+    );
+
+    EnemyHoverIndicator =
+        Indicator;
+
+    HoveredEnemyActor =
+        Actor;
+
+    SF_LOG(
+        Log,
+        "[SFInGameHUDWidget] Enemy hover indicator created | Actor=%s",
+        *Actor->GetName()
+    );
+}
+
+void USFInGameHUDWidget::HideEnemyHoverIndicator()
+{
+    if (bEnemyHoverFeedbackActive)
+    {
+        return;
+    }
+
+    if (IsValid(EnemyHoverIndicator))
+    {
+        EnemyHoverIndicator->DestroyComponent();
+    }
+
+    EnemyHoverIndicator =
+        nullptr;
+
+    EnemyHoverDynamicMaterial =
+        nullptr;
+
+    EnemyHoverBaseDecalSize =
+        FVector::ZeroVector;
+
+    bEnemyHoverFeedbackActive =
+        false;
+
+    EnemyHoverFeedbackElapsed =
+        0.f;
+
+    AActor* SuppressedActor =
+        HoverSuppressedSelectionActor.Get();
+
+    if (bHoverSuppressedSelectionIndicator &&
+        IsValid(SuppressedActor))
+    {
+        bool bStillSelected =
+            SelectedActor.Get() == SuppressedActor;
+
+        if (!bStillSelected)
+        {
+            for (
+                const TObjectPtr<AActor>& Selected :
+                SelectedActors
+                )
+            {
+                if (Selected.Get() ==
+                    SuppressedActor)
+                {
+                    bStillSelected =
+                        true;
+
+                    break;
+                }
+            }
+        }
+
+        if (bStillSelected)
+        {
+            ShowSelectionIndicator(
+                SuppressedActor
+            );
+        }
+    }
+
+    HoverSuppressedSelectionActor =
+        nullptr;
+
+    bHoverSuppressedSelectionIndicator =
+        false;
+
+    HoveredEnemyActor.Reset();
+}
+
+void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
+    AActor* Target
+)
+{
+    if (!IsValid(Target) ||
+        HoveredEnemyActor.Get() != Target ||
+        !IsValid(EnemyHoverIndicator))
+    {
+        return;
+    }
+
+    EnemyHoverFeedbackElapsed =
+        0.f;
+
+    bEnemyHoverFeedbackActive =
+        true;
+
+    if (IsValid(EnemyHoverDynamicMaterial))
+    {
+        EnemyHoverDynamicMaterial->
+            SetScalarParameterValue(
+                TEXT("AttackFlash"),
+                0.f
+            );
+    }
+}
+
+void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
+    float InDeltaTime
+)
+{
+    if (!bEnemyHoverFeedbackActive ||
+        !IsValid(EnemyHoverIndicator))
+    {
+        return;
+    }
+
+    constexpr float PulseCount = 2.f;
+
+    EnemyHoverFeedbackElapsed +=
+        InDeltaTime;
+
+    const float TotalDuration =
+        EnemyHoverAttackPulseDuration *
+        PulseCount;
+
+    const float Alpha =
+        FMath::Clamp(
+            EnemyHoverFeedbackElapsed /
+            TotalDuration,
+            0.f,
+            1.f
+        );
+
+    // 0 → 1 → 0 패턴을 두 번 반복한다.
+    const float PulseAlpha =
+        FMath::Abs(
+            FMath::Sin(
+                Alpha *
+                PulseCount *
+                PI
+            )
+        );
+
+    const float CurrentScale =
+        FMath::Lerp(
+            1.f,
+            EnemyHoverAttackPulseScale,
+            PulseAlpha
+        );
+
+    EnemyHoverIndicator->DecalSize =
+        EnemyHoverBaseDecalSize *
+        CurrentScale;
+
+    if (IsValid(EnemyHoverDynamicMaterial))
+    {
+        EnemyHoverDynamicMaterial->
+            SetScalarParameterValue(
+                TEXT("AttackFlash"),
+                PulseAlpha
+            );
+    }
+
+    if (Alpha >= 1.f)
+    {
+        EnemyHoverIndicator->DecalSize =
+            EnemyHoverBaseDecalSize;
+
+        if (IsValid(EnemyHoverDynamicMaterial))
+        {
+            EnemyHoverDynamicMaterial->
+                SetScalarParameterValue(
+                    TEXT("AttackFlash"),
+                    0.f
+                );
+        }
+
+        EnemyHoverFeedbackElapsed =
+            0.f;
+
+        bEnemyHoverFeedbackActive =
+            false;
+
+        HideEnemyHoverIndicator();
+    }
 }
 
 void USFInGameHUDWidget::HandleSelectionDragStarted(

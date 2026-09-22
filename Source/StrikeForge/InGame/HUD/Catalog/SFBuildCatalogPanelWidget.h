@@ -19,6 +19,9 @@ class STRIKEFORGE_API USFBuildCatalogPanelWidget
 
 	//==================== = Functions ====================
 
+public:
+	bool RequestBuildingBySlot(int32 SlotIndex);
+
 private:
 	void BindResourceData();
 

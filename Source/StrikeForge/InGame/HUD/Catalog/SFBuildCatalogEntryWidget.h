@@ -18,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildResourceWarningRequested);
 
 class USFBuildingDefinition;
 class USoundBase;
+class UTextBlock;
 
 UCLASS()
 class STRIKEFORGE_API USFBuildCatalogEntryWidget
@@ -68,11 +69,16 @@ public:
 		return bCanAfford;
 	}
 
+	UFUNCTION(BlueprintCallable,Category = "SF|Build Catalog")
+	void SetHotkeyText(const FText& InHotkey);
+
 	UFUNCTION(
 		BlueprintPure,
 		Category = "SF|Build Catalog"
 	)
 	FResources GetConstructionCost() const;
+
+	void TriggerEntryClickedFromHotkey();
 
 protected:
 	virtual void NativeConstruct() override;
@@ -103,6 +109,13 @@ protected:
 	void BP_OnStageBuildLockChanged(
 		bool bStageLocked
 	);
+
+	UPROPERTY(
+		meta = (BindWidget),
+		BlueprintReadOnly,
+		Category = "SF|Build Catalog"
+	)
+	TObjectPtr<UTextBlock> HotkeyText;
 
 private:
 	/**

@@ -30,7 +30,8 @@ public:
 	// DELETE BUILDING's ABILITY
 	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
-
+	
+	void SetProgressColorByResourceType(EResourceType InResourceType);
 	// Minable
 	virtual bool CanAcceptResource(const AResourceBase* InResource) const override;
 	virtual bool TryLinkResource(AResourceBase* InResource) override;
@@ -41,7 +42,6 @@ public:
 	int32 GetExtractAmount() const;
 	int32 GetResourceAmount() const;
 	float GetMiningProgressRatio() const;
-	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

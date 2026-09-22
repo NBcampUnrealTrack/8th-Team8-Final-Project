@@ -207,6 +207,10 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		return false;
 	}
 
+	// 고스트가 요구한 건물을 이 위치에 확정했다면, 완공될 때까지
+	// 같은 건물을 포함한 새 건설을 막는다.
+	USFTutorialSubsystem::NotifyTutorialBuildingPlacementConfirmed(this, Building);
+
 	// 짓겠다고 확정한 순간 안내용 모형을 치운다.
 	// 건설이 끝날 때까지 두면 실제 건물과 겹쳐 서 있어서 무엇이 진짜인지
 	// 알 수 없다.

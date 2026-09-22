@@ -10,6 +10,16 @@
 void USFTutorialSpotlightWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    // 우측 상단 안내 배너는 두 줄 문구가 자주 들어간다. 기존 크기에서는
+    // 외곽선까지 겹쳐 보이므로 폰트만 조금 낮추고 줄 간격을 확보한다.
+    if (IsValid(InstructionText))
+    {
+        FSlateFontInfo GuideFont = InstructionText->GetFont();
+        GuideFont.Size = FMath::Max(1, GuideFont.Size - 4);
+        InstructionText->SetFont(GuideFont);
+        InstructionText->SetLineHeightPercentage(1.18f);
+    }
 }
 
 void USFTutorialSpotlightWidget::NativeDestruct()

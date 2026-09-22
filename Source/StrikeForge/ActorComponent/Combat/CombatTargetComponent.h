@@ -73,6 +73,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void SetArmor(float InArmor) { Armor = FMath::Clamp(InArmor, 0.f, 0.9f); }
 
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	FORCEINLINE void SetDamageMultiplier(float Value) { DamageMultiplier = Value; }
+
 	// ── 피해 ────────────────────────────────────────────
 	/**
 	 * 최종 피해를 적용한다. 방어 감산은 공격자가 이미 계산했다.
@@ -120,6 +123,10 @@ private:
 	/** 받는 피해 감소 0~0.9 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0", ClampMax = "0.9"))
 	float Armor = 0.f;
+
+	/** 받는 피해 배율 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	float DamageMultiplier = 1.f;
 
 	/**
 	 * 소유 액터의 최대 체력을 이 값으로 초기화한다.

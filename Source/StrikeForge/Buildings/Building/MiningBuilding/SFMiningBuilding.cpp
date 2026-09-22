@@ -1,7 +1,9 @@
 ﻿#include "SFMiningBuilding.h"
 #include "ActorComponent/Mining/MiningComponent.h"
+#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
 #include "Logging/SFLog.h"
 
@@ -36,17 +38,21 @@ void ASFMiningBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ASFMiningBuilding::BindDelegateFunction()
 {
-	//need to connect widgetcomponent
-	//MiningComponent->OnExtractProgressRatioChanged
 	
 	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	// 진행도는 건물을 거치지 않고 상태 컴포넌트가 직접 받는다.
+	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
 }
 
 void ASFMiningBuilding::UnBindDelegateFunction()
 {
 	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
 	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
+	
 }
 
 FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
@@ -88,6 +94,7 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 	}
 
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
+	SetProgressColorByResourceType(GetMineResourceType());
 }
 
 void ASFMiningBuilding::OnTierActivated()
@@ -127,6 +134,12 @@ void ASFMiningBuilding::OnTierDeactivated()
 	Super::OnTierDeactivated();
 	
 	RefreshMiningState();
+}
+
+void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceType)
+{
+	// 색 규칙은 SFOverheadUIColors 한 곳에 있다. 획득 배지도 같은 함수를 쓴다.
+	StatusComponent->SetProgressColor(SFOverheadUIColors::FromResourceType(InResourceType));
 }
 
 bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const
@@ -191,13 +204,23 @@ void ASFMiningBuilding::RefreshMiningState()
 	{
 		MiningComponent->StopMining();
 		ApplyIncomeRate(0.f);
+		
+		// progressbar는 종료하고 다른 UI를 보여한다
+		OverheadUI->SetElementVisible(ESFOverheadElement::Progress, false);
+		// TODO:: Alert UI Needed
+		
 		return;
 	}
 
+	// 광질 시작
 	MiningComponent->StartMining();
 
 	ApplyIncomeRate(
 		MiningComponent->GetIncomeRatePerSeconds());
+
+	
+	// 내 광산만 진행도를 보여준다. 적 수입은 노출하지 않는다.
+	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, IsOwnedByLocalPlayer());
 }
 
 //getter
@@ -232,6 +255,17 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 	if (!IsValid(SFGameState)) return;
 	
 	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
+
+	/*
+	 * 획득은 상태가 아니라 사건이다.
+	 * 1초 뒤에 물어보면 보여줄 게 없으므로 상태 컴포넌트를 거치지 않고 바로 전달한다.
+	 *
+	 * 자원은 팀과 무관하게 쌓이지만 배지는 내 것만 띄운다.
+	 * 남의 수입은 보여줄 이유가 없고, 시야에 들어온 적 광산의 채굴량이 그대로 노출된다.
+	 */
+	if (!IsOwnedByLocalPlayer())	return;
+
+	OverheadUI->PlayResourceGain(InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

@@ -2,6 +2,7 @@
 
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/SFRootBase.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
@@ -393,6 +394,19 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 				USFTutorialSubsystem::NotifyObjective(
 					this,
 					TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade,
+					false);
+			}
+
+			// 스테이지 3의 마지막 임무는 특수 병영에서 완성된 전쟁야수만
+			// 인정한다. 생산 대기열 등록 시점이 아니라 실제 스폰 완료 후
+			// 이 함수에 도달하므로, 실패한 생산은 통과 처리되지 않는다.
+			if (OwnerBuilding->GetBuildingDefinition() &&
+				OwnerBuilding->GetBuildingDefinition()->BuildingType == ESFBuildingType::SpecialProduction &&
+				InRowName == TEXT("WarBeast"))
+			{
+				USFTutorialSubsystem::NotifyObjective(
+					this,
+					TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast,
 					false);
 			}
 		}

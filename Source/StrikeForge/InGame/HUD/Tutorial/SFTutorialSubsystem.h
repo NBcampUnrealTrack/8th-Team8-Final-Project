@@ -21,6 +21,7 @@ UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier1);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_Tier2);
 UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade);
+UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast);
 
 class ASFTutorialGhostActor;
 class ASFBaseBuilding;

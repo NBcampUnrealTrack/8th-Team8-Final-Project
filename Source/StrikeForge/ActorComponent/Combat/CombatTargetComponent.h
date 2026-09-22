@@ -74,7 +74,7 @@ public:
 	void SetArmor(float InArmor) { Armor = FMath::Clamp(InArmor, 0.f, 0.9f); }
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
-	void SetDamagerMultiplier(float Value) { DamageMultiplier = Value; }
+	FORCEINLINE void SetDamageMultiplier(float Value) { DamageMultiplier = Value; }
 
 	// ── 피해 ────────────────────────────────────────────
 	/**

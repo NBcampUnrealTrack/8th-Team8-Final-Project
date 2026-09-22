@@ -1,5 +1,6 @@
 #include "SFBuildCatalogEntryWidget.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "Components/TextBlock.h"
 #include "Logging/SFLog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
@@ -293,4 +294,23 @@ void USFBuildCatalogEntryWidget::SetStageBuildAllowed(
 	BP_OnStageBuildLockChanged(
 		!bStageBuildAllowed
 	);
+}
+
+void USFBuildCatalogEntryWidget::TriggerEntryClickedFromHotkey()
+{
+    HandleEntryClicked();
+}
+
+void USFBuildCatalogEntryWidget::SetHotkeyText(
+    const FText& InHotkey
+)
+{
+    if (!IsValid(HotkeyText))
+    {
+        return;
+    }
+
+    HotkeyText->SetText(
+        InHotkey
+    );
 }

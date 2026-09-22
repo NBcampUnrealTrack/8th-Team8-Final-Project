@@ -129,6 +129,7 @@ public:
 
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
 
+    void SetBuildModeInputEnabled(bool bEnabled);
 
 protected:
     virtual void BeginPlay() override;
@@ -245,6 +246,10 @@ private:
 
     // Async
 
+
+    //빌드모드 단축키
+    void HandleBuildSlotInput(int32 SlotIndex);
+
     // 변수 영역
 protected:
 
@@ -320,6 +325,12 @@ protected:
         Category = "SF|Input|Mapping"
     )
     int32 BuildPlacementMappingPriority = 20;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Mapping")
+    TObjectPtr<UInputMappingContext> BuildModeMappingContext = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Mapping")
+    int32 BuildModeMappingPriority = 30;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -452,6 +463,24 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> CommanderSkillAction3 = nullptr;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot01Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot02Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot03Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot04Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot05Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot06Action = nullptr;
+
 private:
     UPROPERTY(
         Transient
@@ -486,6 +515,8 @@ private:
     int32 LastControlGroupIndex = INDEX_NONE;
 
     double LastControlGroupInputTime = -1.0;
+
+    bool bBuildModeInputEnabled = false;
 
     // team
     int32 MyTeamIndex = 0;

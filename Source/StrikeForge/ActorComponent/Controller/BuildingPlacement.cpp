@@ -1,6 +1,6 @@
 ﻿#include "BuildingPlacement.h"
+#include "Logging/SFLog.h"
 #include "Buildings/Building/SFBaseBuilding.h"
-#include "Buildings/Building/MiningBuilding/SFMiningBuilding.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
@@ -12,35 +12,61 @@ UBuildingPlacement::UBuildingPlacement()
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
-bool UBuildingPlacement::StartPlacementMode(ASFBaseBuilding* InTargetBuilding)
+bool UBuildingPlacement::StartPlacementMode(
+	ASFBaseBuilding* InTargetBuilding)
 {
 	EndPlacementSession();
 
-	if (!IsValid(InTargetBuilding)) return false;
-	APlayerController* Controller =	Cast<APlayerController>(GetOwner());
-	if (!IsValid(Controller)) return false;
-
-	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
-	if (!IsValid(GridSubsystem)) return false;
-	
-	
-	if (InTargetBuilding->IsA<ASFMiningBuilding>())
+	if (!IsValid(InTargetBuilding))
 	{
-		EResourceType Type = Cast<ASFMiningBuilding>(InTargetBuilding)->GetMineResourceType();
-		GridSubsystem->DebugDrawResourceCells(Type, 10.f);
+		SF_LOG(Warning,
+			"[BuildingPlacement] 유효하지 않은 건물로 "
+			"배치 모드를 시작하려 했습니다.");
+		return false;
 	}
-	else
+	
+	APlayerController* Controller =	Cast<APlayerController>(GetOwner());
+	if (!IsValid(Controller))
 	{
-		GridSubsystem->DebugDrawOccupiedCells(5.f);
+		SF_LOG(Warning,
+			"[BuildingPlacement] Owner가 "
+			"PlayerController가 아닙니다.");
+		return false;
+	}
+	
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		SF_LOG(Warning,
+			"[BuildingPlacement] 유효한 World가 없습니다.");
+		return false;
+	}
+	
+	USFBuildingGridSubsystem* GridSubsystem = World->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(GridSubsystem))
+	{
+		SF_LOG(Warning,
+			"[BuildingPlacement] BuildingGridSubsystem을 "
+			"찾을 수 없습니다.");
+
+		return false;
 	}
 	
 	TargetBuilding = InTargetBuilding;
 	OwnerController = Controller;
 	CachedGridSubsystem = GridSubsystem;
-	TargetBuildingGridInfo.GridSize = InTargetBuilding->GetGridSize();
+
+	const FIntPoint BaseGridSize =	InTargetBuilding->GetGridSize();
+	// DA의 로컬 크기에 Actor 회전을 적용하여 월드 격자 점유 크기로 변환합니다.
+	TargetBuildingGridInfo.GridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			BaseGridSize, InTargetBuilding->GetActorRotation());
 
 	bCanPlaceCurrentLocation = false;
 
+	// 배치 시작 시점의 현재 점유 격자를 한 번 표시합니다.
+	GridSubsystem->DebugDrawOccupiedCells();
+	
 	SetComponentTickEnabled(true);
 	UpdatePlacementMode();
 	
@@ -50,74 +76,114 @@ bool UBuildingPlacement::StartPlacementMode(ASFBaseBuilding* InTargetBuilding)
 
 void UBuildingPlacement::UpdatePlacementMode()
 {
-	if (!TargetBuilding.IsValid())
+	ASFBaseBuilding* Building =
+		TargetBuilding.Get();
+	if (!IsValid(Building))
 	{
+		SF_LOG(
+			Warning,
+			"[BuildingPlacement] TargetBuilding이 유효하지 않아 "
+			"배치 모드를 종료합니다.");
+
 		EndPlacementSession();
-		UE_LOG(LogTemp, Error, TEXT("UBuildingPlacement::UpdatePlacementMode:TargetActor is Invalid"));
 		return;
 	}
 
-	if (!OwnerController.IsValid())
+	APlayerController* Controller =
+		OwnerController.Get();
+	if (!IsValid(Controller))
 	{
+		SF_LOG(
+			Warning,
+			"[BuildingPlacement] OwnerController가 유효하지 않아 "
+			"배치 모드를 종료합니다.");
+
 		EndPlacementSession();
-		UE_LOG(LogTemp, Error, TEXT("UBuildingPlacement::UpdatePlacementMode:Controller is Invalid"));
 		return;
 	}
-	
+
+	USFBuildingGridSubsystem* GridSubsystem =
+		CachedGridSubsystem.Get();
+	if (!IsValid(GridSubsystem))
+	{
+		SF_LOG(
+			Warning,
+			"[BuildingPlacement] BuildingGridSubsystem이 유효하지 않아 "
+			"배치 모드를 종료합니다.");
+
+		EndPlacementSession();
+		return;
+	}
+
 	FHitResult HitResult;
 
-	if (OwnerController.Get()->GetHitResultUnderCursor(
+	if (!Controller->GetHitResultUnderCursor(
 			ECC_LANDSCAPE,
 			false,
 			HitResult))
 	{
-		
-		TargetBuildingGridInfo =
-			CachedGridSubsystem->WorldCenterToGridInfo(
-				HitResult.Location,
-				TargetBuildingGridInfo.GridSize);
+		// 지형을 찾지 못한 프레임은 배치 불가로 처리합니다.
+		SetCurrentPlacementInvalid();
+		return;
+	}
 
-		FVector BuildingLocation =
-			CachedGridSubsystem->GridInfoToWorldCenter(
-				TargetBuildingGridInfo);
+	FVector BuildingLocation;
 
-		BuildingLocation.Z = HitResult.Location.Z;
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			HitResult.Location,
+			TargetBuildingGridInfo.GridSize,
+			TargetBuildingGridInfo,
+			BuildingLocation))
+	{
+		SetCurrentPlacementInvalid();
+		return;
+	}
 
-		TargetBuilding->SetActorLocation(
-			BuildingLocation);
+	Building->SetActorLocation(BuildingLocation);
 
-		const bool bCanPlaceOnGrid = CanPlaceOnCurrentGrid();
-		
-		const bool bUsesResourceGrid =
-			Cast<IMinable>(
-		TargetBuilding.Get()) != nullptr;
+	bCanPlaceCurrentLocation = CanPlaceAtCurrentLocation();
+	const IMinable* MinableBuilding = Cast<IMinable>(Building);
 
-		const bool bCanPlaceOnNavigation =
-			bUsesResourceGrid ||
-			CanPlaceOnNavMeshXY(BuildingLocation);
+	if (MinableBuilding)
+	{
+		GridSubsystem->DebugDrawResourceCells(
+			MinableBuilding->GetMineResourceType(),
+			0.0f);
 
-		// 튜토리얼이 자리를 제한하는 중이면 그것도 조건에 넣는다.
-		// 별도 문장으로 부르면 반환값이 버려져서, 경고만 뜨고 배치는 그대로
-		// 허용되는 상태가 된다.
-		bCanPlaceCurrentLocation =
-			bCanPlaceOnGrid &&
-			bCanPlaceOnNavigation &&
-			USFTutorialSubsystem::IsBuildLocationAllowed(this, BuildingLocation);
-		
-		CachedGridSubsystem->DebugDrawGridInfo(
-		TargetBuildingGridInfo,
-		BuildingLocation.Z,
-		bCanPlaceCurrentLocation,
-		0.0f);
-		
-		TargetBuilding->ApplyPreviewMaterial(
-			bCanPlaceCurrentLocation);
+		// 실제 자원 검색 판정과 같은 회전된 검색 크기를 디버그 표시에 사용합니다.
+		const FIntPoint EffectiveSearchGridSize =
+			USFBuildingGridSubsystem::GetRotatedGridSize(
+				MinableBuilding->GetResourceSearchGridSize(),
+				Building->GetActorRotation());
+
+		GridSubsystem->DebugDrawMiningPlacementGrid(
+			TargetBuildingGridInfo,
+			EffectiveSearchGridSize,
+			BuildingLocation.Z,
+			0.0f);
 	}
 	else
-	{	// LandScape Trace Failed.
-		bCanPlaceCurrentLocation = false;
-		TargetBuilding->ApplyPreviewMaterial(false);
-		return;
+	{
+		GridSubsystem->DebugDrawGridInfo(
+			TargetBuildingGridInfo,
+			BuildingLocation.Z,
+			bCanPlaceCurrentLocation,
+			0.0f);
+	}
+
+	Building->ApplyPreviewMaterial(bCanPlaceCurrentLocation);
+}
+
+void UBuildingPlacement::SetCurrentPlacementInvalid()
+{
+	bCanPlaceCurrentLocation = false;
+
+	ASFBaseBuilding* Building =
+		TargetBuilding.Get();
+
+	if (IsValid(Building))
+	{
+		Building->ApplyPreviewMaterial(false);
 	}
 }
 
@@ -137,16 +203,41 @@ bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
 		TargetBuildingGridInfo);
 }
 
+bool UBuildingPlacement::CanPlaceAtCurrentLocation() const
+{
+	const ASFBaseBuilding* Building = TargetBuilding.Get();
+
+	if (!IsValid(Building) || !IsValid(CachedGridSubsystem) ||
+		!TargetBuildingGridInfo.IsValid())
+	{
+		return false;
+	}
+
+	const FVector BuildingLocation = Building->GetActorLocation();
+
+	const bool bUsesResourceGrid = Cast<IMinable>(Building) != nullptr;
+
+	// 광산은 자원 셀 위에 배치되므로 현재 NavMesh 경계 검사에서 제외합니다.
+	const bool bCanPlaceOnNavigation =
+		bUsesResourceGrid || CanPlaceOnNavMeshXY(TargetBuildingGridInfo);
+	
+	return CanPlaceOnCurrentGrid() &&
+		bCanPlaceOnNavigation &&
+		USFTutorialSubsystem::IsBuildLocationAllowed(
+			this, BuildingLocation);
+}
+
 void UBuildingPlacement::EndPlacementSession()
 {
-	// tick off
 	SetComponentTickEnabled(false);
-	// cached 정보 초기화
+
 	TargetBuilding.Reset();
 	OwnerController.Reset();
 	CachedGridSubsystem = nullptr;
 	TargetBuildingGridInfo = FBuildingGridInfo();
 	bCanPlaceCurrentLocation = false;
+	
+	FlushPersistentDebugLines(GetWorld());
 }
 
 void UBuildingPlacement::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -169,41 +260,17 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		return false;
 	}
 
-	const bool bUsesResourceGrid =
-		Cast<IMinable>(Building) != nullptr;
-
-	const bool bCanPlaceOnNavigation =
-		bUsesResourceGrid ||
-		CanPlaceOnNavMeshXY(
-			Building->GetActorLocation());
-
-	if (!CanPlaceOnCurrentGrid() ||
-		!bCanPlaceOnNavigation)
+	// 확정 직전에도 같은 최종 규칙으로 다시 검사합니다.
+	if (!CanPlaceAtCurrentLocation())
 	{
-		bCanPlaceCurrentLocation = false;
-		Building->ApplyPreviewMaterial(false);
-		return false;
-	}
-
-	// 튜토리얼 자리 제한은 여기서도 본다.
-	//
-	// 위쪽 틱 판정만 믿으면 판정과 클릭 사이 한 프레임에 자리가 바뀐 경우를
-	// 놓친다. 실제로 짓는 문은 이 함수 하나뿐이므로 여기서 막는 것이 확실하다.
-	if (!USFTutorialSubsystem::IsBuildLocationAllowed(
-			this,
-			Building->GetActorLocation()))
-	{
-		bCanPlaceCurrentLocation = false;
-		Building->ApplyPreviewMaterial(false);
+		SetCurrentPlacementInvalid();
 		return false;
 	}
 
 	// 등록과 자원 연결 모두 GridSubsystem이 처리한다.
-	if (!Building->TryRegisterGrid(
-		TargetBuildingGridInfo))
+	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))
 	{
-		bCanPlaceCurrentLocation = false;
-		Building->ApplyPreviewMaterial(false);
+		SetCurrentPlacementInvalid();
 		return false;
 	}
 
@@ -220,38 +287,53 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	return true;
 }
 
-bool UBuildingPlacement::CanPlaceOnNavMeshXY(const FVector& WorldLocation) const
+bool UBuildingPlacement::CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const
 {
-	UNavigationSystemV1* NavSys =
-	   UNavigationSystemV1::GetCurrent(GetWorld());
+	const USFBuildingGridSubsystem* GridSubsystem =
+		CachedGridSubsystem.Get();
 
-	if (!IsValid(NavSys) ||
-		!NavSys->GetDefaultNavDataInstance())
+	if (!IsValid(GridSubsystem) || !GridInfo.IsValid())
 	{
 		return false;
 	}
 
-	FNavLocation ProjectedLocation;
+	UNavigationSystemV1* NavSystem =
+		UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!IsValid(NavSystem)) return false;
 
-	// 근처 NavMesh를 검색하는 범위입니다.
-	const FVector QueryExtent(
-		100.0f,
-		100.0f,
-		1000.0f);
+	ANavigationData* NavigationData =
+		NavSystem->GetDefaultNavDataInstance();
+	if (!IsValid(NavigationData)) return false;
 
-	if (!NavSys->ProjectPointToNavigation(
-			WorldLocation,
-			ProjectedLocation,
-			QueryExtent))
-	{
-		return false;
-	}
+	const FBox NavigationBounds = NavigationData->GetBounds();
+	if (!NavigationBounds.IsValid) return false;
 
-	// Z는 무시하고 XY 차이만 검사합니다.
-	constexpr float MaxXYError = 5.0f;
+	const float CellSize = GridSubsystem->GetCellSize();
+	const FVector& GridOrigin = GridSubsystem->GetGridOrigin();
 
-	return FVector::DistSquared2D(
-			   WorldLocation,
-			   ProjectedLocation.Location)
-		<= FMath::Square(MaxXYError);
+	// OriginCell이 가리키는 첫 셀의 왼쪽 아래 모서리입니다.
+	const float GridMinX =
+		GridOrigin.X + GridInfo.OriginCell.X * CellSize;
+
+	const float GridMinY =
+		GridOrigin.Y + GridInfo.OriginCell.Y * CellSize;
+
+	// 건물이 차지하는 마지막 셀의 오른쪽 위 모서리입니다.
+	const float GridMaxX =
+		GridMinX + GridInfo.GridSize.X * CellSize;
+
+	const float GridMaxY =
+		GridMinY + GridInfo.GridSize.Y * CellSize;
+
+	constexpr float BoundaryTolerance = 1.0f;
+
+	return
+		GridMinX >= NavigationBounds.Min.X -
+			BoundaryTolerance &&
+		GridMinY >= NavigationBounds.Min.Y -
+			BoundaryTolerance &&
+		GridMaxX <= NavigationBounds.Max.X +
+			BoundaryTolerance &&
+		GridMaxY <= NavigationBounds.Max.Y +
+			BoundaryTolerance;
 }

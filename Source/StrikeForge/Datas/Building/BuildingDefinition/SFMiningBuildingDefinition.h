@@ -42,7 +42,15 @@ public:
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tier")
-	EResourceType CanDigResourceType = EResourceType::Mineral;;
+	EResourceType CanDigResourceType = EResourceType::Mineral;
+	
+	/**
+	 * 건물 점유 격자 안에서 자원을 검색할 중심 영역입니다.
+	 * 현재는 별도의 Offset 없이 건물 중심에 배치합니다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Placement|Mining", meta = (ClampMin = "1"))
+	FIntPoint ResourceSearchGridSize = FIntPoint(1, 1);
+	
 	// FSFMiningBuildingTierData = Tiers를 상속해 확장한 구조체
 	/** 배열 인덱스 0이 게임의 1티어다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tiers")

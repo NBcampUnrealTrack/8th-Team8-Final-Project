@@ -128,7 +128,6 @@ public:
 	// Grid System
 	
 	bool TryRegisterGrid(const FBuildingGridInfo& GridInfo);
-	//FIntPoint GetEffectiveGridSize() const;
 	
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
@@ -217,8 +216,8 @@ protected:
 	UFUNCTION()
 	void FinishHitReaction();
 	
-	// grid system
-	bool TryRegistInitialGrid();
+	// 선배치 건물의 격자를 계산하고 등록합니다.
+	bool TryRegisterInitialGrid();
 	bool bGridRegistered = false;
 private:
 	/** 로드된 Definition의 공통 데이터를 건물에 캐시한다. BeginPlay에서 호출되며 PrepareLoadedTier로 이어진다. */

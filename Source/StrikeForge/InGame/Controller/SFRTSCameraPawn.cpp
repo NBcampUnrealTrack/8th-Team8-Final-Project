@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
+#include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 ASFRTSCameraPawn::ASFRTSCameraPawn()
 {
@@ -102,6 +103,8 @@ void ASFRTSCameraPawn::BeginPlay()
             SafeMaximumDistance
         );
 
+        PushOverheadUIScale();
+        
         SpringArm->SetRelativeRotation(
             FRotator(CameraPitch, 0.0f, 0.0f)
         );
@@ -226,8 +229,7 @@ void ASFRTSCameraPawn::MoveCamera(
 }
 
 void ASFRTSCameraPawn::ZoomCamera(
-    const FInputActionValue& InputValue
-)
+    const FInputActionValue& InputValue)
 {
     if (!IsValid(SpringArm))
     {
@@ -260,6 +262,20 @@ void ASFRTSCameraPawn::ZoomCamera(
         SafeMinimumDistance,
         SafeMaximumDistance
     );
+    
+    PushOverheadUIScale();
+}
+
+void ASFRTSCameraPawn::PushOverheadUIScale() const
+{
+    if (!IsValid(SpringArm))	return;
+    if (SpringArm->TargetArmLength <= KINDA_SMALL_NUMBER)	return;
+
+    USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this);
+    if (!IsValid(OverheadUI))	return;
+
+    // 원근 투영에서 화면 크기는 카메라 거리에 반비례한다.
+    OverheadUI->SetUIScale(InitialCameraDistance / SpringArm->TargetArmLength);
 }
 
 void ASFRTSCameraPawn::HandleEdgeScroll()

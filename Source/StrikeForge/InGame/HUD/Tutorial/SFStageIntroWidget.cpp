@@ -961,10 +961,11 @@ void USFStageIntroWidget::ApplyHighlightToImage(UImage* InImage, float InAlpha) 
     // 예전 코드가 남긴 값이 있을 수 있으니 되돌려 둔다.
     InImage->SetRenderOpacity(1.f);
 
+    // 초상화 프레임은 텍스처를 직접 그린다. UImage의 RenderScale을 바꾸면
+    // "멀어지는" 대신 그림 자체가 작아져 하반신이 잘린 것처럼 보인다.
+    // 화자 구분은 명암만으로 하고, 두 인물의 전신 구도는 항상 고정한다.
     InImage->SetRenderTransformPivot(SpeakerScalePivot);
-
-    const float Scale = FMath::Lerp(ListenerScale, SpeakerScale, InAlpha);
-    InImage->SetRenderScale(FVector2D(Scale, Scale));
+    InImage->SetRenderScale(FVector2D(1.f, 1.f));
 }
 
 bool USFStageIntroWidget::HandleSpeakerBlendTicker(float InDeltaTime)

@@ -10,6 +10,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameState/SFGameState.h"
 #include "InGame/SFInGameHUDWidget.h"
+#include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Units/Commander/SFCommander.h"
 #include "Units/Unit/UnitBase.h"
@@ -80,7 +81,11 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
         return false;
     }
 
-    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex);
+    // GameState의 넥서스 티어는 0부터 시작하는 내부 인덱스다. 반면
+    // BuildingDefinition의 RequiredNexusTier는 UI에 표시하는 1부터의 티어 번호다.
+    // 인덱스를 그대로 비교하면 시작 넥서스(인덱스 0)가 있는 상태에서도
+    // "티어 1 필요" 건물인 미네랄 광산을 잘못 막게 된다.
+    const int32 CurrentNexusTier = SFGS->GetNexusTier(TeamIndex) + 1;
     if (CurrentNexusTier < Definition->RequiredNexusTier)
     {
         SF_LOG(Warning,
@@ -231,6 +236,10 @@ void ASFInGamePlayerController::ClearPendingBuildingRef()
     }
 
     SF_LOG(Log, "[SFPC] 건설 명령 취소: %s", *PendingSpawnedBuildingRef->GetName());
+
+	// 고스트 위치를 확정한 뒤 지휘관이 도달하지 못했거나 명령이 취소된 경우다.
+	// 이때는 실제 건설이 시작되지 않았으므로, 다시 배치할 수 있게 예약을 푼다.
+	USFTutorialSubsystem::NotifyTutorialBuildingPlacementCancelled(this, PendingSpawnedBuildingRef);
 
     PendingSpawnedBuildingRef->Destroy();
     PendingSpawnedBuildingRef = nullptr;
@@ -406,6 +415,32 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::HandleToggleBuildModeInput);
     }
 
+    TArray<TWeakObjectPtr<UInputAction>> BuildSlotActions =
+    {
+        BuildSlot01Action,
+        BuildSlot02Action,
+        BuildSlot03Action,
+        BuildSlot04Action,
+        BuildSlot05Action,
+        BuildSlot06Action
+    };
+
+    for (int32 Index = 0; Index < BuildSlotActions.Num(); ++Index)
+    {
+        if (!BuildSlotActions[Index].IsValid())
+        {
+            continue;
+        }
+
+        EnhancedInputComponent->BindAction(
+            BuildSlotActions[Index].Get(),
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleBuildSlotInput,
+            Index
+        );
+    }
+
     if (IsValid(ProduceSlot1Action))
     {
         EnhancedInputComponent->BindAction(
@@ -496,6 +531,11 @@ void ASFInGamePlayerController::SetSFControlMode(
     ESFControlMode NewControlMode
 )
 {
+    if (NewControlMode == ESFControlMode::BuildPlacement)
+    {
+        SetBuildModeInputEnabled(false);
+    }
+
     if (
         bControlModeInitialized
         && CurrentControlMode == NewControlMode
@@ -1061,48 +1101,65 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
 
         FVector Goal = Destination;
 
-        // 기존 포메이션 목적지 계산은 그대로 유지한다.
-        if (Count > 1)
+        // 실제 유닛은 클릭 지점 주변에 원형으로 배치
+        if (Count > 1 && !bAppendToQueue)
         {
-            const float Angle = 2.f * PI * Index / Count;
+            const float Angle =
+                2.f * PI * Index / Count;
 
-            const float Radius = FormationSpacing * FMath::Sqrt(static_cast<float>(Count));
+            const float Radius =
+                FormationSpacing *
+                FMath::Sqrt(
+                    static_cast<float>(Count)
+                );
 
-            Goal += FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+            Goal += FVector(
+                FMath::Cos(Angle),
+                FMath::Sin(Angle),
+                0.f
+            ) * Radius;
         }
 
         AUnitBase* Unit = Cast<AUnitBase>(Actor);
 
         if (!IsValid(Unit))
         {
-            // 지휘관처럼 UnitBase가 아닌 대상은
-            // 기존 인터페이스 이동을 사용한다.
-            IMovable::Execute_MoveToLocation(Actor, Goal);
+            IMovable::Execute_MoveToLocation(
+                Actor,
+                Goal
+            );
 
             continue;
         }
 
-        // 이 유닛이 이전 그룹에 들어 있었다면
-        // 이전 그룹에서 먼저 제거한다.
-        RemoveUnitFromForcedMoveGroups(Unit, false);
+        RemoveUnitFromForcedMoveGroups(
+            Unit,
+            false
+        );
 
         if (bForceGroupMove)
         {
-            // 그룹 전체가 완료될 때까지
-            // 자동 전투 재개를 막는다.
             Unit->SetWaitingForGroupMove(true);
 
             NewGroup.Units.Add(Unit);
 
-            Unit->ExecuteCommandWithQueue(ESFUnitCommand::Move, Goal, nullptr, false);
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::Move,
+                Goal,
+                nullptr,
+                false
+            );
         }
         else
         {
-            // 평상시 우클릭은 이동 중 적을 만나면
-            // 자동 교전하는 기존 공격 이동이다.
             Unit->SetWaitingForGroupMove(false);
 
-            Unit->ExecuteCommandWithQueue(ESFUnitCommand::AttackMove, Goal, nullptr, bAppendToQueue);
+            Unit->ExecuteCommandWithQueue(
+                ESFUnitCommand::AttackMove,
+                Goal,
+                nullptr,
+                bAppendToQueue
+            );
         }
     }
 
@@ -1508,6 +1565,16 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
         );
     }
 
+    if (CommandMode == ESFUnitCommandMode::Attack &&
+        IsValid(AttackTarget) &&
+        IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->
+            PlayEnemyHoverAttackFeedback(
+                AttackTarget
+            );
+    }
+
     if (IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->ShowMoveDestinationIndicator(
@@ -1881,18 +1948,102 @@ void ASFInGamePlayerController::HandleControlGroupInput(
             GroupIndex,
             false
         );
+
+        // 저장 입력은 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else if (bShiftPressed)
+
+    if (bShiftPressed)
     {
         InGameHUDWidget->SaveCurrentSelectionToControlGroup(
             GroupIndex,
             true
         );
+
+        // 추가 입력도 더블 입력으로 기록하지 않는다.
+        LastControlGroupIndex = INDEX_NONE;
+        LastControlGroupInputTime = -1.0;
+
+        return;
     }
-    else
+
+    const double CurrentTime =
+        GetWorld()
+        ? GetWorld()->GetTimeSeconds()
+        : 0.0;
+
+    const bool bDoublePressed =
+        LastControlGroupIndex == GroupIndex &&
+        CurrentTime - LastControlGroupInputTime
+        <= ControlGroupDoubleTapWindow;
+
+    // 첫 번째 숫자 입력에서도 부대를 선택한다.
+    InGameHUDWidget->SelectControlGroup(GroupIndex);
+
+    // 같은 숫자를 짧은 시간 안에 다시 누르면 카메라 이동
+    if (bDoublePressed)
     {
-        InGameHUDWidget->SelectControlGroup(GroupIndex);
+        FocusCameraOnCurrentControlGroup();
     }
+
+    LastControlGroupIndex = GroupIndex;
+    LastControlGroupInputTime = CurrentTime;
+}
+
+void ASFInGamePlayerController::FocusCameraOnCurrentControlGroup()
+{
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    FVector FocusLocation = FVector::ZeroVector;
+    int32 ValidActorCount = 0;
+
+    for (
+        const TObjectPtr<AActor>& ActorPtr :
+        InGameHUDWidget->GetSelectedActors()
+        )
+    {
+        AActor* Actor = ActorPtr.Get();
+
+        if (!IsValid(Actor))
+        {
+            continue;
+        }
+
+        FocusLocation += Actor->GetActorLocation();
+        ++ValidActorCount;
+    }
+
+    if (ValidActorCount == 0)
+    {
+        return;
+    }
+
+    FocusLocation /= static_cast<float>(ValidActorCount);
+
+    ASFRTSCameraPawn* CameraPawn =
+        Cast<ASFRTSCameraPawn>(GetPawn());
+
+    if (!IsValid(CameraPawn))
+    {
+        return;
+    }
+
+    CameraPawn->FocusOnWorldLocation(
+        FocusLocation
+    );
+
+    SF_LOG(
+        Log,
+        "[SFInGamePlayerController] "
+        "Control group camera focused | Location: %s",
+        *FocusLocation.ToString()
+    );
 }
 
 bool ASFInGamePlayerController::IsShiftCommandModifierDown() const
@@ -1900,4 +2051,89 @@ bool ASFInGamePlayerController::IsShiftCommandModifierDown() const
     return
         IsInputKeyDown(EKeys::LeftShift) ||
         IsInputKeyDown(EKeys::RightShift);
+}
+
+void ASFInGamePlayerController::HandleBuildSlotInput(
+    int32 SlotIndex
+)
+{
+    SF_LOG(
+        Log,
+        "[BuildInput] Slot=%d Enabled=%s Mode=%d HUD=%s",
+        SlotIndex,
+        bBuildModeInputEnabled
+        ? TEXT("true")
+        : TEXT("false"),
+        static_cast<int32>(CurrentControlMode),
+        IsValid(InGameHUDWidget)
+        ? TEXT("Valid")
+        : TEXT("Invalid")
+    );
+
+    if (
+        !bBuildModeInputEnabled ||
+        CurrentControlMode !=
+        ESFControlMode::Gameplay
+        )
+    {
+        SF_LOG(
+            Warning,
+            "[BuildInput] 입력 거부"
+        );
+
+        return;
+    }
+
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->RequestBuildingBySlot(
+        SlotIndex
+    );
+}
+
+void ASFInGamePlayerController::SetBuildModeInputEnabled(
+    bool bEnabled
+)
+{
+    UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+        GetEnhancedInputSubsystem();
+
+    if (!IsValid(InputSubsystem))
+    {
+        return;
+    }
+
+    FModifyContextOptions ModifyOptions;
+    ModifyOptions.bIgnoreAllPressedKeysUntilRelease =
+        true;
+
+    if (bEnabled)
+    {
+        // GameplayMappingContext는 유지한다.
+        // 지휘관 이동, 유닛 이동, 공격 입력이 계속 작동해야 한다.
+
+        if (IsValid(BuildModeMappingContext))
+        {
+            InputSubsystem->AddMappingContext(
+                BuildModeMappingContext,
+                BuildModeMappingPriority,
+                ModifyOptions
+            );
+        }
+    }
+    else
+    {
+        if (IsValid(BuildModeMappingContext))
+        {
+            InputSubsystem->RemoveMappingContext(
+                BuildModeMappingContext,
+                ModifyOptions
+            );
+        }
+    }
+
+    bBuildModeInputEnabled = bEnabled;
 }

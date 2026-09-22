@@ -129,6 +129,7 @@ public:
 
     FORCEINLINE int32 GetMyTeamIndex() const { return MyTeamIndex; }
 
+    void SetBuildModeInputEnabled(bool bEnabled);
 
 protected:
     virtual void BeginPlay() override;
@@ -171,6 +172,8 @@ private:
     void HandleSelectAllUnitsInput();
 
     void HandleControlGroupInput(int32 GroupIndex);
+
+    void FocusCameraOnCurrentControlGroup();
 
     void HandleToggleBuildModeInput();
 
@@ -242,6 +245,10 @@ private:
     void PlaySelectionSound(AActor* SelectedTarget);
 
     // Async
+
+
+    //빌드모드 단축키
+    void HandleBuildSlotInput(int32 SlotIndex);
 
     // 변수 영역
 protected:
@@ -318,6 +325,12 @@ protected:
         Category = "SF|Input|Mapping"
     )
     int32 BuildPlacementMappingPriority = 20;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Mapping")
+    TObjectPtr<UInputMappingContext> BuildModeMappingContext = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Mapping")
+    int32 BuildModeMappingPriority = 30;
 
     UPROPERTY(
         EditDefaultsOnly,
@@ -415,6 +428,14 @@ protected:
     )
     float FormationSpacing = 120.f;
 
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|Control Group",
+        meta = (ClampMin = "0.15", ClampMax = "0.6")
+    )
+    float ControlGroupDoubleTapWindow = 0.3f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> ProduceSlot1Action = nullptr;
 
@@ -441,6 +462,24 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
     TObjectPtr<UInputAction> CommanderSkillAction3 = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot01Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot02Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot03Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot04Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot05Action = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Input|Action")
+    TObjectPtr<UInputAction> BuildSlot06Action = nullptr;
 
 private:
     UPROPERTY(
@@ -472,6 +511,12 @@ private:
     bool bCommandClickConsumed = false;
 
     bool bRallyPointPending = false;
+
+    int32 LastControlGroupIndex = INDEX_NONE;
+
+    double LastControlGroupInputTime = -1.0;
+
+    bool bBuildModeInputEnabled = false;
 
     // team
     int32 MyTeamIndex = 0;

@@ -16,6 +16,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     GroupIndex
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FSFOnControlNumResetRequested,
+    int32,
+    GroupIndex
+);
+
 UCLASS(Blueprintable)
 class STRIKEFORGE_API USFControlNumWidget
     : public UUserWidget
@@ -50,6 +56,9 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "SF|ControlGroup")
     FSFOnControlNumClicked OnControlNumClicked;
 
+    UPROPERTY(BlueprintAssignable, Category = "SF|ControlGroup")
+    FSFOnControlNumResetRequested OnControlNumResetRequested;
+
     UFUNCTION(BlueprintCallable, Category = "SF|ControlGroup")
     void PlaySlideOutAndHide();
 
@@ -59,7 +68,11 @@ protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
-    // WBP_ControlNum에서 이름을 동일하게 맞춰줘.
+    virtual FReply NativeOnMouseButtonDown(
+        const FGeometry& InGeometry,
+        const FPointerEvent& InMouseEvent
+    ) override;
+
     UPROPERTY(
         BlueprintReadOnly,
         Category = "SF|ControlGroup",

@@ -11,6 +11,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductUnitArrayChanged, const TArr
 
 class UProductComponent;
 
+// UENUM()
+// enum class EBuildingWorkStates : uint8
+// {
+// 	Idle,
+// 	Working,
+// 	Paused,
+// 	Blocked,
+// };
+
 UCLASS()
 class STRIKEFORGE_API ASFProductionBuilding
 	: public ASFBaseBuilding
@@ -35,7 +44,12 @@ public:
 	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
 	void ApplySpeedBuff(float InMultiflyValue) const;
 	void ResetSpeedMultiplier();
+	
 protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void OnBuildingDefinitionLoaded() override;
+	
 	virtual void OnTierActivated() override;
 	virtual void OnUpgradeStarted() override;
 	virtual void OnBuildingDestroyed() override;
@@ -46,6 +60,9 @@ protected:
 
 	void TryAddUnitProductLine(FName InUnitName);
 
+	UFUNCTION()
+	void HandleProductLineChanged(TArray<FProductInfo> InProductLine);
+	
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
 

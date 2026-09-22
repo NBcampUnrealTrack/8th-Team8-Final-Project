@@ -2,6 +2,7 @@
 
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/SFRootBase.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Unit/UnitStatData.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Game/GameState/SFGameState.h"
@@ -382,6 +383,33 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 		}
 
 		USFTutorialSubsystem::NotifyObjective(this, TutorialTag);
+
+		// 스테이지 2의 마지막 임무는 "병영을 한 번 티어 업한 뒤" 생산한
+		// 유닛만 인정한다. 기존 Tier1/2 태그는 다른 튜토리얼의 호환성을
+		// 위해 그대로 두고, 이 조건만 별도 태그로 명확히 표현한다.
+		if (const ASFBaseBuilding* OwnerBuilding = Cast<ASFBaseBuilding>(GetOwner()))
+		{
+			if (OwnerBuilding->GetCurrentTier() >= 1 && InRowName == TEXT("Berserker"))
+			{
+				USFTutorialSubsystem::NotifyObjective(
+					this,
+					TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade,
+					false);
+			}
+
+			// 스테이지 3의 마지막 임무는 특수 병영에서 완성된 전쟁야수만
+			// 인정한다. 생산 대기열 등록 시점이 아니라 실제 스폰 완료 후
+			// 이 함수에 도달하므로, 실패한 생산은 통과 처리되지 않는다.
+			if (OwnerBuilding->GetBuildingDefinition() &&
+				OwnerBuilding->GetBuildingDefinition()->BuildingType == ESFBuildingType::SpecialProduction &&
+				InRowName == TEXT("WarBeast"))
+			{
+				USFTutorialSubsystem::NotifyObjective(
+					this,
+					TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast,
+					false);
+			}
+		}
 	}
 	
 	UE_LOG(LogTemp, Warning, TEXT("CompletedProduct: %s"), *InRowName.ToString());

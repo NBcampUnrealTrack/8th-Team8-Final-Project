@@ -151,6 +151,19 @@ public:
     )
     TArray<FSFStageBuildingRule> BuildingRules;
 
+    /**
+     * 스테이지가 시작되는 순간 플레이어 팀에 지급할 광물.
+     *
+     * GameMode의 하드코딩/행별 예외가 아니라 DT_SFStage 각 행에서 조절한다.
+     * 0도 유효한 값이므로, 자원을 주지 않는 특수 스테이지도 만들 수 있다.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Resource", meta = (ClampMin = "0"))
+    int32 StartingMineral = 205;
+
+    /** 스테이지 시작 시 플레이어 팀에 지급할 에테르. 0도 유효하다. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Resource", meta = (ClampMin = "0"))
+    int32 StartingEther = 100;
+
     /* 스테이지 진입 시 플레이어에게 기본 적용할 종족. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")
     ESFRace PlayerRace = ESFRace::None;

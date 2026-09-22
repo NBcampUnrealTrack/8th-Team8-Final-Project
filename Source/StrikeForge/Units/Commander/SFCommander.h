@@ -93,6 +93,9 @@ protected:
 	void PrintMessage(FString Msg);
 
 	void StopMoving();
+public:
+	UPROPERTY(BlueprintReadOnly)
+	TWeakObjectPtr<USoundBase> CurrentSkillSound;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;
@@ -100,11 +103,23 @@ protected:
 	TObjectPtr<UHealthComponent> HealthComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	TObjectPtr<UAnimMontage> SkillMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	TObjectPtr<USoundBase> SkillSound1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	TObjectPtr<USoundBase> SkillSound2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	TObjectPtr<USoundBase> SkillSound3;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SpawnProperty")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SF|SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Race")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Race")
 	ERace Race;
 
 	const float MaxDistToBuild = 50.f;	// 건설이 가능한 최대거리

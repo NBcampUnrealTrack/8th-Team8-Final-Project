@@ -1,4 +1,4 @@
-#include "SFInGameHUDWidget.h"
+﻿#include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Interfaces/Units/Targetable.h"
@@ -2053,9 +2053,15 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
         ? FMath::Clamp(BuildingBaseRadius * 1.05f, 100.f, 1500.f)
         : FMath::Clamp(UnitBaseRadius * 0.7f, 32.f, 150.f);
 
+    //const FVector IndicatorLocation(
+    //    Origin.X,
+    //    Origin.Y,
+    //    Origin.Z - Extent.Z + 8.f
+    //);
+    FVector ActorLoc = Actor->GetActorLocation();
     const FVector IndicatorLocation(
-        Origin.X,
-        Origin.Y,
+        ActorLoc.X,
+        ActorLoc.Y,
         Origin.Z - Extent.Z + 8.f
     );
 

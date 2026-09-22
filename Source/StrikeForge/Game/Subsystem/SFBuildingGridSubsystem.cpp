@@ -100,12 +100,17 @@ bool USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuil
 	const IMinable* Consumer = Cast<IMinable>(MiningBuilding);
 	if (!Consumer) return false;
 
+	// 검색 크기도 광산의 로컬 설정값이므로 현재 Actor 회전을 반영합니다.
+	const FIntPoint EffectiveSearchGridSize =
+		GetRotatedGridSize(
+			Consumer->GetResourceSearchGridSize(),
+			MiningBuilding->GetActorRotation());
+
 	FBuildingGridInfo SearchGridInfo;
 
 	if (!TryMakeCenteredSubGrid(
 			BuildingGridInfo,
-			Consumer->GetResourceSearchGridSize(),
-			SearchGridInfo))
+			EffectiveSearchGridSize,SearchGridInfo))
 	{
 		return false;
 	}
@@ -404,6 +409,28 @@ void USFBuildingGridSubsystem::UnregisterResourceCell(
 	{
 		GridCells.Remove(CellCoordinate);
 	}
+}
+
+FIntPoint USFBuildingGridSubsystem::GetRotatedGridSize(const FIntPoint& BaseGridSize, const FRotator& WorldRotation)
+{
+	if (BaseGridSize.X <= 0 || BaseGridSize.Y <= 0)
+	{
+		return BaseGridSize;
+	}
+
+	const float NormalizedYaw =
+		FRotator::NormalizeAxis(WorldRotation.Yaw);
+
+	const int32 QuarterTurnCount =
+		FMath::RoundToInt(NormalizedYaw / 90.0f);
+
+	// 90도와 270도에서는 로컬 X축과 Y축이 월드에서 서로 교환됩니다.
+	const bool bShouldSwapXY =
+		FMath::Abs(QuarterTurnCount) % 2 == 1;
+
+	return bShouldSwapXY
+		? FIntPoint(BaseGridSize.Y,	BaseGridSize.X)
+		: BaseGridSize;
 }
 
 FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const

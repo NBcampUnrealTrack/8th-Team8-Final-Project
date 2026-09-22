@@ -72,6 +72,11 @@ public:
 	void UnregisterResourceCell(const AResourceBase* Resource,
 	const FBuildingGridInfo& GridInfo, int32 ResourceCellIndex);
 	
+	/**
+	 * 로컬 GridSize를 건물의 월드 회전에 맞는 점유 크기로 변환합니다.
+	 */
+	static FIntPoint GetRotatedGridSize(
+		const FIntPoint& BaseGridSize, const FRotator& WorldRotation);
 	FVector GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const;
 	// world location -> grid
 	FBuildingGridInfo WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& GridSize) const;

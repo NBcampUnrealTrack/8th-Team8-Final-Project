@@ -80,9 +80,12 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 		return;
 	}
 
-	const FIntPoint GridSize =	Definition->GridSize;
+	// Definition에는 로컬 크기를 유지하고 실제 스냅에는 Anchor 회전을 반영합니다.
+	const FIntPoint EffectiveGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			Definition->GridSize, GetActorRotation());
 
-	if (GridSize.X <= 0 ||	GridSize.Y <= 0)
+	if (EffectiveGridSize.X <= 0 || EffectiveGridSize.Y <= 0)
 	{
 		RefreshEditorPreview();
 		return;
@@ -104,7 +107,9 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 	 */
 	const FBuildingGridInfo EditorGridInfo =
 		GridSubsystem->WorldCenterToGridInfo(
-			CurrentLocation, GridSize);
+			CurrentLocation,
+			EffectiveGridSize);
+	
 	if (!EditorGridInfo.IsValid())
 	{
 		RefreshEditorPreview();
@@ -220,14 +225,16 @@ void ASFBuildingSpawnAnchor::RefreshEditorGridPreview(const USFBuildingDefinitio
 	USFBuildingGridSubsystem* GridSubsystem =
 		World->GetSubsystem<USFBuildingGridSubsystem>();
 
+	// 프리뷰 박스는 로컬 GridSize를 사용하고 Anchor의 회전을 그대로 따라갑니다.
+	// 실제 격자 스냅과 등록에서만 회전된 EffectiveGridSize를 사용합니다.
 	const FIntPoint GridSize = Definition->GridSize;
 
 	if (!IsValid(GridSubsystem) ||
-		GridSize.X <= 0 || GridSize.Y <= 0)
+		GridSize.X <= 0 ||
+		GridSize.Y <= 0)
 	{
 		return;
 	}
-
 	const float CellSize = GridSubsystem->GetCellSize();
 	if (CellSize <= 0.0f) return;
 

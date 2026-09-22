@@ -55,8 +55,12 @@ bool UBuildingPlacement::StartPlacementMode(
 	TargetBuilding = InTargetBuilding;
 	OwnerController = Controller;
 	CachedGridSubsystem = GridSubsystem;
-	
-	TargetBuildingGridInfo.GridSize = InTargetBuilding->GetGridSize();
+
+	const FIntPoint BaseGridSize =	InTargetBuilding->GetGridSize();
+	// DA의 로컬 크기에 Actor 회전을 적용하여 월드 격자 점유 크기로 변환합니다.
+	TargetBuildingGridInfo.GridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			BaseGridSize, InTargetBuilding->GetActorRotation());
 
 	bCanPlaceCurrentLocation = false;
 
@@ -143,9 +147,15 @@ void UBuildingPlacement::UpdatePlacementMode()
 			MinableBuilding->GetMineResourceType(),
 			0.0f);
 
+		// 실제 자원 검색 판정과 같은 회전된 검색 크기를 디버그 표시에 사용합니다.
+		const FIntPoint EffectiveSearchGridSize =
+			USFBuildingGridSubsystem::GetRotatedGridSize(
+				MinableBuilding->GetResourceSearchGridSize(),
+				Building->GetActorRotation());
+
 		GridSubsystem->DebugDrawMiningPlacementGrid(
 			TargetBuildingGridInfo,
-			MinableBuilding->GetResourceSearchGridSize(),
+			EffectiveSearchGridSize,
 			BuildingLocation.Z,
 			0.0f);
 	}

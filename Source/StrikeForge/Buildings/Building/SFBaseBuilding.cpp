@@ -1708,23 +1708,35 @@ FResources ASFBaseBuilding::GetUpgradeCost() const
 
 bool ASFBaseBuilding::TryRegistInitialGrid()
 {
-	USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	USFBuildingGridSubsystem* Grid =
+		GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
 	if (!IsValid(Grid)) return false;
-	FBuildingGridInfo GridInfo = Grid->WorldCenterToGridInfo(GetActorLocation(), ConfiguredGridSize);
+	
+	// ConfiguredGridSize는 DA의 로컬 크기이므로 현재 Actor 회전을 반영합니다.
+	const FIntPoint EffectiveGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			ConfiguredGridSize,	GetActorRotation());
+
+	FBuildingGridInfo GridInfo =
+		Grid->WorldCenterToGridInfo(
+			GetActorLocation(),	EffectiveGridSize);
+
 	if (!TryRegisterGrid(GridInfo))
 	{
-		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
+		SF_LOG(Error,
+			"[%s] 선배치 건물 격자 등록 실패",
+			*GetName());
+
 		return false;
 	}
-	
-	FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
-	/*
-	 * 선배치 건물도 격자에는 XY만 맞추고
-	 * 레벨에서 설정한 높이는 유지합니다.
-	 */
+
+	FVector WorldCenterVector =
+		Grid->GridInfoToWorldCenter(GridInfo);
+
+	// 격자는 XY만 정렬하고 레벨에서 지정한 높이는 유지합니다.
 	WorldCenterVector.Z = GetActorLocation().Z;
 	SetActorLocation(WorldCenterVector);
-	
+
 	return true;
 }
 #pragma endregion 

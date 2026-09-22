@@ -3,7 +3,9 @@
 #include "UObject/UnrealType.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
-
+#if WITH_EDITOR
+#include "EngineUtils.h"
+#endif
 AResourceBase::AResourceBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -17,11 +19,34 @@ AResourceBase::AResourceBase()
 	BoxComponent = CreateDefaultSubobject<UBoxComponent>("BoxComponent");
 	BoxComponent->SetupAttachment(GetRootComponent());
 
-	BoxComponent->SetVisibility(true);
-	BoxComponent->SetLineThickness(2.f);
-	BoxComponent->SetHiddenInGame(false);
+	BoxComponent->SetVisibility(false);
+	// BoxComponent->SetLineThickness(2.f);
+	BoxComponent->SetHiddenInGame(true);
 	
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
+	
+#if WITH_EDITORONLY_DATA
+
+	GridPreviewComponent =
+		CreateDefaultSubobject<UBoxComponent>(TEXT("GridPreviewComponent"));
+
+	GridPreviewComponent->SetupAttachment(GetRootComponent());
+
+	GridPreviewComponent->SetCollisionEnabled(
+		ECollisionEnabled::NoCollision);
+
+	GridPreviewComponent->SetGenerateOverlapEvents(false);
+	GridPreviewComponent->SetCanEverAffectNavigation(false);
+
+	// 에디터에서는 보이지만 PIE와 게임에서는 보이지 않습니다.
+	GridPreviewComponent->SetHiddenInGame(true);
+	GridPreviewComponent->SetVisibility(true);
+
+	GridPreviewComponent->ShapeColor = FColor::Green;
+	GridPreviewComponent->bDrawOnlyIfSelected = false;
+	GridPreviewComponent->SetLineThickness(3.0f);
+
+#endif
 }
 
 void AResourceBase::InitializeCellDeposits()
@@ -209,7 +234,12 @@ void AResourceBase::BeginPlay()
 		GetActorLocation(),
 		ResourceGridSize);
 	
-	const FVector WorldCenterVector = GridSubsystem->GridInfoToWorldCenter(RegisteredResourceGridInfo);
+	FVector WorldCenterVector = GridSubsystem->GridInfoToWorldCenter(RegisteredResourceGridInfo);
+	/*
+	 * 격자는 XY만 정렬합니다.
+	 * 레벨에서 지정한 자원의 높이는 유지합니다.
+	 */
+	WorldCenterVector.Z = GetActorLocation().Z;
 	SetActorLocation(WorldCenterVector);
 	
 	bResourceGridRegistered  = 
@@ -255,3 +285,252 @@ void AResourceBase::SetBoxExtent()
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
 }
+
+#if WITH_EDITOR
+void AResourceBase::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return;
+	}
+
+	SetBoxExtent();
+	RefreshAllEditorResourceGridPreviews();
+	
+}
+
+void AResourceBase::PostEditMove(bool bFinished)
+{
+	Super::PostEditMove(bFinished);
+	
+	/*
+	드래그하는 동안 매번 격자 중심으로 이동시키면
+	액터가 마우스를 따라가지 않고 잘 배치가 안됀다.
+	엑터의 Pivot은 격자이동하지않고 움직이는데
+	정작 엑터는 격자이동을하고 Pivot을 움직여도 엑터는 가만히있는현상이 있다
+	
+	bFinished 로 조건을 추가한
+	현재 방식은 자유롭게 이동한 뒤 마우스를 놓을 때 한 번만 정렬합니다.
+	 */
+
+	if (!bFinished)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return;
+	}
+
+	USFBuildingGridSubsystem* GridSubsystem =
+		World->GetSubsystem<USFBuildingGridSubsystem>();
+
+	if (!IsValid(GridSubsystem))
+	{
+		return;
+	}
+
+	if (ResourceGridSize.X <= 0 ||
+		ResourceGridSize.Y <= 0)
+	{
+		return;
+	}
+
+	const FBuildingGridInfo EditorGridInfo =
+		GridSubsystem->WorldCenterToGridInfo(
+			GetActorLocation(),
+			ResourceGridSize);
+
+	if (!EditorGridInfo.IsValid())
+	{
+		return;
+	}
+
+	FVector SnappedLocation =
+		GridSubsystem->GridInfoToWorldCenter(
+			EditorGridInfo);
+
+	/*
+	 * 격자는 XY만 담당합니다.
+	 * 지형 높이나 디자이너가 지정한 Z값은 유지합니다.
+	 */
+	SnappedLocation.Z = GetActorLocation().Z;
+
+	if (!GetActorLocation().Equals(
+			SnappedLocation,
+			KINDA_SMALL_NUMBER))
+	{
+		SetActorLocation(
+			SnappedLocation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+	
+	// color
+	/*
+	 * 하나의 자원이 이동하면 주변 자원의
+	 * 충돌 상태도 함께 달라질 수 있습니다.
+	 */
+	RefreshAllEditorResourceGridPreviews();
+}
+
+void AResourceBase::PostEditUndo()
+{
+	Super::PostEditUndo();
+	/*
+	 * 위치 이동, 삭제 복구 등의 Undo/Redo가 발생하면
+	 * 다른 자원들의 충돌 상태도 함께 달라질 수 있습니다.
+	 */
+	RefreshAllEditorResourceGridPreviews();
+}
+
+void AResourceBase::Destroyed()
+{
+	/*
+	 * 이 액터가 제거되기 전에 남아 있는 자원들의
+	 * 프리뷰 색상을 다시 계산합니다.
+	 *
+	 * 이 시점에는 IsActorBeingDestroyed()가 true이므로
+	 * 충돌 검사에서 이 자원을 제외해야 합니다.
+	 */
+	RefreshAllEditorResourceGridPreviews();
+	
+	Super::Destroyed();
+}
+
+void AResourceBase::RefreshAllEditorResourceGridPreviews()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld()) return;
+
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		AResourceBase* Resource = *It;
+
+		if (!IsValid(Resource) || Resource->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		Resource->RefreshEditorGridPreview();
+	}
+}
+
+void AResourceBase::RefreshEditorGridPreview()
+{
+#if WITH_EDITORONLY_DATA
+
+	if (!IsValid(GridPreviewComponent))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		GridPreviewComponent->SetVisibility(false);
+		return;
+	}
+
+	USFBuildingGridSubsystem* GridSubsystem =
+		World->GetSubsystem<USFBuildingGridSubsystem>();
+
+	if (!IsValid(GridSubsystem) ||
+		ResourceGridSize.X <= 0 ||
+		ResourceGridSize.Y <= 0)
+	{
+		GridPreviewComponent->SetVisibility(false);
+		return;
+	}
+
+	const float CellSize =
+		GridSubsystem->GetCellSize();
+
+	const FVector PreviewExtent(
+		ResourceGridSize.X * CellSize * 0.5f,
+		ResourceGridSize.Y * CellSize * 0.5f,
+		5.0f);
+
+	GridPreviewComponent->SetBoxExtent(
+		PreviewExtent,
+		false);
+
+	GridPreviewComponent->SetRelativeLocation(
+		FVector(0.0f, 0.0f, 5.0f));
+
+	const FBuildingGridInfo EditorGridInfo =
+	GridSubsystem->WorldCenterToGridInfo(
+		GetActorLocation(), ResourceGridSize);
+
+	const bool bHasConflict =
+		HasEditorResourceGridConflict(
+			EditorGridInfo,	GridSubsystem);
+
+	GridPreviewComponent->ShapeColor =
+		bHasConflict
+			? FColor::Red
+			: FColor::Green;
+
+	/*
+	 * ShapeColor만 변경하면 기존 SceneProxy에
+	 * 색상 변경이 즉시 반영되지 않을 수 있습니다.
+	 */
+	GridPreviewComponent->MarkRenderStateDirty();
+	
+	GridPreviewComponent->SetVisibility(true);
+
+#endif
+}
+
+bool AResourceBase::HasEditorResourceGridConflict(const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!ThisGridInfo.IsValid() || !IsValid(GridSubsystem))
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld()) return false;
+
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		const AResourceBase* OtherResource = *It;
+
+		if (!IsValid(OtherResource) ||	OtherResource == this ||
+			OtherResource->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		/*
+		 * 다른 종류의 자원은 같은 셀에
+		 * 함께 존재할 수 있습니다.
+		 */
+		if (OtherResource->ResourceType != ResourceType)
+		{
+			continue;
+		}
+
+		const FBuildingGridInfo OtherGridInfo =
+			GridSubsystem->WorldCenterToGridInfo(
+				OtherResource->GetActorLocation(),
+				OtherResource->ResourceGridSize);
+
+		if (ThisGridInfo.Overlaps(OtherGridInfo))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+#endif

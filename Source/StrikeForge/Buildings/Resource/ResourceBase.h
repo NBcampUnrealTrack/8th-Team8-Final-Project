@@ -10,6 +10,7 @@
 #include "InGame/SFSelectINfo/SFSelectable.h"
 #include "ResourceBase.generated.h"
 
+class USFBuildingGridSubsystem;
 class UBoxComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnResourceNodeDepleted, AResourceBase*, Resource);
@@ -44,12 +45,30 @@ public:
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
 	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
 
-protected:
+protected: // functions
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+	virtual void PostEditMove(bool bFinished) override;
+
+	virtual void PostEditUndo() override;
+
+	virtual void Destroyed() override;
+	
+	void RefreshEditorGridPreview();
+	
+	void RefreshAllEditorResourceGridPreviews();
+	
+	bool HasEditorResourceGridConflict(
+		const FBuildingGridInfo& ThisGridInfo,
+		const USFBuildingGridSubsystem* GridSubsystem) const;
+#endif
 	
 	void SetBoxExtent();
-protected:
+protected: // properties
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -87,4 +106,19 @@ private:
 	Category = "Resource|Grid",
 	meta = (AllowPrivateAccess = true))
 	TArray<int32> CellDeposits;
+	
+#if WITH_EDITORONLY_DATA
+
+	/*
+	 * 레벨 디자이너에게 자원이 차지하는
+	 * 격자 크기를 보여주는 에디터 전용 컴포넌트입니다.
+	 */
+	UPROPERTY(
+		VisibleAnywhere,
+		BlueprintReadOnly,
+		Category = "Resource|Grid",
+		meta = (AllowPrivateAccess = true))
+	TObjectPtr<UBoxComponent> GridPreviewComponent;
+
+#endif
 };

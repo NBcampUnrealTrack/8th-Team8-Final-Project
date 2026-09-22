@@ -1717,7 +1717,12 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		return false;
 	}
 	
-	const FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
+	FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
+	/*
+	 * 선배치 건물도 격자에는 XY만 맞추고
+	 * 레벨에서 설정한 높이는 유지합니다.
+	 */
+	WorldCenterVector.Z = GetActorLocation().Z;
 	SetActorLocation(WorldCenterVector);
 	
 	return true;

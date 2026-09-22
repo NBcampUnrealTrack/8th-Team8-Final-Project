@@ -234,6 +234,9 @@ void UBuildingPlacement::EndPlacementSession()
 	CachedGridSubsystem = nullptr;
 	TargetBuildingGridInfo = FBuildingGridInfo();
 	bCanPlaceCurrentLocation = false;
+	
+	// debug delete
+	FlushPersistentDebugLines(GetWorld());
 }
 
 void UBuildingPlacement::TickComponent(float DeltaTime, ELevelTick TickType,

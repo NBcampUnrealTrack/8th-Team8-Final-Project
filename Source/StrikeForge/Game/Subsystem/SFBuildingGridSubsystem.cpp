@@ -3,6 +3,10 @@
 #include "Buildings/Resource/ResourceBase.h"
 #include "GameFramework/Actor.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
+#if WITH_EDITOR
+#include "EngineUtils.h"
+#include "Game/Spawn/SFBuildingSpawnAnchor.h"
+#endif
 
 void USFBuildingGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -26,29 +30,60 @@ void USFBuildingGridSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+#if WITH_EDITOR
+void USFBuildingGridSubsystem::RefreshAllEditorGridPreviews()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld()) return;
+
+	for (TActorIterator<ASFBuildingSpawnAnchor> It(World); It; ++It)
+	{
+		ASFBuildingSpawnAnchor* Anchor = *It;
+
+		if (!IsValid(Anchor) || Anchor->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		Anchor->RefreshEditorPreview();
+	}
+
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		AResourceBase* Resource = *It;
+
+		if (!IsValid(Resource) || Resource->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		Resource->RefreshEditorGridPreview();
+	}
+}
+#endif
+
 FVector USFBuildingGridSubsystem::GridToWorldCoordinate(const FIntPoint& GridCoord) const
 {
 	return GridOrigin + FVector(
-	GridCoord.X * CellSize + CellSize * 0.5f,
-	GridCoord.Y * CellSize + CellSize * 0.5f,
-	0.f);
+		GridCoord.X * CellSize + CellSize * 0.5f,
+		GridCoord.Y * CellSize + CellSize * 0.5f,
+		0.f);
 }
 
 bool USFBuildingGridSubsystem::CanOccupyBuildingCells(const AActor* Owner, const FBuildingGridInfo& GridInfo) const
 {
-	// gridsize = 차지할 공간길이(length) 절대 음수 불가
 	if (!IsValid(Owner) || !GridInfo.IsValid()) return false;
 
-	for (int Y = 0; Y < GridInfo.GridSize.Y; Y++)
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
 	{
-		for (int X = 0; X < GridInfo.GridSize.X; X++)
-		{	// X는 X값에 Y는 Y값에 더해주는 +연산자 오버로딩 있음
-			const FIntPoint TempCoordinate = GridInfo.OriginCell + FIntPoint(X, Y); 
-			// TMap에서 Key값으로 값이 존재하는지 검사
-			const FSFGridCellData* Cell = GridCells.Find(TempCoordinate);
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+
+			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
 			if (!Cell) continue;
-			// TMap에서 존재하면 점유중, 본인이 본인자리에 배치는 가능(예외), 갑자기 nullptr 방지(destroy)
-			// 가장 첫번째 조건을 검사함 > nullptr이면 isvalid 오류남 nullptr검사부터
+
 			const AActor* ExistingBuilding = Cell->BuildingActor.Get();
 			if (IsValid(ExistingBuilding) && ExistingBuilding != Owner)
 			{
@@ -308,11 +343,17 @@ bool USFBuildingGridSubsystem::TryRegisterResourceGrid(AResourceBase* Resource, 
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
-			const FIntPoint CellCoordinate =
-				GridInfo.OriginCell + FIntPoint(X, Y);
-
 			const int32 LinearIndex =
 				Y * GridInfo.GridSize.X + X;
+
+			// 분배 결과가 0인 셀은 자원 점유 셀로 등록하지 않습니다.
+			if (Resource->GetCellDeposit(LinearIndex) <= 0)
+			{
+				continue;
+			}
+
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
 
 			FSFGridResourceEntry NewEntry;
 			NewEntry.ResourceActor = Resource;
@@ -434,7 +475,7 @@ FIntPoint USFBuildingGridSubsystem::GetRotatedGridSize(const FIntPoint& BaseGrid
 }
 
 FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo& GridInfo) const
-{	// GridInfo.OriginCell = WorldCenterToGridInfo에서 계산한값
+{
 	if (!GridInfo.IsValid())
 	{
 		return GridOrigin;
@@ -449,9 +490,9 @@ FVector USFBuildingGridSubsystem::GridInfoToWorldCenter(const FBuildingGridInfo&
 		0.0f);
 }
 
-// 건물의 월드 중심과 점유 크기를 바탕으로, 해당 건물이 점유해야 할 첫 번째 Grid 셀 좌표를 계산한다.
+// 월드 중심과 점유 크기로 첫 번째 점유 셀을 계산합니다.
 FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector& WorldCenter, const FIntPoint& InGridSize) const
-{	// vector = mousecursor, size = buildingGridsize
+{
 	FBuildingGridInfo Result;
 	Result.GridSize = InGridSize;
 
@@ -460,11 +501,10 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 		return Result;
 	}
 	
-	// Fintpoint
 	const FVector LocalCenter =
 		(WorldCenter - GridOrigin) / CellSize;
 	
-	// Size까지 고려해 중점 맞추고 Fintpoint 반환
+	// 점유 크기의 절반을 빼서 중심 위치를 첫 번째 점유 셀로 변환합니다.
 	Result.OriginCell = FIntPoint(
 		FMath::RoundToInt(
 			LocalCenter.X - InGridSize.X * 0.5f),
@@ -472,6 +512,52 @@ FBuildingGridInfo USFBuildingGridSubsystem::WorldCenterToGridInfo(const FVector&
 			LocalCenter.Y - InGridSize.Y * 0.5f));
 
 	return Result;
+}
+
+bool USFBuildingGridSubsystem::TrySnapWorldCenterToGrid(
+	const FVector& WorldCenter,
+	FIntPoint GridSize,
+	FBuildingGridInfo& OutGridInfo,
+	FVector& OutSnappedWorldCenter) const
+{
+	OutGridInfo.OriginCell = FIntPoint::ZeroValue;
+	OutGridInfo.GridSize = FIntPoint::ZeroValue;
+	OutSnappedWorldCenter = WorldCenter;
+
+	if (GridSize.X <= 0 || GridSize.Y <= 0 || CellSize <= 0.0f)
+	{
+		return false;
+	}
+
+	OutGridInfo = WorldCenterToGridInfo(WorldCenter, GridSize);
+
+	if (!OutGridInfo.IsValid())
+	{
+		return false;
+	}
+
+	OutSnappedWorldCenter = GridInfoToWorldCenter(OutGridInfo);
+	OutSnappedWorldCenter.Z = WorldCenter.Z;
+
+	return true;
+}
+
+bool USFBuildingGridSubsystem::IsCenteredSubGridSizeValid(
+	const FIntPoint& OuterGridSize,
+	const FIntPoint& InnerGridSize)
+{
+	if (OuterGridSize.X <= 0 || OuterGridSize.Y <= 0 ||
+		InnerGridSize.X <= 0 || InnerGridSize.Y <= 0)
+	{
+		return false;
+	}
+
+	const FIntPoint SizeDifference = OuterGridSize - InnerGridSize;
+
+	return SizeDifference.X >= 0 &&
+		SizeDifference.Y >= 0 &&
+		SizeDifference.X % 2 == 0 &&
+		SizeDifference.Y % 2 == 0;
 }
 
 bool USFBuildingGridSubsystem::TryMakeCenteredSubGrid(const FBuildingGridInfo& OuterGridInfo,
@@ -482,31 +568,16 @@ bool USFBuildingGridSubsystem::TryMakeCenteredSubGrid(const FBuildingGridInfo& O
 
 	OutInnerGridInfo.GridSize = FIntPoint::ZeroValue;
 
-	if (!OuterGridInfo.IsValid() || InnerGridSize.X <= 0 ||
-		InnerGridSize.Y <= 0)
+	if (!OuterGridInfo.IsValid() ||
+		!IsCenteredSubGridSizeValid(
+			OuterGridInfo.GridSize,
+			InnerGridSize))
 	{
 		return false;
 	}
 
 	const FIntPoint SizeDifference =
 		OuterGridInfo.GridSize - InnerGridSize;
-
-	// 검색 격자가 건물 격자보다 클 수 없습니다.
-	if (SizeDifference.X < 0 ||	SizeDifference.Y < 0)
-	{
-		return false;
-	}
-
-	/*
-	 * 차이가 홀수이면 양쪽에 같은 수의 셀을 둘 수 없습니다.
-	 *
-	 * 4 - 3 = 1
-	 * 왼쪽 0.5칸, 오른쪽 0.5칸 배치는 불가능합니다.
-	 */
-	if (SizeDifference.X % 2 != 0 || SizeDifference.Y % 2 != 0)
-	{
-		return false;
-	}
 
 	OutInnerGridInfo.GridSize = InnerGridSize;
 
@@ -572,6 +643,15 @@ bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Reso
 	{
 		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
 		{
+			const int32 LinearIndex =
+				Y * GridInfo.GridSize.X + X;
+
+			// 매장량이 있는 셀에만 자원 중첩 규칙을 적용합니다.
+			if (Resource->GetCellDeposit(LinearIndex) <= 0)
+			{
+				continue;
+			}
+
 			const FIntPoint CellCoordinate =
 				GridInfo.OriginCell + FIntPoint(X, Y);
 

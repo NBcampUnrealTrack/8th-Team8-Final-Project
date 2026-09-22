@@ -4,6 +4,7 @@
 #include "Game/GameState/SFGameState.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
@@ -94,17 +95,12 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 
 	ConfiguredResourceSearchGridSize = Definition->ResourceSearchGridSize;
 
-#pragma region Check Searchsize < gridsize && check even or odd
 	const FIntPoint BuildingGridSize = GetGridSize();
-	const FIntPoint SizeDifference =
-		BuildingGridSize - ConfiguredResourceSearchGridSize;
 	const bool bIsValidSearchGrid =
-		ConfiguredResourceSearchGridSize.X > 0 &&
-		ConfiguredResourceSearchGridSize.Y > 0 &&
-		SizeDifference.X >= 0 &&
-		SizeDifference.Y >= 0 &&
-		SizeDifference.X % 2 == 0 &&
-		SizeDifference.Y % 2 == 0;
+		USFBuildingGridSubsystem::IsCenteredSubGridSizeValid(
+			BuildingGridSize,
+			ConfiguredResourceSearchGridSize);
+
 	if (!bIsValidSearchGrid)
 	{
 		SF_LOG(
@@ -114,7 +110,6 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 			*BuildingGridSize.ToString(),
 			*ConfiguredResourceSearchGridSize.ToString());
 	}
-#pragma endregion 
 	
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
 	SetProgressColorByResourceType(GetMineResourceType());

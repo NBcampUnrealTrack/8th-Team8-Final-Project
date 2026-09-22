@@ -1,10 +1,10 @@
 ﻿#include "ResourceBase.h"
 #include "Components/BoxComponent.h"
-#include "UObject/UnrealType.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
 #if WITH_EDITOR
 #include "EngineUtils.h"
+#include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #endif
 AResourceBase::AResourceBase()
 {
@@ -44,7 +44,7 @@ AResourceBase::AResourceBase()
 
 	GridPreviewComponent->ShapeColor = FColor::Green;
 	GridPreviewComponent->bDrawOnlyIfSelected = false;
-	GridPreviewComponent->SetLineThickness(3.0f);
+	GridPreviewComponent->SetLineThickness(5.0f);
 
 #endif
 }
@@ -68,23 +68,39 @@ void AResourceBase::InitializeCellDeposits()
 	ResourceDeposit =
 		FMath::Max(0, ResourceDeposit);
 
-	const int32 BaseDeposit =
-		ResourceDeposit / CellCount;
+	CellDeposits.SetNumUninitialized(CellCount);
 
-	const int32 Remainder =
-		ResourceDeposit % CellCount;
-
-	CellDeposits.Init(BaseDeposit, CellCount);
-
-	/*
-	 * 나누어떨어지지 않은 나머지는
-	 * 앞쪽 셀부터 1씩 배분합니다.
-	 */
-	for (int32 Index = 0; Index < Remainder; ++Index)
+	for (int32 Index = 0; Index < CellCount; ++Index)
 	{
-		CellDeposits[Index] += 1;
+		CellDeposits[Index] =
+			CalculateDistributedCellDeposit(
+				ResourceDeposit,
+				ResourceGridSize,
+				Index);
 	}
-	
+}
+
+int32 AResourceBase::CalculateDistributedCellDeposit(
+	int32 TotalDeposit,
+	const FIntPoint& GridSize,
+	int32 ResourceCellIndex)
+{
+	if (TotalDeposit <= 0 || GridSize.X <= 0 || GridSize.Y <= 0)
+	{
+		return 0;
+	}
+
+	const int32 CellCount = GridSize.X * GridSize.Y;
+
+	if (ResourceCellIndex < 0 || ResourceCellIndex >= CellCount)
+	{
+		return 0;
+	}
+
+	const int32 BaseDeposit = TotalDeposit / CellCount;
+	const int32 Remainder = TotalDeposit % CellCount;
+
+	return BaseDeposit + (ResourceCellIndex < Remainder ? 1 : 0);
 }
 
 int32 AResourceBase::GetCellDeposit(
@@ -230,16 +246,22 @@ void AResourceBase::BeginPlay()
 	USFBuildingGridSubsystem* GridSubsystem = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
 	if (!IsValid(GridSubsystem)) return;
 	
-	RegisteredResourceGridInfo = GridSubsystem->WorldCenterToGridInfo(
-		GetActorLocation(),
-		ResourceGridSize);
-	
-	FVector WorldCenterVector = GridSubsystem->GridInfoToWorldCenter(RegisteredResourceGridInfo);
-	/*
-	 * 격자는 XY만 정렬합니다.
-	 * 레벨에서 지정한 자원의 높이는 유지합니다.
-	 */
-	WorldCenterVector.Z = GetActorLocation().Z;
+	FVector WorldCenterVector;
+
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			GetActorLocation(),
+			ResourceGridSize,
+			RegisteredResourceGridInfo,
+			WorldCenterVector))
+	{
+		SF_LOG(Warning,
+			"Resource: %s Failed to Calculate GridSystem",
+			*GetName());
+
+		Destroy();
+		return;
+	}
+
 	SetActorLocation(WorldCenterVector);
 	
 	bResourceGridRegistered  = 
@@ -298,24 +320,19 @@ void AResourceBase::OnConstruction(const FTransform& Transform)
 	}
 
 	SetBoxExtent();
-	RefreshAllEditorResourceGridPreviews();
-	
+
+	if (USFBuildingGridSubsystem* GridSubsystem =
+			World->GetSubsystem<USFBuildingGridSubsystem>())
+	{
+		GridSubsystem->RefreshAllEditorGridPreviews();
+	}
 }
 
 void AResourceBase::PostEditMove(bool bFinished)
 {
 	Super::PostEditMove(bFinished);
 	
-	/*
-	드래그하는 동안 매번 격자 중심으로 이동시키면
-	액터가 마우스를 따라가지 않고 잘 배치가 안됀다.
-	엑터의 Pivot은 격자이동하지않고 움직이는데
-	정작 엑터는 격자이동을하고 Pivot을 움직여도 엑터는 가만히있는현상이 있다
-	
-	bFinished 로 조건을 추가한
-	현재 방식은 자유롭게 이동한 뒤 마우스를 놓을 때 한 번만 정렬합니다.
-	 */
-
+	// 드래그 중에는 자유 이동을 유지하고 마우스를 놓았을 때만 스냅합니다.
 	if (!bFinished)
 	{
 		return;
@@ -336,31 +353,17 @@ void AResourceBase::PostEditMove(bool bFinished)
 		return;
 	}
 
-	if (ResourceGridSize.X <= 0 ||
-		ResourceGridSize.Y <= 0)
-	{
-		return;
-	}
+	FBuildingGridInfo EditorGridInfo;
+	FVector SnappedLocation;
 
-	const FBuildingGridInfo EditorGridInfo =
-		GridSubsystem->WorldCenterToGridInfo(
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
 			GetActorLocation(),
-			ResourceGridSize);
-
-	if (!EditorGridInfo.IsValid())
+			ResourceGridSize,
+			EditorGridInfo,
+			SnappedLocation))
 	{
 		return;
 	}
-
-	FVector SnappedLocation =
-		GridSubsystem->GridInfoToWorldCenter(
-			EditorGridInfo);
-
-	/*
-	 * 격자는 XY만 담당합니다.
-	 * 지형 높이나 디자이너가 지정한 Z값은 유지합니다.
-	 */
-	SnappedLocation.Z = GetActorLocation().Z;
 
 	if (!GetActorLocation().Equals(
 			SnappedLocation,
@@ -373,54 +376,34 @@ void AResourceBase::PostEditMove(bool bFinished)
 			ETeleportType::TeleportPhysics);
 	}
 	
-	// color
-	/*
-	 * 하나의 자원이 이동하면 주변 자원의
-	 * 충돌 상태도 함께 달라질 수 있습니다.
-	 */
-	RefreshAllEditorResourceGridPreviews();
+	GridSubsystem->RefreshAllEditorGridPreviews();
 }
 
 void AResourceBase::PostEditUndo()
 {
 	Super::PostEditUndo();
-	/*
-	 * 위치 이동, 삭제 복구 등의 Undo/Redo가 발생하면
-	 * 다른 자원들의 충돌 상태도 함께 달라질 수 있습니다.
-	 */
-	RefreshAllEditorResourceGridPreviews();
+	if (UWorld* World = GetWorld())
+	{
+		if (USFBuildingGridSubsystem* GridSubsystem =
+				World->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			GridSubsystem->RefreshAllEditorGridPreviews();
+		}
+	}
 }
 
 void AResourceBase::Destroyed()
 {
-	/*
-	 * 이 액터가 제거되기 전에 남아 있는 자원들의
-	 * 프리뷰 색상을 다시 계산합니다.
-	 *
-	 * 이 시점에는 IsActorBeingDestroyed()가 true이므로
-	 * 충돌 검사에서 이 자원을 제외해야 합니다.
-	 */
-	RefreshAllEditorResourceGridPreviews();
-	
-	Super::Destroyed();
-}
-
-void AResourceBase::RefreshAllEditorResourceGridPreviews()
-{
-	UWorld* World = GetWorld();
-	if (!IsValid(World) || World->IsGameWorld()) return;
-
-	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	if (UWorld* World = GetWorld())
 	{
-		AResourceBase* Resource = *It;
-
-		if (!IsValid(Resource) || Resource->IsActorBeingDestroyed())
+		if (USFBuildingGridSubsystem* GridSubsystem =
+				World->GetSubsystem<USFBuildingGridSubsystem>())
 		{
-			continue;
+			GridSubsystem->RefreshAllEditorGridPreviews();
 		}
-
-		Resource->RefreshEditorGridPreview();
 	}
+
+	Super::Destroyed();
 }
 
 void AResourceBase::RefreshEditorGridPreview()
@@ -470,9 +453,20 @@ void AResourceBase::RefreshEditorGridPreview()
 	GridSubsystem->WorldCenterToGridInfo(
 		GetActorLocation(), ResourceGridSize);
 
-	const bool bHasConflict =
-		HasEditorResourceGridConflict(
+	const bool bHasResourceConflict =
+	HasEditorResourceGridConflict(
+		EditorGridInfo,	GridSubsystem);
+
+	const bool bHasSpawnAnchorConflict =
+		HasEditorSpawnAnchorGridConflict(
 			EditorGridInfo,	GridSubsystem);
+
+	const bool bHasInvalidDeposit = ResourceDeposit <= 0;
+
+	const bool bHasConflict =
+		bHasInvalidDeposit ||
+		bHasResourceConflict ||
+		bHasSpawnAnchorConflict;
 
 	GridPreviewComponent->ShapeColor =
 		bHasConflict
@@ -520,14 +514,118 @@ bool AResourceBase::HasEditorResourceGridConflict(const FBuildingGridInfo& ThisG
 			continue;
 		}
 
+		if (OtherResource->ResourceDeposit <= 0)
+		{
+			continue;
+		}
+
 		const FBuildingGridInfo OtherGridInfo =
 			GridSubsystem->WorldCenterToGridInfo(
 				OtherResource->GetActorLocation(),
 				OtherResource->ResourceGridSize);
 
-		if (ThisGridInfo.Overlaps(OtherGridInfo))
+		if (!ThisGridInfo.Overlaps(OtherGridInfo))
 		{
-			return true;
+			continue;
+		}
+
+		for (int32 Y = 0; Y < ThisGridInfo.GridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < ThisGridInfo.GridSize.X; ++X)
+			{
+				const int32 ThisCellIndex =
+					Y * ThisGridInfo.GridSize.X + X;
+
+				if (CalculateDistributedCellDeposit(
+						ResourceDeposit,
+						ThisGridInfo.GridSize,
+						ThisCellIndex) <= 0)
+				{
+					continue;
+				}
+
+				const FIntPoint CellCoordinate =
+					ThisGridInfo.OriginCell + FIntPoint(X, Y);
+
+				const FIntPoint OtherLocalCell =
+					CellCoordinate - OtherGridInfo.OriginCell;
+
+				if (OtherLocalCell.X < 0 ||
+					OtherLocalCell.X >= OtherGridInfo.GridSize.X ||
+					OtherLocalCell.Y < 0 ||
+					OtherLocalCell.Y >= OtherGridInfo.GridSize.Y)
+				{
+					continue;
+				}
+
+				const int32 OtherCellIndex =
+					OtherLocalCell.Y * OtherGridInfo.GridSize.X +
+					OtherLocalCell.X;
+
+				if (CalculateDistributedCellDeposit(
+						OtherResource->ResourceDeposit,
+						OtherGridInfo.GridSize,
+						OtherCellIndex) > 0)
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+bool AResourceBase::HasEditorSpawnAnchorGridConflict(const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!ThisGridInfo.IsValid() || !IsValid(GridSubsystem))
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return false;
+	}
+
+	for (TActorIterator<ASFBuildingSpawnAnchor> It(World); It; ++It)
+	{
+		const ASFBuildingSpawnAnchor* Anchor = *It;
+
+		if (!IsValid(Anchor) ||	Anchor->IsActorBeingDestroyed())
+		{
+			continue;
+		}
+
+		for (int32 Y = 0; Y < ThisGridInfo.GridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < ThisGridInfo.GridSize.X; ++X)
+			{
+				const int32 ResourceCellIndex =
+					Y * ThisGridInfo.GridSize.X + X;
+
+				if (CalculateDistributedCellDeposit(
+						ResourceDeposit,
+						ThisGridInfo.GridSize,
+						ResourceCellIndex) <= 0)
+				{
+					continue;
+				}
+
+				FBuildingGridInfo ResourceCellGridInfo;
+				ResourceCellGridInfo.OriginCell =
+					ThisGridInfo.OriginCell + FIntPoint(X, Y);
+				ResourceCellGridInfo.GridSize = FIntPoint(1, 1);
+
+				if (Anchor->BlocksEditorResourceGrid(
+						ResourceCellGridInfo,
+						GridSubsystem))
+				{
+					return true;
+				}
+			}
 		}
 	}
 

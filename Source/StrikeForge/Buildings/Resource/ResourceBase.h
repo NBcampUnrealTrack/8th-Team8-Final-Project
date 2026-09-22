@@ -22,6 +22,7 @@ class STRIKEFORGE_API AResourceBase
 	, public IBeMinedable
 {
 	GENERATED_BODY()
+	friend class USFBuildingGridSubsystem;
 
 public:
 	// Sets default values for this actor's properties
@@ -41,6 +42,10 @@ public:
 	FORCEINLINE float GetResourceRequiredWork() const { return ResourceRequiredWork; }
 	FORCEINLINE const FIntPoint& GetResourceGridSize() const { return ResourceGridSize;	}
 	int32 GetCellDeposit(int32 ResourceCellIndex) const;
+	static int32 CalculateDistributedCellDeposit(
+		int32 TotalDeposit,
+		const FIntPoint& GridSize,
+		int32 ResourceCellIndex);
 
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
 	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
@@ -60,11 +65,12 @@ protected: // functions
 	
 	void RefreshEditorGridPreview();
 	
-	void RefreshAllEditorResourceGridPreviews();
-	
 	bool HasEditorResourceGridConflict(
 		const FBuildingGridInfo& ThisGridInfo,
 		const USFBuildingGridSubsystem* GridSubsystem) const;
+	bool HasEditorSpawnAnchorGridConflict(
+	const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const;
 #endif
 	
 	void SetBoxExtent();
@@ -80,8 +86,8 @@ protected: // properties
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
 	EResourceType ResourceType = EResourceType::Mineral;
 	// 매장량
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
-	int32 ResourceDeposit = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ResourceDeposit = 1;
 	// 등급 ( 품질 )
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	int32 ResourceTier = 1;

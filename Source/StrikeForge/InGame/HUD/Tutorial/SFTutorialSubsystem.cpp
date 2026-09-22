@@ -1303,21 +1303,19 @@ void USFTutorialSubsystem::SnapPlacementGuideToBuildingGrid(
             Definition->GridSize,
             InOutStep.GhostRotation);
 
-    const FBuildingGridInfo GridInfo =
-        GridSubsystem->WorldCenterToGridInfo(
-            InOutStep.WorldLocation,
-            EffectiveGridSize);
+	FBuildingGridInfo GridInfo;
+	FVector SnappedLocation;
 
-    if (!GridInfo.IsValid())
-    {
-        return;
-    }
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			InOutStep.WorldLocation,
+			EffectiveGridSize,
+			GridInfo,
+			SnappedLocation))
+	{
+		return;
+	}
 
-    FVector SnappedLocation = GridSubsystem->GridInfoToWorldCenter(GridInfo);
-    // 그리드는 XY만 관리한다. 지형 높이는 DT가 보관한 값을 유지한다.
-    SnappedLocation.Z = InOutStep.WorldLocation.Z;
-
-    if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
+	if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
     {
         SF_LOG(Log,
             "[SFTutorialSubsystem] Placement guide snapped to building grid | Building: %s | %s -> %s",

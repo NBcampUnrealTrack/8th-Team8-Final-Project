@@ -11,11 +11,15 @@ class USceneComponent;
 class UStaticMeshComponent;
 class USFBuildingDefinition;
 class UBoxComponent;
+struct FBuildingGridInfo;
+class USFBuildingGridSubsystem;
+class USFMiningBuildingDefinition;
 
 UCLASS()
 class STRIKEFORGE_API ASFBuildingSpawnAnchor : public AActor
 {
 	GENERATED_BODY()
+	friend class USFBuildingGridSubsystem;
 public:
 	
 	ASFBuildingSpawnAnchor();
@@ -80,13 +84,39 @@ private:
 #if WITH_EDITOR
 public:
 	virtual void OnConstruction(
-		const FTransform& Transform) override;
+	const FTransform& Transform) override;
+
 	virtual void PostEditMove(
-			bool bFinished) override;
+		bool bFinished) override;
+
+	virtual void PostEditUndo() override;
+
+	virtual void Destroyed() override;
+	/**
+	 * 이 Anchor의 건물이 해당 자원 격자를 막는지 검사합니다.
+ * 광산은 자원과 격자를 공유하므로 항상 false를 반환합니다.
+ */
+	bool BlocksEditorResourceGrid(
+		const FBuildingGridInfo& ResourceGridInfo,
+		const USFBuildingGridSubsystem* GridSubsystem) const;
 private:
 	bool TryGetBuildingMeshRelativeTransform(
 		const USFBuildingDefinition* Definition,
 		FTransform& OutRelativeTransform) const;
+	
+	bool HasEditorSpawnAnchorGridConflict(
+	const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const;
+	
+	bool HasEditorResourceGridConflict(
+	const USFBuildingDefinition* Definition,
+	const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const;
+	
+	bool HasUsableEditorMiningResource(
+	const USFMiningBuildingDefinition* MiningDefinition,
+	const FBuildingGridInfo& BuildingGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const;
 	
 	void ClearEditorPreview();
 

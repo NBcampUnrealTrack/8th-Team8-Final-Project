@@ -52,22 +52,12 @@ public:
 	bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets);
 	
 	void ClearMiningTargets();
-	// ui?
 	float GetIncomeRatePerSeconds() const;
-	// setter
 	FORCEINLINE void SetMineResourceType(EResourceType InResourceType) { MineResourceType = InResourceType; }
-	// getter
 	FORCEINLINE EResourceType GetMineResourceType() const { return MineResourceType; }
 	FORCEINLINE int32 GetExtractAmount() const { return ExtractAmount; }
-	// 현재 남은 자원량 get
 	int32 GetRemainingDeposit() const;
-	/** 현재 채굴 진행률. get */
 	float GetExtractProgressRatio() const;
-	
-	
-	// UFUNCTION()
-	// void HandleResourceDepleted(AResourceBase* Resource);
-
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:

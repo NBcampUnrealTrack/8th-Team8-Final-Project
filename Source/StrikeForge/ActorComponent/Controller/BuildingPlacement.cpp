@@ -122,20 +122,23 @@ void UBuildingPlacement::UpdatePlacementMode()
 			false,
 			HitResult))
 	{
-		// 실패처리 ( 머티리얼, bool변수 )
+		// 지형을 찾지 못한 프레임은 배치 불가로 처리합니다.
 		SetCurrentPlacementInvalid();
 		return;
 	}
 
-	TargetBuildingGridInfo =
-		GridSubsystem->WorldCenterToGridInfo(
-			HitResult.Location,	TargetBuildingGridInfo.GridSize);
+	FVector BuildingLocation;
 
-	FVector BuildingLocation =
-		GridSubsystem->GridInfoToWorldCenter(TargetBuildingGridInfo);
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			HitResult.Location,
+			TargetBuildingGridInfo.GridSize,
+			TargetBuildingGridInfo,
+			BuildingLocation))
+	{
+		SetCurrentPlacementInvalid();
+		return;
+	}
 
-	// 격자는 XY만 정렬하고 지형에서 얻은 높이는 유지합니다.
-	BuildingLocation.Z = HitResult.Location.Z;
 	Building->SetActorLocation(BuildingLocation);
 
 	bCanPlaceCurrentLocation = CanPlaceAtCurrentLocation();
@@ -210,11 +213,11 @@ bool UBuildingPlacement::CanPlaceAtCurrentLocation() const
 		return false;
 	}
 
-	// 위치
 	const FVector BuildingLocation = Building->GetActorLocation();
-	// 광산건물
+
 	const bool bUsesResourceGrid = Cast<IMinable>(Building) != nullptr;
-	// 네브메쉬 (판정 개선 필요, 현재는 NavMesh안에만 있으면 건설 가능함)
+
+	// 광산은 자원 셀 위에 배치되므로 현재 NavMesh 경계 검사에서 제외합니다.
 	const bool bCanPlaceOnNavigation =
 		bUsesResourceGrid || CanPlaceOnNavMeshXY(TargetBuildingGridInfo);
 	
@@ -226,16 +229,14 @@ bool UBuildingPlacement::CanPlaceAtCurrentLocation() const
 
 void UBuildingPlacement::EndPlacementSession()
 {
-	// tick off
 	SetComponentTickEnabled(false);
-	// cached 정보 초기화
+
 	TargetBuilding.Reset();
 	OwnerController.Reset();
 	CachedGridSubsystem = nullptr;
 	TargetBuildingGridInfo = FBuildingGridInfo();
 	bCanPlaceCurrentLocation = false;
 	
-	// debug delete
 	FlushPersistentDebugLines(GetWorld());
 }
 
@@ -259,10 +260,9 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 		return false;
 	}
 
-	// 판정통일 ( 위치, 격자, 네브메쉬 )
+	// 확정 직전에도 같은 최종 규칙으로 다시 검사합니다.
 	if (!CanPlaceAtCurrentLocation())
 	{
-		// 실패처리 ( 머티리얼, bool변수 )
 		SetCurrentPlacementInvalid();
 		return false;
 	}
@@ -270,7 +270,6 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 	// 등록과 자원 연결 모두 GridSubsystem이 처리한다.
 	if (!Building->TryRegisterGrid(TargetBuildingGridInfo))
 	{
-		// 실패처리 ( 머티리얼, bool변수 )
 		SetCurrentPlacementInvalid();
 		return false;
 	}

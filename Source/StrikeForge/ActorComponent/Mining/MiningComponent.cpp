@@ -306,12 +306,6 @@ void UMiningComponent::FinishMiningTargets()
 	OnResourceDepleted.Broadcast();
 }
 
-// void UMiningComponent::HandleResourceDepleted(AResourceBase* Resource)
-// {
-// 	StopMining();
-// 	OnResourceDepleted.Broadcast();      // 건물 → 수입률 회수
-// }
-
 float UMiningComponent::GetIncomeRatePerSeconds() const
 {
 	const AResourceBase* Resource = GetCurrentResource();

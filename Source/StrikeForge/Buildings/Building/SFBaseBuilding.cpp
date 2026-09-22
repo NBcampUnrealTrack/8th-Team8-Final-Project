@@ -308,7 +308,7 @@ void ASFBaseBuilding::ApplySpawnMode()
 			if (!InitialTier) return;
 			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
 			
-			if (!TryRegistInitialGrid())
+			if (!TryRegisterInitialGrid())
 			{
 				SF_LOG(
 					Warning,
@@ -1706,7 +1706,7 @@ FResources ASFBaseBuilding::GetUpgradeCost() const
 		: FResources{};
 }
 
-bool ASFBaseBuilding::TryRegistInitialGrid()
+bool ASFBaseBuilding::TryRegisterInitialGrid()
 {
 	USFBuildingGridSubsystem* Grid =
 		GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
@@ -1717,9 +1717,21 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		USFBuildingGridSubsystem::GetRotatedGridSize(
 			ConfiguredGridSize,	GetActorRotation());
 
-	FBuildingGridInfo GridInfo =
-		Grid->WorldCenterToGridInfo(
-			GetActorLocation(),	EffectiveGridSize);
+	FBuildingGridInfo GridInfo;
+	FVector SnappedLocation;
+
+	if (!Grid->TrySnapWorldCenterToGrid(
+			GetActorLocation(),
+			EffectiveGridSize,
+			GridInfo,
+			SnappedLocation))
+	{
+		SF_LOG(Error,
+			"[%s] 선배치 건물 격자 계산 실패",
+			*GetName());
+
+		return false;
+	}
 
 	if (!TryRegisterGrid(GridInfo))
 	{
@@ -1730,12 +1742,7 @@ bool ASFBaseBuilding::TryRegistInitialGrid()
 		return false;
 	}
 
-	FVector WorldCenterVector =
-		Grid->GridInfoToWorldCenter(GridInfo);
-
-	// 격자는 XY만 정렬하고 레벨에서 지정한 높이는 유지합니다.
-	WorldCenterVector.Z = GetActorLocation().Z;
-	SetActorLocation(WorldCenterVector);
+	SetActorLocation(SnappedLocation);
 
 	return true;
 }

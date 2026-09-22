@@ -7,7 +7,11 @@
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/BuildingTierData/SFBuildingTierData.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
-
+#include "Buildings/Resource/ResourceBase.h"
+#include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
+#if WITH_EDITOR
+#include "EngineUtils.h"
+#endif
 ASFBuildingSpawnAnchor::ASFBuildingSpawnAnchor()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -39,7 +43,7 @@ ASFBuildingSpawnAnchor::ASFBuildingSpawnAnchor()
 
 	GridPreviewComponent->ShapeColor = FColor::Green;
 	GridPreviewComponent->bDrawOnlyIfSelected = false;
-	GridPreviewComponent->SetLineThickness(3.0f);
+	GridPreviewComponent->SetLineThickness(5.0f);
 #endif
 }
 
@@ -47,8 +51,15 @@ ASFBuildingSpawnAnchor::ASFBuildingSpawnAnchor()
 void ASFBuildingSpawnAnchor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	
-	RefreshEditorPreview();
+
+	if (UWorld* World = GetWorld())
+	{
+		if (USFBuildingGridSubsystem* GridSubsystem =
+				World->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			GridSubsystem->RefreshAllEditorGridPreviews();
+		}
+	}
 }
 
 void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
@@ -66,9 +77,16 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 		return;
 	}
 
+	USFBuildingGridSubsystem* GridSubsystem =
+		World->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!IsValid(GridSubsystem))
+	{
+		return;
+	}
+
 	if (PreviewDefinition.IsNull())
 	{
-		RefreshEditorPreview();
+		GridSubsystem->RefreshAllEditorGridPreviews();
 		return;
 	}
 
@@ -76,7 +94,7 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 		PreviewDefinition.LoadSynchronous();
 	if (!IsValid(Definition))
 	{
-		RefreshEditorPreview();
+		GridSubsystem->RefreshAllEditorGridPreviews();
 		return;
 	}
 
@@ -85,48 +103,19 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 		USFBuildingGridSubsystem::GetRotatedGridSize(
 			Definition->GridSize, GetActorRotation());
 
-	if (EffectiveGridSize.X <= 0 || EffectiveGridSize.Y <= 0)
-	{
-		RefreshEditorPreview();
-		return;
-	}
-
-	USFBuildingGridSubsystem* GridSubsystem =
-		World->GetSubsystem<USFBuildingGridSubsystem>();
-	if (!IsValid(GridSubsystem))
-	{
-		RefreshEditorPreview();
-		return;
-	}
-
 	const FVector CurrentLocation =	GetActorLocation();
+	FBuildingGridInfo EditorGridInfo;
+	FVector SnappedLocation;
 
-	/*
-	 * 현재 월드 중심을 기준으로
-	 * 이 건물이 차지할 격자 정보를 계산한다.
-	 */
-	const FBuildingGridInfo EditorGridInfo =
-		GridSubsystem->WorldCenterToGridInfo(
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
 			CurrentLocation,
-			EffectiveGridSize);
-	
-	if (!EditorGridInfo.IsValid())
+			EffectiveGridSize,
+			EditorGridInfo,
+			SnappedLocation))
 	{
-		RefreshEditorPreview();
+		GridSubsystem->RefreshAllEditorGridPreviews();
 		return;
 	}
-
-	/*
-	 * 계산된 격자의 정확한 월드 중심을 구한다.
-	 */
-	FVector SnappedLocation =
-		GridSubsystem->GridInfoToWorldCenter(EditorGridInfo);
-
-	/*
-	 * 격자 시스템은 XY 위치만 담당한다.
-	 * 디자이너가 지정한 지면 높이는 그대로 유지한다.
-	 */
-	SnappedLocation.Z =	CurrentLocation.Z;
 
 	if (!CurrentLocation.Equals(
 			SnappedLocation, KINDA_SMALL_NUMBER))
@@ -138,7 +127,35 @@ void ASFBuildingSpawnAnchor::PostEditMove(bool bFinished)
 			ETeleportType::TeleportPhysics);
 	}
 
-	RefreshEditorPreview();
+	GridSubsystem->RefreshAllEditorGridPreviews();
+}
+
+void ASFBuildingSpawnAnchor::PostEditUndo()
+{
+	Super::PostEditUndo();
+	
+	if (UWorld* World = GetWorld())
+	{
+		if (USFBuildingGridSubsystem* GridSubsystem =
+				World->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			GridSubsystem->RefreshAllEditorGridPreviews();
+		}
+	}
+}
+
+void ASFBuildingSpawnAnchor::Destroyed()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (USFBuildingGridSubsystem* GridSubsystem =
+				World->GetSubsystem<USFBuildingGridSubsystem>())
+		{
+			GridSubsystem->RefreshAllEditorGridPreviews();
+		}
+	}
+	
+	Super::Destroyed();
 }
 
 bool ASFBuildingSpawnAnchor::TryGetBuildingMeshRelativeTransform(
@@ -177,6 +194,254 @@ bool ASFBuildingSpawnAnchor::TryGetBuildingMeshRelativeTransform(
 	return true;
 }
 
+bool ASFBuildingSpawnAnchor::HasEditorSpawnAnchorGridConflict(const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!ThisGridInfo.IsValid() || !IsValid(GridSubsystem))
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return false;
+	}
+
+	for (TActorIterator<ASFBuildingSpawnAnchor> It(World); It; ++It)
+	{
+		const ASFBuildingSpawnAnchor* OtherAnchor = *It;
+
+		if (!IsValid(OtherAnchor) ||
+			OtherAnchor == this ||
+			OtherAnchor->IsActorBeingDestroyed() ||
+			OtherAnchor->PreviewDefinition.IsNull())
+		{
+			continue;
+		}
+
+		const USFBuildingDefinition* OtherDefinition =
+			OtherAnchor->PreviewDefinition.LoadSynchronous();
+		if (!IsValid(OtherDefinition))	continue;
+
+		// 다른 Anchor도 자신의 회전을 반영한 월드 점유 크기로 비교합니다.
+		const FIntPoint OtherEffectiveGridSize =
+			USFBuildingGridSubsystem::GetRotatedGridSize(
+				OtherDefinition->GridSize,
+				OtherAnchor->GetActorRotation());
+
+		const FBuildingGridInfo OtherGridInfo =
+			GridSubsystem->WorldCenterToGridInfo(
+				OtherAnchor->GetActorLocation(),
+				OtherEffectiveGridSize);
+
+		if (ThisGridInfo.Overlaps(OtherGridInfo))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool ASFBuildingSpawnAnchor::HasEditorResourceGridConflict(const USFBuildingDefinition* Definition,
+	const FBuildingGridInfo& ThisGridInfo, const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!IsValid(Definition) || !ThisGridInfo.IsValid() ||
+	   !IsValid(GridSubsystem))
+	{
+		return false;
+	}
+
+	/*
+	 * 광산은 자원 셀과 격자를 공유할 수 있습니다.
+	 * 자원 종류와 검색 영역은 HasUsableEditorMiningResource()에서 검사합니다.
+	 */
+	if (Cast<USFMiningBuildingDefinition>(Definition))
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return false;
+	}
+
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		const AResourceBase* Resource = *It;
+
+		if (!IsValid(Resource) ||
+			Resource->IsActorBeingDestroyed() ||
+			Resource->IsDepleted())
+		{
+			continue;
+		}
+
+		const FIntPoint& ResourceGridSize =
+			Resource->GetResourceGridSize();
+
+		if (ResourceGridSize.X <= 0 ||
+			ResourceGridSize.Y <= 0)
+		{
+			continue;
+		}
+
+		const FBuildingGridInfo ResourceGridInfo =
+			GridSubsystem->WorldCenterToGridInfo(
+				Resource->GetActorLocation(),
+				ResourceGridSize);
+
+		if (!ThisGridInfo.Overlaps(ResourceGridInfo))
+		{
+			continue;
+		}
+
+		for (int32 Y = 0; Y < ResourceGridInfo.GridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < ResourceGridInfo.GridSize.X; ++X)
+			{
+				const int32 ResourceCellIndex =
+					Y * ResourceGridInfo.GridSize.X + X;
+
+				if (AResourceBase::CalculateDistributedCellDeposit(
+						Resource->GetResourceDeposit(),
+						ResourceGridInfo.GridSize,
+						ResourceCellIndex) <= 0)
+				{
+					continue;
+				}
+
+				FBuildingGridInfo ResourceCellGridInfo;
+				ResourceCellGridInfo.OriginCell =
+					ResourceGridInfo.OriginCell + FIntPoint(X, Y);
+				ResourceCellGridInfo.GridSize = FIntPoint(1, 1);
+
+				if (ThisGridInfo.Overlaps(ResourceCellGridInfo))
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+bool ASFBuildingSpawnAnchor::HasUsableEditorMiningResource(const USFMiningBuildingDefinition* MiningDefinition,
+	const FBuildingGridInfo& BuildingGridInfo, const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!IsValid(MiningDefinition) || !BuildingGridInfo.IsValid() ||
+		!IsValid(GridSubsystem))
+	{
+		return false;
+	}
+
+	// 검색 격자도 Definition의 로컬 크기이므로
+	// SpawnAnchor의 회전을 반영한 월드 크기로 변환합니다.
+	const FIntPoint EffectiveSearchGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			MiningDefinition->ResourceSearchGridSize,
+			GetActorRotation());
+
+	FBuildingGridInfo SearchGridInfo;
+
+	if (!GridSubsystem->TryMakeCenteredSubGrid(
+			BuildingGridInfo,
+			EffectiveSearchGridSize,SearchGridInfo))
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return false;
+	}
+
+	const FIntPoint SearchMaxExclusive =
+		SearchGridInfo.OriginCell + SearchGridInfo.GridSize;
+
+	for (TActorIterator<AResourceBase> It(World); It; ++It)
+	{
+		const AResourceBase* Resource = *It;
+
+		if (!IsValid(Resource) ||
+			Resource->IsActorBeingDestroyed() ||
+			Resource->GetResourceType() !=
+				MiningDefinition->CanDigResourceType)
+		{
+			continue;
+		}
+
+		const FIntPoint& ResourceGridSize =	Resource->GetResourceGridSize();
+
+		if (ResourceGridSize.X <= 0 ||	ResourceGridSize.Y <= 0)
+		{
+			continue;
+		}
+
+		const int32 TotalDeposit =
+			FMath::Max(
+				0,Resource->GetResourceDeposit());
+
+		if (TotalDeposit <= 0)
+		{
+			continue;
+		}
+
+		const FBuildingGridInfo ResourceGridInfo =
+			GridSubsystem->WorldCenterToGridInfo(
+				Resource->GetActorLocation(),
+				ResourceGridSize);
+
+		// 검색 영역과 전혀 겹치지 않으면
+		// 개별 자원 셀을 검사할 필요가 없습니다.
+		if (!SearchGridInfo.Overlaps(ResourceGridInfo))
+		{
+			continue;
+		}
+
+		for (int32 Y = 0; Y < ResourceGridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < ResourceGridSize.X; ++X)
+			{
+				const FIntPoint CellCoordinate =
+					ResourceGridInfo.OriginCell +
+					FIntPoint(X, Y);
+
+				const bool bInsideSearchGrid =
+					CellCoordinate.X >=	SearchGridInfo.OriginCell.X &&
+					CellCoordinate.X <	SearchMaxExclusive.X &&
+					CellCoordinate.Y >=	SearchGridInfo.OriginCell.Y &&
+					CellCoordinate.Y <	SearchMaxExclusive.Y;
+
+				if (!bInsideSearchGrid)
+				{
+					continue;
+				}
+
+				const int32 ResourceCellIndex =
+					Y * ResourceGridSize.X + X;
+
+				const int32 CellDeposit =
+					AResourceBase::CalculateDistributedCellDeposit(
+						TotalDeposit,
+						ResourceGridSize,
+						ResourceCellIndex);
+
+				if (CellDeposit > 0)
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
 void ASFBuildingSpawnAnchor::ClearEditorPreview()
 {
 #if WITH_EDITORONLY_DATA
@@ -195,6 +460,49 @@ void ASFBuildingSpawnAnchor::ClearEditorPreview()
 		GridPreviewComponent->SetVisibility(false);
 	}
 #endif
+}
+
+bool ASFBuildingSpawnAnchor::BlocksEditorResourceGrid(const FBuildingGridInfo& ResourceGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const
+{
+	if (!ResourceGridInfo.IsValid() || !IsValid(GridSubsystem) ||
+		IsActorBeingDestroyed() || PreviewDefinition.IsNull())
+	{
+		return false;
+	}
+
+	const USFBuildingDefinition* Definition =
+		PreviewDefinition.LoadSynchronous();
+
+	if (!IsValid(Definition))
+	{
+		return false;
+	}
+
+	/*
+	 * 광산은 자원 격자와 겹칠 수 있습니다.
+	 * 광산의 자원 종류와 검색 범위는 광산 프리뷰에서 검사합니다.
+	 */
+	if (Cast<USFMiningBuildingDefinition>(Definition))
+	{
+		return false;
+	}
+
+	const FIntPoint EffectiveGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			Definition->GridSize, GetActorRotation());
+
+	if (EffectiveGridSize.X <= 0 ||	EffectiveGridSize.Y <= 0)
+	{
+		return false;
+	}
+
+	const FBuildingGridInfo AnchorGridInfo =
+		GridSubsystem->WorldCenterToGridInfo(
+			GetActorLocation(),	EffectiveGridSize);
+
+	return AnchorGridInfo.IsValid() &&
+		AnchorGridInfo.Overlaps(ResourceGridInfo);
 }
 
 void ASFBuildingSpawnAnchor::RefreshEditorGridPreview(const USFBuildingDefinition* Definition)
@@ -235,6 +543,23 @@ void ASFBuildingSpawnAnchor::RefreshEditorGridPreview(const USFBuildingDefinitio
 	{
 		return;
 	}
+	
+	// 박스 표시는 로컬 크기를 사용하지만 충돌 판정은 월드 점유 크기를 사용합니다.
+	const FIntPoint EffectiveGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			GridSize,
+			GetActorRotation());
+
+	const FBuildingGridInfo EditorGridInfo =
+		GridSubsystem->WorldCenterToGridInfo(
+			GetActorLocation(),
+			EffectiveGridSize);
+
+	if (!EditorGridInfo.IsValid())
+	{
+		return;
+	}
+	
 	const float CellSize = GridSubsystem->GetCellSize();
 	if (CellSize <= 0.0f) return;
 
@@ -263,11 +588,36 @@ void ASFBuildingSpawnAnchor::RefreshEditorGridPreview(const USFBuildingDefinitio
 	GridPreviewComponent->SetRelativeScale3D(
 		FVector::OneVector);
 
-	/*
-	 * 겹침 판정은 이후 단계에서 추가한다.
-	 * 지금은 유효한 격자를 초록색으로 표시한다.
-	 */
-	GridPreviewComponent->ShapeColor = FColor::Green;
+	const bool bHasAnchorConflict =
+	HasEditorSpawnAnchorGridConflict(
+		EditorGridInfo,
+		GridSubsystem);
+
+	const bool bHasResourceConflict =
+		HasEditorResourceGridConflict(
+			Definition,
+			EditorGridInfo,
+			GridSubsystem);
+
+	const USFMiningBuildingDefinition* MiningDefinition =
+		Cast<USFMiningBuildingDefinition>(Definition);
+
+	const bool bMissingMiningResource =
+		IsValid(MiningDefinition) &&
+		!HasUsableEditorMiningResource(
+			MiningDefinition,
+			EditorGridInfo,
+			GridSubsystem);
+
+	const bool bHasConflict =
+		bHasAnchorConflict ||
+		bHasResourceConflict ||
+		bMissingMiningResource;
+
+	GridPreviewComponent->ShapeColor =
+		bHasConflict
+			? FColor::Red
+			: FColor::Green;
 
 	GridPreviewComponent->MarkRenderStateDirty();
 	GridPreviewComponent->SetVisibility(true);
@@ -311,6 +661,9 @@ void ASFBuildingSpawnAnchor::RefreshEditorPreview()
 		return;
 	}
 
+	// 격자 프리뷰는 메시 데이터와 독립적으로 갱신합니다.
+	RefreshEditorGridPreview(Definition);
+
 	UStaticMesh* CompletedMesh =
 		PreviewTier->Visual.CompletedMesh.LoadSynchronous();
 
@@ -338,8 +691,6 @@ void ASFBuildingSpawnAnchor::RefreshEditorPreview()
 	 */
 	PreviewMeshComponent->SetRelativeTransform(BuildingMeshRelativeTransform);
 	PreviewMeshComponent->SetVisibility(true);
-	
-	RefreshEditorGridPreview(Definition);
 #endif
 }
 #endif

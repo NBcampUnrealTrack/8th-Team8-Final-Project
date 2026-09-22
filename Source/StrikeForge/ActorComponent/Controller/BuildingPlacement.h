@@ -25,13 +25,12 @@ public:
 	void EndPlacementSession();
 private:
 	void UpdatePlacementMode();
-	// 실패처리한곳으로
 	void SetCurrentPlacementInvalid();
 	
 	bool CanPlaceOnCurrentGrid() const;
-	// 공통판정함수
+	// 격자, NavMesh, 튜토리얼 제한을 모두 포함한 최종 배치 판정입니다.
 	bool CanPlaceAtCurrentLocation() const;
-	// nav
+	// 건물 격자의 XY 범위가 NavMesh 경계 안에 있는지 검사합니다.
 	bool CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const;
 
 	// 현재 배치 중인 건물입니다.

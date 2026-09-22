@@ -156,9 +156,37 @@ void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
 			continue;
 		}
 
-		EntryWidget->InitializeBuildingEntry(
-			Definition);
+		const int32 SlotIndex =
+			CurrentEntryWidgets.Num();
 
+		static const TCHAR* BuildHotkeys[] =
+		{
+			TEXT("H"),
+			TEXT("M"),
+			TEXT("E"),
+			TEXT("C"),
+			TEXT("A"),
+			TEXT("S")
+		};
+
+		EntryWidget->InitializeBuildingEntry(
+			Definition
+		);
+
+		if (
+			SlotIndex >= 0 &&
+			SlotIndex < UE_ARRAY_COUNT(BuildHotkeys)
+			)
+		{
+			EntryWidget->SetHotkeyText(
+				FText::FromString(
+					FString(
+						BuildHotkeys[SlotIndex]
+					)
+				)
+			);
+		}
+		
 		UHorizontalBoxSlot* EntrySlot =
 			BuildingEntryHorizontalBox
 			->AddChildToHorizontalBox(
@@ -479,4 +507,40 @@ void USFBuildCatalogPanelWidget::UnbindBuildingCompletionEvents()
 	}
 
 	BoundBuildings.Reset();
+}
+
+bool USFBuildCatalogPanelWidget::RequestBuildingBySlot(
+	int32 SlotIndex
+)
+{
+	SF_LOG(
+		Log,
+		"[BuildInput] Catalog Request Slot=%d EntryCount=%d",
+		SlotIndex,
+		CurrentEntryWidgets.Num()
+	);
+
+	if (!CurrentEntryWidgets.IsValidIndex(SlotIndex))
+	{
+		SF_LOG(
+			Warning,
+			"[SFBuildCatalogPanelWidget] "
+			"잘못된 건물 슬롯입니다. Slot=%d",
+			SlotIndex
+		);
+
+		return false;
+	}
+
+	USFBuildCatalogEntryWidget* EntryWidget =
+		CurrentEntryWidgets[SlotIndex].Get();
+
+	if (!IsValid(EntryWidget))
+	{
+		return false;
+	}
+
+	EntryWidget->TriggerEntryClickedFromHotkey();
+
+	return true;
 }

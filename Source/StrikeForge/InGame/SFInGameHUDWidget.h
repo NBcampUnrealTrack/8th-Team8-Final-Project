@@ -21,6 +21,7 @@ class USFSelectionPanelWidget;
 class UHealthComponent;
 class UDecalComponent;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class USFMultiSelectionPanelWidget;
 class UDataTable;
 class USFStageIntroWidget;
@@ -135,9 +136,12 @@ public:
     );
 
     UFUNCTION()
-    void HandleControlGroupResetRequested(
-        int32 GroupIndex
-    );
+    void HandleControlGroupResetRequested(int32 GroupIndex);
+
+    void PlayEnemyHoverAttackFeedback(AActor* Target);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
+    bool RequestBuildingBySlot(int32 SlotIndex);
 
 protected:
     virtual void NativeConstruct() override;
@@ -242,6 +246,22 @@ private:
     void HideSelectionIndicator(AActor* Actor);
 
     void HideAllSelectionIndicators();
+
+    void UpdateEnemyHoverIndicator();
+
+    void ShowEnemyHoverIndicator(
+        AActor* Actor
+    );
+
+    void HideEnemyHoverIndicator();
+
+    bool IsValidEnemyHoverTarget(
+        AActor* Actor
+    ) const;
+
+    void UpdateEnemyHoverAttackFeedback(
+        float InDeltaTime
+    );
 
     UFUNCTION()
     void HandleSelectionDragStarted(FVector2D StartScreenPosition);
@@ -483,6 +503,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Feedback")
     TObjectPtr<UMaterialInterface> SelectionIndicatorMaterial = nullptr;
 
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    TObjectPtr<UMaterialInterface> EnemyHoverIndicatorMaterial = nullptr;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     TObjectPtr<UMaterialInterface> MoveDestinationIndicatorMaterial = nullptr;
 
@@ -551,6 +574,22 @@ protected:
 
     UPROPERTY(BlueprintReadOnly,Category = "SF|HUD|ControlGroup",meta = (BindWidgetOptional))
     TObjectPtr<USFControlGroupWidget> ControlGroupWidget = nullptr;
+
+    bool bEnemyHoverFeedbackActive =
+        false;
+
+    float EnemyHoverFeedbackElapsed =
+        0.f;
+
+    FVector EnemyHoverBaseDecalSize =
+        FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    float EnemyHoverAttackPulseDuration = 0.35f;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    float EnemyHoverAttackPulseScale = 1.4f;
+
 private:
     UPROPERTY(Transient)
     TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
@@ -600,6 +639,20 @@ private:
 
     UPROPERTY(Transient)
     TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AActor> HoveredEnemyActor;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UDecalComponent> EnemyHoverIndicator = nullptr;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AActor> HoverSuppressedSelectionActor;
+
+    bool bHoverSuppressedSelectionIndicator = false;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic>EnemyHoverDynamicMaterial = nullptr;
 
     FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
     bool bIsSelectionDragging = false;

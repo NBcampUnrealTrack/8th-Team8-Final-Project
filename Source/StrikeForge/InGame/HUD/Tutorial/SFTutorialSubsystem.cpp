@@ -37,6 +37,7 @@ UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced, "Tutorial.Unit.Produced");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier1, "Tutorial.Unit.Produced.Tier1");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_Tier2, "Tutorial.Unit.Produced.Tier2");
 UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade, "Tutorial.Unit.Produced.AfterBarrackUpgrade");
+UE_DEFINE_GAMEPLAY_TAG(TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast, "Tutorial.Unit.Produced.SpecialWarBeast");
 
 void USFTutorialSubsystem::Deinitialize()
 {
@@ -779,12 +780,23 @@ bool USFTutorialSubsystem::IsUnitProductionAllowed(
     const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
     const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
 
-    return IsValid(Tutorial) &&
-        IsValid(Definition) &&
+    if (!IsValid(Tutorial) || !IsValid(Definition))
+    {
+        return false;
+    }
+
+    const bool bStage2Berserker =
         Tutorial->PendingObjectiveTag == TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade &&
         Definition->BuildingType == ESFBuildingType::Barracks &&
         InBuilding->GetCurrentTier() >= 1 &&
         InUnitRowName == TEXT("Berserker");
+
+    const bool bStage3WarBeast =
+        Tutorial->PendingObjectiveTag == TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast &&
+        Definition->BuildingType == ESFBuildingType::SpecialProduction &&
+        InUnitRowName == TEXT("WarBeast");
+
+    return bStage2Berserker || bStage3WarBeast;
 }
 
 void USFTutorialSubsystem::NotifyBuildingTierActivated(
@@ -858,13 +870,26 @@ void USFTutorialSubsystem::NotifyBuildingConstructionCompleted(
     case ESFBuildingType::Barracks:
         ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.Product"), false);
         break;
+    case ESFBuildingType::RangedProduction:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.Academy"), false);
+        break;
+    case ESFBuildingType::SpecialProduction:
+        ObjectiveTag = FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Build.Special"), false);
+        break;
     default:
         return;
     }
 
     if (ObjectiveTag.IsValid())
     {
-        NotifyObjective(InWorldContext, ObjectiveTag);
+        // 건설 목표는 "지금 안내한 건물을 실제로 완성했는가"를 묻는
+        // 행동형 목표다. 맵 로딩 중에 이미 완성된 시작/상대 건물까지
+        // CompletedObjectives 에 기록해 두면, 나중에 건설 메뉴에서 대상만
+        // 고른 뒤 다음 배치 칸이 자동으로 넘어가 버린다.
+        //
+        // 따라서 현재 이 목표를 기다릴 때만 통과시킨다. 실제 건설 완료는
+        // PendingObjectiveTag 와 일치하므로 아래 false여도 정상 진행된다.
+        NotifyObjective(InWorldContext, ObjectiveTag, false);
     }
 }
 
@@ -961,11 +986,25 @@ void USFTutorialSubsystem::NotifyBuildingSelected(const UObject* InWorldContext,
             Tutorial->LockedBuildingStepIndex != INDEX_NONE &&
             Tutorial->LockedBuildingStepIndex == Tutorial->GuideStepIndex;
 
+        // 건설 메뉴에서의 "선택"만 이 경로로 완료될 수 있다.
+        //
+        // 스테이지 1처럼 하나의 안내 칸이 곧바로 Tutorial.Build.* 를
+        // 기다리는 경우도 RequiredBuildingRowName 을 사용해 다른 건물을
+        // 막는다. 이때 CompletionTag 를 그대로 쏘면 카탈로그에서 건물을
+        // 고르는 것만으로 "건설 완료"가 되어 단계가 건너뛰어진다.
+        // 선택 목표(Tutorial.Select.Building.*)일 때만 클릭 신호를
+        // 완료로 인정하고, 건설/생산/티어업 태그는 실제 게임플레이 이벤트가
+        // 들어올 때까지 기다린다.
+        static const FGameplayTag SelectRoot =
+            FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Select.Building"), false);
+
         if (bOnLockingStep && Tutorial->LockedBuildingRowName == InBuildingRowName)
         {
             if (const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep())
             {
-                if (Step->CompletionTag.IsValid())
+                if (SelectRoot.IsValid() &&
+                    Step->CompletionTag.IsValid() &&
+                    Step->CompletionTag.MatchesTag(SelectRoot))
                 {
                     NotifyObjective(InWorldContext, Step->CompletionTag, false);
                 }
@@ -1257,20 +1296,26 @@ void USFTutorialSubsystem::SnapPlacementGuideToBuildingGrid(
     // UBuildingPlacement::UpdatePlacementMode와 같은 변환을 써야 한다.
     // 특히 1x1이 아닌 오두막/병영은 중심 좌표가 셀 크기의 절반만큼
     // 달라질 수 있어, DT 원시 좌표에 세운 고스트와 실제 건물이 어긋났다.
-    const FBuildingGridInfo GridInfo = GridSubsystem->WorldCenterToGridInfo(
-        InOutStep.WorldLocation,
-        Definition->GridSize);
+    // +
+    // 튜토리얼 고스트도 실제 건물 배치와 같은 회전을 점유 크기에 적용합니다.
+    const FIntPoint EffectiveGridSize =
+        USFBuildingGridSubsystem::GetRotatedGridSize(
+            Definition->GridSize,
+            InOutStep.GhostRotation);
 
-    if (!GridInfo.IsValid())
-    {
-        return;
-    }
+	FBuildingGridInfo GridInfo;
+	FVector SnappedLocation;
 
-    FVector SnappedLocation = GridSubsystem->GridInfoToWorldCenter(GridInfo);
-    // 그리드는 XY만 관리한다. 지형 높이는 DT가 보관한 값을 유지한다.
-    SnappedLocation.Z = InOutStep.WorldLocation.Z;
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			InOutStep.WorldLocation,
+			EffectiveGridSize,
+			GridInfo,
+			SnappedLocation))
+	{
+		return;
+	}
 
-    if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
+	if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
     {
         SF_LOG(Log,
             "[SFTutorialSubsystem] Placement guide snapped to building grid | Building: %s | %s -> %s",

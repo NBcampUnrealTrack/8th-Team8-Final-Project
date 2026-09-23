@@ -1,5 +1,6 @@
 ﻿#include "SFInGamePlayerController.h"
 #include "EnhancedInputComponent.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "EnhancedInputSubsystemInterface.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/EngineTypes.h"
@@ -415,6 +416,32 @@ void ASFInGamePlayerController::SetupInputComponent()
             &ASFInGamePlayerController::HandleToggleBuildModeInput);
     }
 
+    TArray<TWeakObjectPtr<UInputAction>> BuildSlotActions =
+    {
+        BuildSlot01Action,
+        BuildSlot02Action,
+        BuildSlot03Action,
+        BuildSlot04Action,
+        BuildSlot05Action,
+        BuildSlot06Action
+    };
+
+    for (int32 Index = 0; Index < BuildSlotActions.Num(); ++Index)
+    {
+        if (!BuildSlotActions[Index].IsValid())
+        {
+            continue;
+        }
+
+        EnhancedInputComponent->BindAction(
+            BuildSlotActions[Index].Get(),
+            ETriggerEvent::Started,
+            this,
+            &ASFInGamePlayerController::HandleBuildSlotInput,
+            Index
+        );
+    }
+
     if (IsValid(ProduceSlot1Action))
     {
         EnhancedInputComponent->BindAction(
@@ -505,6 +532,11 @@ void ASFInGamePlayerController::SetSFControlMode(
     ESFControlMode NewControlMode
 )
 {
+    if (NewControlMode == ESFControlMode::BuildPlacement)
+    {
+        SetBuildModeInputEnabled(false);
+    }
+
     if (
         bControlModeInitialized
         && CurrentControlMode == NewControlMode
@@ -1534,6 +1566,16 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
         );
     }
 
+    if (CommandMode == ESFUnitCommandMode::Attack &&
+        IsValid(AttackTarget) &&
+        IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->
+            PlayEnemyHoverAttackFeedback(
+                AttackTarget
+            );
+    }
+
     if (IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->ShowMoveDestinationIndicator(
@@ -1659,6 +1701,10 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
 
 bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
 {
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
+    }
     if (!IsValid(Actor) || IsLocallyControllableActor(Actor))
     {
         return false;
@@ -2010,4 +2056,89 @@ bool ASFInGamePlayerController::IsShiftCommandModifierDown() const
     return
         IsInputKeyDown(EKeys::LeftShift) ||
         IsInputKeyDown(EKeys::RightShift);
+}
+
+void ASFInGamePlayerController::HandleBuildSlotInput(
+    int32 SlotIndex
+)
+{
+    SF_LOG(
+        Log,
+        "[BuildInput] Slot=%d Enabled=%s Mode=%d HUD=%s",
+        SlotIndex,
+        bBuildModeInputEnabled
+        ? TEXT("true")
+        : TEXT("false"),
+        static_cast<int32>(CurrentControlMode),
+        IsValid(InGameHUDWidget)
+        ? TEXT("Valid")
+        : TEXT("Invalid")
+    );
+
+    if (
+        !bBuildModeInputEnabled ||
+        CurrentControlMode !=
+        ESFControlMode::Gameplay
+        )
+    {
+        SF_LOG(
+            Warning,
+            "[BuildInput] 입력 거부"
+        );
+
+        return;
+    }
+
+    if (!IsValid(InGameHUDWidget))
+    {
+        return;
+    }
+
+    InGameHUDWidget->RequestBuildingBySlot(
+        SlotIndex
+    );
+}
+
+void ASFInGamePlayerController::SetBuildModeInputEnabled(
+    bool bEnabled
+)
+{
+    UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+        GetEnhancedInputSubsystem();
+
+    if (!IsValid(InputSubsystem))
+    {
+        return;
+    }
+
+    FModifyContextOptions ModifyOptions;
+    ModifyOptions.bIgnoreAllPressedKeysUntilRelease =
+        true;
+
+    if (bEnabled)
+    {
+        // GameplayMappingContext는 유지한다.
+        // 지휘관 이동, 유닛 이동, 공격 입력이 계속 작동해야 한다.
+
+        if (IsValid(BuildModeMappingContext))
+        {
+            InputSubsystem->AddMappingContext(
+                BuildModeMappingContext,
+                BuildModeMappingPriority,
+                ModifyOptions
+            );
+        }
+    }
+    else
+    {
+        if (IsValid(BuildModeMappingContext))
+        {
+            InputSubsystem->RemoveMappingContext(
+                BuildModeMappingContext,
+                ModifyOptions
+            );
+        }
+    }
+
+    bBuildModeInputEnabled = bEnabled;
 }

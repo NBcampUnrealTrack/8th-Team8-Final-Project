@@ -1160,6 +1160,7 @@ void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocatio
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
+	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
 	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
 	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
 
@@ -1521,6 +1522,8 @@ float AUnitBase::GetDistanceToTargetEdge(const AActor* InTarget) const
 
 bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 {
+	// Artillery/building obstacle exceptions never bypass personal sight range.
+	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
 	if (!bRequireLineOfSight) return true;		// 곡사 유닛은 시야를 요구하지 않는다
 	if (!IsValid(InTarget)) return false;
 
@@ -1624,6 +1627,7 @@ AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 
 	for (AActor* Candidate : Candidates)
 	{
+		if (!IsTargetUsable(Candidate)) continue;
 		// 슬롯 접근에 실패한 기존 타겟은 이번 재탐색에서 제외한다.
 		if (Candidate == InExcludedTarget)
 		{
@@ -1692,7 +1696,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 	 * 기존의 즉시 피해 계산은 Notify 피해와 중복될 수 있으므로 제거하고,
 	 * 실제 피해는 공격 애니메이션의 타격 Notify 시점에 적용한다.
 	 */
-	if (!IsTargetUsable(InTarget))
+	if (!IsTargetUsable(InTarget) || !HasLineOfSight(InTarget))
 	{
 		return;
 	}
@@ -1768,7 +1772,7 @@ void AUnitBase::HandleAttackHit(float DamageRatio)
 /** 공격 Notify가 발생했을 때 실제 피해를 계산하고 적용한다 */
 void AUnitBase::ApplyAttackDamage(AActor* InTarget, float DamageRatio)
 {
-	if (!IsTargetUsable(InTarget))
+	if (!IsTargetUsable(InTarget) || !HasLineOfSight(InTarget))
 	{
 		return;
 	}

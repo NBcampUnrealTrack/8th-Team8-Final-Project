@@ -20,8 +20,6 @@ void UResultWidget::NativeConstruct()
 	if (IsValid(Loose_Image)) { Loose_Image->SetVisibility(ESlateVisibility::Collapsed); }
 	if (IsValid(Exit_Btn_W)) { Exit_Btn_W->SetVisibility(ESlateVisibility::Collapsed); }
 	if (IsValid(Exit_Btn_F)) { Exit_Btn_F->SetVisibility(ESlateVisibility::Collapsed); }
-
-	OnExitButtonClicked();
 }
 
 void UResultWidget::SetResultState(bool bIsWin)

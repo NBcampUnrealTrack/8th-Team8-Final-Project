@@ -5,19 +5,44 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Misc/ConfigCacheIni.h"
 
+namespace TutorialSave
+{
+	static const TCHAR* Section = TEXT("/Script/StrikeForge.Tutorial");
+	static const TCHAR* Key = TEXT("bLobbyTutorialCompleted");
+}
+
+bool UTutorialOverlayWidget::IsTutorialCompleted()
+{
+	bool bCompleted = false;
+	GConfig->GetBool(TutorialSave::Section, TutorialSave::Key, bCompleted, GGameUserSettingsIni);
+	return bCompleted;
+}
+
+void UTutorialOverlayWidget::ResetTutorialCompleted()
+{
+	GConfig->SetBool(TutorialSave::Section, TutorialSave::Key, false, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
 void UTutorialOverlayWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	ClickCatcher->OnClicked.AddDynamic(this, &ThisClass::HandleCatcherClicked);
 }
-
 void UTutorialOverlayWidget::StartTutorial(UUserWidget* InHost)
 {
+	// Already completed -> remove overlay immediately
+	if (IsTutorialCompleted())
+	{
+		RemoveFromParent();
+		return;
+	}
 	HostWidget = InHost;
 	if (!HostWidget.IsValid() || Steps.Num() == 0)
 	{
-		FinishTutorial();
+		// Setup error: close without saving completion
+		RemoveFromParent();
 		return;
 	}
 	EnterStep(0);
@@ -69,7 +94,12 @@ void UTutorialOverlayWidget::FinishTutorial()
 {
 	UnbindTarget();
 	CurrentIndex = INDEX_NONE;
-	OnTutorialFinished.Broadcast(); // save "tutorial done" flag in the listener
+
+	// Persist completion so the tutorial never shows again
+	GConfig->SetBool(TutorialSave::Section, TutorialSave::Key, true, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+
+	OnTutorialFinished.Broadcast();
 	RemoveFromParent();
 }
 

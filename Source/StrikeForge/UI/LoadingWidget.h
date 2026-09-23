@@ -7,8 +7,8 @@
 class UProgressBar;
 class UTextBlock;
 class UImage;
-class UMediaPlayer;
-class UMediaSource;
+class UCommonVideoPlayer;
+class UWidgetAnimation;
 
 UCLASS()
 class STRIKEFORGE_API ULoadingWidget : public UUserWidget
@@ -17,16 +17,18 @@ class STRIKEFORGE_API ULoadingWidget : public UUserWidget
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 public:
-	// gamestate의 델리게이트에 연결되 데이터가 로드될때마다 gamestate에 값이 넘어가고
-	// gamestate는 몇개가 로드됬는지 비율을 계산해 이 함수로 넘겨줌
 	UFUNCTION()
-	void SetProgress(float InPercent01); // 0.0 ~ 1.0
+	void SetProgress(float InPercent01);
 	UFUNCTION()
 	void HandleStageStateChanged(ESFStageState InGameState);
 	UFUNCTION(BlueprintCallable, Category = "SF|Loading")
 	void FinishLoadingScreen();
+	UFUNCTION(BlueprintCallable, Category = "SF|Loading")
+	void SetStageTitle(const FText& InTitle);
+
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UProgressBar* LoadingBar;
@@ -34,24 +36,70 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UTextBlock* PercentText;
 
-	// ��� ���� �� Image (Brush�� MediaTexture �����ϴ� Material�� ����)
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	UImage* BackgroundImage;
 
-	// �����Ϳ��� ����: ������� ����� mp4 �ҽ�
-	UPROPERTY(EditDefaultsOnly, Category = "Loading")
-	UMediaSource* BackgroundVideoSource;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonVideoPlayer> BackgroundVideo;
 
-	// �����Ϳ��� ����: Media Player ����
-	UPROPERTY(EditDefaultsOnly, Category = "Loading")
-	UMediaPlayer* BackgroundMediaPlayer;
-	
-	// Loading is too fast. Deliberately, slow down time using timer
-	FTimerHandle FakeProgressTimerHandle;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> StageTitleText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> TipText;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_TipFade;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_FadeIn;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_FadeOut;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Loop;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Loading", meta = (AllowPrivateAccess = true, UIMin = 0.0f))
 	float DelayStartTime = 1.f;
-	
-	//caching class
+
+	UPROPERTY(EditAnywhere, Category = "Loading", meta = (UIMin = 0.1f))
+	float ProgressInterpSpeed = 3.f;
+
+	UPROPERTY(EditAnywhere, Category = "Loading", meta = (UIMin = 0.01f))
+	float MinProgressSpeed = 0.25f;
+
+	UPROPERTY(EditAnywhere, Category = "Loading|Tips", meta = (MultiLine = true))
+	TArray<FText> Tips;
+
+	UPROPERTY(EditAnywhere, Category = "Loading|Tips")
+	float TipInterval = 4.f;
+
 	UPROPERTY()
 	TObjectPtr<ASFGameState> CachedGameState;
+
+	FTimerHandle FakeProgressTimerHandle;
+
+private:
+	void StartBackgroundVideo();
+	void RetryPlayVideo();
+	void StopBackgroundVideo();
+	void ApplyDisplayedProgress();
+	void BeginFadeOut();
+	void ShowNextTip();
+
+	UFUNCTION()
+	void OnFadeOutFinished();
+
+	FWidgetAnimationDynamicEvent FadeOutFinishedEvent;
+
+	FTimerHandle TipTimerHandle;
+	FTimerHandle VideoRetryTimerHandle;
+	int32 VideoRetryCount = 0;
+	int32 LastTipIndex = INDEX_NONE;
+
+	float TargetProgress = 0.f;
+	float DisplayedProgress = 0.f;
+	bool bWaitingForFullBar = false;
+	bool bFinishing = false;
 };

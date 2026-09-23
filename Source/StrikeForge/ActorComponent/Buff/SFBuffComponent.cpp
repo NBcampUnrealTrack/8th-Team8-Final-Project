@@ -5,6 +5,8 @@
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
 #include "Units/Unit/UnitBase.h"
 
 void UBuffData::ExecuteBuff()
@@ -13,6 +15,11 @@ void UBuffData::ExecuteBuff()
 	if (OnBuffBeginEvent.IsBound())
 	{
 		OnBuffBeginEvent.Broadcast();
+	}
+
+	if (IsValid(ParticleComp))
+	{
+		ParticleComp->Activate(true);
 	}
 
 	// 버프 종료까지 남은 시간
@@ -29,6 +36,12 @@ void UBuffData::FinishBuff(bool bCallEndEvent)
 	{
 		OnBuffEndEvent.Broadcast();
 	}
+
+	if (IsValid(ParticleComp))
+	{
+		ParticleComp->Deactivate();
+	}
+
 	this->ConditionalBeginDestroy();
 }
 
@@ -107,12 +120,7 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		// 버프가 끝나면 실행 (InitialTime이 음수라면 버프가 자연적으로 끝내지 않음)
 		if (Buff->InitialTime >= 0.f && Buff->RemainTime <= 0.f)
 		{
-			if (Buff->OnBuffEndEvent.IsBound())
-			{
-				Buff->OnBuffEndEvent.Broadcast();
-			}
-
-			Buff->ConditionalBeginDestroy();
+			Buff->FinishBuff(true);
 			continue;
 		}
 
@@ -175,7 +183,7 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	Flag_Apply = EBuffApply::None;
 }
 
-void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval)
+void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval, UNiagaraSystem* _Particle)
 {
 	for (UBuffData* BD : BuffList)
 	{
@@ -194,6 +202,12 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 	BuffList.Last()->OnBuffTickEvent.AddLambda([_TickEvent]() {_TickEvent(); });
 	BuffList.Last()->OnBuffBeginEvent.AddLambda([_BeginEvent]() {_BeginEvent(); });
 	BuffList.Last()->OnBuffEndEvent.AddLambda([_EndEvent]() {_EndEvent(); });
+
+	if (IsValid(_Particle))
+	{
+		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(_Particle, GetOwner()->GetRootComponent(), NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, FVector::OneVector, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
+		BuffList.Last()->ParticleComp->SetUsingAbsoluteRotation(true);
+	}
 
 	BuffList.Last()->ExecuteBuff();
 	ShrinkBuff();

@@ -10,6 +10,7 @@
 class AActor;
 class ASceneCapture2D;
 class UBorder;
+class UImage;
 class USFMinimapViewIndicatorWidget;
 class UCanvasPanel;
 class UCombatTargetComponent;
@@ -56,7 +57,20 @@ protected:
     virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
+    friend class FSFMinimapRegistryTest;
+    void BindMarkerRegistry();
+    void UnbindMarkerRegistry();
+    void QueueMarkerActor(AActor* Actor);
+    void HandleSourceRegistered(UCombatTargetComponent* Source);
+    void HandleSourceUnregistered(UCombatTargetComponent* Source);
+    void ProcessPendingMarkers();
+    void RemoveMarkerAt(int32 Index);
+    ESFMinimapMarkerType ResolveMarkerType(AActor* Actor) const;
+    TMap<TWeakObjectPtr<AActor>, int32> ActorToMarker;
+    TSet<TWeakObjectPtr<AActor>> PendingMarkerActors;
+    FDelegateHandle ActorSpawnedHandle;
     void InitializeMinimapCapture();
+    void UpdateFogOverlay();
 
     bool LoadCurrentMinimapSettings(
         FSFMinimapSettings& OutSettings
@@ -400,6 +414,9 @@ TObjectPtr<USFMinimapViewIndicatorWidget>
 private:
     UPROPERTY(Transient)
     TArray<FSFMinimapMarkerEntry> MinimapMarkerEntries;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UImage> FogOverlay = nullptr;
 
     UPROPERTY(Transient)
     TObjectPtr<ASceneCapture2D>

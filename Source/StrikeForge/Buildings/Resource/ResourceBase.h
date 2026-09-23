@@ -10,6 +10,7 @@
 #include "InGame/SFSelectINfo/SFSelectable.h"
 #include "ResourceBase.generated.h"
 
+class USFBuildingGridSubsystem;
 class UBoxComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnResourceNodeDepleted, AResourceBase*, Resource);
@@ -21,6 +22,7 @@ class STRIKEFORGE_API AResourceBase
 	, public IBeMinedable
 {
 	GENERATED_BODY()
+	friend class USFBuildingGridSubsystem;
 
 public:
 	// Sets default values for this actor's properties
@@ -29,23 +31,50 @@ public:
 	FSFOnResourceNodeDepleted OnDepleted;
 	
 	virtual int32 Extract(int32 InDigAmount) override;
+	int32 ExtractFromCell(int32 ResourceCellIndex, int32 ExtractAmount);
+	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual FBeMinedableData GetBeMinedableData() const override;
 	// Getter
-	FORCEINLINE EResourceType GetResourceType() const { return ResourceType; }
+	virtual FORCEINLINE EResourceType GetResourceType() const override { return ResourceType; }
 	FORCEINLINE int32 GetResourceDeposit() const { return ResourceDeposit; }
 	FORCEINLINE int32 GetResourceTier() const { return ResourceTier; }
 	FORCEINLINE float GetResourceRequiredWork() const { return ResourceRequiredWork; }
-	
+	FORCEINLINE const FIntPoint& GetResourceGridSize() const { return ResourceGridSize;	}
+	int32 GetCellDeposit(int32 ResourceCellIndex) const;
+	static int32 CalculateDistributedCellDeposit(
+		int32 TotalDeposit,
+		const FIntPoint& GridSize,
+		int32 ResourceCellIndex);
+
 	FORCEINLINE const FBuildingGridInfo& GetRegisteredResourceGridInfo() const { return RegisteredResourceGridInfo; }
 	FORCEINLINE bool IsDepleted() const { return ResourceDeposit <= 0; }
 
-protected:
+protected: // functions
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+	virtual void PostEditMove(bool bFinished) override;
+
+	virtual void PostEditUndo() override;
+
+	virtual void Destroyed() override;
+	
+	void RefreshEditorGridPreview();
+	
+	bool HasEditorResourceGridConflict(
+		const FBuildingGridInfo& ThisGridInfo,
+		const USFBuildingGridSubsystem* GridSubsystem) const;
+	bool HasEditorSpawnAnchorGridConflict(
+	const FBuildingGridInfo& ThisGridInfo,
+	const USFBuildingGridSubsystem* GridSubsystem) const;
+#endif
 	
 	void SetBoxExtent();
-protected:
+protected: // properties
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SceneComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -57,13 +86,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
 	EResourceType ResourceType = EResourceType::Mineral;
 	// 매장량
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "0"))
-	int32 ResourceDeposit = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1", UIMin = "1"))
+	int32 ResourceDeposit = 1;
 	// 등급 ( 품질 )
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	int32 ResourceTier = 1;
 	// 한번캘때 요구 작업량
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
 	float ResourceRequiredWork = 50.f;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource|Grid")
@@ -75,4 +104,27 @@ protected:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Selection|UI")
 	FName SelectionUIDataRowName = NAME_None;
 private:
+	void InitializeCellDeposits();
+	
+	UPROPERTY(
+	VisibleInstanceOnly,
+	BlueprintReadOnly,
+	Category = "Resource|Grid",
+	meta = (AllowPrivateAccess = true))
+	TArray<int32> CellDeposits;
+	
+#if WITH_EDITORONLY_DATA
+
+	/*
+	 * 레벨 디자이너에게 자원이 차지하는
+	 * 격자 크기를 보여주는 에디터 전용 컴포넌트입니다.
+	 */
+	UPROPERTY(
+		VisibleAnywhere,
+		BlueprintReadOnly,
+		Category = "Resource|Grid",
+		meta = (AllowPrivateAccess = true))
+	TObjectPtr<UBoxComponent> GridPreviewComponent;
+
+#endif
 };

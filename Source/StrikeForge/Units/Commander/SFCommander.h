@@ -13,6 +13,7 @@ class UAnimationAsset;
 class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
+class UNiagaraSystem;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -64,8 +65,11 @@ public:
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
 
-	void ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UWorld> World);
-	void ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UWorld> World);
+	UFUNCTION()
+	void ActiveCommanderSkill_Beast(int32 SkillTier);
+
+	UFUNCTION()
+	void ActiveCommanderSkill_Ether(int32 SkillTier);
 
 	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, float Radius);
 	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, TSubclassOf<AActor> ActorClass);
@@ -93,9 +97,6 @@ protected:
 	void PrintMessage(FString Msg);
 
 	void StopMoving();
-public:
-	UPROPERTY(BlueprintReadOnly)
-	TWeakObjectPtr<USoundBase> CurrentSkillSound;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;
@@ -104,18 +105,31 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Montage")
 	TObjectPtr<UAnimMontage> SkillMontage;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	// TODO : 이후 구조체로 통합해 수정할 예정입니다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<USoundBase> SkillSound1;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillEffect1;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillHitEffect1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<USoundBase> SkillSound2;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillEffect2;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillHitEffect2;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|SkillAsset")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<USoundBase> SkillSound3;
-	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillEffect3;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillHitEffect3;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SF|SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
 

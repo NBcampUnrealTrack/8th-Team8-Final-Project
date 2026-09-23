@@ -1,6 +1,7 @@
 ﻿#include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
@@ -419,6 +420,11 @@ void USFInGameHUDWidget::NativeTick(
         MyGeometry,
         InDeltaTime
     );
+
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (IsValid(SelectedActor) && !Fog->IsActorVisibleToLocalPlayer(SelectedActor)) ClearSelection();
+    }
 
     if (bQueuedMovePathRefreshPending)
     {
@@ -1428,6 +1434,10 @@ void USFInGameHUDWidget::ShowResultWidget(
 
 void USFInGameHUDWidget::SelectActor(AActor* Actor)
 {
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return;
+    }
     if (!IsValid(Actor))
     {
         return;
@@ -2201,6 +2211,10 @@ bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
     AActor* Actor
 ) const
 {
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
+    }
     AUnitBase* Unit =
         Cast<AUnitBase>(Actor);
 
@@ -2705,6 +2719,11 @@ void USFInGameHUDWidget::PerformDragSelection(
     for (TActorIterator<AActor> Iterator(World); Iterator; ++Iterator)
     {
         AActor* Actor = *Iterator;
+
+        if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+        {
+            if (!Fog->IsActorVisibleToLocalPlayer(Actor)) continue;
+        }
 
         if (!IsValid(Actor))
         {

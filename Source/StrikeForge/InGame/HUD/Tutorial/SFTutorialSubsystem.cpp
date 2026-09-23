@@ -1296,20 +1296,26 @@ void USFTutorialSubsystem::SnapPlacementGuideToBuildingGrid(
     // UBuildingPlacement::UpdatePlacementMode와 같은 변환을 써야 한다.
     // 특히 1x1이 아닌 오두막/병영은 중심 좌표가 셀 크기의 절반만큼
     // 달라질 수 있어, DT 원시 좌표에 세운 고스트와 실제 건물이 어긋났다.
-    const FBuildingGridInfo GridInfo = GridSubsystem->WorldCenterToGridInfo(
-        InOutStep.WorldLocation,
-        Definition->GridSize);
+    // +
+    // 튜토리얼 고스트도 실제 건물 배치와 같은 회전을 점유 크기에 적용합니다.
+    const FIntPoint EffectiveGridSize =
+        USFBuildingGridSubsystem::GetRotatedGridSize(
+            Definition->GridSize,
+            InOutStep.GhostRotation);
 
-    if (!GridInfo.IsValid())
-    {
-        return;
-    }
+	FBuildingGridInfo GridInfo;
+	FVector SnappedLocation;
 
-    FVector SnappedLocation = GridSubsystem->GridInfoToWorldCenter(GridInfo);
-    // 그리드는 XY만 관리한다. 지형 높이는 DT가 보관한 값을 유지한다.
-    SnappedLocation.Z = InOutStep.WorldLocation.Z;
+	if (!GridSubsystem->TrySnapWorldCenterToGrid(
+			InOutStep.WorldLocation,
+			EffectiveGridSize,
+			GridInfo,
+			SnappedLocation))
+	{
+		return;
+	}
 
-    if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
+	if (!SnappedLocation.Equals(InOutStep.WorldLocation, KINDA_SMALL_NUMBER))
     {
         SF_LOG(Log,
             "[SFTutorialSubsystem] Placement guide snapped to building grid | Building: %s | %s -> %s",

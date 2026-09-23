@@ -2679,9 +2679,11 @@ void USFInGameHUDWidget::PerformDragSelection(
     APlayerController* PlayerController =
         GetOwningPlayer();
 
-    UWorld* World = GetWorld();
+    UWorld* World =
+        GetWorld();
 
-    if (!IsValid(PlayerController) || !IsValid(World))
+    if (!IsValid(PlayerController) ||
+        !IsValid(World))
     {
         return;
     }
@@ -2716,14 +2718,15 @@ void USFInGameHUDWidget::PerformDragSelection(
     TArray<AActor*> FoundActors;
     TArray<AActor*> EnemyActors;
 
-    for (TActorIterator<AActor> Iterator(World); Iterator; ++Iterator)
-    {
-        AActor* Actor = *Iterator;
+    const USFFogOfWarSubsystem* Fog =
+        USFFogOfWarSubsystem::Get(this);
 
-        if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
-        {
-            if (!Fog->IsActorVisibleToLocalPlayer(Actor)) continue;
-        }
+    for (TActorIterator<AActor> Iterator(World);
+        Iterator;
+        ++Iterator)
+    {
+        AActor* Actor =
+            *Iterator;
 
         if (!IsValid(Actor))
         {
@@ -2740,12 +2743,59 @@ void USFInGameHUDWidget::PerformDragSelection(
         const bool bIsOwnedByLocalPlayer =
             IsOwnedByLocalPlayer(Actor);
 
+        // 아군은 항상 선택 가능하게 두고,
+        // 적 유닛만 현재 시야 안에 있을 때 선택 가능하게 한다.
+        if (!bIsOwnedByLocalPlayer &&
+            Fog &&
+            !Fog->IsActorVisibleToLocalPlayer(Actor))
+        {
+            continue;
+        }
+
         FVector BoundsOrigin;
         FVector BoundsExtent;
-        Actor->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+
+        /*
+         * 캐릭터 계열은 CharacterMesh가 아니라
+         * CapsuleComponent 기준으로 선택 범위를 계산한다.
+         */
+        if (const ACharacter* Character =
+            Cast<ACharacter>(Actor))
+        {
+            if (const UCapsuleComponent* Capsule =
+                Character->GetCapsuleComponent())
+            {
+                BoundsOrigin =
+                    Capsule->GetComponentLocation();
+
+                BoundsExtent = FVector(
+                    Capsule->GetScaledCapsuleRadius(),
+                    Capsule->GetScaledCapsuleRadius(),
+                    Capsule->GetScaledCapsuleHalfHeight()
+                );
+            }
+            else
+            {
+                Actor->GetActorBounds(
+                    true,
+                    BoundsOrigin,
+                    BoundsExtent
+                );
+            }
+        }
+        else
+        {
+            Actor->GetActorBounds(
+                true,
+                BoundsOrigin,
+                BoundsExtent
+            );
+        }
 
         const FSFSelectableInfo SelectableInfo =
-            ISFSelectable::Execute_GetSelectableInfo(Actor);
+            ISFSelectable::Execute_GetSelectableInfo(
+                Actor
+            );
 
         FVector2D ActorScreenPosition;
 
@@ -2762,59 +2812,96 @@ void USFInGameHUDWidget::PerformDragSelection(
         }
 
         const bool bUsesBoundsOverlap =
-            SelectableInfo.SelectableType == ESFSelectableType::Commander ||
-            SelectableInfo.SelectableType == ESFSelectableType::Unit;
+            SelectableInfo.SelectableType ==
+            ESFSelectableType::Commander ||
+            SelectableInfo.SelectableType ==
+            ESFSelectableType::Unit;
 
+        /*
+         * 일반 액터는 중심점이 선택 영역 안에 있는지 확인한다.
+         */
         if (!bUsesBoundsOverlap)
         {
-            if (!SelectionRectangle.IsInsideOrOn(ActorScreenPosition))
+            if (!SelectionRectangle.IsInsideOrOn(
+                ActorScreenPosition
+            ))
             {
                 continue;
             }
         }
+        /*
+         * 유닛과 지휘관은 Capsule Bounds의
+         * 화면상 범위가 선택 영역과 겹치는지 확인한다.
+         */
         else
         {
-            FVector2D ScreenBoundsMin = ActorScreenPosition;
-            FVector2D ScreenBoundsMax = ActorScreenPosition;
-            bool bHasProjectedCorner = false;
+            FVector2D ScreenBoundsMin =
+                ActorScreenPosition;
 
-            for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
+            FVector2D ScreenBoundsMax =
+                ActorScreenPosition;
+
+            bool bHasProjectedCorner =
+                false;
+
+            for (int32 CornerIndex = 0;
+                CornerIndex < 8;
+                ++CornerIndex)
             {
-                const FVector CornerLocation = BoundsOrigin + FVector(
-                    (CornerIndex & 1) != 0 ? BoundsExtent.X : -BoundsExtent.X,
-                    (CornerIndex & 2) != 0 ? BoundsExtent.Y : -BoundsExtent.Y,
-                    (CornerIndex & 4) != 0 ? BoundsExtent.Z : -BoundsExtent.Z
-                );
+                const FVector CornerLocation =
+                    BoundsOrigin +
+                    FVector(
+                        (CornerIndex & 1) != 0
+                        ? BoundsExtent.X
+                        : -BoundsExtent.X,
+
+                        (CornerIndex & 2) != 0
+                        ? BoundsExtent.Y
+                        : -BoundsExtent.Y,
+
+                        (CornerIndex & 4) != 0
+                        ? BoundsExtent.Z
+                        : -BoundsExtent.Z
+                    );
 
                 FVector2D CornerScreenPosition;
 
-                if (!PlayerController->ProjectWorldLocationToScreen(
-                    CornerLocation,
-                    CornerScreenPosition,
-                    true
-                ))
+                if (!PlayerController->
+                    ProjectWorldLocationToScreen(
+                        CornerLocation,
+                        CornerScreenPosition,
+                        true
+                    ))
                 {
                     continue;
                 }
 
-                ScreenBoundsMin.X = FMath::Min(
-                    ScreenBoundsMin.X,
-                    CornerScreenPosition.X
-                );
-                ScreenBoundsMin.Y = FMath::Min(
-                    ScreenBoundsMin.Y,
-                    CornerScreenPosition.Y
-                );
-                ScreenBoundsMax.X = FMath::Max(
-                    ScreenBoundsMax.X,
-                    CornerScreenPosition.X
-                );
-                ScreenBoundsMax.Y = FMath::Max(
-                    ScreenBoundsMax.Y,
-                    CornerScreenPosition.Y
-                );
+                ScreenBoundsMin.X =
+                    FMath::Min(
+                        ScreenBoundsMin.X,
+                        CornerScreenPosition.X
+                    );
 
-                bHasProjectedCorner = true;
+                ScreenBoundsMin.Y =
+                    FMath::Min(
+                        ScreenBoundsMin.Y,
+                        CornerScreenPosition.Y
+                    );
+
+                ScreenBoundsMax.X =
+                    FMath::Max(
+                        ScreenBoundsMax.X,
+                        CornerScreenPosition.X
+                    );
+
+                ScreenBoundsMax.Y =
+                    FMath::Max(
+                        ScreenBoundsMax.Y,
+                        CornerScreenPosition.Y
+                    );
+
+                bHasProjectedCorner =
+                    true;
             }
 
             if (!bHasProjectedCorner)
@@ -2844,8 +2931,14 @@ void USFInGameHUDWidget::PerformDragSelection(
         }
     }
 
+    /*
+     * 선택 우선순위가 높은 액터가 먼저 오도록 정렬한다.
+     */
     FoundActors.Sort(
-        [this](const AActor& Left, const AActor& Right)
+        [this](
+            const AActor& Left,
+            const AActor& Right
+            )
         {
             const int32 LeftPriority =
                 GetSelectionPriority(
@@ -2862,15 +2955,23 @@ void USFInGameHUDWidget::PerformDragSelection(
                 return LeftPriority < RightPriority;
             }
 
-            return Left.GetName() < Right.GetName();
+            return Left.GetName() <
+                Right.GetName();
         }
     );
 
+    /*
+     * 한 번에 선택할 수 있는 최대 유닛 수를 제한한다.
+     */
     if (FoundActors.Num() > 30)
     {
         FoundActors.SetNum(30);
     }
 
+    /*
+     * Shift를 누른 추가 선택이라면
+     * 기존 아군 선택 목록과 새 선택 목록을 합친다.
+     */
     if (bAddToExistingSelection)
     {
         TArray<AActor*> CombinedActors;
@@ -2878,7 +2979,8 @@ void USFInGameHUDWidget::PerformDragSelection(
         for (const TObjectPtr<AActor>& ExistingActor :
             SelectedActors)
         {
-            AActor* Actor = ExistingActor.Get();
+            AActor* Actor =
+                ExistingActor.Get();
 
             if (IsValid(Actor) &&
                 IsOwnedByLocalPlayer(Actor))
@@ -2900,30 +3002,51 @@ void USFInGameHUDWidget::PerformDragSelection(
             CombinedActors.SetNum(30);
         }
 
-        FoundActors = MoveTemp(CombinedActors);
+        FoundActors =
+            MoveTemp(CombinedActors);
     }
 
+    /*
+     * 아군이 선택됐다면 아군 다중 선택을 적용한다.
+     */
     if (!FoundActors.IsEmpty())
     {
-        ApplyMultipleSelection(FoundActors);
+        ApplyMultipleSelection(
+            FoundActors
+        );
+
         return;
     }
 
+    /*
+     * Shift 추가 선택 중 빈 공간을 드래그한 경우에는
+     * 기존 선택을 유지한다.
+     */
     if (bAddToExistingSelection)
     {
         return;
     }
 
+    /*
+     * 아군이 없고 적만 드래그했다면
+     * 가장 먼저 정렬된 적 하나만 선택한다.
+     */
     if (!EnemyActors.IsEmpty())
     {
         EnemyActors.Sort(
-            [](const AActor& Left, const AActor& Right)
+            [](
+                const AActor& Left,
+                const AActor& Right
+                )
             {
-                return Left.GetName() < Right.GetName();
+                return Left.GetName() <
+                    Right.GetName();
             }
         );
 
-        SelectActor(EnemyActors[0]);
+        SelectActor(
+            EnemyActors[0]
+        );
 
         SF_LOG(
             Log,
@@ -2934,6 +3057,9 @@ void USFInGameHUDWidget::PerformDragSelection(
         return;
     }
 
+    /*
+     * 아무것도 선택되지 않았다면 현재 선택을 해제한다.
+     */
     ClearSelection();
 }
 

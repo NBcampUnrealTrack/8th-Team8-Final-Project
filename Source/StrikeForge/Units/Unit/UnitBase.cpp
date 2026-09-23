@@ -145,6 +145,25 @@ void AUnitBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+
+	if (UCapsuleComponent* Capsule =
+		GetCapsuleComponent())
+	{
+		Capsule->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Block
+		);
+	}
+
+	if (USkeletalMeshComponent* CharacterMesh =
+		GetMesh())
+	{
+		CharacterMesh->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Ignore
+		);
+	}
+
 	// 레벨에 직접 배치한 유닛은 스포너를 거치지 않으므로 여기서 주입한다.
 	// 스폰으로 이미 주입됐다면 건너뛴다.
 	if (!bStatInitialized && !UnitRowName.IsNone())

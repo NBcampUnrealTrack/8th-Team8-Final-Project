@@ -264,7 +264,7 @@ bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBui
 void USFBuildingGridSubsystem::UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
 {
 	if (!IsValid(Owner) || !GridInfo.IsValid()) return;
-	// 자원격자 해제
+	
 	if (IMinable* MiningBuilding = Cast<IMinable>(Owner))
 	{
 		MiningBuilding->ClearMiningTargets();
@@ -660,7 +660,6 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells() const
 	 * 이전 배치 세션에서 그린 점유 격자를 제거한 뒤,
 	 * 현재 점유 상태를 다시 그립니다.
 	 */
-	FlushPersistentDebugLines(World);
 	
 	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f, 10.0f);
 

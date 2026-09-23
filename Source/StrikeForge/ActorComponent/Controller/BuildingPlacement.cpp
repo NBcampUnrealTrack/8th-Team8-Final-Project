@@ -82,9 +82,6 @@ bool UBuildingPlacement::StartPlacementMode(
 	ResetPlacementEvaluation();
 	bCanPlaceCurrentLocation = false;
 
-	// 이전 건설 세션의 문자열을 제거합니다.
-	FlushDebugStrings(World);
-
 	// 기존 영구선을 제거하고 전체 점유 격자를 표시합니다.
 	GridSubsystem->DebugDrawOccupiedCells();
 
@@ -188,6 +185,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 		{
 			OnMineableResourceAmountChanged.Broadcast(
 				Evaluation.MineableResourceAmount);
+			SF_LOG(Log, "Total Resource Amount : %d", Evaluation.MineableResourceAmount);
 		}
 
 		Building->ApplyPreviewMaterial(
@@ -319,6 +317,7 @@ void UBuildingPlacement::EndPlacementSession()
 
 	if (UWorld* World = GetWorld())
 	{
+		// 배치 세션에서 생성한 영구 격자와 자원 문자열을 정리합니다.
 		FlushPersistentDebugLines(World);
 		FlushDebugStrings(World);
 	}

@@ -2,9 +2,9 @@
 #include "ActorComponent/Mining/MiningComponent.h"
 #include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
-#include "Buildings/Resource/ResourceBase.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
 
 ASFMiningBuilding::ASFMiningBuilding()
@@ -93,6 +93,24 @@ void ASFMiningBuilding::OnBuildingDefinitionLoaded()
 		return;
 	}
 
+	ConfiguredResourceSearchGridSize = Definition->ResourceSearchGridSize;
+
+	const FIntPoint BuildingGridSize = GetGridSize();
+	const bool bIsValidSearchGrid =
+		USFBuildingGridSubsystem::IsCenteredSubGridSizeValid(
+			BuildingGridSize,
+			ConfiguredResourceSearchGridSize);
+
+	if (!bIsValidSearchGrid)
+	{
+		SF_LOG(
+			Error,
+			"[%s] ResourceSearchGridSize가 건물 중심에 배치될 수 없습니다. Building=%s, Search=%s",
+			*GetName(),
+			*BuildingGridSize.ToString(),
+			*ConfiguredResourceSearchGridSize.ToString());
+	}
+	
 	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
 	SetProgressColorByResourceType(GetMineResourceType());
 }
@@ -142,42 +160,32 @@ void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceT
 	StatusComponent->SetProgressColor(SFOverheadUIColors::FromResourceType(InResourceType));
 }
 
-bool ASFMiningBuilding::CanAcceptResource(const AResourceBase* InResource) const
+bool ASFMiningBuilding::SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets)
 {
-	return IsValid(MiningComponent) &&
-		IsValid(InResource) &&
-		!InResource->IsDepleted() &&
-		MiningComponent->GetMineResourceType() ==
-			InResource->GetResourceType();
+	if (!IsValid(MiningComponent)) return false;
+
+	const bool bHasUsableTarget =
+		MiningComponent->SetMiningTargets(InTargets);
+
+	RefreshMiningState();
+
+	return bHasUsableTarget;
 }
 
-bool ASFMiningBuilding::TryLinkResource(AResourceBase* InResourceRef)
+void ASFMiningBuilding::ClearMiningTargets()
 {
-	if (!CanAcceptResource(InResourceRef))
-	{
-		return false;
-	}
-	
-	const bool bLinked =
-		MiningComponent->TryLinkResource(InResourceRef);
-
-	if (bLinked)
-	{
-		RefreshMiningState();
-	}
-
-	return bLinked;
-}
-
-void ASFMiningBuilding::UnlinkResource(const AResourceBase* InResource)
-{
-	if (!IsValid(MiningComponent) || !MiningComponent->IsLinkedResource(InResource))
+	if (!IsValid(MiningComponent))
 	{
 		return;
 	}
 
-	MiningComponent->UnlinkResource();
+	MiningComponent->ClearMiningTargets();
 	RefreshMiningState();
+}
+
+FIntPoint ASFMiningBuilding::GetResourceSearchGridSize() const
+{
+	return ConfiguredResourceSearchGridSize;
 }
 
 // update gamestate UI
@@ -195,32 +203,30 @@ void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
 void ASFMiningBuilding::RefreshMiningState()
 {
 	if (!IsValid(MiningComponent)) return;
-	
-	const bool bCanMine =
-		IsTierActivated() &&
-		MiningComponent->HasUsableLinkedResource();
 
-	if (!bCanMine)
+	/*
+	 * 티어가 활성화되어 있고,
+	 * 실제로 사용할 수 있는 0번 채굴 대상을
+	 * 준비할 수 있어야 채굴을 시작합니다.
+	 */
+	const bool bMiningStarted =
+		IsTierActivated() && MiningComponent->TryStartMining();
+
+	if (!bMiningStarted)
 	{
 		MiningComponent->StopMining();
 		ApplyIncomeRate(0.f);
-		
-		// progressbar는 종료하고 다른 UI를 보여한다
-		OverheadUI->SetElementVisible(ESFOverheadElement::Progress, false);
-		// TODO:: Alert UI Needed
-		
+
+		OverheadUI->SetElementVisible(
+			ESFOverheadElement::Progress,false);
+
 		return;
 	}
 
-	// 광질 시작
-	MiningComponent->StartMining();
+	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
 
-	ApplyIncomeRate(
-		MiningComponent->GetIncomeRatePerSeconds());
-
-	
-	// 내 광산만 진행도를 보여준다. 적 수입은 노출하지 않는다.
-	OverheadUI->SetElementVisible(ESFOverheadElement::Progress, IsOwnedByLocalPlayer());
+	OverheadUI->SetElementVisible(
+		ESFOverheadElement::Progress,IsOwnedByLocalPlayer());
 }
 
 //getter

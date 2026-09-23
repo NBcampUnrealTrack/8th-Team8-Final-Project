@@ -37,9 +37,11 @@ struct FBeMinedableData
 class STRIKEFORGE_API IBeMinedable
 {
 	GENERATED_BODY()
+
 public:
+	virtual EResourceType GetResourceType() const = 0;
+
 	virtual int32 Extract(const int32 InDigAmount) = 0;
-	
-	// getter
+
 	virtual FBeMinedableData GetBeMinedableData() const = 0;
 };

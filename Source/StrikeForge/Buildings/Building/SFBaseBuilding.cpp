@@ -310,7 +310,7 @@ void ASFBaseBuilding::ApplySpawnMode()
 			if (!InitialTier) return;
 			HealthComponent->InitializeHealth(InitialTier->Stats.MaxHealth);
 			
-			if (!TryRegistInitialGrid())
+			if (!TryRegisterInitialGrid())
 			{
 				SF_LOG(
 					Warning,
@@ -1711,20 +1711,44 @@ FResources ASFBaseBuilding::GetUpgradeCost() const
 		: FResources{};
 }
 
-bool ASFBaseBuilding::TryRegistInitialGrid()
+bool ASFBaseBuilding::TryRegisterInitialGrid()
 {
-	USFBuildingGridSubsystem* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	USFBuildingGridSubsystem* Grid =
+		GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
 	if (!IsValid(Grid)) return false;
-	FBuildingGridInfo GridInfo = Grid->WorldCenterToGridInfo(GetActorLocation(), ConfiguredGridSize);
-	if (!TryRegisterGrid(GridInfo))
+	
+	// ConfiguredGridSize는 DA의 로컬 크기이므로 현재 Actor 회전을 반영합니다.
+	const FIntPoint EffectiveGridSize =
+		USFBuildingGridSubsystem::GetRotatedGridSize(
+			ConfiguredGridSize,	GetActorRotation());
+
+	FBuildingGridInfo GridInfo;
+	FVector SnappedLocation;
+
+	if (!Grid->TrySnapWorldCenterToGrid(
+			GetActorLocation(),
+			EffectiveGridSize,
+			GridInfo,
+			SnappedLocation))
 	{
-		SF_LOG(Error, "[%s] 선배치 건물 격자 등록 실패", *GetName());
+		SF_LOG(Error,
+			"[%s] 선배치 건물 격자 계산 실패",
+			*GetName());
+
 		return false;
 	}
-	
-	const FVector WorldCenterVector = Grid->GridInfoToWorldCenter(GridInfo);
-	SetActorLocation(WorldCenterVector);
-	
+
+	if (!TryRegisterGrid(GridInfo))
+	{
+		SF_LOG(Error,
+			"[%s] 선배치 건물 격자 등록 실패",
+			*GetName());
+
+		return false;
+	}
+
+	SetActorLocation(SnappedLocation);
+
 	return true;
 }
 #pragma endregion 

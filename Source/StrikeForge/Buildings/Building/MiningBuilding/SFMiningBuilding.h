@@ -7,7 +7,6 @@
 #include "SFMiningBuilding.generated.h"
 
 class UMiningComponent;
-class AResourceBase;
 
 UCLASS()
 class STRIKEFORGE_API ASFMiningBuilding 
@@ -24,21 +23,18 @@ public:
 	void BindDelegateFunction();
 	void UnBindDelegateFunction();
 	virtual void OnBuildingDefinitionLoaded() override;
-	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
 
-	// DELETE BUILDING's ABILITY
-	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
 	
 	void SetProgressColorByResourceType(EResourceType InResourceType);
-	// Minable
-	virtual bool CanAcceptResource(const AResourceBase* InResource) const override;
-	virtual bool TryLinkResource(AResourceBase* InResource) override;
-	virtual void UnlinkResource(const AResourceBase* InResource) override;
-
-	// getter ui 초기값 설정
-	EResourceType GetMineResourceType() const;
+	// IMinable
+	virtual bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets) override;
+	virtual void ClearMiningTargets() override;
+	
+	virtual FIntPoint GetResourceSearchGridSize() const override;
+	
+	virtual EResourceType GetMineResourceType() const override;
 	int32 GetExtractAmount() const;
 	int32 GetResourceAmount() const;
 	float GetMiningProgressRatio() const;
@@ -58,4 +54,7 @@ protected:
 	TObjectPtr<UMiningComponent> MiningComponent;
 private:
 	float CurrentIncomeRatePerSecond = 0.f;
+	
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Mining|Grid", meta = (AllowPrivateAccess = true))
+	FIntPoint ConfiguredResourceSearchGridSize = FIntPoint(1, 1);
 };

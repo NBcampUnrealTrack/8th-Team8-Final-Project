@@ -2,11 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Building/MiningData/SFMiningCellTarget.h"
 #include "UObject/Interface.h"
 #include "SFMinable.generated.h"
 
 class UMiningComponent;
-class AResourceBase;
 
 UINTERFACE()
 class UMinable : public UInterface
@@ -44,13 +44,17 @@ class STRIKEFORGE_API IMinable
 	GENERATED_BODY()
 
 public:
-	/* 이 건물이 해당 자원을 사용할 수 있는지 검사한다.
-	 * 이 함수에서는 상태를 변경하지 않는다. */
-	virtual bool CanAcceptResource(const AResourceBase* InResource) const = 0;
-	/* 호환되는 자원을 실제로 연결한다. */
-	virtual bool TryLinkResource(AResourceBase* InResource) = 0;
-	/* 연결된 자원이 그리드에서 제거될 때 호출한다. */
-	virtual void UnlinkResource(const AResourceBase* InResource) = 0;
+	// 광산이 취급하는 자원 종류
+	virtual EResourceType GetMineResourceType() const = 0;
+	
+	// 광산건물의 자원 catch size
+	virtual FIntPoint GetResourceSearchGridSize() const = 0;
+
+	// 검색 영역에서 찾은 실제 채굴 셀 목록을 전달합니다.
+	virtual bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets) = 0;
+
+	// 건물이 등록 해제될 때 모든 채굴 대상을 비웁니다.
+	virtual void ClearMiningTargets() = 0;
 	
 	// 광산 정보 Getter
 	virtual const FMinableData GetMinableData() = 0;

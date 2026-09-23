@@ -118,6 +118,43 @@ void UMiningComponent::TickMining()
 	}
 }
 
+void UMiningComponent::SortMiningTargetsByDeposit()
+{
+	MiningTargets.Sort(
+		[](const FSFMiningCellTarget& Left,
+		   const FSFMiningCellTarget& Right)
+		{
+			const AResourceBase* LeftResource =
+				Left.ResourceActor.Get();
+
+			const AResourceBase* RightResource =
+				Right.ResourceActor.Get();
+
+			const bool bLeftValid =
+				IsValid(LeftResource);
+
+			const bool bRightValid =
+				IsValid(RightResource);
+
+			if (bLeftValid != bRightValid)
+			{
+				return bLeftValid;
+			}
+
+			if (!bLeftValid)
+			{
+				return false;
+			}
+
+			return
+				LeftResource->GetCellDeposit(
+					Left.ResourceCellIndex)
+				<
+				RightResource->GetCellDeposit(
+					Right.ResourceCellIndex);
+		});
+}
+
 bool UMiningComponent::PrepareFrontTarget()
 {
 	bool bRemovedTarget = false;
@@ -215,6 +252,9 @@ bool UMiningComponent::SetMiningTargets(
 			MiningTargets.Add(Target);
 		}
 	}
+	
+	// 유효성과 중복 검사를 통과한 대상만 정렬합니다.
+	SortMiningTargetsByDeposit();
 
 	return PrepareFrontTarget();
 }

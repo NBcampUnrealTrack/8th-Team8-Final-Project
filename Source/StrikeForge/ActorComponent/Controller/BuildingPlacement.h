@@ -8,12 +8,15 @@
 class ASFBaseBuilding;
 class USFBuildingGridSubsystem;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnMineableResourceAmountChanged,
+	int32, MineableResourceAmount);
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class STRIKEFORGE_API UBuildingPlacement : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:
+public: // functions
 	UBuildingPlacement();
 	
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
@@ -23,22 +26,39 @@ public:
 	
 	bool TryConfirmPlacementMode();
 	void EndPlacementSession();
+public: // properties
+	UPROPERTY(BlueprintAssignable, Category = "Building|Placement")
+	FSFOnMineableResourceAmountChanged OnMineableResourceAmountChanged;
 private:
 	void UpdatePlacementMode();
 	void SetCurrentPlacementInvalid();
-	
-	bool CanPlaceOnCurrentGrid() const;
-	// 격자, NavMesh, 튜토리얼 제한을 모두 포함한 최종 배치 판정입니다.
-	bool CanPlaceAtCurrentLocation() const;
-	// 건물 격자의 XY 범위가 NavMesh 경계 안에 있는지 검사합니다.
-	bool CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const;
+	void DrawCurrentPlacementGrid() const;
+	void ResetPlacementEvaluation();
 
+	bool CanPlaceAtCurrentLocation(bool bCanPlaceOnGrid) const;
+
+	bool CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const;
 	// 현재 배치 중인 건물입니다.
 	UPROPERTY(Transient)
 	TWeakObjectPtr<ASFBaseBuilding> TargetBuilding;
 	// 현재 미리보기 건물이 차지하는 격자 정보입니다.
 	UPROPERTY(Transient)
 	FBuildingGridInfo TargetBuildingGridInfo;
+	
+	// 건설 세션 동안 고정된 회전 적용 GridSize입니다.
+	FIntPoint PlacementGridSize =
+		FIntPoint(1, 1);
+
+	// 광산의 회전 적용 자원 검색 크기입니다.
+	FIntPoint CachedResourceSearchGridSize =
+		FIntPoint::ZeroValue;
+
+	// 마지막으로 배치 판정을 수행한 격자입니다.
+	FBuildingGridInfo LastEvaluatedGridInfo;
+
+	bool bHasEvaluatedGrid = false;
+	bool bIsMiningPlacement = false;
+	
 	// 가장 최근 미리보기 위치의 배치 가능 여부입니다.
 	UPROPERTY(Transient)
 	bool bCanPlaceCurrentLocation = false;

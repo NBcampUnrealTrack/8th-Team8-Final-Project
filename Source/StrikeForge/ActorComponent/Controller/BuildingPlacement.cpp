@@ -1,5 +1,7 @@
 ﻿#include "BuildingPlacement.h"
+
 #include "Logging/SFLog.h"
+#include "DrawDebugHelpers.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
@@ -56,28 +58,50 @@ bool UBuildingPlacement::StartPlacementMode(
 	OwnerController = Controller;
 	CachedGridSubsystem = GridSubsystem;
 
-	const FIntPoint BaseGridSize =	InTargetBuilding->GetGridSize();
-	// DA의 로컬 크기에 Actor 회전을 적용하여 월드 격자 점유 크기로 변환합니다.
-	TargetBuildingGridInfo.GridSize =
+	PlacementGridSize =
 		USFBuildingGridSubsystem::GetRotatedGridSize(
-			BaseGridSize, InTargetBuilding->GetActorRotation());
+			InTargetBuilding->GetGridSize(),
+			InTargetBuilding->GetActorRotation());
 
+	TargetBuildingGridInfo = FBuildingGridInfo();
+	TargetBuildingGridInfo.GridSize = PlacementGridSize;
+
+	const IMinable* MiningBuilding = Cast<IMinable>(InTargetBuilding);
+	bIsMiningPlacement = MiningBuilding != nullptr;
+
+	CachedResourceSearchGridSize = FIntPoint::ZeroValue;
+
+	if (MiningBuilding != nullptr)
+	{
+		CachedResourceSearchGridSize =
+			USFBuildingGridSubsystem::GetRotatedGridSize(
+				MiningBuilding->GetResourceSearchGridSize(),
+				InTargetBuilding->GetActorRotation());
+	}
+
+	ResetPlacementEvaluation();
 	bCanPlaceCurrentLocation = false;
 
-	// 배치 시작 시점의 현재 점유 격자를 한 번 표시합니다.
+	// 기존 영구선을 제거하고 전체 점유 격자를 표시합니다.
 	GridSubsystem->DebugDrawOccupiedCells();
-	
+
+	// 자원 셀 인덱스와 매장량을 영구 표시합니다.
+	if (MiningBuilding != nullptr)
+	{
+		GridSubsystem->DebugDrawResourceCells(
+			MiningBuilding->GetMineResourceType(),
+			-1.0f);
+	}
+
 	SetComponentTickEnabled(true);
 	UpdatePlacementMode();
-	
-	// BuildingRef이 isvalid 한가 확인, tick이 on인지 확인
-	return TargetBuilding.IsValid() && IsComponentTickEnabled();
+
+	return	TargetBuilding.IsValid() &&	IsComponentTickEnabled();
 }
 
 void UBuildingPlacement::UpdatePlacementMode()
 {
-	ASFBaseBuilding* Building =
-		TargetBuilding.Get();
+	ASFBaseBuilding* Building =	TargetBuilding.Get();
 	if (!IsValid(Building))
 	{
 		SF_LOG(
@@ -89,8 +113,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 		return;
 	}
 
-	APlayerController* Controller =
-		OwnerController.Get();
+	APlayerController* Controller =	OwnerController.Get();
 	if (!IsValid(Controller))
 	{
 		SF_LOG(
@@ -102,8 +125,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 		return;
 	}
 
-	USFBuildingGridSubsystem* GridSubsystem =
-		CachedGridSubsystem.Get();
+	USFBuildingGridSubsystem* GridSubsystem = CachedGridSubsystem.Get();
 	if (!IsValid(GridSubsystem))
 	{
 		SF_LOG(
@@ -127,69 +149,120 @@ void UBuildingPlacement::UpdatePlacementMode()
 		return;
 	}
 
-	FVector BuildingLocation;
+	FBuildingGridInfo NewGridInfo;
+	FVector NewBuildingLocation;
 
 	if (!GridSubsystem->TrySnapWorldCenterToGrid(
 			HitResult.Location,
-			TargetBuildingGridInfo.GridSize,
-			TargetBuildingGridInfo,
-			BuildingLocation))
+			PlacementGridSize, NewGridInfo,
+			NewBuildingLocation))
 	{
 		SetCurrentPlacementInvalid();
 		return;
 	}
 
-	Building->SetActorLocation(BuildingLocation);
+	const bool bGridChanged =
+		!bHasEvaluatedGrid ||
+			LastEvaluatedGridInfo.OriginCell !=
+			NewGridInfo.OriginCell ||
+		LastEvaluatedGridInfo.GridSize !=
+			NewGridInfo.GridSize;
 
-	bCanPlaceCurrentLocation = CanPlaceAtCurrentLocation();
-	const IMinable* MinableBuilding = Cast<IMinable>(Building);
+	TargetBuildingGridInfo = NewGridInfo;
 
-	if (MinableBuilding)
+	if (bGridChanged)
 	{
-		GridSubsystem->DebugDrawResourceCells(
-			MinableBuilding->GetMineResourceType(),
-			0.0f);
+		Building->SetActorLocation(NewBuildingLocation);
 
-		// 실제 자원 검색 판정과 같은 회전된 검색 크기를 디버그 표시에 사용합니다.
-		const FIntPoint EffectiveSearchGridSize =
-			USFBuildingGridSubsystem::GetRotatedGridSize(
-				MinableBuilding->GetResourceSearchGridSize(),
-				Building->GetActorRotation());
+		const FSFBuildingGridEvaluationResult Evaluation =
+			GridSubsystem->EvaluatePlayerBuildingGrid(
+				Building, NewGridInfo);
 
-		GridSubsystem->DebugDrawMiningPlacementGrid(
-			TargetBuildingGridInfo,
-			EffectiveSearchGridSize,
-			BuildingLocation.Z,
-			0.0f);
-	}
-	else
-	{
-		GridSubsystem->DebugDrawGridInfo(
-			TargetBuildingGridInfo,
-			BuildingLocation.Z,
-			bCanPlaceCurrentLocation,
-			0.0f);
+		bCanPlaceCurrentLocation =
+			CanPlaceAtCurrentLocation(Evaluation.bCanPlaceOnGrid);
+
+		if (bIsMiningPlacement)
+		{
+			OnMineableResourceAmountChanged.Broadcast(
+				Evaluation.MineableResourceAmount);
+			SF_LOG(Log, "Total Resource Amount : %d", Evaluation.MineableResourceAmount);
+		}
+
+		Building->ApplyPreviewMaterial(
+			bCanPlaceCurrentLocation);
+
+		LastEvaluatedGridInfo = NewGridInfo;
+		bHasEvaluatedGrid = true;
 	}
 
-	Building->ApplyPreviewMaterial(bCanPlaceCurrentLocation);
+	// 현재 건물 격자는 한 프레임만 유지되므로 매 Tick 그립니다.
+	DrawCurrentPlacementGrid();
 }
 
 void UBuildingPlacement::SetCurrentPlacementInvalid()
 {
+	const bool bHadEvaluatedGrid = bHasEvaluatedGrid;
+
 	bCanPlaceCurrentLocation = false;
+	bHasEvaluatedGrid = false;
 
-	ASFBaseBuilding* Building =
-		TargetBuilding.Get();
+	// 지형 밖에 머무는 동안 매 Tick 0을 전송하지 않습니다.
+	if (bIsMiningPlacement && bHadEvaluatedGrid)
+	{
+		OnMineableResourceAmountChanged.Broadcast(0);
+	}
 
+	ASFBaseBuilding* Building =	TargetBuilding.Get();
 	if (IsValid(Building))
 	{
 		Building->ApplyPreviewMaterial(false);
 	}
 }
 
-bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
+void UBuildingPlacement::DrawCurrentPlacementGrid() const
 {
-	ASFBaseBuilding* Building = TargetBuilding.Get();
+	const ASFBaseBuilding* Building =
+		TargetBuilding.Get();
+
+	const USFBuildingGridSubsystem* GridSubsystem =
+		CachedGridSubsystem.Get();
+
+	if (!IsValid(Building) ||
+		!IsValid(GridSubsystem) ||
+		!TargetBuildingGridInfo.IsValid())
+	{
+		return;
+	}
+
+	if (bIsMiningPlacement)
+	{
+		GridSubsystem->DebugDrawMiningPlacementGrid(
+			TargetBuildingGridInfo,
+			CachedResourceSearchGridSize,
+			Building->GetActorLocation().Z,
+			0.0f);
+
+		return;
+	}
+
+	GridSubsystem->DebugDrawGridInfo(
+		TargetBuildingGridInfo,
+		Building->GetActorLocation().Z,
+		bCanPlaceCurrentLocation,
+		0.0f);
+}
+
+void UBuildingPlacement::ResetPlacementEvaluation()
+{
+	LastEvaluatedGridInfo =	FBuildingGridInfo();
+	bHasEvaluatedGrid = false;
+}
+
+bool UBuildingPlacement::CanPlaceAtCurrentLocation(
+	const bool bCanPlaceOnGrid) const
+{
+	const ASFBaseBuilding* Building =
+		TargetBuilding.Get();
 
 	if (!IsValid(Building) ||
 		!IsValid(CachedGridSubsystem) ||
@@ -198,46 +271,56 @@ bool UBuildingPlacement::CanPlaceOnCurrentGrid() const
 		return false;
 	}
 
-	return CachedGridSubsystem->CanPlacePlayerBuildingGrid(
-		Building,
-		TargetBuildingGridInfo);
-}
+	const bool bUsesResourceGrid =
+		Cast<IMinable>(Building) != nullptr;
 
-bool UBuildingPlacement::CanPlaceAtCurrentLocation() const
-{
-	const ASFBaseBuilding* Building = TargetBuilding.Get();
-
-	if (!IsValid(Building) || !IsValid(CachedGridSubsystem) ||
-		!TargetBuildingGridInfo.IsValid())
-	{
-		return false;
-	}
-
-	const FVector BuildingLocation = Building->GetActorLocation();
-
-	const bool bUsesResourceGrid = Cast<IMinable>(Building) != nullptr;
-
-	// 광산은 자원 셀 위에 배치되므로 현재 NavMesh 경계 검사에서 제외합니다.
 	const bool bCanPlaceOnNavigation =
-		bUsesResourceGrid || CanPlaceOnNavMeshXY(TargetBuildingGridInfo);
-	
-	return CanPlaceOnCurrentGrid() &&
+		bUsesResourceGrid ||
+		CanPlaceOnNavMeshXY(
+			TargetBuildingGridInfo);
+
+	return
+		bCanPlaceOnGrid &&
 		bCanPlaceOnNavigation &&
 		USFTutorialSubsystem::IsBuildLocationAllowed(
-			this, BuildingLocation);
+			this,
+			Building->GetActorLocation());
 }
 
 void UBuildingPlacement::EndPlacementSession()
 {
 	SetComponentTickEnabled(false);
 
+	if (bIsMiningPlacement)
+	{
+		// UI 표시 여부는 UI가 관리하고 값만 초기화합니다.
+		OnMineableResourceAmountChanged.Broadcast(0);
+	}
+
 	TargetBuilding.Reset();
 	OwnerController.Reset();
 	CachedGridSubsystem = nullptr;
-	TargetBuildingGridInfo = FBuildingGridInfo();
+
+	TargetBuildingGridInfo =
+		FBuildingGridInfo();
+
+	PlacementGridSize =
+		FIntPoint(1, 1);
+
+	CachedResourceSearchGridSize =
+		FIntPoint::ZeroValue;
+
+	ResetPlacementEvaluation();
+
 	bCanPlaceCurrentLocation = false;
-	
-	FlushPersistentDebugLines(GetWorld());
+	bIsMiningPlacement = false;
+
+	if (UWorld* World = GetWorld())
+	{
+		// 배치 세션에서 생성한 영구 격자와 자원 문자열을 정리합니다.
+		FlushPersistentDebugLines(World);
+		FlushDebugStrings(World);
+	}
 }
 
 void UBuildingPlacement::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -255,13 +338,18 @@ bool UBuildingPlacement::TryConfirmPlacementMode()
 
 	if (!IsValid(Building) ||
 		!IsValid(CachedGridSubsystem) ||
-		!bCanPlaceCurrentLocation)
+		!bHasEvaluatedGrid)
 	{
 		return false;
 	}
 
-	// 확정 직전에도 같은 최종 규칙으로 다시 검사합니다.
-	if (!CanPlaceAtCurrentLocation())
+	const FSFBuildingGridEvaluationResult FinalEvaluation =
+	CachedGridSubsystem->EvaluatePlayerBuildingGrid(
+		Building,
+		TargetBuildingGridInfo);
+
+	if (!CanPlaceAtCurrentLocation(
+			FinalEvaluation.bCanPlaceOnGrid))
 	{
 		SetCurrentPlacementInvalid();
 		return false;

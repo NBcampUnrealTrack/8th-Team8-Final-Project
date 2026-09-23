@@ -861,20 +861,19 @@ void USFBuildingGridSubsystem::DebugDrawResourceCells(
 			FVector TextLocation = CellCenter;
 			TextLocation.Z += 30.0f;
 
-			const FString DebugText =
-				FString::Printf(
-					TEXT("Index: %d\nAmount: %d"),
-					Entry.ResourceCellIndex,
-					RemainingDeposit);
+			// const FString DebugText =
+			// 	FString::Printf(
+			// 		TEXT("%d"),
+			// 		RemainingDeposit);
 
-			DrawDebugString(
-				World,
-				TextLocation,
-				DebugText,
-				nullptr,
-				FColor::White,
-				Duration,
-				false);
+			// DrawDebugString(
+			// 	World,
+			// 	TextLocation,
+			// 	DebugText,
+			// 	nullptr,
+			// 	FColor::White,
+			// 	Duration,
+			// 	false);
 
 			/*
 			 * 동일한 종류의 자원은 한 셀에

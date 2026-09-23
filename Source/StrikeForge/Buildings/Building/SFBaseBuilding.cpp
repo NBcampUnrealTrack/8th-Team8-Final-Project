@@ -1,4 +1,5 @@
 ﻿#include "SFBaseBuilding.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Logging/SFLog.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
@@ -32,6 +33,7 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>("HealthComponent");
 	ProgressComponent = CreateDefaultSubobject<UProgressComponent>("ProgressComponent");
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>("CombatTargetComponent");
+	CombatTargetComponent->SightRadius = 1600.f;
 	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	// OverHead UI	
@@ -420,6 +422,7 @@ void ASFBaseBuilding::BeginConstruction()
 	Tags.AddUnique(
 		FName(TEXT("MinimapBuilding"))
 	);
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->OnSourceChanged.Broadcast(CombatTargetComponent);
 
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	
@@ -447,6 +450,7 @@ void ASFBaseBuilding::EnterCompletedState()
 	
 	//성윤 미니맵 마커제작
 	Tags.AddUnique(FName(TEXT("MinimapBuilding")));
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->OnSourceChanged.Broadcast(CombatTargetComponent);
 
 }
 
@@ -532,6 +536,7 @@ void ASFBaseBuilding::EnterDestroyedState()
 	Tags.Remove(
 		FName(TEXT("MinimapBuilding"))
 	);
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->OnSourceChanged.Broadcast(CombatTargetComponent);
 	// sound effect
 	OnBuildingDestroyed();
 	Destroy();

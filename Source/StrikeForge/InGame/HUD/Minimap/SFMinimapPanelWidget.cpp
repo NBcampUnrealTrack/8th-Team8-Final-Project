@@ -1,5 +1,8 @@
 #include "SFMinimapPanelWidget.h"
 #include "SFMinimapViewIndicatorWidget.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Components/Image.h"
 
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Datas/Stage/SFStageData.h"
@@ -27,6 +30,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "TimerManager.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Logging/SFLog.h"
 
@@ -134,14 +138,24 @@ void USFMinimapPanelWidget::NativeConstruct()
         );
     }
 
+    BindMarkerRegistry();
+    bInitialMarkerScanCompleted = false;
     InitializeMinimapCapture();
     CreateMinimapMarkers();
     bInitialMarkerScanCompleted = true;
     CreateMinimapBoundsMasks();
+    if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        Fog->SetMapBounds(MapWorldMin, MapWorldMax);
+    }
+    UpdateFogOverlay();
 }
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    UnbindMarkerRegistry();
+    if (FogOverlay) FogOverlay->RemoveFromParent();
+    FogOverlay = nullptr;
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(
@@ -562,6 +576,12 @@ void USFMinimapPanelWidget::CaptureMinimapScene()
         return;
     }
 
+    // Units/buildings are represented by live, visibility-filtered markers.
+    // Baking them into the terrain would leave enemy silhouettes after sight closes.
+    for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+    {
+        if (It->FindComponentByClass<UCombatTargetComponent>()) CaptureComponent->HiddenActors.AddUnique(*It);
+    }
     CaptureComponent->CaptureScene();
 
     SF_LOG(
@@ -893,7 +913,9 @@ void USFMinimapPanelWidget::NativeTick(
 
     UpdateMinimapBoundsMasks();
     UpdatePlayerViewIndicator();
+    ProcessPendingMarkers();
     UpdateMinimapMarkers(InDeltaTime);
+    UpdateFogOverlay();
     UpdateCombatDangerOverlay(InDeltaTime);
     UpdateBuildingEventOverlay(InDeltaTime);
 }
@@ -929,6 +951,10 @@ void USFMinimapPanelWidget::CreateMinimapMarkers()
         BuildingMarkerActorTag,
         ESFMinimapMarkerType::Building
     );
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+        for (const auto& Source : Fog->GetSources())
+            if (Source.IsValid()) QueueMarkerActor(Source->GetOwner());
+
 }
 
 void USFMinimapPanelWidget::CreateMarkersForTag(
@@ -936,6 +962,7 @@ void USFMinimapPanelWidget::CreateMarkersForTag(
     ESFMinimapMarkerType MarkerType
 )
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(SFMinimap_CreateMarkersForTag);
     if (ActorTag.IsNone())
     {
         return;
@@ -951,69 +978,104 @@ void USFMinimapPanelWidget::CreateMarkersForTag(
 
     for (AActor* FoundActor : FoundActors)
     {
-        if (!IsValid(FoundActor))
-        {
-            continue;
-        }
-
-        const bool bAlreadyRegistered =
-            MinimapMarkerEntries.ContainsByPredicate(
-                [FoundActor](
-                    const FSFMinimapMarkerEntry& MarkerEntry
-                    )
-                {
-                    return
-                        MarkerEntry.TargetActor.Get() ==
-                        FoundActor;
-                }
-            );
-
-        if (bAlreadyRegistered)
-        {
-            continue;
-        }
-
-        ESFMinimapMarkerType ResolvedMarkerType = MarkerType;
-
-        if (MarkerType == ESFMinimapMarkerType::Building)
-        {
-            const ASFBaseBuilding* Building =
-                Cast<ASFBaseBuilding>(FoundActor);
-
-            ASFInGamePlayerController* PlayerController =
-                Cast<ASFInGamePlayerController>(GetOwningPlayer());
-
-            if (
-                IsValid(Building) &&
-                IsValid(PlayerController)
-                )
-            {
-                const int32 BuildingTeam =
-                    Building->GetTeamIndex();
-
-                const int32 LocalTeam =
-                    PlayerController->GetMyTeamIndex();
-
-                if (BuildingTeam == LocalTeam)
-                {
-                    ResolvedMarkerType =
-                        ESFMinimapMarkerType::AllyBuilding;
-                }
-                else if (
-                    BuildingTeam != Targetable::NeutralTeam
-                    )
-                {
-                    ResolvedMarkerType =
-                        ESFMinimapMarkerType::EnemyBuilding;
-                }
-            }
-        }
-
-        CreateMarkerForActor(
-            FoundActor,
-            ResolvedMarkerType
-        );
+        if (IsValid(FoundActor)) CreateMarkerForActor(FoundActor, ResolveMarkerType(FoundActor));
     }
+}
+
+void USFMinimapPanelWidget::BindMarkerRegistry()
+{
+    UnbindMarkerRegistry();
+    if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        Fog->OnSourceRegistered.AddUObject(this, &USFMinimapPanelWidget::HandleSourceRegistered);
+        Fog->OnSourceUnregistered.AddUObject(this, &USFMinimapPanelWidget::HandleSourceUnregistered);
+        Fog->OnSourceChanged.AddUObject(this, &USFMinimapPanelWidget::HandleSourceRegistered);
+    }
+    if (UWorld* World = GetWorld())
+        ActorSpawnedHandle = World->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &USFMinimapPanelWidget::QueueMarkerActor));
+}
+
+void USFMinimapPanelWidget::UnbindMarkerRegistry()
+{
+    if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        Fog->OnSourceRegistered.RemoveAll(this);
+        Fog->OnSourceUnregistered.RemoveAll(this);
+        Fog->OnSourceChanged.RemoveAll(this);
+    }
+    if (UWorld* World = GetWorld()) World->RemoveOnActorSpawnedHandler(ActorSpawnedHandle);
+    PendingMarkerActors.Reset();
+    ActorSpawnedHandle.Reset();
+}
+
+void USFMinimapPanelWidget::QueueMarkerActor(AActor* Actor)
+{
+    if (IsValid(Actor)) PendingMarkerActors.Add(Actor);
+}
+
+void USFMinimapPanelWidget::HandleSourceRegistered(UCombatTargetComponent* Source)
+{
+    if (IsValid(Source)) QueueMarkerActor(Source->GetOwner());
+}
+
+void USFMinimapPanelWidget::HandleSourceUnregistered(UCombatTargetComponent* Source)
+{
+    if (!Source) return;
+    AActor* Actor = Source->GetOwner();
+    PendingMarkerActors.Remove(Actor);
+    if (const int32* Index = ActorToMarker.Find(Actor)) RemoveMarkerAt(*Index);
+}
+
+ESFMinimapMarkerType USFMinimapPanelWidget::ResolveMarkerType(AActor* Actor) const
+{
+    if (!IsValid(Actor)) return ESFMinimapMarkerType::None;
+    const UCombatTargetComponent* Combat = USFCombatSubsystem::FindTargetComponent(Actor);
+    if (Combat && !Combat->IsAlive()) return ESFMinimapMarkerType::None;
+    if (Actor->ActorHasTag(CommanderMarkerActorTag)) return ESFMinimapMarkerType::Commander;
+    const USFCombatSubsystem* CombatSystem = USFCombatSubsystem::Get(this);
+    const int32 LocalTeam = CombatSystem ? CombatSystem->GetLocalPlayerTeam() : INDEX_NONE;
+    if (Actor->ActorHasTag(BuildingMarkerActorTag))
+    {
+        const int32 Team = Combat ? Combat->GetTeamIndex() : INDEX_NONE;
+        if (Team == INDEX_NONE) return ESFMinimapMarkerType::Building;
+        return Team == LocalTeam ? ESFMinimapMarkerType::AllyBuilding : ESFMinimapMarkerType::EnemyBuilding;
+    }
+    if (Actor->ActorHasTag(AllyMarkerActorTag) || Actor->ActorHasTag(EnemyMarkerActorTag))
+    {
+        if (Combat)
+        {
+            if (Combat->GetTeamIndex() == INDEX_NONE) return ESFMinimapMarkerType::None;
+            return Combat->GetTeamIndex() == LocalTeam ? ESFMinimapMarkerType::Ally : ESFMinimapMarkerType::Enemy;
+        }
+        return Actor->ActorHasTag(AllyMarkerActorTag) ? ESFMinimapMarkerType::Ally : ESFMinimapMarkerType::Enemy;
+    }
+    return ESFMinimapMarkerType::None;
+}
+
+void USFMinimapPanelWidget::ProcessPendingMarkers()
+{
+    TRACE_CPUPROFILER_EVENT_SCOPE(SFMinimap_ProcessRegistrations);
+    for (auto It = PendingMarkerActors.CreateIterator(); It; ++It)
+    {
+        AActor* Actor = It->Get();
+        if (!IsValid(Actor)) { It.RemoveCurrent(); continue; }
+        // Spawn notifications can precede deferred construction and BeginPlay tags.
+        if (!Actor->HasActorBegunPlay()) continue;
+        CreateMarkerForActor(Actor, ResolveMarkerType(Actor));
+        It.RemoveCurrent();
+    }
+}
+
+void USFMinimapPanelWidget::RemoveMarkerAt(int32 Index)
+{
+    FSFMinimapMarkerEntry& Entry = MinimapMarkerEntries[Index];
+    if (AActor* Actor = Entry.TargetActor.Get())
+        if (UCombatTargetComponent* Combat = USFCombatSubsystem::FindTargetComponent(Actor))
+            Combat->OnCombatDamaged.RemoveDynamic(this, &USFMinimapPanelWidget::HandleCombatTargetDamaged);
+    if (Entry.MarkerWidget) Entry.MarkerWidget->RemoveFromParent();
+    ActorToMarker.Remove(Entry.TargetActor);
+    MinimapMarkerEntries.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+    if (MinimapMarkerEntries.IsValidIndex(Index)) ActorToMarker.FindChecked(MinimapMarkerEntries[Index].TargetActor) = Index;
 }
 
 void USFMinimapPanelWidget::CreateMarkerForActor(
@@ -1023,6 +1085,7 @@ void USFMinimapPanelWidget::CreateMarkerForActor(
 {
     if (
         !IsValid(TargetActor) ||
+        ActorToMarker.Contains(TargetActor) ||
         MarkerType == ESFMinimapMarkerType::None ||
         !IsValid(MinimapMarkerLayer) ||
         !IsValid(WidgetTree)
@@ -1047,9 +1110,9 @@ void USFMinimapPanelWidget::CreateMarkerForActor(
         )
     );
 
-    NewMarker->SetVisibility(
-        ESlateVisibility::HitTestInvisible
-    );
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    NewMarker->SetVisibility(!Fog || Fog->IsActorVisibleToLocalPlayer(TargetActor)
+        ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
     UCanvasPanelSlot* MarkerCanvasSlot =
         MinimapMarkerLayer->AddChildToCanvas(
@@ -1120,9 +1183,7 @@ void USFMinimapPanelWidget::CreateMarkerForActor(
             Building->GetCurrentTier();
     }
 
-    MinimapMarkerEntries.Add(
-        MarkerEntry
-    );
+    ActorToMarker.Add(TargetActor, MinimapMarkerEntries.Add(MarkerEntry));
 
     if (
         bInitialMarkerScanCompleted &&
@@ -1193,6 +1254,7 @@ void USFMinimapPanelWidget::ClearMinimapMarkers()
     }
 
     MinimapMarkerEntries.Reset();
+    ActorToMarker.Reset();
 }
 
 void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
@@ -1267,6 +1329,11 @@ void USFMinimapPanelWidget::UpdatePlayerViewIndicator()
     );
 
     IndicatorSlot->SetAutoSize(false);
+
+    // This canvas is inside the decorative frame. Keep the camera footprint
+    // above fog, markers and playable-area masks without moving it above the frame.
+    IndicatorSlot->SetZOrder(200);
+    PlayerViewIndicator->SetClipping(EWidgetClipping::ClipToBounds);
 
     /*
      * 테스트 단계에서는 1.0으로 둔다.
@@ -1408,6 +1475,7 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers(
     float InDeltaTime
 )
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(SFMinimap_UpdateMarkers);
     for (
         int32 Index =
         MinimapMarkerEntries.Num() - 1;
@@ -1426,22 +1494,22 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers(
         UBorder* MarkerWidget =
             MarkerEntry.MarkerWidget.Get();
 
-        if (
-            !IsValid(TargetActor) ||
-            !IsValid(MarkerWidget)
-            )
+        const ESFMinimapMarkerType Type = ResolveMarkerType(TargetActor);
+        if (!IsValid(TargetActor) || !IsValid(MarkerWidget) || Type == ESFMinimapMarkerType::None)
         {
-            if (IsValid(MarkerWidget))
-            {
-                MarkerWidget->RemoveFromParent();
-            }
-
-            MinimapMarkerEntries.RemoveAt(
-                Index
-            );
-
+            RemoveMarkerAt(Index);
             continue;
         }
+        if (MarkerEntry.MarkerType != Type)
+        {
+            MarkerEntry.MarkerType = Type;
+            if (MarkerEntry.DangerTimeRemaining <= 0.f) MarkerWidget->SetBrushColor(GetMarkerColor(Type));
+            if (UCanvasPanelSlot* MarkerSlot = Cast<UCanvasPanelSlot>(MarkerWidget->Slot)) MarkerSlot->SetSize(GetMarkerSize(Type));
+        }
+        const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+        const ESlateVisibility NewVisibility = !Fog || Fog->IsActorVisibleToLocalPlayer(TargetActor)
+            ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+        if (MarkerWidget->GetVisibility() != NewVisibility) MarkerWidget->SetVisibility(NewVisibility);
 
         FVector2D MinimapPosition =
             WorldToMinimapPosition(
@@ -1551,20 +1619,7 @@ void USFMinimapPanelWidget::UpdateMinimapMarkers(
 
     }
 
-    CreateMarkersForTag(
-        AllyMarkerActorTag,
-        ESFMinimapMarkerType::Ally
-    );
 
-    CreateMarkersForTag(
-        EnemyMarkerActorTag,
-        ESFMinimapMarkerType::Enemy
-    );
-
-    CreateMarkersForTag(
-        BuildingMarkerActorTag,
-        ESFMinimapMarkerType::Building
-    );
 }
 
 void USFMinimapPanelWidget::SetMarkerLayerPosition(
@@ -1663,9 +1718,8 @@ void USFMinimapPanelWidget::SetMarkerLayerPosition(
         )
     );
 
-    MarkerCanvasSlot->SetPosition(
-        ClampedPosition
-    );
+    if (MarkerCanvasSlot->GetPosition() != ClampedPosition)
+        MarkerCanvasSlot->SetPosition(ClampedPosition);
 }
 
 FVector2D USFMinimapPanelWidget::GetMarkerSize(
@@ -2115,4 +2169,25 @@ bool USFMinimapPanelWidget::IsActorOnMainScreen(
         ScreenPosition.X <= ViewportSizeX &&
         ScreenPosition.Y >= 0.0f &&
         ScreenPosition.Y <= ViewportSizeY;
+}
+
+void USFMinimapPanelWidget::UpdateFogOverlay()
+{
+    USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if (!Fog || !MinimapMarkerLayer || !WidgetTree) return;
+    if (!FogOverlay)
+    {
+        FogOverlay = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+        FogOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+        FogOverlay->SetColorAndOpacity(FLinearColor::Black);
+        UCanvasPanelSlot* FogSlot = MinimapMarkerLayer->AddChildToCanvas(FogOverlay);
+        FogSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+        FogSlot->SetOffsets(FMargin(0.f));
+        FogSlot->SetZOrder(0);
+    }
+    if (UTexture2D* Texture = Fog->GetMinimapFogTexture())
+    {
+        if (FogOverlay->GetBrush().GetResourceObject() != Texture)
+            FogOverlay->SetBrushFromTexture(Texture);
+    }
 }

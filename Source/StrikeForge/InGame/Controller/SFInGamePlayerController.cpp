@@ -1,5 +1,6 @@
 ﻿#include "SFInGamePlayerController.h"
 #include "EnhancedInputComponent.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "EnhancedInputSubsystemInterface.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/EngineTypes.h"
@@ -1700,6 +1701,10 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
 
 bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
 {
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
+    }
     if (!IsValid(Actor) || IsLocallyControllableActor(Actor))
     {
         return false;

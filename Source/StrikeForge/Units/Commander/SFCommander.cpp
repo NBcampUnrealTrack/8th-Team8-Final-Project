@@ -32,6 +32,7 @@ ASFCommander::ASFCommander()
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>(TEXT("CombatTargetComponent"));
+	CombatTargetComponent->SightRadius = 1400.f;
 }
 
 FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()

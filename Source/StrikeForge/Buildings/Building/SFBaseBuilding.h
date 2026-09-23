@@ -152,6 +152,10 @@ public:
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
 	FORCEINLINE bool IsTierActivated() const { return bIsTierActivated; }
+	bool ProvidesVision() const
+	{
+		return CurrentBuildingState == EBuildingState::UnderConstruction || CurrentBuildingState == EBuildingState::Completed;
+	}
 
 	/**
 	 * 이 건물이 로컬 플레이어의 것인지.

@@ -45,6 +45,17 @@ class STRIKEFORGE_API UCombatTargetComponent : public UActorComponent
 public:
 	UCombatTargetComponent();
 
+	/** Shared by allied/enemy units, commanders and buildings. Zero disables vision. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SF|Vision", meta = (ClampMin = "0.0", Units = "cm"))
+	float SightRadius = 1200.f;
+
+	UFUNCTION(BlueprintPure, Category = "SF|Vision")
+	float GetSightRadius() const { return FMath::Max(0.f, SightRadius); }
+
+	/** Personal sight range; obstacle checks remain the attacker's responsibility. */
+	UFUNCTION(BlueprintPure, Category = "SF|Vision")
+	bool IsWithinSight(const AActor* Target) const;
+
 	// ── 조회 ────────────────────────────────────────────
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	FORCEINLINE int32 GetTeamIndex() const { return TeamIndex; }

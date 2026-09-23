@@ -11,6 +11,7 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 #include "AIController.h"
+#include "Units/Projectile/SFUnitProjectile.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -1722,7 +1723,14 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 
 	// 몽타주가 없거나 재생에 실패한 경우의 안전장치.
 	// 이 경우에는 즉시 한 번의 전체 피해를 적용한다.
-	HandleAttackHit(1.f);
+	if (ProjectileClass)
+	{
+		HandleProjectileLaunch(1.f);
+	}
+	else
+	{
+		HandleAttackHit(1.f);
+	}
 
 	OnAttackPerformed(InTarget);
 }
@@ -1767,6 +1775,101 @@ void AUnitBase::HandleAttackHit(float DamageRatio)
 	{
 		PendingAttackTarget.Reset();
 	}
+}
+
+/** 원거리 공격 애니메이션의 발사 Notify에서 호출한다 */
+void AUnitBase::HandleProjectileLaunch(float DamageRatio)
+{
+	// 죽은 유닛의 늦은 Notify에서는 발사하지 않는다.
+	if (CombatState == EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	if (DamageRatio <= 0.f)
+	{
+		return;
+	}
+
+	// 현재 공격에서 허용된 발사 횟수를 모두 사용했다.
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		return;
+	}
+
+	AActor* Target = PendingAttackTarget.Get();
+
+	if (!IsTargetUsable(Target))
+	{
+		PendingAttackTarget.Reset();
+		return;
+	}
+
+	if (!ProjectileClass)
+	{
+		SF_LOG(Warning, "[Unit] %s : ProjectileClass가 설정되지 않아 원거리 공격을 발사하지 못했습니다.", *GetName());
+		return;
+	}
+
+	USkeletalMeshComponent* UnitMesh = GetMesh();
+
+	if (!IsValid(UnitMesh))
+	{
+		return;
+	}
+
+	FVector SpawnLocation = UnitMesh->GetComponentLocation();
+
+	if (ProjectileSocketName != NAME_None && UnitMesh->DoesSocketExist(ProjectileSocketName))
+	{
+		SpawnLocation = UnitMesh->GetSocketLocation(ProjectileSocketName);
+	}
+	else
+	{
+		SF_LOG(Warning, "[Unit] %s : 발사 소켓 '%s'을 찾지 못해 Mesh 위치에서 발사합니다.", *GetName(), *ProjectileSocketName.ToString());
+	}
+
+	const FVector TargetLocation = Target->GetActorLocation();
+	const FRotator SpawnRotation = (TargetLocation - SpawnLocation).Rotation();
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	ASFUnitProjectile* Projectile = GetWorld()->SpawnActor<ASFUnitProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, SpawnParams);
+
+	if (!IsValid(Projectile))
+	{
+		SF_LOG(Warning, "[Unit] %s : 발사체 생성에 실패했습니다.", *GetName());
+		return;
+	}
+
+	Projectile->InitializeProjectile(this, Target, DamageRatio, ProjectileSpeed);
+
+	// 이 값은 근거리에서는 타격 횟수,
+	// 원거리에서는 발사 횟수로 사용한다.
+	++AppliedAttackHitCount;
+
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		PendingAttackTarget.Reset();
+	}
+}
+
+void AUnitBase::HandleProjectileImpact(AActor* InTarget, float DamageRatio)
+{
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
+
+	if (DamageRatio <= 0.f)
+	{
+		return;
+	}
+
+	ApplyAttackDamage(InTarget, DamageRatio);
 }
 
 /** 공격 Notify가 발생했을 때 실제 피해를 계산하고 적용한다 */

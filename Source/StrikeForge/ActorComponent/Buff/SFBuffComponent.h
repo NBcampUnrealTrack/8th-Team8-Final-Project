@@ -7,6 +7,8 @@
 #include "SFBuffComponent.generated.h"
 
 class AUnitBase;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 DECLARE_MULTICAST_DELEGATE(FOnBuffEvent);
 
@@ -37,6 +39,8 @@ public:
     float InitialTime;  // 지속시간 초기값. (음수라면 무한)
     UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
     float TickInterval; // 효과발생 주기. (0이면 매 프레임 지속)
+    UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
+    TObjectPtr<UNiagaraComponent> ParticleComp; // 이펙트
 
     float RemainTime;       // 현재 남은 시간
     float RemainInterval;   // 현재 남은 주기
@@ -78,7 +82,7 @@ class STRIKEFORGE_API USFBuffComponent : public UActorComponent
 public:	
 
     // C++전용
-    void AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime = -1.f, float _TickInterval = 0.f);
+    void AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime = -1.f, float _TickInterval = 0.f, UNiagaraSystem* _Particle = nullptr);
     void ShrinkBuff();  // 만료된 버프 정리
     void ClearBuff();   // 모든 버프 제거
 

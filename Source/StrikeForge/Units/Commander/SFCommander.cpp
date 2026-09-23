@@ -2,6 +2,7 @@
 
 
 #include "Units/Commander/SFCommander.h"
+#include "Units/Commander/SFCommanderAnim.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Units/Unit/UnitAIController.h"
 #include "Components/CapsuleComponent.h"
@@ -16,6 +17,8 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
 #include "Logging/SFLog.h"
 
 // Sets default values
@@ -425,6 +428,53 @@ void ASFCommander::StopMoving()
 
 void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 {
+	TWeakObjectPtr<USFCommanderAnim> Anim = Cast<USFCommanderAnim>(GetMesh()->GetAnimInstance());
+	if (!Anim.IsValid())
+	{
+		SF_LOG(Error, "ASFCommander: AnimInstance Is Invalid.");
+		return;
+	}
+
+	// 스킬 시전중에는 실행되지 않음.
+	if (Anim->OnSkillActiveDelegate.IsBound())
+	{
+		return;
+	}
+
+	if (!IsValid(SkillMontage))
+	{
+		SF_LOG(Error, "ASFCommander: SkillMontage Is Invalid.");
+		return;
+	}
+	Anim->bSkillFloating = false;
+	Anim->Montage_Play(SkillMontage);
+	switch (SkillTier)
+	{
+	case 1:
+		Anim->CurrentSkillSound = SkillSound1;
+		break;
+	case 2:
+		Anim->CurrentSkillSound = SkillSound2;
+		break;
+	case 3:
+		Anim->CurrentSkillSound = SkillSound3;
+		break;
+	}
+
+	Anim->SkillDelegateTier = SkillTier;
+	switch (Race)
+	{
+	case ERace::BEAST:
+		Anim->OnSkillActiveDelegate.BindDynamic(this, &ASFCommander::ActiveCommanderSkill_Beast);
+		break;
+	case ERace::ETHERIAN:
+		Anim->OnSkillActiveDelegate.BindDynamic(this, &ASFCommander::ActiveCommanderSkill_Ether);
+		break;
+	}
+}
+
+void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
+{
 	TWeakObjectPtr<UWorld> World = GetWorld();
 	if (!World.IsValid())
 	{
@@ -432,36 +482,6 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 		return;
 	}
 
-	if (IsValid(SkillMontage))
-	{
-		GetMesh()->GetAnimInstance()->Montage_Play(SkillMontage);
-	}
-	switch (SkillTier)
-	{
-	case 1:
-		CurrentSkillSound = SkillSound1;
-		break;
-	case 2:
-		CurrentSkillSound = SkillSound2;
-		break;
-	case 3:
-		CurrentSkillSound = SkillSound3;
-		break;
-	}
-
-	switch (Race)
-	{
-	case ERace::BEAST:
-		ActiveCommanderSkill_Beast(SkillTier, World);
-		break;
-	case ERace::ETHERIAN:
-		ActiveCommanderSkill_Ether(SkillTier, World);
-		break;
-	}
-}
-
-void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UWorld> World)
-{
 	switch (SkillTier)
 	{
 	case 1:
@@ -469,7 +489,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 		do
 		{
 			/** 버프 정보 */
-
+			
 			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("SpeedUp"); // 버프 키 (중복방지)
 			const FText BuffText = FText::FromString(TEXT("돌격명령"));	// 버프 UI표시명
@@ -519,8 +539,17 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
 						},
 						BuffTime,
-						BuffInterval);
+						BuffInterval,
+						SkillHitEffect1);
 				}
+			}
+
+			if (IsValid(SkillEffect1))
+			{
+				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f};
+				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect1, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;
@@ -585,8 +614,16 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
 						},
 						BuffTime,
-						BuffInterval);
+						BuffInterval,
+						SkillHitEffect2);
 				}
+			}
+			if (IsValid(SkillEffect2))
+			{
+				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
+				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect2, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;
@@ -644,16 +681,31 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, TWeakObjectPtr<UW
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						BuffTime,
-						BuffInterval);
+						BuffInterval,
+						SkillHitEffect3);
 				}
+			}
+			if (IsValid(SkillEffect3))
+			{
+				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
+				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect3, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;
 	}
 }
 
-void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UWorld> World)
+void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 {
+	TWeakObjectPtr<UWorld> World = GetWorld();
+	if (!World.IsValid())
+	{
+		SF_LOG(Error, "ASFCommander: World Is Invalid.");
+		return;
+	}
+
 	switch (SkillTier)
 	{
 	case 1:
@@ -699,7 +751,8 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 							GEngine->AddOnScreenDebugMessage(4, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] HealUp Buff End"), *Target->GetName()));
 						},
 						BuffTime,
-						BuffInterval);
+						BuffInterval,
+						SkillHitEffect1);
 				}
 			}
 		} while (false);
@@ -757,7 +810,8 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 							Target->ResetSpeedMultiplier();
 						},
 						BuffDuration,
-						1.f);
+						1.f,
+						SkillHitEffect2);
 				}
 			}
 		} while (false);
@@ -805,7 +859,8 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, TWeakObjectPtr<UW
 							GEngine->AddOnScreenDebugMessage(6, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff End"), *Target->GetName()));
 						},
 						BuffTime,
-						BuffInterval);
+						BuffInterval,
+						SkillHitEffect3);
 				}
 			}
 		} while (false);

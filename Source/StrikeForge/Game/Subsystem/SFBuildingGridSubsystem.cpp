@@ -95,47 +95,50 @@ bool USFBuildingGridSubsystem::CanOccupyBuildingCells(const AActor* Owner, const
 	return true;
 }
 
-bool USFBuildingGridSubsystem::CanPlacePlayerBuildingGrid(const AActor* Building,
+FSFBuildingGridEvaluationResult
+USFBuildingGridSubsystem::EvaluatePlayerBuildingGrid(
+	const AActor* Building,
 	const FBuildingGridInfo& GridInfo) const
 {
+	FSFBuildingGridEvaluationResult Result;
+
 	if (!CanRegisterBuildingGrid(Building, GridInfo))
 	{
-		return false;
+		return Result;
 	}
 
-	const IMinable* Consumer =
-		Cast<IMinable>(Building);
-
-	// 일반 건물은 건물 격자 검사 결과만 사용합니다.
-	if (!Consumer)
+	const IMinable* MiningBuilding = Cast<IMinable>(Building);
+	// 일반 건물은 점유 격자만 통과하면 됩니다.
+	if (MiningBuilding == nullptr)
 	{
-		return true;
+		Result.bCanPlaceOnGrid = true;
+		return Result;
 	}
 
-	// 광산은 중앙 검색 영역에 채굴 가능한 셀이
-	// 하나 이상 있어야 배치할 수 있습니다.
-	TArray<FSFMiningCellTarget> MiningTargets;
+	TArray<FSFMiningCellTarget> PreviewTargets;
 
-	return CollectMiningCellTargets(
-		Building,
-		GridInfo,
-		MiningTargets);
+	Result.MineableResourceAmount =
+		CollectMiningCellTargets(
+			Building, GridInfo, PreviewTargets);
+
+	Result.bCanPlaceOnGrid = Result.MineableResourceAmount > 0;
+
+	return Result;
 }
 
-bool USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuilding,
+int32 USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuilding,
 	const FBuildingGridInfo& BuildingGridInfo, TArray<FSFMiningCellTarget>& OutTargets) const
 {
 	OutTargets.Reset();
 
 	if (!IsValid(MiningBuilding) ||	!BuildingGridInfo.IsValid())
 	{
-		return false;
+		return 0;
 	}
 
-	const IMinable* Consumer = Cast<IMinable>(MiningBuilding);
-	if (!Consumer) return false;
+	const IMinable* Consumer =	Cast<IMinable>(MiningBuilding);
+	if (Consumer == nullptr) return 0;
 
-	// 검색 크기도 광산의 로컬 설정값이므로 현재 Actor 회전을 반영합니다.
 	const FIntPoint EffectiveSearchGridSize =
 		GetRotatedGridSize(
 			Consumer->GetResourceSearchGridSize(),
@@ -144,19 +147,17 @@ bool USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuil
 	FBuildingGridInfo SearchGridInfo;
 
 	if (!TryMakeCenteredSubGrid(
-			BuildingGridInfo,
-			EffectiveSearchGridSize,SearchGridInfo))
+			BuildingGridInfo, EffectiveSearchGridSize,
+			SearchGridInfo))
 	{
-		return false;
+		return 0;
 	}
 
-	/*
-	 * 같은 종류의 자원은 한 셀에 하나만 존재하므로
-	 * 광산이 취급하는 자원 대상 수도 최대 검색 셀 수입니다.
-	 */
 	OutTargets.Reserve(
-		SearchGridInfo.GridSize.X *
-		SearchGridInfo.GridSize.Y);
+		SearchGridInfo.GridSize.X *	SearchGridInfo.GridSize.Y);
+
+	const EResourceType MineResourceType = Consumer->GetMineResourceType();
+	int32 TotalResourceAmount = 0;
 
 	for (int32 Y = 0; Y < SearchGridInfo.GridSize.Y; ++Y)
 	{
@@ -166,75 +167,31 @@ bool USFBuildingGridSubsystem::CollectMiningCellTargets(const AActor* MiningBuil
 				SearchGridInfo.OriginCell +	FIntPoint(X, Y);
 
 			const FSFGridCellData* Cell = GridCells.Find(CellCoordinate);
-
-			if (!Cell) continue;
+			if (Cell == nullptr) continue;
 
 			for (const FSFGridResourceEntry& Entry : Cell->Resources)
 			{
+				if (Entry.ResourceType != MineResourceType)	continue;
+
 				AResourceBase* Resource = Entry.ResourceActor.Get();
 				if (!IsValid(Resource))	continue;
 
-				const IBeMinedable* MineableResource = Cast<IBeMinedable>(Resource);
-				if (!MineableResource) continue;
-
-				// 광산이 취급하는 종류와 같은 자원만 수집합니다.
-				if (MineableResource->GetResourceType() !=
-					Consumer->GetMineResourceType())
-				{
-					continue;
-				}
-
-				// 고갈됐거나 잘못된 인덱스는 0을 반환합니다.
-				if (Resource->GetCellDeposit(Entry.ResourceCellIndex) <= 0)
-				{
-					continue;
-				}
+				// 검사와 합산에서 같은 값을 재사용합니다.
+				const int32 CellDeposit =
+					Resource->GetCellDeposit(Entry.ResourceCellIndex);
+				if (CellDeposit <= 0) continue;
 
 				FSFMiningCellTarget Target;
-				Target.ResourceActor = Resource;
+				Target.ResourceActor	 =	Resource;
 				Target.ResourceCellIndex =	Entry.ResourceCellIndex;
 
-				/*
-				 * AddUnique를 사용하지 않습니다.
-				 * 같은 ResourceActor라도 서로 다른 셀은
-				 * 별개의 채굴 대상입니다.
-				 */
 				OutTargets.Add(MoveTemp(Target));
+				TotalResourceAmount += CellDeposit;
 			}
 		}
 	}
 
-	/*
-	 * 셀별 남은 매장량이 적은 대상부터 채굴하도록 정렬합니다.
-	 * 매장량은 복사본이 아니라 ResourceBase에서 직접 읽습니다.
-	 */
-	OutTargets.Sort(
-		[](const FSFMiningCellTarget& Left,
-		   const FSFMiningCellTarget& Right)
-		{
-			AResourceBase* LeftResource =
-				Left.ResourceActor.Get();
-
-			AResourceBase* RightResource =
-				Right.ResourceActor.Get();
-
-			if (!IsValid(LeftResource))
-			{
-				return false;
-			}
-
-			if (!IsValid(RightResource))
-			{
-				return true;
-			}
-
-			return LeftResource->GetCellDeposit(
-					   Left.ResourceCellIndex)
-				< RightResource->GetCellDeposit(
-					   Right.ResourceCellIndex);
-		});
-
-	return OutTargets.Num() > 0;
+	return TotalResourceAmount;
 }
 
 bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo)
@@ -256,11 +213,15 @@ bool USFBuildingGridSubsystem::TryRegisterBuildingGrid(AActor* Owner, const FBui
 	 * Preview 검사 이후 자원 상태가 바뀌었을 수도 있으므로
 	 * 실제 등록 시점에도 재검사하는 것이 안전합니다.
 	 */
-	if (MiningBuilding &&
-		!CollectMiningCellTargets(
-			Owner, GridInfo,MiningTargets))
+	if (MiningBuilding)
 	{
-		return false;
+		const int32 TotalResourceAmount =
+			CollectMiningCellTargets(Owner, GridInfo,MiningTargets);
+
+		if (TotalResourceAmount <= 0)
+		{
+			return false;
+		}
 	}
 
 	// 건물 점유 셀을 등록합니다.
@@ -864,6 +825,8 @@ void USFBuildingGridSubsystem::DebugDrawResourceCells(
 	UWorld* World = GetWorld();
 	if (!IsValid(World)) return;
 
+	const bool bPersistentLines = Duration < 0.0f;
+	
 	const FVector BoxExtent(
 		CellSize * 0.5f,CellSize * 0.5f,10.0f);
 
@@ -891,7 +854,7 @@ void USFBuildingGridSubsystem::DebugDrawResourceCells(
 				CellCenter,
 				BoxExtent,
 				FColor::Green,
-				false,
+				bPersistentLines,
 				Duration,
 				0,
 				3.0f);

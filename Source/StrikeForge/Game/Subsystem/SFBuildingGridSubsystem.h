@@ -9,6 +9,16 @@
 
 class AResourceBase;
 
+/**
+ * 건물 격자 검사 결과입니다.
+ * 함수 반환용이며 Subsystem이나 BuildingPlacement에 캐싱하지 않습니다.
+ */
+struct FSFBuildingGridEvaluationResult
+{
+	bool bCanPlaceOnGrid = false;
+	int32 MineableResourceAmount = 0;
+};
+
 // Grid 한 칸에 등록되는 자원 하나의 정보입니다.
 // Blueprint에 노출하지 않는 런타임 전용 구조체입니다.
 struct FSFGridResourceEntry
@@ -60,8 +70,9 @@ public:
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
 	// 현재 건물 격자와 광산 자원 조건을 함께 검사합니다.
-	bool CanPlacePlayerBuildingGrid(const AActor* Building, const FBuildingGridInfo& GridInfo) const;
-
+	FSFBuildingGridEvaluationResult EvaluatePlayerBuildingGrid(
+		const AActor* Building,	const FBuildingGridInfo& GridInfo) const;
+	
 	// 건물 점유를 검사한 뒤 성공한 경우에만 등록합니다.
 	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 	void UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
@@ -123,7 +134,7 @@ public:
 private: // functions
 
 	// 광산건물시도시 자원 수집
-	bool CollectMiningCellTargets(
+	int32 CollectMiningCellTargets(
 		const AActor* MiningBuilding,
 		const FBuildingGridInfo& BuildingGridInfo,
 		TArray<FSFMiningCellTarget>& OutTargets) const;

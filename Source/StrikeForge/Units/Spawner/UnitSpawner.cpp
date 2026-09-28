@@ -538,6 +538,10 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 
 AUnitBase* AUnitSpawner::SpawnOne()
 {
+    // BP의 직접 호출도 타이머와 같은 게이트를 통과해야 한다.
+    if (!bActivated || !bSpawningEnabled || bOwnerBuildingDestroyed) return nullptr;
+    if (bStopWhenOwnerBuildingDestroyed && bRequireOwnerBuilding && !OwnerBuildingTarget.IsValid()) return nullptr;
+
 	if (!UnitClass)
 	{
 		SF_LOG(Warning, "[UnitSpawner] %s : UnitClass 가 비어 있습니다.", *GetName());

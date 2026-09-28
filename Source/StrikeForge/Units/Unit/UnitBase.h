@@ -19,6 +19,7 @@ class UAnimMontage;
 class ALanePath;
 class USoundBase;
 class UAnimationAsset;
+class ASFUnitProjectile;
 
 /** 전투 상태 머신 */
 UENUM(BlueprintType)
@@ -211,6 +212,13 @@ public:
 	/** 공격 애니메이션의 타격 Notify에서 호출한다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void HandleAttackHit(float DamageRatio = 1.f);
+
+	/** 원거리 공격 애니메이션의 발사 Notify에서 호출한다 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void HandleProjectileLaunch(float DamageRatio = 1.f);
+
+	/** 발사체가 목표에 도착했을 때 호출한다 */
+	void HandleProjectileImpact(AActor* InTarget, float DamageRatio);
 
 	/** 사망 애니메이션이 완전히 누운 자세에 도달했을 때 호출한다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Animation")
@@ -930,6 +938,18 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/** 이 유닛이 발사할 발사체. 비어 있으면 원거리 발사를 할 수 없다 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<ASFUnitProjectile> ProjectileClass;
+
+	/** 발사체가 생성될 Mesh Socket */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (AllowPrivateAccess = "true"))
+	FName ProjectileSocketName = TEXT("ProjectileSocket");
+
+	/** 발사체 이동속도 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (ClampMin = "1.0", AllowPrivateAccess = "true"))
+	float ProjectileSpeed = 1500.f;
 
 	/**
 	 * 공격 몽타주를 끊을 때의 블렌드 아웃 시간(초).

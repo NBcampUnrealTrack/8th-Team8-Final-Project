@@ -508,7 +508,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 				bool IsTarget = false;	// 버프대상인가?
 
 				TWeakObjectPtr<UCombatTargetComponent> TargetCombatComp = TG.ActorPtr->GetComponentByClass<UCombatTargetComponent>();
-				if (TargetCombatComp.IsValid() && IsValid(CombatTargetComponent))
+				if (TargetCombatComp.IsValid())
 				{
 					// 아군이고 커맨더 혹은 유닛이다.
 					if (TargetCombatComp->GetTeamIndex() == 0 &&
@@ -578,7 +578,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 				bool IsTarget = false;	// 버프대상인가?
 
 				TWeakObjectPtr<UCombatTargetComponent> TargetCombatComp = TG.ActorPtr->GetComponentByClass<UCombatTargetComponent>();
-				if (TargetCombatComp.IsValid() && IsValid(CombatTargetComponent))
+				if (TargetCombatComp.IsValid())
 				{
 					// 아군이고 커맨더 혹은 유닛이다.
 					if (TargetCombatComp->GetTeamIndex() == 0 &&
@@ -651,7 +651,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 				bool IsTarget = false;	// 버프대상인가?
 
 				TWeakObjectPtr<UCombatTargetComponent> TargetCombatComp = TG.ActorPtr->GetComponentByClass<UCombatTargetComponent>();
-				if (TargetCombatComp.IsValid() && IsValid(CombatTargetComponent))
+				if (TargetCombatComp.IsValid())
 				{
 					// 적이다.
 					if (TargetCombatComp->GetTeamIndex() != 0)
@@ -721,6 +721,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 			const float BuffInterval = 1.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
 			const float SkillRadius = 2000.f; // 버프가 적용되는 스킬 반경
+			const float RealAmount = 5.f;	  // 회복량
 			//-------------------
 
 			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
@@ -728,32 +729,56 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 
 			for (FBuffTarget TG : Targets)
 			{
-				// TODO : 현재 커맨더에게만 버프를 부여하고 있는 상태. [커맨더를 포함한 '아군' 유닛], 혹은 [특정 컴포넌트 기능을 가진 액터] 만을 필터링하도록 코드를 변경해주세요.
-				TWeakObjectPtr<ASFCommander> Target = Cast<ASFCommander>(TG.ActorPtr);
+				bool IsTarget = false;	// 버프대상인가?
 
-				if (Target.IsValid())
+				TWeakObjectPtr<UCombatTargetComponent> TargetCombatComp = TG.ActorPtr->GetComponentByClass<UCombatTargetComponent>();
+				if (TargetCombatComp.IsValid())
+				{
+					// 아군이고 커맨더 혹은 유닛이다.
+					if (TargetCombatComp->GetTeamIndex() == 0 &&
+						(Cast<ASFCommander>(TG.ActorPtr) || Cast<AUnitBase>(TG.ActorPtr)))
+					{
+						IsTarget = true;
+					}
+				}
+
+				if (IsTarget)
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
+						[TG, RealAmount]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White, FString::Printf(TEXT("[%s] HealUp Buff Tick..."), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White, FString::Printf(TEXT("[%s] HealUp Buff Tick..."), *TG.ActorPtr->GetName()));
+							TWeakObjectPtr<UHealthComponent> HPComp = TG.ActorPtr->GetComponentByClass<UHealthComponent>();
+							if (HPComp.IsValid())
+							{
+								HPComp->IncreaseCurrentHealth(RealAmount);
+							}
 						},
-						[Target]()	// 버프 시작 시 실행(Begin)
+						[TG]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] HealUp Buff Begin"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] HealUp Buff Begin"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Regen);
 						},
-						[Target]()	// 버프 종료 시 실행(End)
+						[TG]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(4, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] HealUp Buff End"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(4, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] HealUp Buff End"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Regen);
 						},
 						BuffTime,
 						BuffInterval,
 						SkillHitEffect1);
 				}
+			}
+			if (IsValid(SkillEffect1))
+			{
+				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
+				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect1, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;
@@ -769,11 +794,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 
 			const float BuffDuration = 10.f;
 			const float ProductionSpeedMultiplier = 2.f;
-			const float SkillRadius = 2000.f;
-			const float SkillRadiusSquared = FMath::Square(SkillRadius);
 			//--------------------------------------------
-			
-			//DrawDebugSphere(GetWorld(), GetActorLocation(), SkillRadius, -1,FColor::Red,false, 3.f,0,2);
 
 			const ASFInGamePlayerController* SFPC =
 					World->GetFirstPlayerController<ASFInGamePlayerController>();
@@ -786,33 +807,50 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 
 			for (FBuffTarget TG : Targets)
 			{
-				// TODO : 현재 건물에게만 버프를 부여하고 있는 상태. ['아군' 건물] 만을 필터링하도록 코드를 변경해주세요.
-				TWeakObjectPtr<ASFProductionBuilding> Target = Cast<ASFProductionBuilding>(TG.ActorPtr);
-				if (Target.IsValid() && Target->GetTeamIndex() == CasterTeamIndex)
+				bool IsTarget = false;	// 버프대상인가?
+
+				TWeakObjectPtr<ASFProductionBuilding> TargetBuilding = Cast<ASFProductionBuilding>(TG.ActorPtr);
+				if (TargetBuilding.IsValid())
+				{
+					// 아군 건물이다.
+					TWeakObjectPtr<UCombatTargetComponent> CTComp = TargetBuilding->GetComponentByClass<UCombatTargetComponent>();
+					if (CTComp.IsValid() && CTComp->GetTeamIndex() == 0)
+					{
+						IsTarget = true;
+					}
+				}
+
+				if (IsTarget)
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
+						[TargetBuilding]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							//GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *TargetBuilding->GetName()));
 						},
-						[Target, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
+						[TargetBuilding, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *Target->GetName()));
-							Target->ApplySpeedBuff(ProductionSpeedMultiplier);
+							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *TargetBuilding->GetName()));
+							TargetBuilding->ApplySpeedBuff(ProductionSpeedMultiplier);
 						},
-						[Target]()	// 버프 종료 시 실행(End)
+						[TargetBuilding]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *Target->GetName()));
-							Target->ResetSpeedMultiplier();
+							//GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *TargetBuilding->GetName()));
+							TargetBuilding->ResetSpeedMultiplier();
 						},
 						BuffDuration,
 						1.f,
 						SkillHitEffect2);
 				}
+			}
+			if (IsValid(SkillEffect2))
+			{
+				FVector ParticleScale = { GetActorScale().X, GetActorScale().X, 1.f };
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect2, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;
@@ -828,7 +866,8 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 			const float BuffTime = 5.f;	// 버프 지속시간(초)
 			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 500.f; // 버프가 적용되는 스킬 반경
+			const float SkillRadius = 600.f; // 버프가 적용되는 스킬 반경
+			const float DmgMul = 0.1f;	// 받는 피해 증가 배율
 			//-------------------
 
 			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
@@ -836,27 +875,37 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 
 			for (FBuffTarget TG : Targets)
 			{
-				// TODO : 현재 커맨더에게만 버프를 부여하고 있는 상태. [커맨더를 포함한 '아군' 유닛], [아군 건물], 혹은 [특정 컴포넌트 기능을 가진 액터] 만을 필터링하도록 코드를 변경해주세요.
-				TWeakObjectPtr<ASFCommander> Target = Cast<ASFCommander>(TG.ActorPtr);
+				bool IsTarget = false;	// 버프대상인가?
 
-				if (Target.IsValid())
+				TWeakObjectPtr<UCombatTargetComponent> TargetCombatComp = TG.ActorPtr->GetComponentByClass<UCombatTargetComponent>();
+				if (TargetCombatComp.IsValid())
+				{
+					// 아군이다.
+					if (TargetCombatComp->GetTeamIndex() == 0)
+					{
+						IsTarget = true;
+					}
+				}
+
+				if (IsTarget)
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
+						[TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							// TODO: 틱 단위 함수 작성
-							GEngine->AddOnScreenDebugMessage(6, 0.f, FColor::White, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff Tick..."), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(3, 0.f, FColor::White, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff Tick..."), *TG.ActorPtr->GetName()));
+
+							TG.BuffCompPtr->Current_Status.DmgMul *= DmgMul;
 						},
-						[Target]()	// 버프 시작 시 실행(Begin)
+						[TG]()	// 버프 시작 시 실행(Begin)
 						{
-							// TODO: 버프 시작 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff Begin"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff Begin"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
-						[Target]()	// 버프 종료 시 실행(End)
+						[TG]()	// 버프 종료 시 실행(End)
 						{
-							// TODO: 버프 종료 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(6, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff End"), *Target->GetName()));
+							//GEngine->AddOnScreenDebugMessage(3, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff End"), *TG.ActorPtr->GetName()));
+							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						BuffTime,
 						BuffInterval,

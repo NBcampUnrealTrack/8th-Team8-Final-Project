@@ -70,7 +70,8 @@ enum class EBuffApply : uint8
     Speed       = 1 << 0, // 1
     Atk         = 1 << 1, // 2
     MaxHealth   = 1 << 2, // 4
-    DamageMul   = 1 << 3  // 8
+    DamageMul   = 1 << 3, // 8
+    Regen       = 1 << 4, // 16
 };
 ENUM_CLASS_FLAGS(EBuffApply);
 

@@ -252,6 +252,15 @@ public:
     static bool IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName);
 
     /**
+     * 튜토리얼 건설/티어 업에 사용할 작업량을 반환한다.
+     * Stage02와 Stage03의 단계별 가이드가 실제로 진행 중일 때만 10초로
+     * 단축하며, 일반 게임과 Stage01은 원래 값을 그대로 쓴다.
+     */
+    static float ResolveBuildingRequiredWork(
+        const UObject* InWorldContext,
+        float InDefaultRequiredWork);
+
+    /**
      * 건물 선택 제한을 강제로 푼다.
      *
      * 정상 경로에서는 건물이 실제로 지어질 때 저절로 풀린다. 이 함수는

@@ -22,6 +22,9 @@ class STRIKEFORGE_API USFBuildCatalogPanelWidget
 public:
 	bool RequestBuildingBySlot(int32 SlotIndex);
 
+	/** 지정 건물 카드의 실제 화면 위치를 튜토리얼 테두리에 제공한다. */
+	UWidget* FindTutorialEntryWidget(FName BuildingRowName) const;
+
 private:
 	void BindResourceData();
 

@@ -56,6 +56,9 @@ class STRIKEFORGE_API USFInGameHUDWidget
     // ==================== Functions ====================
 
 public:
+    /** 건설 안내가 고정 좌표 대신 실제 UI를 강조할 수 있게 대상 위젯을 돌려준다. */
+    UWidget* GetTutorialBuildModeButton() const;
+    UWidget* FindTutorialBuildCatalogEntry(FName BuildingRowName) const;
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Building"
@@ -75,6 +78,11 @@ public:
     void ToggleSettings();
 
     void ShowResultWidget(bool bIsWin);
+
+#if WITH_EDITOR
+    /** K 즉시 승리 테스트 전에 재생 중인 시작 스토리를 정리한다. */
+    void DismissActiveStageIntroForDebug();
+#endif
 
     void SelectActor(AActor* Actor);
 
@@ -348,6 +356,12 @@ private:
     void HandleStageIntroDeactivated();
 
     FName ResolveStageIntroRowName() const;
+
+    /**
+     * 현재 스테이지와 같은 이름에 Clear 접미사를 붙인 후일담 행을 연다.
+     * 예: Stage03 -> Stage03Clear. 행이 없으면 일반 승리 화면을 사용한다.
+     */
+    bool TryStartVictoryEpilogue();
 
     UFUNCTION()
     void HandleRallyPointRequested();
@@ -631,6 +645,12 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UResultWidget> ResultWidget = nullptr;
+
+    /** 승리 후일담이 끝날 때까지 결과 UI를 보류하고 있는가. */
+    bool bPendingVictoryResultAfterEpilogue = false;
+
+    /** 같은 승리 결과 신호가 다시 와도 후일담을 두 번 재생하지 않는다. */
+    bool bVictoryEpilogueCompleted = false;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<UHealthComponent> SelectedHealthComponent;

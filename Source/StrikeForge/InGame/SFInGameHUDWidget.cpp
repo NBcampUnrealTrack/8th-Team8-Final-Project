@@ -1310,6 +1310,30 @@ void USFInGameHUDWidget::OpenBuildingMode()
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
+
+    static const FGameplayTag BuildModeOpenTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.BuildMode.Open"), false);
+    if (BuildModeOpenTag.IsValid())
+    {
+        USFTutorialSubsystem::NotifyObjective(this, BuildModeOpenTag, false);
+    }
+}
+
+UWidget* USFInGameHUDWidget::GetTutorialBuildModeButton() const
+{
+    return BuildModeOpenButton.Get();
+}
+
+UWidget* USFInGameHUDWidget::FindTutorialBuildCatalogEntry(FName BuildingRowName) const
+{
+    if (!IsValid(ActiveBuildingModeWidget) || !ActiveBuildingModeWidget->IsActivated())
+    {
+        return nullptr;
+    }
+
+    USFBuildCatalogPanelWidget* Panel = Cast<USFBuildCatalogPanelWidget>(
+        ActiveBuildingModeWidget->GetWidgetFromName(TEXT("BuildCatalogPanel")));
+    return IsValid(Panel) ? Panel->FindTutorialEntryWidget(BuildingRowName) : nullptr;
 }
 
 void USFInGameHUDWidget::CloseBuildingMode()
@@ -1389,10 +1413,35 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
     );
 }
 
+#if WITH_EDITOR
+void USFInGameHUDWidget::DismissActiveStageIntroForDebug()
+{
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->DeactivateWidget();
+    }
+}
+#endif
+
 void USFInGameHUDWidget::ShowResultWidget(
     bool bIsWin
 )
 {
+    // Stage03Clear처럼 현재 스테이지 이름 뒤에 Clear를 붙인 행이 있으면
+    // 승리 화면보다 먼저 재생한다. 패배는 지연하지 않는다.
+    if (bIsWin && bPendingVictoryResultAfterEpilogue)
+    {
+        // 결과 신호가 중복으로 들어와도 후일담 위에 승리 UI를 덮지 않는다.
+        return;
+    }
+
+    if (bIsWin &&
+        !bVictoryEpilogueCompleted &&
+        TryStartVictoryEpilogue())
+    {
+        return;
+    }
+
     if (!IsValid(ResultWidget))
     {
         if (!ResultWidgetClass)
@@ -3438,6 +3487,42 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
     return StageIntroFallbackRowName;
 }
 
+bool USFInGameHUDWidget::TryStartVictoryEpilogue()
+{
+    if (!IsValid(StageIntroDataTable) || IsValid(ActiveStageIntroWidget))
+    {
+        return false;
+    }
+
+    const FName StageRowName = ResolveStageIntroRowName();
+    if (StageRowName.IsNone())
+    {
+        return false;
+    }
+
+    const FName EpilogueRowName(*(StageRowName.ToString() + TEXT("Clear")));
+    if (!StageIntroDataTable->GetRowNames().Contains(EpilogueRowName))
+    {
+        return false;
+    }
+
+    bPendingVictoryResultAfterEpilogue = true;
+    SF_LOG(Log,
+        "[SFInGameHUDWidget] 승리 후일담을 먼저 재생합니다 | Stage: %s | Row: %s",
+        *StageRowName.ToString(), *EpilogueRowName.ToString());
+
+    if (OpenStageIntro(StageIntroDataTable, EpilogueRowName, INDEX_NONE))
+    {
+        return true;
+    }
+
+    // OpenStageIntro가 위젯 생성 뒤 실패했다면 정리 콜백에서 이미 결과 UI를
+    // 열었을 수 있다. 그 경우 외부 ShowResultWidget이 한 번 더 열지 않게 한다.
+    const bool bResultWasHandled = bVictoryEpilogueCompleted;
+    bPendingVictoryResultAfterEpilogue = false;
+    return bResultWasHandled;
+}
+
 void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
 {
     /*
@@ -3682,6 +3767,9 @@ void USFInGameHUDWidget::HandleTutorialResumeRequested(
 
 void USFInGameHUDWidget::HandleStageIntroDeactivated()
 {
+    const bool bShowDeferredVictoryResult =
+        bPendingVictoryResultAfterEpilogue;
+
     if (IsValid(ActiveStageIntroWidget))
     {
         ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
@@ -3717,6 +3805,13 @@ void USFInGameHUDWidget::HandleStageIntroDeactivated()
         Log,
         "[SFInGameHUDWidget] Stage intro finished."
     );
+
+    if (bShowDeferredVictoryResult)
+    {
+        bPendingVictoryResultAfterEpilogue = false;
+        bVictoryEpilogueCompleted = true;
+        ShowResultWidget(true);
+    }
 }
 
 bool USFInGameHUDWidget::RequestProductionBySlot(

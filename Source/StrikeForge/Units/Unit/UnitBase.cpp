@@ -1,6 +1,7 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
@@ -145,6 +146,25 @@ AUnitBase::AUnitBase()
 void AUnitBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+
+	if (UCapsuleComponent* Capsule =
+		GetCapsuleComponent())
+	{
+		Capsule->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Block
+		);
+	}
+
+	if (USkeletalMeshComponent* CharacterMesh =
+		GetMesh())
+	{
+		CharacterMesh->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Ignore
+		);
+	}
 
 	// 레벨에 직접 배치한 유닛은 스포너를 거치지 않으므로 여기서 주입한다.
 	// 스폰으로 이미 주입됐다면 건너뛴다.
@@ -954,7 +974,7 @@ bool AUnitBase::ExecuteNextQueuedCommand()
 		// 예약해둔 공격 대상이 이미 죽었다면 건너뛴다.
 		if (
 			NextCommand.bTargetRequired &&
-			!IsTargetUsable(NextCommand.Target.Get())
+			!CanForceAttackTarget(NextCommand.Target.Get())
 			)
 		{
 			SF_LOG(
@@ -1028,7 +1048,7 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 		return;
 	}
 
-	if (!IsTargetUsable(InTarget))
+	if (!CanForceAttackTarget(InTarget))
 	{
 		SF_LOG(Warning,
 			"[Unit] %s : %s 은(는) 공격할 수 없는 대상입니다. "
@@ -1161,11 +1181,18 @@ void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocatio
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
-	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
-	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
-	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
+	if (!CanForceAttackTarget(InTarget)) return false;
+	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	return InTarget == ForcedTarget || USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
 
-	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+bool AUnitBase::CanForceAttackTarget(const AActor* InTarget) const
+{
+	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
+	const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!Target || !Target->IsAlive() || Target->GetTeamIndex() == INDEX_NONE) return false;
+	const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(InTarget);
+	return !Building || Building->ProvidesVision();
 }
 
 void AUnitBase::SetWaitingForGroupMove(bool bWaiting)

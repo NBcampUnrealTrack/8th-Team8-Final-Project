@@ -1512,7 +1512,7 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             }
         }
 
-        // 적 대상이 아니면 클릭 지점을 공격 이동 목적지로 처리한다.
+        // 대상이 없으면 클릭 지점을 공격 이동 목적지로 처리한다.
         if (!IsValid(AttackTarget) &&
             !GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
         {
@@ -1555,8 +1555,15 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
     const bool bAppendToQueue =
         IsShiftCommandModifierDown();
 
+    bool bAcceptedTargetAttack = false;
     for (AActor* Actor : Commandables)
     {
+        if (IsValid(AttackTarget))
+        {
+            const AUnitBase* Unit = Cast<AUnitBase>(Actor);
+            if (!Unit || !Unit->CanForceAttackTarget(AttackTarget)) continue;
+            bAcceptedTargetAttack = true;
+        }
         ExecuteUnitCommandForActor(
             Actor,
             CommandMode,
@@ -1565,6 +1572,8 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             bAppendToQueue
         );
     }
+
+    if (IsValid(AttackTarget) && !bAcceptedTargetAttack) return true;
 
     if (CommandMode == ESFUnitCommandMode::Attack &&
         IsValid(AttackTarget) &&
@@ -1576,7 +1585,7 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             );
     }
 
-    if (IsValid(InGameHUDWidget))
+    if (!IsValid(AttackTarget) && IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->ShowMoveDestinationIndicator(
             Hit.Location,
@@ -1705,7 +1714,7 @@ bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
     {
         if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
     }
-    if (!IsValid(Actor) || IsLocallyControllableActor(Actor))
+    if (!IsValid(Actor))
     {
         return false;
     }
@@ -1713,9 +1722,10 @@ bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
     const UCombatTargetComponent* CombatTarget =
         Actor->FindComponentByClass<UCombatTargetComponent>();
 
-    return IsValid(CombatTarget) &&
+    const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(Actor);
+    return (!Building || Building->ProvidesVision()) && IsValid(CombatTarget) &&
         CombatTarget->IsAlive() &&
-        CombatTarget->GetTeamIndex() != MyTeamIndex;
+        CombatTarget->GetTeamIndex() != INDEX_NONE;
 }
 
 bool ASFInGamePlayerController::IsLocallyControllableActor(const AActor* Actor) const

@@ -1,6 +1,7 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
@@ -972,7 +973,7 @@ bool AUnitBase::ExecuteNextQueuedCommand()
 		// 예약해둔 공격 대상이 이미 죽었다면 건너뛴다.
 		if (
 			NextCommand.bTargetRequired &&
-			!IsTargetUsable(NextCommand.Target.Get())
+			!CanForceAttackTarget(NextCommand.Target.Get())
 			)
 		{
 			SF_LOG(
@@ -1046,7 +1047,7 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 		return;
 	}
 
-	if (!IsTargetUsable(InTarget))
+	if (!CanForceAttackTarget(InTarget))
 	{
 		SF_LOG(Warning,
 			"[Unit] %s : %s 은(는) 공격할 수 없는 대상입니다. "
@@ -1179,11 +1180,18 @@ void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocatio
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
-	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
-	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
-	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
+	if (!CanForceAttackTarget(InTarget)) return false;
+	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	return InTarget == ForcedTarget || USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
 
-	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+bool AUnitBase::CanForceAttackTarget(const AActor* InTarget) const
+{
+	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
+	const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!Target || !Target->IsAlive() || Target->GetTeamIndex() == INDEX_NONE) return false;
+	const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(InTarget);
+	return !Building || Building->ProvidesVision();
 }
 
 void AUnitBase::SetWaitingForGroupMove(bool bWaiting)

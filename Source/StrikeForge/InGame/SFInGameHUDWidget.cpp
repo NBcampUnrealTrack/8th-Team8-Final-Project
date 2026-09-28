@@ -2,6 +2,7 @@
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
@@ -2010,6 +2011,10 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
         return;
     }
 
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if ((Target && !Target->IsAlive()) || (Fog && !Fog->IsActorVisibleToLocalPlayer(Actor))) return;
+
     const bool bIsEnemyTarget =
         IsValidEnemyHoverTarget(
             Actor
@@ -2215,36 +2220,13 @@ bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
     {
         if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
     }
-    AUnitBase* Unit =
-        Cast<AUnitBase>(Actor);
-
-    if (!IsValid(Unit))
-    {
-        return false;
-    }
-
-    if (IsOwnedByLocalPlayer(Unit))
-    {
-        return false;
-    }
-
-    const UCombatTargetComponent* CombatTarget =
-        Unit->FindComponentByClass<
-        UCombatTargetComponent
-        >();
-
-    if (!IsValid(CombatTarget))
-    {
-        return false;
-    }
-
-    if (!CombatTarget->IsAlive())
-    {
-        return false;
-    }
-
-    return CombatTarget->GetTeamIndex() !=
-        Targetable::PlayerTeam;
+    if (!IsValid(Actor)) return false;
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
+    const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+    if (!Target || !Target->IsAlive() || !Combat) return false;
+    const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(Actor);
+    return (!Building || Building->ProvidesVision()) &&
+        USFCombatSubsystem::IsHostileTeam(Combat->GetLocalPlayerTeam(), Target->GetTeamIndex());
 }
 
 void USFInGameHUDWidget::ShowEnemyHoverIndicator(
@@ -2265,35 +2247,14 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(
         return;
     }
 
-    FVector BoundsOrigin;
-    FVector BoundsExtent;
-
-    Actor->GetActorBounds(
-        true,
-        BoundsOrigin,
-        BoundsExtent
-    );
-
-    const float UnitBaseRadius =
-        FMath::Max(
-            BoundsExtent.X,
-            BoundsExtent.Y
-        );
-
-    const float RingRadius =
-        FMath::Clamp(
-            UnitBaseRadius * 0.85f,
-            40.f,
-            180.f
-        );
-
-    const FVector IndicatorLocation(
-        BoundsOrigin.X,
-        BoundsOrigin.Y,
-        BoundsOrigin.Z -
-        BoundsExtent.Z +
-        8.f
-    );
+    FVector BoundsOrigin, BoundsExtent;
+    const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
+    Actor->GetActorBounds(!bIsBuilding || Actor->IsA<ASFProductionBuilding>(), BoundsOrigin, BoundsExtent);
+    const float RingRadius = bIsBuilding
+        ? FMath::Clamp(FVector2D(BoundsExtent.X, BoundsExtent.Y).Size() * 1.05f, 100.f, 1500.f)
+        : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
+    const FVector Center = bIsBuilding ? Actor->GetActorLocation() : BoundsOrigin;
+    const FVector IndicatorLocation(Center.X, Center.Y, BoundsOrigin.Z - BoundsExtent.Z + 8.f);
 
     UDecalComponent* Indicator =
         NewObject<UDecalComponent>(Actor);
@@ -2458,10 +2419,25 @@ void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
     AActor* Target
 )
 {
-    if (!IsValid(Target) ||
-        HoveredEnemyActor.Get() != Target ||
-        !IsValid(EnemyHoverIndicator))
+    if (!IsValid(Target)) return;
+    const UCombatTargetComponent* CombatTarget = USFCombatSubsystem::FindTargetComponent(Target);
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if (!CombatTarget || !CombatTarget->IsAlive() || (Fog && !Fog->IsActorVisibleToLocalPlayer(Target))) return;
+
+    // Command acknowledgement is independent of ordinary enemy hover and team.
+    // Repeated commands restart the existing two-pulse animation on the new target.
+    bEnemyHoverFeedbackActive = false;
+    HideEnemyHoverIndicator();
+    if (SelectionIndicatorComponents.Contains(Target))
     {
+        HoverSuppressedSelectionActor = Target;
+        bHoverSuppressedSelectionIndicator = true;
+        HideSelectionIndicator(Target);
+    }
+    ShowEnemyHoverIndicator(Target);
+    if (!IsValid(EnemyHoverIndicator))
+    {
+        HideEnemyHoverIndicator();
         return;
     }
 
@@ -2485,9 +2461,14 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     float InDeltaTime
 )
 {
-    if (!bEnemyHoverFeedbackActive ||
-        !IsValid(EnemyHoverIndicator))
+    if (!bEnemyHoverFeedbackActive) return;
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(HoveredEnemyActor.Get());
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if (!IsValid(EnemyHoverIndicator) || !Target || !Target->IsAlive() ||
+        (Fog && !Fog->IsActorVisibleToLocalPlayer(HoveredEnemyActor.Get())))
     {
+        bEnemyHoverFeedbackActive = false;
+        HideEnemyHoverIndicator();
         return;
     }
 

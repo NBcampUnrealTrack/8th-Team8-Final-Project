@@ -51,6 +51,7 @@ class STRIKEFORGE_API USFInGameHUDWidget
     : public UUserWidget
 {
     GENERATED_BODY()
+    friend struct FSFForcedAttackTestAccess;
 
     // ==================== Functions ====================
 

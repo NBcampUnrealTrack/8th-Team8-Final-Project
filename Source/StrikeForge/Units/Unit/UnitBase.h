@@ -111,6 +111,7 @@ UCLASS()
 class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable, public IMovable
 {
 	GENERATED_BODY()
+	friend struct FSFForcedAttackTestAccess;
 
 public:
 	AUnitBase();
@@ -266,11 +267,14 @@ public:
 	 * 지정 대상 강제 공격. 그 대상이 쓰러질 때까지 다른 적으로 갈아타지 않는다.
 	 *
 	 * TObjectPtr 은 UFUNCTION 인자로 쓸 수 없으므로 원시 포인터를 받는다.
-	 * 현재는 적대 진영만 지정할 수 있다 — 중립(TeamIndex -1) 강제 공격은
-	 * IsHostileTeam 우회가 필요하며 기획 확정 후 붙인다.
+	 * 아군/적군 유닛과 건물을 지정할 수 있다. 자신, 중립, 사망, 건설 미리보기는 제외한다.
+	 * 자동 탐색은 계속 적대 진영만 대상으로 삼는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Command")
 	void CommandAttackTarget(AActor* InTarget);
+
+	/** Explicit player target: permits allies, but retains sight/life/preview checks. */
+	bool CanForceAttackTarget(const AActor* InTarget) const;
 
 	/** 모든 명령 해제(S). 선 자리를 대기 지점으로 삼고 평소대로 싸운다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Command")

@@ -289,6 +289,40 @@ void UMiningComponent::ClearMiningTargets()
 	Tracker.CurrentWork = 0.f;
 }
 
+void UMiningComponent::SetWorkRateModifier(FName ModifierId, float InMultiplier)
+{
+	if (!Tracker.WouldChangeWorkRateModifier(ModifierId, InMultiplier))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.SetWorkRateModifier(ModifierId, InMultiplier);
+}
+
+void UMiningComponent::RemoveWorkRateModifier(FName ModifierId)
+{
+	if (!Tracker.HasWorkRateModifier(ModifierId))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.RemoveWorkRateModifier(ModifierId);
+}
+
 const FSFMiningCellTarget*
 UMiningComponent::GetCurrentMiningTarget() const
 {

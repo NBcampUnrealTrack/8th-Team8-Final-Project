@@ -27,18 +27,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	bool bIsHasProducts() const { return !ProductLine.IsEmpty(); }
 
-	/** speed changer */
-	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void SetSpeedMultiplier(float InMultiplier);
-	UFUNCTION(BlueprintCallable, Category = "SF|Product")
-	void ResetSpeedMultiplier();
+	/**
+	 * 출처별 생산 속도 배율을 등록한다.
+	 * 서로 다른 출처의 배율은 곱해지므로 구역 보너스와 스킬 버프가 서로 덮어쓰지 않는다.
+	 */
+	void SetSpeedModifier(FName ModifierId, float InMultiplier);
+	/** 지정한 출처의 배율을 제거하고 남은 배율들로 최종 생산속도를 다시 계산합니다. */
+	void RemoveSpeedModifier(FName ModifierId);
 	// 집결지 setter
 	void SetAssemblePoint(const FVector& InAssemblePoint);
 	void CancleAssemblePoint();
 	
 	// getter
-	FORCEINLINE float GetSpeedMultiplier() const { return Tracker.WorkRateMultiplier; }
-	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
 	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
@@ -63,6 +63,7 @@ private:
 	void CompletedProduct(const FName& InCompletedName);
 	void ResetProductProgress();
 	
+	/** 마지막 갱신 이후 경과 시간을 현재 배율로 생산 진행도에 반영합니다. */
 	void ProcessProductionToNow();
 	void TickProduction();
 	

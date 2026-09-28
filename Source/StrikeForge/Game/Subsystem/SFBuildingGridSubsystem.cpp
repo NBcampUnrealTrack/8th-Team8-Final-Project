@@ -701,58 +701,64 @@ void USFBuildingGridSubsystem::DebugDrawOccupiedCells() const
 	}
 }
 
+void USFBuildingGridSubsystem::DebugDrawGridCells(
+	const FBuildingGridInfo& GridInfo,
+	float WorldZ,
+	const FColor& Color,
+	float Duration,
+	float ZOffset,
+	float Thickness) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const float HalfCell = CellSize * 0.5f;
+	const FVector BoxExtent(HalfCell, HalfCell, 5.0f);
+
+	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
+	{
+		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		{
+			const FIntPoint CellCoordinate =
+				GridInfo.OriginCell + FIntPoint(X, Y);
+			FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
+			CellCenter.Z = WorldZ + ZOffset;
+
+			DrawDebugBox(
+				World,
+				CellCenter,
+				BoxExtent,
+				Color,
+				false,
+				Duration,
+				0,
+				Thickness);
+		}
+	}
+}
+
 void USFBuildingGridSubsystem::DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,
 	const FIntPoint& ResourceSearchGridSize, float WorldZ, float Duration) const
 {
 	if (!BuildingGridInfo.IsValid()) return;
-	UWorld* World = GetWorld();
-	if (!IsValid(World)) return;
-
-	const float HalfCell = CellSize * 0.5f;
-
-	const FVector BoxExtent(
-		HalfCell,
-		HalfCell,
-		5.0f);
-
-	auto DrawGridCells =
-		[this, World, WorldZ, Duration, &BoxExtent]
-		(const FBuildingGridInfo& GridInfo,
-			const FColor& Color,
-			float ZOffset,
-			float Thickness)
-		{
-			for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
-			{
-				for (int32 X = 0; X < GridInfo.GridSize.X;	++X)
-				{
-					const FIntPoint CellCoordinate =
-						GridInfo.OriginCell + FIntPoint(X, Y);
-
-					FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
-
-					CellCenter.Z =	WorldZ + ZOffset;
-
-					DrawDebugBox(
-						World,
-						CellCenter,
-						BoxExtent,
-						Color,
-						false,
-						Duration,
-						0,
-						Thickness);
-				}
-			}
-		};
 
 	/*
 	 * 먼저 전체 건물 점유 영역을 검정색으로 그립니다.
 	 * 4×6 광산이면 24개 셀이 표시됩니다.
 	 */
-	DrawGridCells(
+	DebugDrawGridCells(
 		BuildingGridInfo,
+		WorldZ,
 		FColor::Black,
+		Duration,
 		5.0f,
 		4.0f);
 
@@ -770,9 +776,11 @@ void USFBuildingGridSubsystem::DebugDrawMiningPlacementGrid(const FBuildingGridI
 	 * 검색 영역을 검정색 영역보다 조금 위에 그립니다.
 	 * 두 DebugBox가 겹쳐 깜빡이는 현상을 줄일 수 있습니다.
 	 */
-	DrawGridCells(
+	DebugDrawGridCells(
 		SearchGridInfo,
+		WorldZ,
 		FColor::Green,
+		Duration,
 		8.0f,
 		5.0f);
 }
@@ -781,40 +789,10 @@ void USFBuildingGridSubsystem::DebugDrawMiningPlacementGrid(const FBuildingGridI
 void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ, bool bCanPlace,
 	float Duration) const
 {
-	if (!GridInfo.IsValid())
-	{
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	const float HalfCell = CellSize * 0.5f;
-	const FVector BoxExtent(HalfCell,HalfCell,5.0f);
-
 	const FColor GridColor = bCanPlace ?
 		FColor::Green: FColor::Red;
 
-	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
-	{
-		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
-		{
-			
-			const FIntPoint CellCoordinate = GridInfo.OriginCell + FIntPoint(X, Y);
-			FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
-
-			CellCenter.Z = WorldZ + 5.0f;
-			DrawDebugBox(World,	CellCenter,	BoxExtent,
-				GridColor,
-				false,
-				Duration,
-				0,
-				3.0f);
-		}
-	}
+	DebugDrawGridCells(GridInfo, WorldZ, GridColor, Duration);
 }
 
 void USFBuildingGridSubsystem::DebugDrawResourceCells(

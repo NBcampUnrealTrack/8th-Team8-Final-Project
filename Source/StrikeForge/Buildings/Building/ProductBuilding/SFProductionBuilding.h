@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Interfaces/Building/Productable.h"
+#include "Interfaces/Building/SFProductionRateModifiable.h"
 #include "SFProductionBuilding.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FProductUnitArrayChanged, const TArray<FName>&, SpawnableRowNames);
@@ -24,6 +25,7 @@ UCLASS()
 class STRIKEFORGE_API ASFProductionBuilding
 	: public ASFBaseBuilding
 	, public IProductable
+	, public ISFProductionRateModifiable
 {
 	GENERATED_BODY()
 
@@ -42,8 +44,14 @@ public:
 
 	// setter
 	void SetAssembleVectorPoint(const FVector& InAssemblePoint);
-	void ApplySpeedBuff(float InMultiflyValue) const;
+	/** 지휘관 스킬 배율을 별도 식별자로 등록하여 다른 생산 보너스와 함께 적용합니다. */
+	void ApplySpeedBuff(float InMultiflyValue);
+	/** 지휘관 스킬 식별자의 배율만 제거하고 다른 생산 보너스는 유지합니다. */
 	void ResetSpeedMultiplier();
+	/** 생산 건물용 인터페이스 요청을 실제 ProductComponent 배율 등록으로 전달합니다. */
+	virtual void SetProductionSpeedModifier(FName ModifierId, float InMultiplier) override;
+	/** ProductComponent에서 지정된 출처의 생산 배율만 제거합니다. */
+	virtual void RemoveProductionSpeedModifier(FName ModifierId) override;
 	
 protected:
 	virtual void BeginPlay() override;

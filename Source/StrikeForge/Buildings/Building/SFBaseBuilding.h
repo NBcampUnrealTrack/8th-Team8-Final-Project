@@ -142,6 +142,18 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return ConfiguredGridSize; }
 
+	/** 실제 배치에 사용된 원점과 회전 반영 점유 크기를 반환합니다. 격자 등록 전이면 false입니다. */
+	FORCEINLINE bool TryGetRegisteredGridInfo(FBuildingGridInfo& OutGridInfo) const
+	{
+		if (!bGridRegistered || !RegisteredGridInfo.IsValid())
+		{
+			return false;
+		}
+
+		OutGridInfo = RegisteredGridInfo;
+		return true;
+	}
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
 

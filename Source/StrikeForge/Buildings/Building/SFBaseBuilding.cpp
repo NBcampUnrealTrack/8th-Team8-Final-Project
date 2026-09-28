@@ -17,6 +17,7 @@
 #include "Components/TimelineComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
 #include "InGame/Controller/SFInGamePlayerController.h"
@@ -878,11 +879,28 @@ void ASFBaseBuilding::BeginPlay()
 			//	TL_TimelineLength :: 시간을 다 소비하고 끝냄
 			//	TL_LastKeyFrame	  :: Key를 다 지나면 끝냄
 	}
+
+	// Definition 로딩과 초기 활성화가 끝난 건물을 월드 시너지 계산 목록에 등록합니다.
+	if (!IsActorBeingDestroyed())
+	{
+		if (USFBuildingSynergySubsystem* Synergy =
+			USFBuildingSynergySubsystem::Get(this))
+		{
+			Synergy->RegisterBuilding(this);
+		}
+	}
 }
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopHitReaction();
+
+	// 종료되는 건물을 먼저 제외하여 남은 구역과 생산 배율을 즉시 갱신합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->UnregisterBuilding(this);
+	}
 	
 	if (IsValid(DestructionActor))
 	{
@@ -1180,6 +1198,13 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	USFTutorialSubsystem::NotifyBuildingTierActivated(this, this, CurrentTier);
 	USFTutorialSubsystem::NotifyBuildingConstructionCompleted(this, this, CurrentTier);
 
+	// 완성 상태가 확정됐으므로 이 건물을 포함해 시너지 구역을 다시 계산합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->NotifyBuildingChanged(this);
+	}
+
 	return true;
 }
 // enterdestorystate call this function
@@ -1194,6 +1219,13 @@ void ASFBaseBuilding::DeactivateActiveTier()
 	// 파생 훅에서 재진입해도 중복 비활성화되지 않도록 먼저 변경
 	bIsTierActivated = false;
 	OnTierDeactivated();
+
+	// 파괴·업그레이드로 비활성화된 건물을 원천과 대상 계산에서 즉시 제외합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->NotifyBuildingChanged(this);
+	}
 }
 
 #pragma region Sound

@@ -349,7 +349,8 @@ struct STRIKEFORGE_API FSFStageIntroNode
     FText NoText;
 
     /**
-     * 기다릴 행동. NodeType 이 WaitForObjective 일 때만 쓰인다.
+     * WaitForObjective: 기다릴 행동. End: 전체 튜토리얼 종료 후 기록할 완료 신호.
+     * End의 신호는 목표 대기로 창을 잠시 닫거나 잘못된 노드로 종료할 때는 보내지 않는다.
      *
      * 계층으로 매칭된다. Tutorial.Build 로 적어두면 Tutorial.Build.Barracks
      * 든 Tutorial.Build.Factory 든 아무거나 하나만 지어도 통과한다.

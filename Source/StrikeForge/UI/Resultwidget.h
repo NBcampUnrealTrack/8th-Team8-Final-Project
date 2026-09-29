@@ -6,7 +6,7 @@ class UButton;
 class UWidget;
 class UImage;
 class UWidgetAnimation;
-
+class USoundBase;
 
 UCLASS()
 class STRIKEFORGE_API UResultWidget : public UUserWidget
@@ -37,6 +37,11 @@ protected:
 	UButton* Exit_Btn_W;
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn_F;
+	UPROPERTY(EditAnywhere, Category = "SF|Result|Sound")
+	TObjectPtr<USoundBase> WinSound;
+
+	UPROPERTY(EditAnywhere, Category = "SF|Result|Sound")
+	TObjectPtr<USoundBase> LoseSound;
 private:
 	UFUNCTION() void OnWinAnimFinished();
 	FWidgetAnimationDynamicEvent WinAnimFinishedEvent;

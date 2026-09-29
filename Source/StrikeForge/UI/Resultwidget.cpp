@@ -4,7 +4,8 @@
 #include "Components/Widget.h"
 #include "Animation/WidgetAnimation.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
-
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 void UResultWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -69,6 +70,11 @@ void UResultWidget::SetResultState(bool bIsWin)
 		{
 			PlayAnimation(Anim_Lose);
 		}
+	}
+
+	if (USoundBase* ResultSound = bIsWin ? WinSound : LoseSound)
+	{
+		UGameplayStatics::PlaySound2D(this, ResultSound);
 	}
 }
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "SettingWidget.h"
@@ -7,12 +7,15 @@
 class UButton;
 class UWidget;
 class UTexture2D;
+class USFMenuAtmosphereWidget;
+class USFLobbyStagePresentation;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
 	GENERATED_BODY()
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 
 	UFUNCTION()
 	void OnBackButtonClicked();
@@ -41,6 +44,14 @@ protected:
 	void ApplyStageButtonTexture(UButton* StageButton, UTexture2D* StageTexture);
 
 protected:
+	UPROPERTY(Transient)
+	TObjectPtr<USFLobbyStagePresentation> StagePresentation;
+	UPROPERTY(Transient)
+	TObjectPtr<USFMenuAtmosphereWidget> AnimatedBackdrop;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> OriginalBackdrop;
+	ESlateVisibility OriginalBackdropVisibility = ESlateVisibility::Visible;
+
 	UPROPERTY(meta = (BindWidget))
 	UButton* Stage1;
 	UPROPERTY(meta = (BindWidget))

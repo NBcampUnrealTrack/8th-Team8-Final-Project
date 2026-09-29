@@ -9,6 +9,7 @@
 #include "InputMappingContext.h"
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "Game/GameMode/SFGameMode.h"
 #include "Game/GameState/SFGameState.h"
 #include "InGame/SFInGameHUDWidget.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -177,6 +178,9 @@ void ASFInGamePlayerController::ClearSpawnedBuildingRef()
 
     if (IsValid(SpawnedBuildingRef))
     {
+        // 배치 모드에서 우클릭으로 취소했다면 튜토리얼 고스트도 없애고
+        // 건설 메뉴 열기 단계부터 다시 안내한다.
+        USFTutorialSubsystem::NotifyTutorialBuildingPlacementCancelled(this, SpawnedBuildingRef);
         SpawnedBuildingRef->Destroy();
         SpawnedBuildingRef = nullptr;
     }
@@ -290,6 +294,23 @@ void ASFInGamePlayerController::BeginPlay()
 void ASFInGamePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
+
+#if WITH_EDITOR
+    if (IsValid(InputComponent))
+    {
+        // ProtoType/PT_Stage_2의 레벨 BP에는 K 승리 이벤트가 있지만
+        // PT_StageDefence에는 누락돼 있다. 에디터 테스트에서만 보완한다.
+        FInputKeyBinding& DebugVictoryBinding = InputComponent->BindKey(
+            EKeys::K,
+            IE_Pressed,
+            this,
+            &ASFInGamePlayerController::HandleStage03DebugVictoryInput);
+        DebugVictoryBinding.bExecuteWhenPaused = true;
+        // ProtoType과 PT_Stage_2의 레벨 BP도 같은 K 입력을 사용한다.
+        // 여기서 소비하면 Stage03이 아닌 경우 기존 즉시 승리가 막힌다.
+        DebugVictoryBinding.bConsumeInput = false;
+    }
+#endif
 
     UEnhancedInputComponent* EnhancedInputComponent =
         Cast<UEnhancedInputComponent>(
@@ -892,6 +913,42 @@ void ASFInGamePlayerController::HandleCancelBuildInput()
     ClearSpawnedBuildingRef();
     SetSFControlMode(ESFControlMode::Gameplay);
 }
+
+#if WITH_EDITOR
+void ASFInGamePlayerController::HandleStage03DebugVictoryInput()
+{
+    UWorld* World = GetWorld();
+    ASFGameState* GameState = IsValid(World)
+        ? World->GetGameState<ASFGameState>()
+        : nullptr;
+
+    if (!IsValid(GameState) ||
+        GameState->GetCurrentStageRowName() != TEXT("Stage03") ||
+        !GameState->IsStagePlaying())
+    {
+        return;
+    }
+
+    // 시작 스토리나 단계별 가이드 도중 눌러도 기존 인트로를 먼저 정리한다.
+    // 그렇지 않으면 승리 후일담을 열 자리가 없어 결과 창으로 바로 넘어간다.
+    if (USFTutorialSubsystem* Tutorial = World->GetSubsystem<USFTutorialSubsystem>())
+    {
+        Tutorial->CancelGuide();
+    }
+
+    if (IsValid(InGameHUDWidget))
+    {
+        InGameHUDWidget->DismissActiveStageIntroForDebug();
+    }
+
+    ASFGameMode* GameMode = World->GetAuthGameMode<ASFGameMode>();
+    if (IsValid(GameMode))
+    {
+        SF_LOG(Log, "[SFInGamePlayerController] Stage03 editor debug victory (K).");
+        GameMode->ProcessVictory();
+    }
+}
+#endif
 
 void ASFInGamePlayerController::CreateInGameHUD()
 {
@@ -1512,7 +1569,7 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             }
         }
 
-        // 적 대상이 아니면 클릭 지점을 공격 이동 목적지로 처리한다.
+        // 대상이 없으면 클릭 지점을 공격 이동 목적지로 처리한다.
         if (!IsValid(AttackTarget) &&
             !GetHitResultUnderCursor(ECC_LANDSCAPE, false, Hit))
         {
@@ -1555,8 +1612,15 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
     const bool bAppendToQueue =
         IsShiftCommandModifierDown();
 
+    bool bAcceptedTargetAttack = false;
     for (AActor* Actor : Commandables)
     {
+        if (IsValid(AttackTarget))
+        {
+            const AUnitBase* Unit = Cast<AUnitBase>(Actor);
+            if (!Unit || !Unit->CanForceAttackTarget(AttackTarget)) continue;
+            bAcceptedTargetAttack = true;
+        }
         ExecuteUnitCommandForActor(
             Actor,
             CommandMode,
@@ -1565,6 +1629,8 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             bAppendToQueue
         );
     }
+
+    if (IsValid(AttackTarget) && !bAcceptedTargetAttack) return true;
 
     if (CommandMode == ESFUnitCommandMode::Attack &&
         IsValid(AttackTarget) &&
@@ -1576,7 +1642,7 @@ bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()
             );
     }
 
-    if (IsValid(InGameHUDWidget))
+    if (!IsValid(AttackTarget) && IsValid(InGameHUDWidget))
     {
         InGameHUDWidget->ShowMoveDestinationIndicator(
             Hit.Location,
@@ -1705,7 +1771,7 @@ bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
     {
         if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
     }
-    if (!IsValid(Actor) || IsLocallyControllableActor(Actor))
+    if (!IsValid(Actor))
     {
         return false;
     }
@@ -1713,9 +1779,10 @@ bool ASFInGamePlayerController::IsValidAttackTarget(const AActor* Actor) const
     const UCombatTargetComponent* CombatTarget =
         Actor->FindComponentByClass<UCombatTargetComponent>();
 
-    return IsValid(CombatTarget) &&
+    const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(Actor);
+    return (!Building || Building->ProvidesVision()) && IsValid(CombatTarget) &&
         CombatTarget->IsAlive() &&
-        CombatTarget->GetTeamIndex() != MyTeamIndex;
+        CombatTarget->GetTeamIndex() != INDEX_NONE;
 }
 
 bool ASFInGamePlayerController::IsLocallyControllableActor(const AActor* Actor) const

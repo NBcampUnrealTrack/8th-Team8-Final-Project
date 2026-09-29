@@ -63,6 +63,9 @@ protected:
 private:
 	void TickMining();
 
+	// 실제 채굴 정책에 따라 대상 셀을 정렬합니다.
+	void SortMiningTargetsByDeposit();
+	
 	// 사용할 수 없는 앞쪽 대상을 제거하고
 	// MiningTargets[0]을 현재 대상으로 준비합니다.
 	bool PrepareFrontTarget();

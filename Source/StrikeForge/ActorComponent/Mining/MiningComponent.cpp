@@ -1,5 +1,6 @@
 ﻿#include "MiningComponent.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "Logging/SFLog.h"
 
 UMiningComponent::UMiningComponent()
 {
@@ -287,6 +288,44 @@ void UMiningComponent::ClearMiningTargets()
 
 	MiningTargets.Reset();
 	Tracker.CurrentWork = 0.f;
+}
+
+void UMiningComponent::SetWorkRateModifier(FName ModifierId, float InMultiplier)
+{
+	// InMultiplier가 0아닌지 검사하고 ModifierId가 None이 아닌지 검사함
+	if (!Tracker.WouldChangeWorkRateModifier(ModifierId, InMultiplier))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.SetWorkRateModifier(ModifierId, InMultiplier);
+	
+	SF_LOG(Display, "[MiningComponent::SetWorkRateModifier] 광산의기본작업배율증가!: Causer: %s, Amount: %.1f",
+		*ModifierId.ToString(), InMultiplier);
+}
+
+void UMiningComponent::RemoveWorkRateModifier(FName ModifierId)
+{
+	if (!Tracker.HasWorkRateModifier(ModifierId))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.RemoveWorkRateModifier(ModifierId);
 }
 
 const FSFMiningCellTarget*

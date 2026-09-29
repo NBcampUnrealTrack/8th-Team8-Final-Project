@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
+#include "Interfaces/Building/SFProductionRateModifiable.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFMiningBuilding.generated.h"
 
@@ -12,6 +13,7 @@ UCLASS()
 class STRIKEFORGE_API ASFMiningBuilding 
 	: public ASFBaseBuilding
 	, public IMinable
+	, public ISFProductionRateModifiable
 {
 	GENERATED_BODY()
 
@@ -38,6 +40,11 @@ public:
 	int32 GetExtractAmount() const;
 	int32 GetResourceAmount() const;
 	float GetMiningProgressRatio() const;
+
+	/** 생산속도 인터페이스 요청을 MiningComponent의 작업 배율로 전달합니다. */
+	virtual void SetProductionSpeedModifier(FName ModifierId, float InMultiplier) override;
+	/** MiningComponent에서 지정된 출처의 작업 배율만 제거합니다. */
+	virtual void RemoveProductionSpeedModifier(FName ModifierId) override;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

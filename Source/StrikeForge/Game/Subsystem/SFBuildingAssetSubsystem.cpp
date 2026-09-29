@@ -488,6 +488,7 @@ void USFBuildingAssetSubsystem::HandleUIAssetsLoaded(ESFRace InRace)
 
 	LoadedData->UIAssets.Reset();
 
+	// 각 건물 Definition의 기본 아이콘과 시너지 뱃지를 함께 캐시에 등록합니다.
 	for (const TObjectPtr<USFBuildingDefinition>& Definition
 		: LoadedData->Definitions)
 	{
@@ -497,20 +498,22 @@ void USFBuildingAssetSubsystem::HandleUIAssetsLoaded(ESFRace InRace)
 			return;
 		}
 
-		if (Definition->Icon.IsNull())
+		TArray<FSoftObjectPath> DefinitionUIPaths;
+		Definition->GetUIAssetPaths(DefinitionUIPaths);
+
+		for (const FSoftObjectPath& UIPath : DefinitionUIPaths)
 		{
-			continue;
+			UTexture2D* LoadedTexture =
+				Cast<UTexture2D>(UIPath.ResolveObject());
+
+			if (!IsValid(LoadedTexture))
+			{
+				CompleteRaceRequest(InRace, false);
+				return;
+			}
+
+			LoadedData->UIAssets.AddUnique(LoadedTexture);
 		}
-
-		UTexture2D* LoadedIcon = Definition->Icon.Get();
-
-		if (!IsValid(LoadedIcon))
-		{
-			CompleteRaceRequest(InRace, false);
-			return;
-		}
-
-		LoadedData->UIAssets.AddUnique(LoadedIcon);
 	}
 
 	CompleteRaceRequest(InRace, true);

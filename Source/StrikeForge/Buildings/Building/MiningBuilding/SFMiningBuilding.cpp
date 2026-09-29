@@ -254,6 +254,30 @@ float ASFMiningBuilding::GetMiningProgressRatio() const
 	return MiningComponent->GetExtractProgressRatio();
 }
 
+void ASFMiningBuilding::SetProductionSpeedModifier(
+	FName ModifierId,
+	float InMultiplier)
+{
+	if (!IsValid(MiningComponent))
+	{
+		return;
+	}
+
+	MiningComponent->SetWorkRateModifier(ModifierId, InMultiplier);
+	RefreshMiningState();
+}
+
+void ASFMiningBuilding::RemoveProductionSpeedModifier(FName ModifierId)
+{
+	if (!IsValid(MiningComponent))
+	{
+		return;
+	}
+
+	MiningComponent->RemoveWorkRateModifier(ModifierId);
+	RefreshMiningState();
+}
+
 // delegates
 void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 InAmount)
 {

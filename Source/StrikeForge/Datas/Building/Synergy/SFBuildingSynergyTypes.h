@@ -15,15 +15,15 @@ struct STRIKEFORGE_API FSFBuildingSynergyLevel
 
 	/** 이 단계를 활성화하는 최소 원천 건물 수입니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy", meta = (ClampMin = "1"))
-	int32 MinSourceBuildingCount = 1;
+	int32 MinSourceBuildingCount = 2;
 
 	/** 원천 건물의 로컬 X/Y 기준 효과 구역 전체 셀 수이며, 건물 회전에 따라 함께 회전합니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy", meta = (ClampMin = "1", UIMin = "1"))
-	FIntPoint EffectSizeCells = FIntPoint(11, 11);
+	FIntPoint EffectSizeCells = FIntPoint(5, 5);
 
 	/** 2를 입력하면 기본 생산력에 2%가 추가됩니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy", meta = (ClampMin = "0.0"))
-	float ProductionBonusPercent = 2.f;
+	float ProductionBonusPercent = 25.f;
 };
 
 /**

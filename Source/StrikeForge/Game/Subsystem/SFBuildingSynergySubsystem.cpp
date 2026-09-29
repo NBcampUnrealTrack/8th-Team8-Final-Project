@@ -3,36 +3,13 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Building/Synergy/SFBuildingSynergyDefinition.h"
-#include "DrawDebugHelpers.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
-#include "HAL/IConsoleManager.h"
 #include "Interfaces/Building/SFProductionRateModifiable.h"
 #include "Interfaces/Units/Targetable.h"
-#include "Logging/SFLog.h"
 
 namespace
 {
 	const FName BuildingSynergyModifierId(TEXT("BuildingSynergy"));
-
-#if !UE_BUILD_SHIPPING
-	TAutoConsoleVariable<int32> CVarBuildingSynergyAutoDebugDraw(
-		TEXT("sf.BuildingSynergy.AutoDebugDraw"),
-		1,
-		TEXT("0: disable automatic synergy debug output, 1: draw and log after recalculation"),
-		ECVF_Cheat);
-
-	TAutoConsoleVariable<float> CVarBuildingSynergyDebugDuration(
-		TEXT("sf.BuildingSynergy.DebugDuration"),
-		10.f,
-		TEXT("Lifetime in seconds for automatically drawn building synergy debug shapes"),
-		ECVF_Cheat);
-
-	TAutoConsoleVariable<int32> CVarBuildingSynergyDrawClusterLinkCells(
-		TEXT("sf.BuildingSynergy.DrawClusterLinkCells"),
-		1,
-		TEXT("0: hide cluster link cells, 1: draw each source building's cluster link extent"),
-		ECVF_Cheat);
-#endif
 
 	struct FSFSynergySourceEntry
 	{
@@ -89,146 +66,6 @@ namespace
 		return MakeCenteredGridInfo(Grid, Left, LeftLinkSize).ContainsCenterOf(Right) ||
 			MakeCenteredGridInfo(Grid, Right, RightLinkSize).ContainsCenterOf(Left);
 	}
-
-#if !UE_BUILD_SHIPPING
-	// 각 시너지 원천 건물을 중심으로 실제 클러스터 연결 판정에 포함되는 셀을 그립니다.
-	// 청록색은 링크 영역, 노란색은 기준 원천 건물이 실제 점유한 전체 셀입니다.
-	void DrawClusterLinkCells(
-		UWorld* World,
-		const USFBuildingGridSubsystem* Grid,
-		const TSet<TWeakObjectPtr<ASFBaseBuilding>>& RegisteredBuildings,
-		float Duration)
-	{
-		if (!IsValid(World) || !IsValid(Grid) ||
-			CVarBuildingSynergyDrawClusterLinkCells.GetValueOnGameThread() == 0)
-		{
-			return;
-		}
-
-		for (const TWeakObjectPtr<ASFBaseBuilding>& WeakBuilding :
-			RegisteredBuildings)
-		{
-			const ASFBaseBuilding* Building = WeakBuilding.Get();
-			if (!IsValid(Building) ||
-				!Building->IsTierActivated() ||
-				Building->GetTeamIndex() == Targetable::NeutralTeam)
-			{
-				continue;
-			}
-
-			const USFBuildingDefinition* BuildingDefinition =
-				Building->GetBuildingDefinition();
-			if (!IsValid(BuildingDefinition))
-			{
-				continue;
-			}
-
-			FBuildingGridInfo SourceGridInfo;
-			if (!Building->TryGetRegisteredGridInfo(SourceGridInfo))
-			{
-				continue;
-			}
-
-			TSet<const USFBuildingSynergyDefinition*> SeenSynergyDefinitions;
-
-			for (const FSFGrantedBuildingSynergy& GrantedSynergy :
-				BuildingDefinition->GrantedSynergies)
-			{
-				const USFBuildingSynergyDefinition* SynergyDefinition =
-					GrantedSynergy.Definition.Get();
-				if (!IsValid(SynergyDefinition) ||
-					SeenSynergyDefinitions.Contains(SynergyDefinition))
-				{
-					continue;
-				}
-				SeenSynergyDefinitions.Add(SynergyDefinition);
-
-				const FIntPoint LinkGridSize = GetRotatedGridSizeForBuilding(
-					SynergyDefinition->ClusterLinkSizeCells,
-					Building);
-				const FBuildingGridInfo LinkGridInfo = MakeCenteredGridInfo(
-					Grid,
-					SourceGridInfo,
-					LinkGridSize);
-
-				SF_LOG(
-					Log,
-					"[BuildingSynergy] ClusterLink | Source=%s | Id=%s | SourceOrigin=(%d,%d) | SourceSize=(%d,%d) | LinkOrigin=(%d,%d) | LinkSize=(%d,%d)",
-					*Building->GetName(),
-					*SynergyDefinition->GetEffectiveSynergyId().ToString(),
-					SourceGridInfo.OriginCell.X,
-					SourceGridInfo.OriginCell.Y,
-					SourceGridInfo.GridSize.X,
-					SourceGridInfo.GridSize.Y,
-					LinkGridInfo.OriginCell.X,
-					LinkGridInfo.OriginCell.Y,
-					LinkGridInfo.GridSize.X,
-					LinkGridInfo.GridSize.Y);
-
-#if ENABLE_DRAW_DEBUG
-				const float DrawZ = Building->GetActorLocation().Z + 15.f;
-				Grid->DebugDrawGridCells(
-					LinkGridInfo,
-					DrawZ,
-					FColor::Cyan,
-					Duration,
-					0.f,
-					1.5f);
-				Grid->DebugDrawGridCells(
-					SourceGridInfo,
-					DrawZ,
-					FColor::Yellow,
-					Duration,
-					3.f,
-					4.f);
-
-				FVector BoundsOrigin;
-				FVector BoundsExtent;
-				Building->GetActorBounds(false, BoundsOrigin, BoundsExtent);
-				const FString Label = FString::Printf(
-					TEXT("Source = %dx%d | Cluster Link = %dx%d"),
-					SourceGridInfo.GridSize.X,
-					SourceGridInfo.GridSize.Y,
-					LinkGridInfo.GridSize.X,
-					LinkGridInfo.GridSize.Y);
-
-				DrawDebugString(
-					World,
-					BoundsOrigin + FVector(0.f, 0.f, BoundsExtent.Z + 130.f),
-					Label,
-					nullptr,
-					FColor::Cyan,
-					Duration,
-					true,
-					1.1f);
-#endif
-			}
-		}
-	}
-
-	// 현재 상태를 원하는 시간만큼 다시 확인할 수 있는 수동 디버그 명령입니다.
-	FAutoConsoleCommandWithWorldAndArgs DrawBuildingSynergyCommand(
-		TEXT("sf.BuildingSynergy.Draw"),
-		TEXT("Draws cluster link cells, synergy zones, and buffed targets. Usage: sf.BuildingSynergy.Draw [Duration]"),
-		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda(
-			[](const TArray<FString>& Args, UWorld* World)
-			{
-				if (!IsValid(World))
-				{
-					return;
-				}
-
-				const float Duration = Args.IsEmpty()
-					? CVarBuildingSynergyDebugDuration.GetValueOnGameThread()
-					: FMath::Max(0.1f, FCString::Atof(*Args[0]));
-
-				if (USFBuildingSynergySubsystem* Synergy =
-					World->GetSubsystem<USFBuildingSynergySubsystem>())
-				{
-					Synergy->DebugDrawSynergyState(Duration);
-				}
-			}));
-#endif
 }
 
 USFBuildingSynergySubsystem* USFBuildingSynergySubsystem::Get(
@@ -317,145 +154,6 @@ float USFBuildingSynergySubsystem::GetProductionBonusPercent(
 		: 0.f;
 }
 
-void USFBuildingSynergySubsystem::DebugDrawSynergyState(float Duration) const
-{
-#if !UE_BUILD_SHIPPING
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	const float SafeDuration = FMath::Max(0.1f, Duration);
-
-	SF_LOG(
-		Log,
-		"[BuildingSynergy] State | Registered=%d | Zones=%d | BuffedTargets=%d",
-		RegisteredBuildings.Num(),
-		SynergyZones.Num(),
-		AppliedMultipliers.Num());
-
-	const USFBuildingGridSubsystem* Grid =
-		World->GetSubsystem<USFBuildingGridSubsystem>();
-	DrawClusterLinkCells(
-		World,
-		Grid,
-		RegisteredBuildings,
-		SafeDuration);
-
-	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
-	{
-		SF_LOG(
-			Log,
-			"[BuildingSynergy] Zone | Id=%s | Team=%d | Sources=%d | Bonus=+%.1f%% | EffectOrigin=(%d,%d) | EffectSize=(%d,%d) | WorldCenter=%s | WorldSize=%s",
-			*Zone.SynergyId.ToString(),
-			Zone.TeamIndex,
-			Zone.SourceBuildingCount,
-			Zone.ProductionBonusPercent,
-			Zone.EffectGridInfo.OriginCell.X,
-			Zone.EffectGridInfo.OriginCell.Y,
-			Zone.EffectGridInfo.GridSize.X,
-			Zone.EffectGridInfo.GridSize.Y,
-			*Zone.WorldCenter.ToCompactString(),
-			*Zone.WorldSize.ToString());
-
-#if ENABLE_DRAW_DEBUG
-		const FVector DrawCenter = Zone.WorldCenter + FVector(0.f, 0.f, 25.f);
-		const FColor DrawColor = Zone.BoundaryColor.ToFColor(true);
-		const FVector DrawExtent(
-			Zone.WorldSize.X * 0.5f,
-			Zone.WorldSize.Y * 0.5f,
-			8.f);
-
-		DrawDebugBox(
-			World,
-			DrawCenter,
-			DrawExtent,
-			FQuat::Identity,
-			DrawColor,
-			false,
-			SafeDuration,
-			0,
-			5.f);
-
-		DrawDebugPoint(
-			World,
-			DrawCenter,
-			18.f,
-			DrawColor,
-			false,
-			SafeDuration);
-
-		const FString ZoneLabel = FString::Printf(
-			TEXT("%s | Team %d | Sources %d | +%.1f%%"),
-			*Zone.SynergyId.ToString(),
-			Zone.TeamIndex,
-			Zone.SourceBuildingCount,
-			Zone.ProductionBonusPercent);
-
-		DrawDebugString(
-			World,
-			DrawCenter + FVector(0.f, 0.f, 80.f),
-			ZoneLabel,
-			nullptr,
-			DrawColor,
-			SafeDuration,
-			true,
-			1.2f);
-#endif
-	}
-
-	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>, float>& Applied :
-		AppliedMultipliers)
-	{
-		const ASFBaseBuilding* Building = Applied.Key.Get();
-		if (!IsValid(Building))
-		{
-			continue;
-		}
-
-		const float BonusPercent = FMath::Max(0.f, (Applied.Value - 1.f) * 100.f);
-		SF_LOG(
-			Log,
-			"[BuildingSynergy] Applied | Target=%s | Team=%d | Bonus=+%.1f%%",
-			*Building->GetName(),
-			Building->GetTeamIndex(),
-			BonusPercent);
-
-#if ENABLE_DRAW_DEBUG
-		FVector BoundsOrigin;
-		FVector BoundsExtent;
-		Building->GetActorBounds(false, BoundsOrigin, BoundsExtent);
-		const FVector MarkerLocation = BoundsOrigin + FVector(
-			0.f,
-			0.f,
-			BoundsExtent.Z + 60.f);
-
-		DrawDebugSphere(
-			World,
-			MarkerLocation,
-			35.f,
-			12,
-			FColor::Green,
-			false,
-			SafeDuration,
-			0,
-			3.f);
-
-		DrawDebugString(
-			World,
-			MarkerLocation + FVector(0.f, 0.f, 45.f),
-			FString::Printf(TEXT("Synergy +%.1f%%"), BonusPercent),
-			nullptr,
-			FColor::Green,
-			SafeDuration,
-			true,
-			1.1f);
-#endif
-	}
-#endif
-}
-
 void USFBuildingSynergySubsystem::Deinitialize()
 {
 	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>, float>& Applied :
@@ -484,11 +182,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 
 	USFBuildingGridSubsystem* Grid =
 		GetWorld() ? GetWorld()->GetSubsystem<USFBuildingGridSubsystem>() : nullptr;
-
-	if (!IsValid(Grid))
-	{
-		return;
-	}
+	if (!IsValid(Grid)) return;
 
 	for (auto It = RegisteredBuildings.CreateIterator(); It; ++It)
 	{
@@ -590,8 +284,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 					continue;
 				}
 
-				const FSFSynergySourceEntry& Candidate =
-					SourceEntries[CandidateIndex];
+				const FSFSynergySourceEntry& Candidate = SourceEntries[CandidateIndex];
 				const ASFBaseBuilding* CandidateBuilding = Candidate.Building.Get();
 
 				if (!IsValid(CandidateBuilding) ||
@@ -662,9 +355,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			Zone.BoundaryColor = Source.GrantedSynergy.BoundaryColor;
 			Zone.BadgeIcon = Source.GrantedSynergy.BadgeIcon;
 			Zone.EffectGridInfo = MakeCenteredGridInfo(
-				Grid,
-				Source.GridInfo,
-				EffectSize);
+				Grid, Source.GridInfo, EffectSize);
 			Zone.WorldCenter = Grid->GridInfoToWorldCenter(Zone.EffectGridInfo);
 			Zone.WorldCenter.Z = SourceBuilding->GetActorLocation().Z;
 			Zone.WorldSize = FVector2D(
@@ -751,28 +442,17 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 	}
 
 	AppliedMultipliers = MoveTemp(DesiredMultipliers);
-
-#if !UE_BUILD_SHIPPING
-	if (CVarBuildingSynergyAutoDebugDraw.GetValueOnGameThread() != 0)
-	{
-		DebugDrawSynergyState(
-			CVarBuildingSynergyDebugDuration.GetValueOnGameThread());
-	}
-#endif
-
 	OnSynergyZonesChanged.Broadcast();
 }
 
 void USFBuildingSynergySubsystem::ApplyProductionModifier(
-	ASFBaseBuilding* Building,
-	float Multiplier)
+	ASFBaseBuilding* Building, float Multiplier)
 {
 	if (ISFProductionRateModifiable* Target =
 		Cast<ISFProductionRateModifiable>(Building))
 	{
 		Target->SetProductionSpeedModifier(
-			BuildingSynergyModifierId,
-			Multiplier);
+			BuildingSynergyModifierId, Multiplier);
 	}
 }
 

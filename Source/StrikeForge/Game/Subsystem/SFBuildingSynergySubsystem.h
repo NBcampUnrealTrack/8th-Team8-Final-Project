@@ -83,10 +83,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 
-	/** 원천 건물의 연결 셀 범위, 활성 구역 경계와 버프 적용 대상을 월드와 로그에 출력합니다. */
-	UFUNCTION(BlueprintCallable, Category = "SF|Building Synergy|Debug")
-	void DebugDrawSynergyState(float Duration = 10.f) const;
-
 	/** 재계산된 구역 정보를 UI와 Niagara 표현 계층에 알립니다. */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Building Synergy")
 	FSFOnBuildingSynergyZonesChanged OnSynergyZonesChanged;

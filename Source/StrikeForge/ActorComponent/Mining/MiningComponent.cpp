@@ -1,5 +1,6 @@
 ﻿#include "MiningComponent.h"
 #include "Buildings/Resource/ResourceBase.h"
+#include "Logging/SFLog.h"
 
 UMiningComponent::UMiningComponent()
 {
@@ -291,6 +292,7 @@ void UMiningComponent::ClearMiningTargets()
 
 void UMiningComponent::SetWorkRateModifier(FName ModifierId, float InMultiplier)
 {
+	// InMultiplier가 0아닌지 검사하고 ModifierId가 None이 아닌지 검사함
 	if (!Tracker.WouldChangeWorkRateModifier(ModifierId, InMultiplier))
 	{
 		return;
@@ -304,6 +306,9 @@ void UMiningComponent::SetWorkRateModifier(FName ModifierId, float InMultiplier)
 	}
 
 	Tracker.SetWorkRateModifier(ModifierId, InMultiplier);
+	
+	SF_LOG(Display, "[MiningComponent::SetWorkRateModifier] 광산의기본작업배율증가!: Causer: %s, Amount: %.1f",
+		*ModifierId.ToString(), InMultiplier);
 }
 
 void UMiningComponent::RemoveWorkRateModifier(FName ModifierId)

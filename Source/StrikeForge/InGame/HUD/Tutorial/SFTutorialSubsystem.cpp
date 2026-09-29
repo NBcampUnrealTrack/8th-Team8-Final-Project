@@ -392,7 +392,12 @@ void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
         if (Step.CompletionTag.IsValid())
         {
             // 이미 해버린 조작이면 기다릴 이유가 없다. 곧바로 다음 칸으로.
-            if (CompletedObjectives.HasTag(Step.CompletionTag))
+            // 건설 메뉴 열기는 같은 스테이지에서도 건물마다 반복한다. 이전
+            // 건설 때의 기록으로 다음 메뉴 단계를 건너뛰면 버튼 강조가 안 보인다.
+            static const FGameplayTag BuildModeOpenTag =
+                FGameplayTag::RequestGameplayTag(TEXT("Tutorial.BuildMode.Open"), false);
+            const bool bRepeatableBuildModeAction = Step.CompletionTag == BuildModeOpenTag;
+            if (!bRepeatableBuildModeAction && CompletedObjectives.HasTag(Step.CompletionTag))
             {
                 SF_LOG(Log, "[SFTutorialSubsystem] Guide step %d was already satisfied | Tag: %s",
                     GuideStepIndex, *Step.CompletionTag.ToString());
@@ -1122,6 +1127,27 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
     return bAllowed;
 }
 
+float USFTutorialSubsystem::ResolveBuildingRequiredWork(
+    const UObject* InWorldContext,
+    float InDefaultRequiredWork)
+{
+    constexpr float TutorialBuildingDurationSeconds = 10.f;
+
+    const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
+    if (!IsValid(Tutorial) || !Tutorial->IsGuideActive())
+    {
+        return InDefaultRequiredWork;
+    }
+
+    const bool bUsesShortTutorialTiming =
+        Tutorial->PendingRowName == TEXT("Stage02") ||
+        Tutorial->PendingRowName == TEXT("Stage03");
+
+    return bUsesShortTutorialTiming
+        ? TutorialBuildingDurationSeconds
+        : InDefaultRequiredWork;
+}
+
 void USFTutorialSubsystem::SetBuildBlocked(bool bInBlocked)
 {
     if (bLastBuildBlocked == bInBlocked)
@@ -1175,15 +1201,56 @@ void USFTutorialSubsystem::NotifyTutorialBuildingPlacementCancelled(
 {
     USFTutorialSubsystem* Tutorial = Get(InWorldContext);
 
-    if (!IsValid(Tutorial) || !Tutorial->ReservedTutorialBuilding.IsValid() ||
-        Tutorial->ReservedTutorialBuilding.Get() != InBuilding)
+    if (!IsValid(Tutorial) || !IsValid(InBuilding))
     {
         return;
     }
 
-    SF_LOG(Log, "[SFTutorialSubsystem] 취소된 튜토리얼 건설 예약 해제 | Building: %s",
-        *GetNameSafe(InBuilding));
-    Tutorial->ReservedTutorialBuilding = nullptr;
+    if (Tutorial->ReservedTutorialBuilding.Get() == InBuilding)
+    {
+        SF_LOG(Log, "[SFTutorialSubsystem] 취소된 튜토리얼 건설 예약 해제 | Building: %s",
+            *GetNameSafe(InBuilding));
+        Tutorial->ReservedTutorialBuilding = nullptr;
+    }
+
+    const USFBuildingDefinition* Definition = InBuilding->GetBuildingDefinition();
+    const FSFStageIntroGuideStep* Step = Tutorial->GetCurrentGuideStep();
+    if (!IsValid(Definition) || !Step ||
+        Definition->BuildingId != Tutorial->LockedBuildingRowName ||
+        Step->TargetKind != ESFGuideTargetKind::WorldLocation ||
+        !Step->bShowPlacementGhost)
+    {
+        return;
+    }
+
+    // 선택 단계 바로 앞에 건설 메뉴 단계가 있으면 그곳까지 되돌린다.
+    int32 RestartIndex = Tutorial->LockedBuildingStepIndex;
+    static const FGameplayTag BuildModeOpenTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.BuildMode.Open"), false);
+    if (RestartIndex > 0 && Tutorial->GuideSteps.IsValidIndex(RestartIndex - 1) &&
+        Tutorial->GuideSteps[RestartIndex - 1].CompletionTag == BuildModeOpenTag)
+    {
+        --RestartIndex;
+    }
+
+    if (!Tutorial->GuideSteps.IsValidIndex(RestartIndex))
+    {
+        return;
+    }
+
+    // 재진입할 단계들의 완료 기록을 지우지 않으면 EnterGuideStep이 이미 한
+    // 조작이라 판단해 곧바로 고스트 단계까지 건너뛴다.
+    for (int32 Index = RestartIndex; Index <= Tutorial->GuideStepIndex; ++Index)
+    {
+        if (Tutorial->GuideSteps.IsValidIndex(Index))
+        {
+            Tutorial->CompletedObjectives.RemoveTag(Tutorial->GuideSteps[Index].CompletionTag);
+        }
+    }
+
+    SF_LOG(Log, "[SFTutorialSubsystem] 배치 취소로 건설 안내 재시작 | Row: %s | Step: %d",
+        *Definition->BuildingId.ToString(), RestartIndex);
+    Tutorial->EnterGuideStep(RestartIndex);
 }
 
 // ─────────────────────────────────────────────────────────

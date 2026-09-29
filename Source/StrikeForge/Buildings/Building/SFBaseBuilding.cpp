@@ -1135,7 +1135,13 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	ProgressComponent->InitProgressWorks(Tier->Construction.RequiredWork, 1.f);
+	// 정적 Definition은 건드리지 않는다. Stage02/03의 튜토리얼 가이드에서
+	// 실제로 요구한 건설과 티어 업만 10초로 단축된다.
+	const float RequiredWork =
+		USFTutorialSubsystem::ResolveBuildingRequiredWork(
+			this,
+			Tier->Construction.RequiredWork);
+	ProgressComponent->InitProgressWorks(RequiredWork, 1.f);
 
 	CurrentStageIndex = 0;
 

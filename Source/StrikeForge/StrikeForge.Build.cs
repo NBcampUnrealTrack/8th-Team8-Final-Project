@@ -29,6 +29,8 @@ public class StrikeForge : ModuleRules
         });
 
 		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
+		// Deferred cleanup for the development-only menu screenshot renderer.
+		PrivateDependencyModuleNames.Add("RenderCore");
 
         PublicDefinitions.Add("ECC_LANDSCAPE=ECC_GameTraceChannel1");
 

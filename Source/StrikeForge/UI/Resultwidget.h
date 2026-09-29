@@ -2,9 +2,11 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "ResultWidget.generated.h"
-
 class UButton;
 class UWidget;
+class UImage;
+class UWidgetAnimation;
+
 
 UCLASS()
 class STRIKEFORGE_API UResultWidget : public UUserWidget
@@ -20,8 +22,13 @@ protected:
 
 	UFUNCTION()
 	void OnExitButtonClicked();
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Win_Glow;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UImage> Flash;
 
-protected:
+	// Names must match the animations in WBP_Win exactly
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional)) TObjectPtr<UWidgetAnimation> Anim_Win;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional)) TObjectPtr<UWidgetAnimation> Anim_WinLoop;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional)) TObjectPtr<UWidgetAnimation> Anim_Lose;
 	UPROPERTY(meta = (BindWidget))
 	UWidget* Win_Image;
 	UPROPERTY(meta = (BindWidget))
@@ -30,4 +37,8 @@ protected:
 	UButton* Exit_Btn_W;
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn_F;
+private:
+	UFUNCTION() void OnWinAnimFinished();
+	FWidgetAnimationDynamicEvent WinAnimFinishedEvent;
+	
 };

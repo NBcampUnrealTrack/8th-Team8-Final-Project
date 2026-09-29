@@ -3,6 +3,8 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/SFInGameHUDWidget.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
@@ -100,6 +102,11 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
 
     PulseTime += InDeltaTime;
 
+    if (CurrentStep.TargetKind == ESFGuideTargetKind::ScreenRegion)
+    {
+        UpdateFromScreenTargetWidget(MyGeometry);
+    }
+
     if (CurrentStep.TargetKind == ESFGuideTargetKind::WorldLocation)
     {
         FVector2D Center = FVector2D::ZeroVector;
@@ -114,6 +121,60 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
         }
     }
 
+}
+
+UWidget* USFTutorialSpotlightWidget::ResolveScreenTargetWidget() const
+{
+    const ASFInGamePlayerController* Controller = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    USFInGameHUDWidget* HUD = IsValid(Controller) ? Controller->GetInGameHUDWidget() : nullptr;
+    if (!IsValid(HUD))
+    {
+        return nullptr;
+    }
+
+    static const FGameplayTag BuildModeOpenTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.BuildMode.Open"), false);
+    if (CurrentStep.CompletionTag == BuildModeOpenTag)
+    {
+        return HUD->GetTutorialBuildModeButton();
+    }
+
+    static const FGameplayTag SelectBuildingTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.Select.Building"), false);
+    if (!CurrentStep.RequiredBuildingRowName.IsNone() &&
+        SelectBuildingTag.IsValid() &&
+        CurrentStep.CompletionTag.MatchesTag(SelectBuildingTag))
+    {
+        return HUD->FindTutorialBuildCatalogEntry(CurrentStep.RequiredBuildingRowName);
+    }
+
+    return nullptr;
+}
+
+bool USFTutorialSpotlightWidget::UpdateFromScreenTargetWidget(const FGeometry& OverlayGeometry)
+{
+    UWidget* Target = ResolveScreenTargetWidget();
+    const FVector2D OverlaySize = OverlayGeometry.GetLocalSize();
+    if (!IsValid(Target) || Target->GetVisibility() == ESlateVisibility::Collapsed ||
+        OverlaySize.X <= KINDA_SMALL_NUMBER || OverlaySize.Y <= KINDA_SMALL_NUMBER)
+    {
+        return false;
+    }
+
+    const FGeometry& TargetGeometry = Target->GetCachedGeometry();
+    const FVector2D TargetSize = TargetGeometry.GetLocalSize();
+    if (TargetSize.X <= KINDA_SMALL_NUMBER || TargetSize.Y <= KINDA_SMALL_NUMBER)
+    {
+        return false;
+    }
+
+    const FVector2D TopLeft = OverlayGeometry.AbsoluteToLocal(TargetGeometry.LocalToAbsolute(FVector2D::ZeroVector));
+    const FVector2D BottomRight = OverlayGeometry.AbsoluteToLocal(TargetGeometry.LocalToAbsolute(TargetSize));
+    const FVector2D TargetPadding(8.f, 8.f);
+    HoleCenterNorm = ((TopLeft + BottomRight) * 0.5f) / OverlaySize;
+    HoleExtentNorm = (((BottomRight - TopLeft) * 0.5f) + TargetPadding) / OverlaySize;
+    bTargetVisible = true;
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────

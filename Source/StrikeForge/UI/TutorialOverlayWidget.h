@@ -60,6 +60,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	TArray<FTutorialStep> Steps;
 
+	// Returns true if the lobby tutorial has already been completed
+	UFUNCTION(BlueprintPure, Category = "Tutorial")
+	static bool IsTutorialCompleted();
+
+	// Clears the completed flag (for testing)
+	UFUNCTION(BlueprintCallable, Category = "Tutorial")
+	static void ResetTutorialCompleted();
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;

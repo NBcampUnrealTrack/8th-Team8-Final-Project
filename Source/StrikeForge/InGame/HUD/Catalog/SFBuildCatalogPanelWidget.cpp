@@ -544,3 +544,16 @@ bool USFBuildCatalogPanelWidget::RequestBuildingBySlot(
 
 	return true;
 }
+
+UWidget* USFBuildCatalogPanelWidget::FindTutorialEntryWidget(FName BuildingRowName) const
+{
+	for (const USFBuildCatalogEntryWidget* Entry : CurrentEntryWidgets)
+	{
+		if (IsValid(Entry) && Entry->GetBuildingRowName() == BuildingRowName)
+		{
+			return const_cast<USFBuildCatalogEntryWidget*>(Entry);
+		}
+	}
+
+	return nullptr;
+}

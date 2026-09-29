@@ -17,7 +17,8 @@
 #include "ActorComponent/Product/ProductInfo.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
-#include "SFProductionButtonPaint.h"
+#include "SFProductionQueueFeedbackWidget.h"
+#include "Components/ButtonSlot.h"
 
 #include "SFProductionUIDataRow.h"
 #include "Game/Subsystem/SFDataTableManager.h"
@@ -74,6 +75,23 @@ void USFProductionBuildingPanelWidget::NativeConstruct()
         Style.Pressed.TintColor = FSlateColor(FLinearColor(.8f,.72f,.64f,1.f));
         Button->SetStyle(Style);
         Button->SetToolTipText(NSLOCTEXT("SFProduction", "CancelHint", "클릭하여 생산 취소 · 비용 반환"));
+    }
+    QueueFeedback.Reset();
+    for (UButton* Button : QueueButtons)
+    {
+        auto* Feedback=CreateWidget<USFProductionQueueFeedbackWidget>(GetOwningPlayer());
+        QueueFeedback.Add(Feedback);
+        if (!Button || !Feedback) continue;
+        Feedback->InitializeContent(Button->GetContent());
+        Button->SetContent(Feedback);
+        FButtonStyle Style=Button->GetStyle();
+        Style.NormalPadding=Style.PressedPadding=FMargin(0);
+        Button->SetStyle(Style);
+        if (auto* ContentSlot=Cast<UButtonSlot>(Feedback->Slot))
+        {
+            ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+            ContentSlot->SetVerticalAlignment(VAlign_Fill);
+        }
     }
     HideProductionBuilding();
 }
@@ -746,6 +764,10 @@ void USFProductionBuildingPanelWidget::NativeDestruct()
 {
     UnbindProductionBuilding();
     UnbindProductComponent();
+    for (int32 I=0; I<QueueFeedback.Num(); ++I)
+        if (QueueButtons.IsValidIndex(I) && QueueButtons[I] && QueueFeedback[I])
+            QueueButtons[I]->SetContent(QueueFeedback[I]->ReleaseContent());
+    QueueFeedback.Reset();
     Super::NativeDestruct();
 }
 
@@ -760,44 +782,8 @@ void USFProductionBuildingPanelWidget::NativeTick(const FGeometry& Geometry, flo
 #endif
         QueueHover[I] = FMath::FInterpTo(QueueHover[I], bHover ? 1.f : 0.f, DeltaTime, 18.f);
         QueueCancelFlash[I] = FMath::Max(0.f, QueueCancelFlash[I] - DeltaTime);
+        if (QueueFeedback.IsValidIndex(I) && QueueFeedback[I])
+            QueueFeedback[I]->SetPresentation(QueueHover[I],QueueCancelFlash[I]/.32f,
+                I<OccupiedQueueCount,I==0,PresentedProgress);
     }
-}
-
-int32 USFProductionBuildingPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G,
-    const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer,
-    const FWidgetStyle& Style, bool bParentEnabled) const
-{
-    using namespace SFProductionPaint;
-    Layer = Super::NativePaint(Args,G,Cull,Out,Layer,Style,bParentEnabled) + 1;
-    const float Alpha = Style.GetColorAndOpacityTint().A * GetRenderOpacity();
-    for (int32 I=0; I<QueueButtons.Num(); ++I)
-    {
-        if (!QueueButtons[I]) continue;
-        const FGeometry& BG=QueueButtons[I]->GetCachedGeometry();
-        const FVector2D P=G.AbsoluteToLocal(BG.LocalToAbsolute(FVector2D::ZeroVector));
-        const FVector2D S=G.AbsoluteToLocal(BG.LocalToAbsolute(BG.GetLocalSize()))-P;
-        if (S.X < 1 || S.Y < 1) continue;
-        const float Hover=QueueHover[I], Flash=QueueCancelFlash[I]/.32f;
-        const float Intensity=FMath::Max(Hover,Flash);
-        FLinearColor C=Cancel; C.A=Alpha*Intensity;
-        Rim(Out,Layer,G,P+FVector2D(4,4),S-FVector2D(8,8),C,2.f);
-        if (I < OccupiedQueueCount)
-        {
-            FLinearColor Base=I==0 ? Ether : Gold; Base.A=Alpha*(1.f-Hover)*.85f;
-            Box(Out,Layer,G,P+FVector2D(9,S.Y-8),FVector2D(S.X-18,2),FLinearColor(.1f,.15f,.13f,Alpha));
-            Box(Out,Layer,G,P+FVector2D(9,S.Y-8),FVector2D((S.X-18)*(I==0 ? PresentedProgress : 1.f),2),Base);
-            // Compact status marker: active chevrons / waiting dots; no extra text crowded into the slots.
-            const FVector2D Mark=P+FVector2D(S.X*.5f,S.Y+6);
-            if (I==0) Line(Out,Layer,G,{Mark-FVector2D(5,2),Mark,Mark-FVector2D(5,-2)},Base,2.f);
-            else Box(Out,Layer,G,Mark-FVector2D(1,1),FVector2D(2,2),Base);
-        }
-        if (Intensity > .01f)
-        {
-            const FVector2D Center=P+FVector2D(S.X-11,11);
-            Box(Out,Layer,G,Center-FVector2D(8,8),FVector2D(16,16),FLinearColor(.13f,.035f,.025f,Alpha*Intensity));
-            Line(Out,Layer,G,{Center-FVector2D(3,3),Center+FVector2D(3,3)},C,2.f);
-            Line(Out,Layer,G,{Center+FVector2D(-3,3),Center+FVector2D(3,-3)},C,2.f);
-        }
-    }
-    return Layer;
 }

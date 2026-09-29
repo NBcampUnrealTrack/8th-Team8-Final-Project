@@ -141,6 +141,8 @@ void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
                 ArtLayoutSlot->SetSize(FVector2D(Width,Width/3.f));
             }
     }
+    if (IsValid(SceneAmbience) && Title)
+        SceneAmbience->UpdateLogoParticles(Title->GetCachedGeometry());
 }
 
 void UStartWidget::NativeConstruct()

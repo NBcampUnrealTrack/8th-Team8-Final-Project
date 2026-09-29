@@ -8,6 +8,7 @@
 class AActor;
 class UVerticalBox;
 class USFProductionUnitEntryWidget;
+class USFProductionQueueFeedbackWidget;
 class UImage;
 class UProductComponent;
 class UProgressBar;
@@ -136,9 +137,6 @@ protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float DeltaTime) override;
-    virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
-        const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer,
-        const FWidgetStyle& Style, bool bParentEnabled) const override;
 public:
 #if WITH_DEV_AUTOMATION_TESTS
     int32 PreviewQueueHover = INDEX_NONE;
@@ -237,6 +235,7 @@ private:
 
     TArray<TObjectPtr<UImage>> QueueSlots;
     TArray<TObjectPtr<UButton>> QueueButtons;
+    UPROPERTY(Transient) TArray<TObjectPtr<USFProductionQueueFeedbackWidget>> QueueFeedback;
     float QueueHover[5] = {};
     float QueueCancelFlash[5] = {};
     int32 OccupiedQueueCount = 0;

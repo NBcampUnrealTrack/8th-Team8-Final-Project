@@ -36,6 +36,18 @@ for (int i = 0; i < 4; ++i)
     fxColor = (fxColor*fxAlpha+tint*mote)/max(fxAlpha+mote,.00001);
     fxAlpha = saturate(fxAlpha+mote);
 }
-float alpha = base.a + fxAlpha * (1.0-base.a);
-float3 result = (color*base.a*(1.0-fxAlpha) + fxColor*fxAlpha)/max(alpha,.00001);
+// Soft faction-colored light behind the title. Transparent margins fade to zero.
+float edge = smoothstep(0.0,.065,UV.x)*smoothstep(0.0,.065,1.0-UV.x)
+    *smoothstep(0.0,.13,UV.y)*smoothstep(0.0,.13,1.0-UV.y);
+float ribbonY = .57 + .095*sin(UV.x*9.0-t*.45);
+float ribbon = exp(-pow((UV.y-ribbonY)/.18,2.0));
+float crown = exp(-pow((UV.y-(.27+.025*sin(t*.6+UV.x*12.0)))/.15,2.0));
+float envelope = exp(-pow((UV.x-.5)/.43,4.0));
+float aura = Strength*edge*envelope*(ribbon*.16+crown*.08)*(.8+.2*sin(t*.8+UV.x*7.0));
+float3 auraColor = lerp(float3(.80,.36,.08),float3(.035,.77,.64),smoothstep(.40,.60,UV.x));
+float backAlpha = saturate(aura)*(1.0-base.a);
+float underAlpha = base.a+backAlpha;
+float3 underPremultiplied = color*base.a+auraColor*backAlpha;
+float alpha = underAlpha + fxAlpha * (1.0-underAlpha);
+float3 result = (underPremultiplied*(1.0-fxAlpha) + fxColor*fxAlpha)/max(alpha,.00001);
 return float4(result, alpha);

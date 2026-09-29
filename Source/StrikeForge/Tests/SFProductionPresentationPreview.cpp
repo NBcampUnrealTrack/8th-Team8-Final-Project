@@ -55,7 +55,7 @@ static FAutoConsoleCommandWithWorldAndArgs SFProductionQA(
             }
             ProductionPanel->ShowProductionBuilding(ProductionFixture.Get());
             auto* Component=ProductionFixture->FindComponentByClass<UProductComponent>();
-            Component->SetSpeedMultiplier(0.f);
+            if (Component) Component->SetSpeedModifier(TEXT("SFProductionPreview"),0.f);
             const FProductableData Data=IProductable::Execute_GetProductableData(ProductionFixture.Get());
             UE_LOG(LogTemp,Display,TEXT("PRODUCTION_QA tier=%d entries=%d active=%d"),Tier+1,Data.ProductableUnitFNames.Num(),ProductionFixture->IsTierActivated());
         }

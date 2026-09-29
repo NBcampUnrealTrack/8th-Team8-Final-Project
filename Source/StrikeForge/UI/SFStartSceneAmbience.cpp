@@ -8,6 +8,9 @@
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
 
 ASFStartSceneAmbience::ASFStartSceneAmbience()
 {
@@ -17,6 +20,20 @@ ASFStartSceneAmbience::ASFStartSceneAmbience()
     RootComponent=CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     WarmMotes=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("ForestFireflies"));
     EtherMotes=CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("EtherMotes"));
+    WarmSideParticles=CreateDefaultSubobject<UNiagaraComponent>(TEXT("BeastSideParticles"));
+    EtherSideParticles=CreateDefaultSubobject<UNiagaraComponent>(TEXT("EtherSideParticles"));
+    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> WarmFX(TEXT("/Game/Core/UI/LobbyAtmosphere/NS_StartSideMotesWarm.NS_StartSideMotesWarm"));
+    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> EtherFX(TEXT("/Game/Core/UI/LobbyAtmosphere/NS_StartSideMotesEther.NS_StartSideMotesEther"));
+    WarmSideParticles->SetAsset(WarmFX.Object);
+    EtherSideParticles->SetAsset(EtherFX.Object);
+    for (UNiagaraComponent* Component : {WarmSideParticles.Get(),EtherSideParticles.Get()})
+    {
+        Component->SetupAttachment(RootComponent);
+        Component->SetAutoActivate(false);
+        Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        Component->SetCanEverAffectNavigation(false);
+        Component->SetCastShadow(false);
+    }
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Plane(TEXT("/Engine/BasicShapes/Plane.Plane"));
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> Glow(TEXT("/Game/Core/UI/LobbyAtmosphere/M_StartWorldMote.M_StartWorldMote"));
     for (UInstancedStaticMeshComponent* Component : {WarmMotes.Get(),EtherMotes.Get()})
@@ -47,6 +64,39 @@ void ASFStartSceneAmbience::SetViewer(APlayerController* Player)
     }
     if (auto* Material=WarmMotes->CreateDynamicMaterialInstance(0)) Material->SetVectorParameterValue(TEXT("Tint"),FLinearColor(1.f,.67f,.23f));
     if (auto* Material=EtherMotes->CreateDynamicMaterialInstance(0)) Material->SetVectorParameterValue(TEXT("Tint"),FLinearColor(.18f,.85f,1.f));
+}
+
+void ASFStartSceneAmbience::UpdateLogoParticles(const FGeometry& LogoGeometry)
+{
+    APlayerController* Player=Viewer.Get();
+    const FVector2D Size=LogoGeometry.GetLocalSize();
+    if (!Player || !Player->PlayerCameraManager || Size.X<1.f || Size.Y<1.f) return;
+
+    FVector Camera; FRotator Rotation;
+    Player->GetPlayerViewPoint(Camera,Rotation);
+    const FVector Forward=Rotation.Vector();
+    FVector Positions[2];
+    for (int32 I=0; I<2; ++I)
+    {
+        // Use the actual title geometry, including DPI and window offsets, rather than a world anchor.
+        FVector2D Pixel,Viewport;
+        USlateBlueprintLibrary::LocalToViewport(Player,LogoGeometry,
+            Size*FVector2D(I==0 ? .14f : .86f,.60f),Pixel,Viewport);
+        FVector RayOrigin,RayDirection;
+        if (!Player->DeprojectScreenPositionToWorld(Pixel.X,Pixel.Y,RayOrigin,RayDirection)) return;
+        const float Facing=FVector::DotProduct(RayDirection,Forward);
+        if (Facing<=KINDA_SMALL_NUMBER) return;
+        Positions[I]=RayOrigin+RayDirection*((200.f-FVector::DotProduct(RayOrigin-Camera,Forward))/Facing);
+    }
+    // Both lightweight emitters simulate locally, so existing particles also follow the logo.
+    const float Scale=FMath::Clamp(FVector::Distance(Positions[0],Positions[1])/200.f,.2f,3.f);
+    for (int32 I=0; I<2; ++I)
+    {
+        UNiagaraComponent* Component=I==0 ? WarmSideParticles.Get() : EtherSideParticles.Get();
+        Component->SetWorldLocationAndRotation(Positions[I],Rotation);
+        Component->SetWorldScale3D(FVector(Scale));
+        if (!Component->IsActive()) Component->Activate(true);
+    }
 }
 
 void ASFStartSceneAmbience::Tick(float DeltaSeconds)

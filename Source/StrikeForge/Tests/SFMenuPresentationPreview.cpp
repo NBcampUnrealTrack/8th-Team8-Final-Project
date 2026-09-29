@@ -38,6 +38,41 @@ static FAutoConsoleCommandWithWorldAndArgs SFMenuSceneShot(
 		}
 	}));
 
+// Exercise the real focus / press delegates without activating navigation.
+static FAutoConsoleCommandWithWorldAndArgs SFStartFeedbackPreview(
+    TEXT("SF.Menu.StartFeedbackPreview"), TEXT("SF.Menu.StartFeedbackPreview <0..2>: capture hover / press frames and quit; optional focus leaves the game running."),
+    FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args,UWorld* World)
+    {
+        if (!World) return;
+        const int32 Index=Args.IsEmpty() ? 0 : FMath::Clamp(FCString::Atoi(*Args[0]),0,2);
+        const bool bFocusOnly=Args.Num()>1 && Args[1]==TEXT("focus");
+        FTimerHandle Ready;
+        World->GetTimerManager().SetTimer(Ready,FTimerDelegate::CreateWeakLambda(World,[World,Index,bFocusOnly]()
+        {
+            TArray<UUserWidget*> Widgets;
+            UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World,Widgets,UStartWidget::StaticClass(),false);
+            if (Widgets.IsEmpty()) return;
+            const FName Names[]={TEXT("Start_Btn"),TEXT("Setting_Btn"),TEXT("Exit_Btn")};
+            auto* Button=Cast<UButton>(Widgets[0]->GetWidgetFromName(Names[Index]));
+            if (!Button) return;
+            Button->SetKeyboardFocus();
+            if (bFocusOnly) return;
+            const float Times[]={.27f,.65f,1.32f};
+            for (int32 Frame=0;Frame<3;++Frame)
+            {
+                FTimerHandle Shot;
+                const FString Path=FPaths::ProjectSavedDir()/TEXT("StartFeedback")/FString::Printf(TEXT("button_%d_frame_%d.png"),Index,Frame);
+                World->GetTimerManager().SetTimer(Shot,FTimerDelegate::CreateLambda([Path]()
+                { FScreenshotRequest::RequestScreenshot(Path,true,false); }),Times[Frame],false);
+            }
+            FTimerHandle Press;
+            World->GetTimerManager().SetTimer(Press,FTimerDelegate::CreateWeakLambda(Button,[Button]()
+            { Button->OnPressed.Broadcast(); }),1.2f,false);
+            FTimerHandle End;
+            World->GetTimerManager().SetTimer(End,FTimerDelegate::CreateLambda([](){ FPlatformMisc::RequestExit(false); }),2.8f,false);
+        }),bFocusOnly ? .01f : 6.f,false);
+    }));
+
 // Hold a departure frame without starting the real navigation timer.
 static FAutoConsoleCommandWithWorldAndArgs SFMenuCloudPreview(
 	TEXT("SF.Menu.CloudPreview"), TEXT("SF.Menu.CloudPreview <seconds>: inspect a departure frame on the title screen."),

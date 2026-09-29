@@ -134,6 +134,15 @@ public:
 
 protected:
     virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float DeltaTime) override;
+    virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
+        const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer,
+        const FWidgetStyle& Style, bool bParentEnabled) const override;
+public:
+#if WITH_DEV_AUTOMATION_TESTS
+    int32 PreviewQueueHover = INDEX_NONE;
+#endif
 
 private:
     void RefreshProductionUnitEntries(
@@ -227,6 +236,11 @@ private:
     TObjectPtr<UProductComponent> CurrentProductComponent = nullptr;
 
     TArray<TObjectPtr<UImage>> QueueSlots;
+    TArray<TObjectPtr<UButton>> QueueButtons;
+    float QueueHover[5] = {};
+    float QueueCancelFlash[5] = {};
+    int32 OccupiedQueueCount = 0;
+    float PresentedProgress = 0.f;
 
     UPROPERTY(Transient)
     TArray<FName> CurrentProductableUnitRowNames;

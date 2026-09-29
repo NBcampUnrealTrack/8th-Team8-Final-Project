@@ -17,6 +17,7 @@
 #include "ActorComponent/Product/ProductInfo.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
+#include "SFProductionButtonPaint.h"
 
 #include "SFProductionUIDataRow.h"
 #include "Game/Subsystem/SFDataTableManager.h"
@@ -61,6 +62,19 @@ void USFProductionBuildingPanelWidget::NativeConstruct()
         &USFProductionBuildingPanelWidget::HandleQueueButton05Clicked
     );
 
+    QueueButtons = {QueueButton01, QueueButton02, QueueButton03, QueueButton04, QueueButton05};
+    for (UButton* Button : QueueButtons)
+    {
+        if (!Button) continue;
+        FButtonStyle Style = Button->GetStyle();
+        Style.Disabled = Style.Normal;
+        Style.Disabled.TintColor = FSlateColor(FLinearColor(.62f,.62f,.62f,1.f));
+        Style.Hovered = Style.Normal;
+        Style.Pressed = Style.Normal;
+        Style.Pressed.TintColor = FSlateColor(FLinearColor(.8f,.72f,.64f,1.f));
+        Button->SetStyle(Style);
+        Button->SetToolTipText(NSLOCTEXT("SFProduction", "CancelHint", "클릭하여 생산 취소 · 비용 반환"));
+    }
     HideProductionBuilding();
 }
 
@@ -90,6 +104,8 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
         return;
     }
 
+    if (CurrentProductionBuilding.Get() != InProductionBuilding)
+        for (int32 I=0;I<5;++I) { QueueHover[I]=0.f; QueueCancelFlash[I]=0.f; }
     CurrentProductionBuilding =
         InProductionBuilding;
 
@@ -141,6 +157,7 @@ void USFProductionBuildingPanelWidget::HideProductionBuilding()
     UnbindProductionBuilding();
     UnbindProductComponent();
 
+    for (int32 I=0;I<5;++I) { QueueHover[I]=0.f; QueueCancelFlash[I]=0.f; }
     CurrentProductionBuilding.Reset();
     CurrentProductableUnitRowNames.Reset();
 
@@ -201,10 +218,12 @@ bool USFProductionBuildingPanelWidget::RequestProductionOnBuilding(
     FName UnitRowName
 )
 {
-    return TryRequestProduction(
-        InProductionBuilding,
-        UnitRowName
-    );
+    const bool bAccepted = TryRequestProduction(InProductionBuilding, UnitRowName);
+    if (CurrentProductionBuilding.Get() == InProductionBuilding && UnitEntryBox)
+        for (UWidget* Child : UnitEntryBox->GetAllChildren())
+            if (auto* Entry = Cast<USFProductionUnitEntryWidget>(Child))
+                if (Entry->GetProductionRowName() == UnitRowName) Entry->ShowRequestFeedback(bAccepted);
+    return bAccepted;
 }
 
 void USFProductionBuildingPanelWidget::RefreshProductionUnitEntries(
@@ -290,10 +309,7 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
     FName UnitRowName
 )
 {
-    TryRequestProduction(
-        CurrentProductionBuilding.Get(),
-        UnitRowName
-    );
+    RequestProductionOnBuilding(CurrentProductionBuilding.Get(), UnitRowName);
 }
 
 bool USFProductionBuildingPanelWidget::TryRequestProduction(
@@ -371,18 +387,14 @@ bool USFProductionBuildingPanelWidget::TryRequestProduction(
         }
     }
 
+    UProductComponent* Component = ProductableData.ProductComponent.Get();
+    const int32 PreviousCount = IsValid(Component) ? Component->GetProductLine().Num() : 0;
+    IProductable::Execute_ProductUnits(ProductionBuilding, UnitRowName);
+    // Full queue, population limit, construction and tutorial restrictions can reject a request.
+    const bool bAccepted = IsValid(Component) && Component->GetProductLine().Num() > PreviousCount;
+    if (!bAccepted) return false;
     if (IsValid(UnitProductionClickSound))
-    {
-        UGameplayStatics::PlaySound2D(
-            this,
-            UnitProductionClickSound
-        );
-    }
-
-    IProductable::Execute_ProductUnits(
-        ProductionBuilding,
-        UnitRowName
-    );
+        UGameplayStatics::PlaySound2D(this, UnitProductionClickSound);
 
     return true;
 }
@@ -492,6 +504,15 @@ void USFProductionBuildingPanelWidget::RefreshProductionQueue(
     const TArray<FProductInfo>& ProductLine
 )
 {
+    OccupiedQueueCount = FMath::Min(5, ProductLine.Num());
+    for (int32 I=0;I<QueueButtons.Num();++I)
+        if (QueueButtons[I])
+        {
+            QueueButtons[I]->SetIsEnabled(I < OccupiedQueueCount);
+            QueueButtons[I]->SetToolTipText(I < OccupiedQueueCount
+                ? NSLOCTEXT("SFProduction", "CancelHint", "클릭하여 생산 취소 · 비용 반환") : FText::GetEmpty());
+        }
+
     UGameInstance* GameInstance =
         GetGameInstance();
 
@@ -565,7 +586,7 @@ void USFProductionBuildingPanelWidget::RefreshProductionQueue(
         );
 
         QueueSlot->SetVisibility(
-            ESlateVisibility::Visible
+            ESlateVisibility::HitTestInvisible
         );
     }
 }
@@ -583,6 +604,7 @@ void USFProductionBuildingPanelWidget::RefreshProductionProgress(
     float ProductRatio
 )
 {
+    PresentedProgress = FMath::Clamp(ProductRatio, 0.f, 1.f);
     if (!IsValid(ProductionProgressBar))
     {
         return;
@@ -637,6 +659,7 @@ void USFProductionBuildingPanelWidget::CancelProductionAtQueueIndex(
     }
 
     CurrentProductComponent->RemoveProductInLine(QueueIndex);
+    if (QueueIndex < 5) QueueCancelFlash[QueueIndex] = .32f;
 }
 
 void USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged(
@@ -717,4 +740,64 @@ IsPointerOverProductionPanel() const
     }
 
     return false;
+}
+
+void USFProductionBuildingPanelWidget::NativeDestruct()
+{
+    UnbindProductionBuilding();
+    UnbindProductComponent();
+    Super::NativeDestruct();
+}
+
+void USFProductionBuildingPanelWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+    Super::NativeTick(Geometry, DeltaTime);
+    for (int32 I=0; I<QueueButtons.Num(); ++I)
+    {
+        bool bHover = I < OccupiedQueueCount && QueueButtons[I] && QueueButtons[I]->IsHovered();
+#if WITH_DEV_AUTOMATION_TESTS
+        bHover |= I < OccupiedQueueCount && PreviewQueueHover == I;
+#endif
+        QueueHover[I] = FMath::FInterpTo(QueueHover[I], bHover ? 1.f : 0.f, DeltaTime, 18.f);
+        QueueCancelFlash[I] = FMath::Max(0.f, QueueCancelFlash[I] - DeltaTime);
+    }
+}
+
+int32 USFProductionBuildingPanelWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G,
+    const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer,
+    const FWidgetStyle& Style, bool bParentEnabled) const
+{
+    using namespace SFProductionPaint;
+    Layer = Super::NativePaint(Args,G,Cull,Out,Layer,Style,bParentEnabled) + 1;
+    const float Alpha = Style.GetColorAndOpacityTint().A * GetRenderOpacity();
+    for (int32 I=0; I<QueueButtons.Num(); ++I)
+    {
+        if (!QueueButtons[I]) continue;
+        const FGeometry& BG=QueueButtons[I]->GetCachedGeometry();
+        const FVector2D P=G.AbsoluteToLocal(BG.LocalToAbsolute(FVector2D::ZeroVector));
+        const FVector2D S=G.AbsoluteToLocal(BG.LocalToAbsolute(BG.GetLocalSize()))-P;
+        if (S.X < 1 || S.Y < 1) continue;
+        const float Hover=QueueHover[I], Flash=QueueCancelFlash[I]/.32f;
+        const float Intensity=FMath::Max(Hover,Flash);
+        FLinearColor C=Cancel; C.A=Alpha*Intensity;
+        Rim(Out,Layer,G,P+FVector2D(4,4),S-FVector2D(8,8),C,2.f);
+        if (I < OccupiedQueueCount)
+        {
+            FLinearColor Base=I==0 ? Ether : Gold; Base.A=Alpha*(1.f-Hover)*.85f;
+            Box(Out,Layer,G,P+FVector2D(9,S.Y-8),FVector2D(S.X-18,2),FLinearColor(.1f,.15f,.13f,Alpha));
+            Box(Out,Layer,G,P+FVector2D(9,S.Y-8),FVector2D((S.X-18)*(I==0 ? PresentedProgress : 1.f),2),Base);
+            // Compact status marker: active chevrons / waiting dots; no extra text crowded into the slots.
+            const FVector2D Mark=P+FVector2D(S.X*.5f,S.Y+6);
+            if (I==0) Line(Out,Layer,G,{Mark-FVector2D(5,2),Mark,Mark-FVector2D(5,-2)},Base,2.f);
+            else Box(Out,Layer,G,Mark-FVector2D(1,1),FVector2D(2,2),Base);
+        }
+        if (Intensity > .01f)
+        {
+            const FVector2D Center=P+FVector2D(S.X-11,11);
+            Box(Out,Layer,G,Center-FVector2D(8,8),FVector2D(16,16),FLinearColor(.13f,.035f,.025f,Alpha*Intensity));
+            Line(Out,Layer,G,{Center-FVector2D(3,3),Center+FVector2D(3,3)},C,2.f);
+            Line(Out,Layer,G,{Center+FVector2D(-3,3),Center+FVector2D(3,-3)},C,2.f);
+        }
+    }
+    return Layer;
 }

@@ -74,15 +74,15 @@ void ASFStartSceneAmbience::Tick(float DeltaSeconds)
         const float Horizontal=FMath::Tan(FMath::DegreesToRadians(Player->PlayerCameraManager->GetFOVAngle()*.5f));
         const float Vertical=Horizontal/FMath::Max(Aspect,.5f);
         FRandomStream Random(7319);
-        for (int32 I=0; I<28; ++I)
+        for (int32 I=0; I<20; ++I)
         {
             FMote Mote;
             float Depth=Random.FRandRange(160.f,700.f);
             float Side=Random.FRandRange(.22f,.86f)*(I%2 ? -1.f : 1.f);
             Mote.Origin=Camera+Forward*Depth+Right*(Depth*Side*Horizontal)+Up*(Depth*Vertical*Random.FRandRange(-.72f,.60f));
             Mote.Phase=Random.FRandRange(0.f,2.f*PI);
-            Mote.Size=Depth*Horizontal*Random.FRandRange(.012f,.024f);
-            Mote.Group=I%4==0 ? 1 : 0;
+            Mote.Size=Depth*Horizontal*Random.FRandRange(.006f,.013f);
+            Mote.Group=Side>0.f ? 1 : 0;
             auto* Component=Mote.Group ? EtherMotes.Get() : WarmMotes.Get();
             Mote.Instance=Component->AddInstance(FTransform(FRotator::ZeroRotator,Mote.Origin,FVector(.01f)),true);
             Motes.Add(Mote);

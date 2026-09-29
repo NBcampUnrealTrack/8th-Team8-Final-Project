@@ -14,7 +14,7 @@ namespace
 	struct FSFSynergySourceEntry
 	{
 		TWeakObjectPtr<ASFBaseBuilding> Building;
-		FSFGrantedBuildingSynergy GrantedSynergy;
+		TObjectPtr<USFBuildingSynergyDefinition> Definition = nullptr;
 		FBuildingGridInfo GridInfo;
 		FIntPoint ClusterLinkGridSize = FIntPoint(1, 1);
 	};
@@ -65,6 +65,76 @@ namespace
 
 		return MakeCenteredGridInfo(Grid, Left, LeftLinkSize).ContainsCenterOf(Right) ||
 			MakeCenteredGridInfo(Grid, Right, RightLinkSize).ContainsCenterOf(Left);
+	}
+
+	// 클러스터의 전체 점유 격자 중앙과 가장 높은 건물 상단을 조합해 UI 배지 기준점을 계산합니다.
+	FVector CalculateClusterBadgeWorldLocation(
+		const USFBuildingGridSubsystem* Grid,
+		const TArray<FSFSynergySourceEntry>& SourceEntries,
+		const TArray<int32>& ClusterIndices,
+		float HeightOffset)
+	{
+		if (!IsValid(Grid))
+		{
+			return FVector::ZeroVector;
+		}
+
+		bool bHasBounds = false;
+		FIntPoint MinCell = FIntPoint::ZeroValue;
+		FIntPoint MaxExclusive = FIntPoint::ZeroValue;
+		float HighestBuildingTop = 0.f;
+
+		for (const int32 SourceIndex : ClusterIndices)
+		{
+			if (!SourceEntries.IsValidIndex(SourceIndex))
+			{
+				continue;
+			}
+
+			const FSFSynergySourceEntry& Source = SourceEntries[SourceIndex];
+			const ASFBaseBuilding* SourceBuilding = Source.Building.Get();
+			if (!IsValid(SourceBuilding) || !Source.GridInfo.IsValid())
+			{
+				continue;
+			}
+
+			const FIntPoint SourceMaxExclusive = Source.GridInfo.GetMaxExclusive();
+			const FBoxSphereBounds BuildBounds = SourceBuilding->GetBuildBounds();
+			const FVector LocalBuildingTop(
+				BuildBounds.Origin.X,
+				BuildBounds.Origin.Y,
+				BuildBounds.Origin.Z + BuildBounds.BoxExtent.Z);
+			const float BuildingTop = SourceBuilding->GetActorTransform()
+				.TransformPosition(LocalBuildingTop).Z;
+
+			if (!bHasBounds)
+			{
+				MinCell = Source.GridInfo.OriginCell;
+				MaxExclusive = SourceMaxExclusive;
+				HighestBuildingTop = BuildingTop;
+				bHasBounds = true;
+				continue;
+			}
+
+			MinCell.X = FMath::Min(MinCell.X, Source.GridInfo.OriginCell.X);
+			MinCell.Y = FMath::Min(MinCell.Y, Source.GridInfo.OriginCell.Y);
+			MaxExclusive.X = FMath::Max(MaxExclusive.X, SourceMaxExclusive.X);
+			MaxExclusive.Y = FMath::Max(MaxExclusive.Y, SourceMaxExclusive.Y);
+			HighestBuildingTop = FMath::Max(HighestBuildingTop, BuildingTop);
+		}
+
+		if (!bHasBounds)
+		{
+			return FVector::ZeroVector;
+		}
+
+		FBuildingGridInfo ClusterGridInfo;
+		ClusterGridInfo.OriginCell = MinCell;
+		ClusterGridInfo.GridSize = MaxExclusive - MinCell;
+
+		FVector BadgeWorldLocation = Grid->GridInfoToWorldCenter(ClusterGridInfo);
+		BadgeWorldLocation.Z = HighestBuildingTop + HeightOffset;
+		return BadgeWorldLocation;
 	}
 }
 
@@ -127,17 +197,22 @@ void USFBuildingSynergySubsystem::NotifyBuildingChanged(ASFBaseBuilding* Buildin
 TArray<FSFBuildingSynergyZoneInfo>
 USFBuildingSynergySubsystem::GetSynergyZonesForTeam(int32 TeamIndex) const
 {
-	TArray<FSFBuildingSynergyZoneInfo> Result;
-
-	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
-	{
-		if (Zone.TeamIndex == TeamIndex)
+	return SynergyZones.FilterByPredicate(
+		[TeamIndex](const FSFBuildingSynergyZoneInfo& Zone)
 		{
-			Result.Add(Zone);
-		}
-	}
+			return Zone.TeamIndex == TeamIndex;
+		});
+}
 
-	return Result;
+TArray<FSFBuildingSynergyClusterProgressInfo>
+USFBuildingSynergySubsystem::GetClusterProgressInfosForTeam(
+	int32 TeamIndex) const
+{
+	return ClusterProgressInfos.FilterByPredicate(
+		[TeamIndex](const FSFBuildingSynergyClusterProgressInfo& ProgressInfo)
+		{
+			return ProgressInfo.TeamIndex == TeamIndex;
+		});
 }
 
 float USFBuildingSynergySubsystem::GetProductionBonusPercent(
@@ -168,6 +243,7 @@ void USFBuildingSynergySubsystem::Deinitialize()
 	AppliedMultipliers.Reset();
 	RegisteredBuildings.Reset();
 	SynergyZones.Reset();
+	ClusterProgressInfos.Reset();
 	Super::Deinitialize();
 }
 
@@ -234,7 +310,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 
 			FSFSynergySourceEntry& Source = SourceEntries.AddDefaulted_GetRef();
 			Source.Building = Building;
-			Source.GrantedSynergy = GrantedSynergy;
+			Source.Definition = GrantedSynergy.Definition;
 			Source.GridInfo = RegisteredGridInfo;
 			Source.ClusterLinkGridSize = GetRotatedGridSizeForBuilding(
 				GrantedSynergy.Definition->ClusterLinkSizeCells,
@@ -243,6 +319,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 	}
 
 	SynergyZones.Reset();
+	ClusterProgressInfos.Reset();
 	TSet<int32> VisitedSourceIndices;
 
 	for (int32 SeedIndex = 0; SeedIndex < SourceEntries.Num(); ++SeedIndex)
@@ -255,7 +332,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		const FSFSynergySourceEntry& Seed = SourceEntries[SeedIndex];
 		ASFBaseBuilding* SeedBuilding = Seed.Building.Get();
 		USFBuildingSynergyDefinition* SynergyDefinition =
-			Seed.GrantedSynergy.Definition.Get();
+			Seed.Definition.Get();
 
 		if (!IsValid(SeedBuilding) || !IsValid(SynergyDefinition))
 		{
@@ -288,7 +365,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 				const ASFBaseBuilding* CandidateBuilding = Candidate.Building.Get();
 
 				if (!IsValid(CandidateBuilding) ||
-					Candidate.GrantedSynergy.Definition != SynergyDefinition ||
+					Candidate.Definition != SynergyDefinition ||
 					CandidateBuilding->GetTeamIndex() != TeamIndex)
 				{
 					continue;
@@ -307,14 +384,6 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			}
 		}
 
-		const FSFBuildingSynergyLevel* ActiveLevel =
-			SynergyDefinition->FindLevel(ClusterIndices.Num());
-
-		if (!ActiveLevel)
-		{
-			continue;
-		}
-
 		// TSet 순회 순서와 무관하게 구역 배열 순서를 유지하도록 셀 위치로 정렬합니다.
 		ClusterIndices.Sort(
 			[&SourceEntries](const int32 LeftIndex, const int32 RightIndex)
@@ -330,6 +399,25 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			});
 
 		const int32 SourceCount = ClusterIndices.Num();
+
+		// 활성 단계가 없는 1개짜리 클러스터도 다음 단계 안내 UI에 전달합니다.
+		FSFBuildingSynergyClusterProgressInfo& ProgressInfo =
+			ClusterProgressInfos.AddDefaulted_GetRef();
+		ProgressInfo.Definition = SynergyDefinition;
+		ProgressInfo.TeamIndex = TeamIndex;
+		ProgressInfo.SourceBuildingCount = SourceCount;
+		ProgressInfo.BadgeWorldLocation = CalculateClusterBadgeWorldLocation(
+			Grid, SourceEntries, ClusterIndices,
+			SynergyDefinition->BadgeHeightOffset);
+
+		const FSFBuildingSynergyLevel* ActiveLevel =
+			SynergyDefinition->FindLevel(SourceCount);
+
+		if (!ActiveLevel)
+		{
+			continue;
+		}
+
 		// 활성 클러스터의 각 원천 건물을 중심으로 독립된 효과 격자를 하나씩 생성합니다.
 		for (const int32 SourceIndex : ClusterIndices)
 		{
@@ -347,13 +435,8 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			FSFBuildingSynergyZoneInfo& Zone =
 				SynergyZones.AddDefaulted_GetRef();
 			Zone.Definition = SynergyDefinition;
-			Zone.SynergyId = SynergyDefinition->GetEffectiveSynergyId();
 			Zone.TeamIndex = TeamIndex;
 			Zone.SourceBuildingCount = SourceCount;
-			Zone.ProductionBonusPercent = ActiveLevel->ProductionBonusPercent;
-			Zone.BoundaryEffect = Source.GrantedSynergy.BoundaryEffect;
-			Zone.BoundaryColor = Source.GrantedSynergy.BoundaryColor;
-			Zone.BadgeIcon = Source.GrantedSynergy.BadgeIcon;
 			Zone.EffectGridInfo = MakeCenteredGridInfo(
 				Grid, Source.GridInfo, EffectSize);
 			Zone.WorldCenter = Grid->GridInfoToWorldCenter(Zone.EffectGridInfo);
@@ -373,6 +456,16 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		{
 			continue;
 		}
+
+		const FSFBuildingSynergyLevel* ActiveLevel =
+			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
+		if (!ActiveLevel)
+		{
+			continue;
+		}
+
+		const float Multiplier =
+			1.f + FMath::Max(0.f, ActiveLevel->ProductionBonusPercent) / 100.f;
 
 		for (ASFBaseBuilding* Target : ActiveBuildings)
 		{
@@ -400,13 +493,9 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 				continue;
 			}
 
-			const float Multiplier =
-				1.f + FMath::Max(0.f, Zone.ProductionBonusPercent) / 100.f;
-
 			// 여러 원천의 효과 격자가 겹쳐도 대상별 최댓값 하나만 최종 배율로 등록합니다.
 			float& DesiredMultiplier = DesiredMultipliers.FindOrAdd(
-				Target,
-				1.f);
+				Target, 1.f);
 			DesiredMultiplier = FMath::Max(DesiredMultiplier, Multiplier);
 		}
 	}
@@ -436,13 +525,12 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			 !FMath::IsNearlyEqual(*PreviousMultiplier, Desired.Value)))
 		{
 			ApplyProductionModifier(
-				Building,
-				Desired.Value);
+				Building, Desired.Value);
 		}
 	}
 
 	AppliedMultipliers = MoveTemp(DesiredMultipliers);
-	OnSynergyZonesChanged.Broadcast();
+	OnSynergyStateChanged.Broadcast();
 }
 
 void USFBuildingSynergySubsystem::ApplyProductionModifier(

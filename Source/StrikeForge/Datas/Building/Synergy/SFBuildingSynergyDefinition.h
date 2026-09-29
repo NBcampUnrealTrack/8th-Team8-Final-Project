@@ -6,6 +6,9 @@
 #include "Engine/DataAsset.h"
 #include "SFBuildingSynergyDefinition.generated.h"
 
+class UNiagaraSystem;
+class UTexture2D;
+
 /**
  * 여러 건물 Definition이 공유하는 건물 배치 시너지 규칙입니다.
  * 원천 건물 종류는 이 에셋을 참조하는 건물 Definition이 결정합니다.
@@ -30,6 +33,10 @@ public:
 
 	/** 현재 원천 건물 수에 적용할 가장 높은 단계를 반환합니다. */
 	const FSFBuildingSynergyLevel* FindLevel(int32 SourceBuildingCount) const;
+	/** 현재 건물 수보다 큰 요구 수 중 가장 가까운 다음 단계를 반환합니다. */
+	const FSFBuildingSynergyLevel* FindNextLevel(int32 SourceBuildingCount) const;
+	/** 마지막 단계가 요구하는 원천 건물 수를 반환하며, 단계가 없으면 0을 반환합니다. */
+	int32 GetMaxRequiredBuildingCount() const;
 
 	/** 전달된 건물 분류가 이 시너지의 생산력 보너스 대상인지 확인합니다. */
 	bool CanAffectBuildingType(ESFBuildingType BuildingType) const;
@@ -53,6 +60,22 @@ public:
 	/** 생산력 보너스를 받을 수 있는 건물 분류입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules")
 	TArray<ESFBuildingType> TargetBuildingTypes;
+
+	/** 이 종족의 활성 효과 구역 경계에 사용할 Niagara 시스템입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSoftObjectPtr<UNiagaraSystem> BoundaryEffect;
+
+	/** Niagara 경계에 전달할 종족별 색상입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	FLinearColor BoundaryColor = FLinearColor::White;
+
+	/** 클러스터 진행 배지에 표시할 종족별 아이콘입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TSoftObjectPtr<UTexture2D> BadgeIcon;
+
+	/** 클러스터에서 가장 높은 건물 상단으로부터 배지를 띄울 월드 높이입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	float BadgeHeightOffset = 100.f;
 
 private:
 	/** 연결 범위와 단계별 효과 범위를 1 이상의 전체 셀 크기로 보정합니다. */

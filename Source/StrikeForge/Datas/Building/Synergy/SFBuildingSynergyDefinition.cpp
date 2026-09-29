@@ -45,6 +45,42 @@ USFBuildingSynergyDefinition::FindLevel(int32 SourceBuildingCount) const
 	return BestLevel;
 }
 
+const FSFBuildingSynergyLevel*
+USFBuildingSynergyDefinition::FindNextLevel(int32 SourceBuildingCount) const
+{
+	const FSFBuildingSynergyLevel* NextLevel = nullptr;
+
+	for (const FSFBuildingSynergyLevel& Candidate : Levels)
+	{
+		if (Candidate.MinSourceBuildingCount <= SourceBuildingCount)
+		{
+			continue;
+		}
+
+		if (!NextLevel ||
+			Candidate.MinSourceBuildingCount < NextLevel->MinSourceBuildingCount)
+		{
+			NextLevel = &Candidate;
+		}
+	}
+
+	return NextLevel;
+}
+
+int32 USFBuildingSynergyDefinition::GetMaxRequiredBuildingCount() const
+{
+	int32 MaxRequiredBuildingCount = 0;
+
+	for (const FSFBuildingSynergyLevel& Level : Levels)
+	{
+		MaxRequiredBuildingCount = FMath::Max(
+			MaxRequiredBuildingCount,
+			Level.MinSourceBuildingCount);
+	}
+
+	return MaxRequiredBuildingCount;
+}
+
 bool USFBuildingSynergyDefinition::CanAffectBuildingType(
 	ESFBuildingType BuildingType) const
 {

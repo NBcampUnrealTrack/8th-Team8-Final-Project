@@ -70,10 +70,12 @@ public:
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
 	// 현재 건물 격자와 광산 자원 조건을 함께 검사합니다.
+	// 초기에 검사용도
 	FSFBuildingGridEvaluationResult EvaluatePlayerBuildingGrid(
 		const AActor* Building,	const FBuildingGridInfo& GridInfo) const;
 	
 	// 건물 점유를 검사한 뒤 성공한 경우에만 등록합니다.
+	// 등록직전에 재검사용도
 	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 	void UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 
@@ -125,6 +127,14 @@ public:
 #pragma region Debug
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
 	void DebugDrawOccupiedCells() const;
+	/** 지정한 격자의 모든 셀을 원하는 색상과 두께로 표시하는 공용 디버그 함수입니다. */
+	void DebugDrawGridCells(
+		const FBuildingGridInfo& GridInfo,
+		float WorldZ,
+		const FColor& Color,
+		float Duration = 0.0f,
+		float ZOffset = 5.0f,
+		float Thickness = 3.0f) const;
 	void DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,const FIntPoint& ResourceSearchGridSize,float WorldZ,float Duration = 0.0f) const;
 	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
 	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;

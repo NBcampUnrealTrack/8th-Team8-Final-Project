@@ -265,6 +265,9 @@ private:
 	// delegate
 	void BindComponentDelegates();
 	void UnbindComponentDelegates();
+	/** 시너지 재계산 결과에서 이 건물의 생산 보너스를 읽어 머리 위 UI 상태로 전달한다. */
+	UFUNCTION()
+	void HandleBuildingSynergyStateChanged();
 
 	// progress가 완료되면 호출되게 bind되있음
 	// Handle -> Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate

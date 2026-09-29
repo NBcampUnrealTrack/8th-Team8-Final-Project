@@ -34,6 +34,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTextBlock> BonusText = nullptr;
 
+	/** 시너지 Definition의 DisplayName을 배지 제목으로 표시합니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<UTextBlock> SynergyDisplayText = nullptr;
+
 private:
 	/** 클러스터 단계가 바뀔 때 계산된 월드 기준점으로, 실제 화면 좌표 변환은 HUD가 담당합니다. */
 	UPROPERTY(Transient)

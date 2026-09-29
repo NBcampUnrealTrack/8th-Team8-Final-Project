@@ -2,6 +2,9 @@
 
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
+#include "Components/TextBlock.h"
+
+#define LOCTEXT_NAMESPACE "SFProgressBarWidget"
 
 void USFProgressBarWidget::SetRatio(float InRatio)
 {
@@ -25,3 +28,29 @@ void USFProgressBarWidget::SetColor(const FLinearColor& InColor)
 		ProgressBarBackground->SetColorAndOpacity(BackgroundColor);
 	}
 }
+
+void USFProgressBarWidget::SetSynergyBonusPercent(float InBonusPercent)
+{
+	if (!IsValid(SynergyAmountText))	return;
+
+	// 보너스가 없을 때는 텍스트가 진행도 바의 레이아웃을 차지하지 않도록 접는다.
+	const bool bHasSynergyBonus = InBonusPercent > 0.f;
+	SynergyAmountText->SetVisibility(bHasSynergyBonus
+		? ESlateVisibility::SelfHitTestInvisible
+		: ESlateVisibility::Collapsed);
+
+	if (!bHasSynergyBonus)
+	{
+		SynergyAmountText->SetText(FText::GetEmpty());
+		return;
+	}
+
+	FNumberFormattingOptions NumberFormat;
+	NumberFormat.MinimumFractionalDigits = 0;
+	NumberFormat.MaximumFractionalDigits = 1;
+	SynergyAmountText->SetText(FText::Format(
+		LOCTEXT("SynergyBonusFormat", "+{0}%"),
+		FText::AsNumber(InBonusPercent, &NumberFormat)));
+}
+
+#undef LOCTEXT_NAMESPACE

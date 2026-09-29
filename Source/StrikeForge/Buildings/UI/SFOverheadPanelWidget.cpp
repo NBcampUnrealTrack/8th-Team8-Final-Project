@@ -52,6 +52,11 @@ void USFOverheadPanelWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
 		{
 			ProgressBarWidget->SetColor(InStatus.ProgressColor);
 		}
+
+		if (bForce || LastStatus.SynergyBonusPercent != InStatus.SynergyBonusPercent)
+		{
+			ProgressBarWidget->SetSynergyBonusPercent(InStatus.SynergyBonusPercent);
+		}
 	}
 
 	// 획득 배지는 상태가 아니라 사건을 그리므로 여기서 제외한다.

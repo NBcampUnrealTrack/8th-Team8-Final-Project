@@ -29,6 +29,12 @@ void USFBuildingSynergyBadgeWidget::SetProgressInfo(
 
 	BadgeWorldLocation = ProgressInfo.BadgeWorldLocation;
 
+	// Definition이 가진 시너지 표시 이름을 배지 제목에 그대로 반영합니다.
+	if (IsValid(SynergyDisplayText))
+	{
+		SynergyDisplayText->SetText(Definition->DisplayName);
+	}
+
 	// Definition의 Soft Texture를 그대로 사용해 종족별 배지 아이콘을 표시합니다.
 	if (IsValid(BadgeIconImage))
 	{

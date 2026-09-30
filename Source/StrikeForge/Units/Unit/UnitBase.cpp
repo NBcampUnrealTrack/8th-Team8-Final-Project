@@ -2167,11 +2167,20 @@ void AUnitBase::Advance(float DeltaSeconds)
 
 		if (FVector::Dist2D(GetActorLocation(), Waypoint) < AssignedLane->GetLaneHalfWidth())
 		{
+			if (LaneAlpha >= 1.f - KINDA_SMALL_NUMBER)
+			{
+				// 경로 끝에 도착하면 핵심 건물 탐색으로 넘긴다.
+				// 그렇지 않으면 마지막 스플라인 점에 계속 이동 요청을 보낸다.
+				AssignedLane = nullptr;
+			}
 			LaneAlpha = FMath::Min(1.f, LaneAlpha + 0.1f);
 		}
 
-		AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
-		return;
+		if (AssignedLane)
+		{
+			AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
+			return;
+		}
 	}
 
 	// 주의: 여기서 멈춰 세우면(ClearMoveRequest) 유닛이 영구히 굳는다.

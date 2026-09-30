@@ -11,6 +11,7 @@
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
+#include "Units/Spawner/UnitSpawner.h"
 
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Components/BoxComponent.h"
@@ -286,6 +287,25 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 
 		SpawnedBuilding->Destroy();
 		return false;
+	}
+
+	// 앵커는 곧 제거된다. 그 전에 같은 위치의 스포너를 실제 생산 건물에
+	// 연결해 두어야 로딩이 길어져도 파괴 신호를 놓치지 않는다.
+	if (BuildingType == ESFBuildingType::Barracks ||
+		BuildingType == ESFBuildingType::RangedProduction ||
+		BuildingType == ESFBuildingType::SpecialProduction)
+	{
+		constexpr float SpawnerAnchorRadius = 150.f;
+		for (TActorIterator<AUnitSpawner> It(GetWorld()); It; ++It)
+		{
+			AUnitSpawner* Spawner = *It;
+			if (IsValid(Spawner) &&
+				FVector::DistSquared2D(Spawner->GetActorLocation(), InAnchor->GetActorLocation()) <=
+				FMath::Square(SpawnerAnchorRadius))
+			{
+				Spawner->AssignOwnerBuilding(SpawnedBuilding);
+			}
+		}
 	}
 
 

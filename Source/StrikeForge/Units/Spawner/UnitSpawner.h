@@ -64,6 +64,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
 	AActor* GetOwnerBuilding() const;
 
+	/** 앵커에서 생성한 실제 생산 건물을 스포너에 직접 연결한다. */
+	bool AssignOwnerBuilding(AActor* InBuilding);
+
 	/** 소유 건물이 파괴돼 영구 정지한 상태인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
 	bool IsShutDownByOwnerBuilding() const;
@@ -115,6 +118,9 @@ protected:
 	/** 델리게이트에 바인드하려면 UFUNCTION 이어야 한다 */
 	UFUNCTION()
 	void HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget);
+
+	UFUNCTION()
+	void HandleOwnerActorDestroyed(AActor* InDestroyedActor);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SpawnPoint;

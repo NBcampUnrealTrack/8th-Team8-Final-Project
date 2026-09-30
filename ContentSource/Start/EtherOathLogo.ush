@@ -1,0 +1,53 @@
+// All effects use logo UVs: no desktop/window coordinates or image distortion.
+float4 base = Texture2DSample(Logo, LogoSampler, UV);
+float t = max(Elapsed, 0.0);
+float2 gem = GemCenter.xy;
+float2 d = (UV - gem) * float2(3.0, 1.0);
+float breath = 0.5 + 0.5 * sin(t * 1.7);
+float gemMask = exp(-dot(d / float2(.062, .080), d / float2(.062, .080)) * 2.0);
+float tealMask = saturate((base.g - base.r) * 5.0) * saturate((base.b - base.r) * 5.0);
+float bronzeMask = saturate((base.r - base.b) * 3.0) * (1.0 - smoothstep(.46, .53, UV.x));
+float sweepX = frac(t / 7.0) * 1.5 - .25;
+float sweep = exp(-pow((UV.x - sweepX + (UV.y - .5) * .10) / .028, 2.0));
+float3 color = base.rgb + Strength * base.a * (
+    float3(.06, .45, .34) * gemMask * (.12 + .23 * breath) +
+    sweep * (tealMask * float3(.03, .20, .15) + bronzeMask * float3(.15, .08, .015)));
+
+// Brief four-point glint on the crystal once per cycle, with a soft breathing halo.
+float cycle = fmod(t + .8, 4.6);
+float flash = pow(saturate(1.0 - abs(cycle - 1.2) / .42), 2.0);
+float star = pow(saturate(1.0 - abs(d.x) / .036), 3.0) * exp(-pow(d.y / .0022, 2.0));
+star += pow(saturate(1.0 - abs(d.y) / .048), 3.0) * exp(-pow(d.x / .0022, 2.0));
+float halo = exp(-dot(d,d) / .0020) * (.025 + .035 * breath);
+float fxAlpha = saturate(Strength * (star * flash * .85 + halo));
+float3 fxColor = float3(.26, 1.0, .85);
+
+// Four small, slow drifting motes near the ornaments, never a screen-wide cloud.
+for (int i = 0; i < 4; ++i)
+{
+    float seed = i * 1.713;
+    float phase = frac(t / (4.8 + i * .4) + i * .27);
+    float2 origin = i < 2 ? float2(.15 + i * .18, .75) : float2(.76 + (i-2)*.16, .22);
+    float2 pos = origin + float2(sin(t*.45+seed)*.012, -phase*.045);
+    float2 md = (UV-pos)*float2(3.0,1.0);
+    float fade = sin(phase*3.14159265);
+    float mote = exp(-dot(md,md)/.000028)*fade*.55*Strength;
+    float3 tint = i < 2 ? float3(1.0,.58,.16) : float3(.16,1.0,.82);
+    fxColor = (fxColor*fxAlpha+tint*mote)/max(fxAlpha+mote,.00001);
+    fxAlpha = saturate(fxAlpha+mote);
+}
+// Soft faction-colored light behind the title. Transparent margins fade to zero.
+float edge = smoothstep(0.0,.065,UV.x)*smoothstep(0.0,.065,1.0-UV.x)
+    *smoothstep(0.0,.13,UV.y)*smoothstep(0.0,.13,1.0-UV.y);
+float ribbonY = .57 + .095*sin(UV.x*9.0-t*.45);
+float ribbon = exp(-pow((UV.y-ribbonY)/.18,2.0));
+float crown = exp(-pow((UV.y-(.27+.025*sin(t*.6+UV.x*12.0)))/.15,2.0));
+float envelope = exp(-pow((UV.x-.5)/.43,4.0));
+float aura = Strength*edge*envelope*(ribbon*.16+crown*.08)*(.8+.2*sin(t*.8+UV.x*7.0));
+float3 auraColor = lerp(float3(.80,.36,.08),float3(.035,.77,.64),smoothstep(.40,.60,UV.x));
+float backAlpha = saturate(aura)*(1.0-base.a);
+float underAlpha = base.a+backAlpha;
+float3 underPremultiplied = color*base.a+auraColor*backAlpha;
+float alpha = underAlpha + fxAlpha * (1.0-underAlpha);
+float3 result = (underPremultiplied*(1.0-fxAlpha) + fxColor*fxAlpha)/max(alpha,.00001);
+return float4(result, alpha);

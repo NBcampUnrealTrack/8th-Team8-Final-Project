@@ -1,4 +1,5 @@
 #include "StartWidget.h"
+#include "SFStartButtonFeedbackWidget.h"
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "Components/Widget.h"
@@ -14,84 +15,134 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Blueprint/WidgetTree.h"
 #include "SFStartSceneAmbience.h"
+#include "Components/TextBlock.h"
+#include "Components/ButtonSlot.h"
+#include "Engine/Font.h"
+#include "Styling/SlateBrush.h"
 
 UStartWidget::UStartWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Material(TEXT("/Game/Core/UI/LobbyAtmosphere/M_LobbyHeader.M_LobbyHeader"));
-	static ConstructorHelpers::FObjectFinder<UTexture2D> Atlas(TEXT("/Game/Core/UI/LobbyAtmosphere/T_StartMenuAtlas.T_StartMenuAtlas"));
-	MenuArtMaterial=Material.Object;
-	MenuArtAtlas=Atlas.Object;
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Shade(TEXT("/Game/Core/UI/LobbyAtmosphere/M_StartMenuShade.M_StartMenuShade"));
-	MenuShadeMaterial=Shade.Object;
+    static ConstructorHelpers::FObjectFinder<UTexture2D> Logo(TEXT("/Game/Core/UI/LobbyAtmosphere/T_StartEtherOath.T_StartEtherOath"));
+    Wordmark = Logo.Object;
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> LogoEffect(TEXT("/Game/Core/UI/LobbyAtmosphere/M_StartEtherOathLogo.M_StartEtherOathLogo"));
+    LogoMaterial = LogoEffect.Object;
+    static ConstructorHelpers::FObjectFinder<UFont> Font(TEXT("/Game/Game/IN_UI/Font/Jua-Regular_Font.Jua-Regular_Font"));
+    MenuFont = Font.Object;
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> Shade(TEXT("/Game/Core/UI/LobbyAtmosphere/M_StartMenuShade.M_StartMenuShade"));
+    MenuShadeMaterial = Shade.Object;
 }
 
 void UStartWidget::ApplyStartArt()
 {
-	if (!MenuArtMaterial || !MenuArtAtlas || !ArtControls.IsEmpty()) return;
-	ArtElapsed=0.f;
-	UWidget* Widgets[] = { Title,Start_Btn,Setting_Btn,Exit_Btn };
-	const FLinearColor Regions[] = {
-		FLinearColor(28.f/1774,25.f/887,929.f/1774,449.f/887),
-		FLinearColor(975.f/1774,154.f/887,1736.f/1774,441.f/887),
-		FLinearColor(72.f/1774,532.f/887,848.f/1774,819.f/887),
-		FLinearColor(974.f/1774,532.f/887,1737.f/1774,819.f/887) };
-	for (int32 I=0; I<4; ++I)
-	{
-		FSFStartArtControl& State=ArtControls.AddDefaulted_GetRef();
-		State.Widget=Widgets[I];
-		if (!State.Widget) continue;
-		State.Transform=State.Widget->GetRenderTransform();
-		State.Material=UMaterialInstanceDynamic::Create(MenuArtMaterial,this);
-		State.Material->SetTextureParameterValue(TEXT("Atlas"),MenuArtAtlas);
-		State.Material->SetVectorParameterValue(TEXT("Region"),Regions[I]);
-		State.Material->SetScalarParameterValue(TEXT("Title"),I==0 ? 1.f : 0.f);
-		FSlateBrush Brush;
-		Brush.DrawAs=ESlateBrushDrawType::Image;
-		Brush.SetResourceObject(State.Material);
-		Brush.ImageSize=I==0 ? FVector2D(700,330) : I==1 ? FVector2D(360,132) : FVector2D(300,110);
-		if (UCanvasPanelSlot* ArtSlot=Cast<UCanvasPanelSlot>(State.Widget->Slot))
-		{
-			State.OriginalLayout=ArtSlot->GetLayout();
-			ArtSlot->SetSize(Brush.ImageSize);
-			ArtSlot->SetAnchors(I==0 ? FAnchors(.5f,0.f) : FAnchors(1.f,1.f));
-			ArtSlot->SetAlignment(I==0 ? FVector2D(.5,0) : FVector2D(1,1));
-			const FVector2D Positions[] = { {0,24},{-80,-298},{-80,-172},{-80,-46} };
-			ArtSlot->SetPosition(Positions[I]);
-		}
-		if (UImage* Image=Cast<UImage>(State.Widget))
-		{
-			State.OriginalImage=Image->GetBrush();
-			Image->SetBrush(Brush);
-		}
-		if (UButton* Button=Cast<UButton>(State.Widget))
-		{
-			State.OriginalStyle=Button->GetStyle();
-			FButtonStyle Style=State.OriginalStyle;
-			Style.Normal=Style.Hovered=Style.Pressed=Style.Disabled=Brush;
-			Button->SetStyle(Style);
-		}
-	}
+    if (!WidgetTree || !ArtControls.IsEmpty()) return;
+    ArtElapsed = 0.f;
+    // Remove the old global blur / black veil; light belongs to the 3D scene.
+    if (UWidget* Backdrop = GetWidgetFromName(TEXT("BackgroundBlur_149")))
+    {
+        OriginalBackdropVisibility = Backdrop->GetVisibility();
+        Backdrop->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    UWidget* Widgets[] = { Title, Start_Btn, Setting_Btn, Exit_Btn };
+    const FText Labels[] = {
+        NSLOCTEXT("SFStart", "Start", "게임 시작"),
+        NSLOCTEXT("SFStart", "Settings", "설정"),
+        NSLOCTEXT("SFStart", "Exit", "게임 종료") };
+    for (int32 I=0; I<4; ++I)
+    {
+        FSFStartArtControl& State = ArtControls.AddDefaulted_GetRef();
+        State.Widget = Widgets[I];
+        if (!State.Widget) continue;
+        State.Transform = State.Widget->GetRenderTransform();
+        if (auto* ArtLayoutSlot = Cast<UCanvasPanelSlot>(State.Widget->Slot))
+        {
+            State.OriginalLayout = ArtLayoutSlot->GetLayout();
+            ArtLayoutSlot->SetAnchors(FAnchors(.5f, I==0 ? .28f : .65f));
+            ArtLayoutSlot->SetAlignment(FVector2D(.5f,.5f));
+            ArtLayoutSlot->SetSize(I==0 ? FVector2D(1050,350) : FVector2D(300,54));
+            ArtLayoutSlot->SetPosition(FVector2D(0,I==0 ? 0 : (I-1)*64));
+        }
+        if (auto* Image = Cast<UImage>(State.Widget))
+        {
+            State.OriginalImage = Image->GetBrush();
+            if (LogoMaterial)
+            {
+                Image->SetBrushFromMaterial(LogoMaterial);
+                State.Material = Image->GetDynamicMaterial();
+                if (State.Material && Wordmark) State.Material->SetTextureParameterValue(TEXT("Logo"),Wordmark);
+            }
+            else if (Wordmark) Image->SetBrushFromTexture(Wordmark);
+        }
+        if (auto* Button = Cast<UButton>(State.Widget))
+        {
+            State.OriginalStyle = Button->GetStyle();
+            State.OriginalContent = Button->GetContent();
+            FButtonStyle Style = State.OriginalStyle;
+            FSlateBrush Empty; Empty.DrawAs = ESlateBrushDrawType::NoDrawType;
+            Style.Normal = Style.Hovered = Style.Pressed = Style.Disabled = Empty;
+            Style.NormalPadding = Style.PressedPadding = FMargin(0);
+            Button->SetStyle(Style);
+            State.Feedback = CreateWidget<USFStartButtonFeedbackWidget>(GetOwningPlayer());
+            if (!State.Feedback) continue;
+            State.Label = State.Feedback->CreateLabel();
+            State.Label->SetText(Labels[I-1]);
+            State.Label->SetFont(FSlateFontInfo(MenuFont,I==1 ? 28 : 22));
+            State.Label->SetJustification(ETextJustify::Center);
+            State.Label->SetColorAndOpacity(FSlateColor(FLinearColor(.94f,.91f,.82f,1.f)));
+            State.Label->SetShadowColorAndOpacity(FLinearColor(0.018f,.023f,.023f,.9f));
+            State.Label->SetShadowOffset(FVector2D(0,2));
+            State.Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+            Button->SetContent(State.Feedback);
+            if (auto* ButtonSlot=Cast<UButtonSlot>(State.Feedback->Slot))
+            {
+                ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+                ButtonSlot->SetVerticalAlignment(VAlign_Fill);
+            }
+        }
+    }
 }
 
 void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
 {
-	Super::NativeTick(Geometry,DeltaTime);
-	ArtElapsed+=DeltaTime;
-	for (FSFStartArtControl& State : ArtControls)
-	{
-		if (!State.Widget || !State.Material) continue;
-		UButton* Button=Cast<UButton>(State.Widget);
-		const bool Hover=Button && (Button->IsHovered() || Button->HasKeyboardFocus()) && !bEnteringLobby;
-		State.Hover=FMath::FInterpTo(State.Hover,Hover ? 1.f : 0.f,DeltaTime,12.f);
-		State.Press=FMath::FInterpTo(State.Press,Button && Button->IsPressed() ? 1.f : 0.f,DeltaTime,22.f);
-		State.Material->SetScalarParameterValue(TEXT("Elapsed"),ArtElapsed);
-		State.Material->SetScalarParameterValue(TEXT("Hover"),State.Hover);
-		State.Material->SetScalarParameterValue(TEXT("Press"),State.Press);
-		FWidgetTransform Transform=State.Transform;
-		Transform.Scale*=1.f+State.Hover*.035f-State.Press*.05f;
-		Transform.Translation.Y-=State.Hover*2.f;
-		State.Widget->SetRenderTransform(Transform);
-	}
+    Super::NativeTick(Geometry,DeltaTime);
+    ArtElapsed += DeltaTime;
+    for (int32 I=0; I<ArtControls.Num(); ++I)
+    {
+        auto& State=ArtControls[I];
+        if (!State.Widget) continue;
+        auto* Button=Cast<UButton>(State.Widget);
+        const bool Hover=Button && (Button->IsHovered() || Button->HasKeyboardFocus()) && !bEnteringLobby
+            && (!SettingWidget || !SettingWidget->IsVisible());
+        if (Hover && !State.bWasHovered) State.HoverTime=0.f;
+        State.bWasHovered=Hover;
+        State.HoverTime+=DeltaTime;
+        State.ClickTime=FMath::Min(1.f,State.ClickTime+DeltaTime);
+        State.Hover=FMath::FInterpTo(State.Hover,Hover ? 1.f : 0.f,DeltaTime,14.f);
+        State.Press=FMath::FInterpTo(State.Press,Button && Button->IsPressed() ? 1.f : 0.f,DeltaTime,24.f);
+        if (State.Label)
+        {
+            State.Label->SetColorAndOpacity(FSlateColor(FMath::Lerp(FLinearColor(.94f,.91f,.82f),FLinearColor(.24f,1.f,.83f),State.Hover)));
+            const float Kick=FMath::Max(0.f,1.f-State.ClickTime/.32f);
+            State.Label->SetRenderTransformPivot(FVector2D(.5f,.5f));
+            State.Label->SetRenderScale(FVector2D(1.f+.035f*State.Hover-.045f*State.Press+.025f*Kick));
+            State.Label->SetRenderTranslation(FVector2D(0,State.Press*2));
+            State.Label->SetShadowColorAndOpacity(FMath::Lerp(FLinearColor(.018f,.023f,.023f,.9f),
+                FLinearColor(.015f,.24f,.19f,.85f),State.Hover));
+        }
+        if (State.Feedback)
+            State.Feedback->SetFeedback(State.Hover,State.HoverTime,State.ClickTime,
+                !bEnteringLobby && (!SettingWidget || !SettingWidget->IsVisible()));
+        if (I==0 && State.Material)
+            State.Material->SetScalarParameterValue(TEXT("Elapsed"),ArtElapsed);
+        // Anchors follow aspect changes; a wide title also fits narrow / small windows.
+        if (I==0)
+            if (auto* ArtLayoutSlot=Cast<UCanvasPanelSlot>(State.Widget->Slot))
+            {
+                const float Width=FMath::Min(1050.f,Geometry.GetLocalSize().X*.68f);
+                ArtLayoutSlot->SetSize(FVector2D(Width,Width/3.f));
+            }
+    }
+    if (IsValid(SceneAmbience) && Title)
+        SceneAmbience->UpdateLogoParticles(Title->GetCachedGeometry());
 }
 
 void UStartWidget::NativeConstruct()
@@ -123,17 +174,30 @@ void UStartWidget::NativeConstruct()
 	// 버튼 클릭 이벤트 바인딩
 	if (IsValid(Start_Btn))
 	{
+		Start_Btn->OnPressed.AddUniqueDynamic(this, &UStartWidget::OnStartButtonPressed);
 		Start_Btn->OnClicked.AddUniqueDynamic(this, &UStartWidget::OnStartButtonClicked);
 	}
 	if (IsValid(Setting_Btn))
 	{
+		Setting_Btn->OnPressed.AddUniqueDynamic(this, &UStartWidget::OnSettingButtonPressed);
 		Setting_Btn->OnClicked.AddUniqueDynamic(this, &UStartWidget::OnSettingButtonClicked);
 	}
 	if (IsValid(Exit_Btn))
 	{
+		Exit_Btn->OnPressed.AddUniqueDynamic(this, &UStartWidget::OnExitButtonPressed);
 		Exit_Btn->OnClicked.AddUniqueDynamic(this, &UStartWidget::OnExitButtonClicked);
 	}
 }
+
+void UStartWidget::PlayButtonFeedback(int32 Index)
+{
+    if (bEnteringLobby || (SettingWidget && SettingWidget->IsVisible())) return;
+    if (ArtControls.IsValidIndex(Index)) ArtControls[Index].ClickTime=0.f;
+}
+
+void UStartWidget::OnStartButtonPressed() { PlayButtonFeedback(1); }
+void UStartWidget::OnSettingButtonPressed() { PlayButtonFeedback(2); }
+void UStartWidget::OnExitButtonPressed() { PlayButtonFeedback(3); }
 
 void UStartWidget::OnStartButtonClicked()
 {
@@ -190,9 +254,14 @@ void UStartWidget::NativeDestruct()
 		State.Widget->SetRenderTransform(State.Transform);
 		if (UCanvasPanelSlot* ArtSlot=Cast<UCanvasPanelSlot>(State.Widget->Slot)) ArtSlot->SetLayout(State.OriginalLayout);
 		if (UImage* Image=Cast<UImage>(State.Widget)) Image->SetBrush(State.OriginalImage);
-		if (UButton* Button=Cast<UButton>(State.Widget)) Button->SetStyle(State.OriginalStyle);
+		if (UButton* Button=Cast<UButton>(State.Widget))
+        {
+            Button->SetStyle(State.OriginalStyle);
+            Button->SetContent(State.OriginalContent);
+        }
 	}
 	ArtControls.Empty();
+    if (UWidget* Backdrop=GetWidgetFromName(TEXT("BackgroundBlur_149"))) Backdrop->SetVisibility(OriginalBackdropVisibility);
 	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(LobbyTransitionTimer);
 	if (DepartureMist) DepartureMist->RemoveFromParent();
 	DepartureMist = nullptr;

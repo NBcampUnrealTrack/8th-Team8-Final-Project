@@ -1,0 +1,17 @@
+Generated with built-in image_gen.
+
+Use case: sketch-to-render / terrain minimap simplification.
+Edit the attached game map into a SIMPLE FLAT TOP-DOWN MINIMAP TERRAIN PLAN for recreating the map in a game editor. Image 1 is the current map edit target for layout; image 2 is the original hand drawn spatial reference and its topology is authoritative. Preserve the established layout but dramatically reduce visual effort and detail.
+
+Output: crisp restrained 2D orthographic overhead game minimap, landscape aspect matching reference, plain colored terrain regions, clean softened polygon outlines, at most a very subtle darker edge for terrain elevation. Muted sage-green playable ground, pale beige wide attack paths, dark desaturated green-gray solid impassable landforms, muted charcoal outside-map background. Flat shading with extremely sparse texture, readable at thumbnail size. The goal is a practical terrain blockout reference, not an elaborate illustration.
+
+Keep Beast nexus as ONE simple muted orange circular position marker at upper left around (18%,19%), and Etherian nexus as ONE simple cyan circular position marker at lower right around (86%,80%). No actual nexus buildings or architectural detail. Exactly two nexus markers. No faction labels or words needed.
+
+Preserve EXACTLY FOUR primary attack corridors with broad clear widths:
+1 from northwest base east across northern perimeter, then south through the inner gap at x=44%;
+2 farther east on northern perimeter then south through gap at x=78%;
+3 from northwest base south down western perimeter then east across the middle corridor at y=53%;
+4 farther south down western perimeter then east across lower corridor at y=85%.
+All connect into the broad playable southeast basin around the Etherian marker. Paths join naturally, no new shortcut through blockers. Four small understated ivory direction arrows: two southward at the upper passages, two eastward at the middle and bottom passages. No numbers or other text.
+
+Refine the contours of the sketch's impassable X zones into smooth, simple recognizable terrain masses: a large upper-left-middle island at x18–40%,y25–49%; upper-middle island at x49–73%,y22–47%; upper-right boundary mass at x84–100%,y23–39%; elongated lower-left-middle island at x12–57%,y60–80%; and bottom boundary terrain below fourth corridor. Clearly differentiate walkable from unwalkable. Preserve the full northwest-to-southeast four-lane topology. Remove ALL castles, towers, crystal spires, trees as individual objects, detailed rocks, rivers, water, waterfalls, fire, glows, fog, dramatic lighting, 3D perspective, cinematic textures, decorative objects, borders and labels. Represent blocked terrain simply as contiguous flat shaded landforms. Ignore the original yellow annotations as terrain. No X symbols, no hand drawing strokes, no text, no legend, no title, no watermark. ONLY polished simple minimap terrain and two nexus markers plus four tiny directional arrows.

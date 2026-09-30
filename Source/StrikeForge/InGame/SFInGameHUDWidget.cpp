@@ -3593,6 +3593,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
     if (!IsValid(StageIntroDataTable))
     {
         SF_LOG(Log, "[SFInGameHUDWidget] StageIntroDataTable is not set. Tutorial is skipped.");
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 
@@ -3603,6 +3607,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
             "[SFInGameHUDWidget] This stage has no tutorial, so it is skipped | Row: %s",
             *RowName.ToString()
         );
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 

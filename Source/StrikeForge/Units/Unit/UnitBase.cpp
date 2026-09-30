@@ -2173,7 +2173,13 @@ void AUnitBase::Advance(float DeltaSeconds)
 				// 그렇지 않으면 마지막 스플라인 점에 계속 이동 요청을 보낸다.
 				AssignedLane = nullptr;
 			}
-			LaneAlpha = FMath::Min(1.f, LaneAlpha + 0.1f);
+			// 긴 라인에서도 목표점이 한 번에 수십 m 앞으로 건너뛰지 않도록
+			// 월드 거리 기준으로 전진한다. 좁은 길의 굴곡을 따라가게 한다.
+			const float LaneLength = AssignedLane ? AssignedLane->GetSplineLength() : 0.f;
+			const float AlphaStep = LaneLength > KINDA_SMALL_NUMBER
+				? FMath::Min(1.f, 450.f / LaneLength)
+				: 1.f;
+			LaneAlpha = FMath::Min(1.f, LaneAlpha + AlphaStep);
 		}
 
 		if (AssignedLane)

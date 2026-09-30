@@ -8,6 +8,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
+#include "Game/GameState/SFGameState.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "InGame/HUD/Tutorial/SFStageIntroPortraitFrame.h"
 #include "Kismet/GameplayStatics.h"
@@ -320,6 +321,7 @@ bool USFStageIntroWidget::StartStageIntroAt(UDataTable* InDataTable, FName InRow
     //
     // 목표 대기에서 재개될 때 이 함수가 다시 불리는데, 같은 행의 같은 값을
     // 다시 넣는 것이라 무해하다. 오히려 그래야 재개 뒤에도 잠금이 유지된다.
+    USFTutorialSubsystem::SetStageTutorialActive(this, true);
     USFTutorialSubsystem::SetStageFeatureLocks(this, IntroRow->LockedFeatures);
 
     // 목표를 달성하는 순간은 이 위젯이 닫혀 있을 때다.
@@ -1112,8 +1114,17 @@ void USFStageIntroWidget::FinishStageIntro()
     //
     // SuspendStageIntro 는 이 함수를 부르지 않는다. 목표 대기로 창이 닫혀
     // 있는 동안에는 잠금이 유지되어야 하기 때문이다.
+    USFTutorialSubsystem::SetStageTutorialActive(this, false);
     USFTutorialSubsystem::SetStageFeatureLocks(this, FGameplayTagContainer());
     USFTutorialSubsystem::SetStageObjectiveSuccessSound(this, TSoftObjectPtr<USoundBase>());
+
+    if (IsValid(IntroWorld))
+    {
+        if (ASFGameState* GameState = IntroWorld->GetGameState<ASFGameState>())
+        {
+            GameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
+    }
 
     ActiveNodes.Empty();
     ActiveDataTable = nullptr;

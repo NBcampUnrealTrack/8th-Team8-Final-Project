@@ -3678,6 +3678,10 @@ bool USFInGameHUDWidget::OpenStageIntro(
         return false;
     }
 
+    // 다음 안내가 열릴 때 이전 건설 메뉴가 남아 있으면 새 건물을 바로
+    // 선택할 수 있다. 메뉴와 배치 입력을 닫아 다음 안내에서 다시 열게 한다.
+    CloseBuildingMode();
+
     ActiveStageIntroWidget = CreateWidget<USFStageIntroWidget>(
         PlayerController,
         StageIntroWidgetClass

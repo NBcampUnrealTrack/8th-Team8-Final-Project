@@ -213,6 +213,30 @@ AActor* AUnitSpawner::GetOwnerBuilding() const
 	return OwnerBuilding.Get();
 }
 
+bool AUnitSpawner::AssignOwnerBuilding(AActor* InBuilding)
+{
+	if (!bStopWhenOwnerBuildingDestroyed || bOwnerBuildingDestroyed || !IsValid(InBuilding))
+	{
+		return false;
+	}
+
+	UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InBuilding);
+	if (!IsValid(Target) || Target->GetTeamIndex() != TeamIndex ||
+		!IsBuildingTargetType(Target->GetTargetType()))
+	{
+		return false;
+	}
+
+	if (OwnerBuilding.Get() == InBuilding && OwnerBuildingTarget.Get() == Target)
+	{
+		return true;
+	}
+
+	UnbindOwnerBuilding();
+	BindOwnerBuilding(Target);
+	return true;
+}
+
 bool AUnitSpawner::IsShutDownByOwnerBuilding() const
 {
 	return bOwnerBuildingDestroyed;
@@ -352,6 +376,10 @@ void AUnitSpawner::BindOwnerBuilding(UCombatTargetComponent* InTarget)
 	OwnerBuilding = InTarget->GetOwner();
 
 	InTarget->OnTargetDestroyed.AddUniqueDynamic(this, &AUnitSpawner::HandleOwnerBuildingDestroyed);
+	if (AActor* Building = OwnerBuilding.Get())
+	{
+		Building->OnDestroyed.AddUniqueDynamic(this, &AUnitSpawner::HandleOwnerActorDestroyed);
+	}
 
 	SF_LOG(Log, "[UnitSpawner] %s : 소유 건물 연결 | Building: %s | Team: %d",
 		*GetName(), *GetNameSafe(OwnerBuilding.Get()), TeamIndex);
@@ -365,12 +393,26 @@ void AUnitSpawner::BindOwnerBuilding(UCombatTargetComponent* InTarget)
 
 void AUnitSpawner::UnbindOwnerBuilding()
 {
+	if (AActor* Building = OwnerBuilding.Get())
+	{
+		Building->OnDestroyed.RemoveDynamic(this, &AUnitSpawner::HandleOwnerActorDestroyed);
+	}
+
 	if (UCombatTargetComponent* Target = OwnerBuildingTarget.Get())
 	{
 		Target->OnTargetDestroyed.RemoveDynamic(this, &AUnitSpawner::HandleOwnerBuildingDestroyed);
 	}
 
+	OwnerBuilding.Reset();
 	OwnerBuildingTarget.Reset();
+}
+
+void AUnitSpawner::HandleOwnerActorDestroyed(AActor* InDestroyedActor)
+{
+	if (InDestroyedActor == OwnerBuilding.Get())
+	{
+		HandleOwnerBuildingDestroyed(OwnerBuildingTarget.Get());
+	}
 }
 
 void AUnitSpawner::HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget)

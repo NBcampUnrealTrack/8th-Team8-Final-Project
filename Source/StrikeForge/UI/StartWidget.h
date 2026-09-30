@@ -13,6 +13,9 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UTexture2D;
 class UImage;
+class UTextBlock;
+class USFStartButtonFeedbackWidget;
+class UFont;
 class ASFStartSceneAmbience;
 
 USTRUCT()
@@ -24,9 +27,15 @@ struct FSFStartArtControl
 	UPROPERTY() FSlateBrush OriginalImage;
 	UPROPERTY() FAnchorData OriginalLayout;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Material;
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> Label;
+    UPROPERTY(Transient) TObjectPtr<USFStartButtonFeedbackWidget> Feedback;
+	UPROPERTY(Transient) TObjectPtr<UWidget> OriginalContent;
 	FWidgetTransform Transform;
 	float Hover = 0.f;
 	float Press = 0.f;
+    float HoverTime = 0.f;
+    float ClickTime = 1.f;
+    bool bWasHovered = false;
 };
 UCLASS()
 class STRIKEFORGE_API UStartWidget : public UUserWidget
@@ -40,6 +49,10 @@ protected:
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	void ApplyStartArt();
 	void FinishLobbyTransition();
+    void PlayButtonFeedback(int32 Index);
+    UFUNCTION() void OnStartButtonPressed();
+    UFUNCTION() void OnSettingButtonPressed();
+    UFUNCTION() void OnExitButtonPressed();
 
 	UFUNCTION()
 	void OnStartButtonClicked();
@@ -49,8 +62,11 @@ protected:
 	void OnExitButtonClicked();
 
 protected:
-	UPROPERTY() TObjectPtr<UMaterialInterface> MenuArtMaterial;
+	UPROPERTY() TObjectPtr<UMaterialInterface> LogoMaterial;
 	UPROPERTY() TObjectPtr<UTexture2D> MenuArtAtlas;
+	UPROPERTY() TObjectPtr<UTexture2D> Wordmark;
+	UPROPERTY() TObjectPtr<UFont> MenuFont;
+	ESlateVisibility OriginalBackdropVisibility = ESlateVisibility::Visible;
 	UPROPERTY() TObjectPtr<UMaterialInterface> MenuShadeMaterial;
 	UPROPERTY(Transient) TObjectPtr<UImage> MenuShade;
 	UPROPERTY(Transient) TObjectPtr<ASFStartSceneAmbience> SceneAmbience;

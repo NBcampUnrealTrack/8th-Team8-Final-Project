@@ -29,10 +29,25 @@ public:
         FName InUnitRowName
     );
 
+    void ShowRequestFeedback(bool bAccepted);
+    FName GetProductionRowName() const { return UnitRowName; }
+#if WITH_DEV_AUTOMATION_TESTS
+    bool bPreviewHover = false;
+#endif
 protected:
     virtual void NativeConstruct() override;
-
+    virtual void NativeTick(const FGeometry& MyGeometry, float DeltaTime) override;
+    virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
+        const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer,
+        const FWidgetStyle& Style, bool bParentEnabled) const override;
 private:
+    void ArrangeButton();
+    float HoverAmount = 0.f;
+    float PressAmount = 0.f;
+    float FeedbackRemaining = 0.f;
+    float ShineTime = 0.f;
+    bool bLastAccepted = false;
+
     UFUNCTION()
     void HandleProductionButtonClicked();
 

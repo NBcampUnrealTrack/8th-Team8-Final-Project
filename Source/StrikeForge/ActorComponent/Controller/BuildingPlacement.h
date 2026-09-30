@@ -32,7 +32,7 @@ public: // functions
 	bool TryConfirmPlacementMode();
 	void EndPlacementSession();
 
-	/** 선택한 건물이 속한 활성 시너지 클러스터를 시너지 완성 표시(노란색)로 한 번 보여 줍니다. */
+	/** 선택한 건물이 속한 활성 시너지 클러스터를 시너지 완성 표시(시너지 색)로 한 번 보여 줍니다. */
 	void FlashSynergyClustersOfBuilding(const ASFBaseBuilding* Building) const;
 public: // properties
 	UPROPERTY(BlueprintAssignable, Category = "Building|Placement")

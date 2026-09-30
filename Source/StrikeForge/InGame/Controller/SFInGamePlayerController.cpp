@@ -261,7 +261,7 @@ void ASFInGamePlayerController::SetSelectedActor(AActor* InActor)
         PendingUnitCommandMode = ESFUnitCommandMode::None;
     }
 
-    // 시너지 건물(집)을 선택하면 그 건물이 속한 활성 시너지 클러스터를 노란색으로 한 번 보여 준다.
+    // 시너지 건물(집·병영)을 선택하면 그 건물이 속한 활성 시너지 클러스터를 시너지 색으로 한 번 보여 준다.
     if (const ASFBaseBuilding* SelectedBuilding = Cast<ASFBaseBuilding>(InActor))
     {
         if (IsValid(PlacementComponent))

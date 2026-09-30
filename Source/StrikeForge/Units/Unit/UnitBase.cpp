@@ -147,6 +147,12 @@ void AUnitBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// BP에서 붙인 무기 메시까지 배치 격자 데칼이 묻지 않도록 모든 렌더링 컴포넌트에 적용합니다.
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Primitive : PrimitiveComponents)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
 
 	if (UCapsuleComponent* Capsule =
 		GetCapsuleComponent())

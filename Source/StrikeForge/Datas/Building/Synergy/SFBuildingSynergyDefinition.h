@@ -6,7 +6,6 @@
 #include "Engine/DataAsset.h"
 #include "SFBuildingSynergyDefinition.generated.h"
 
-class UNiagaraSystem;
 class UTexture2D;
 
 /**
@@ -60,14 +59,6 @@ public:
 	/** 생산력 보너스를 받을 수 있는 건물 분류입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules")
 	TArray<ESFBuildingType> TargetBuildingTypes;
-
-	/** 이 종족의 활성 효과 구역 경계에 사용할 Niagara 시스템입니다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
-	TSoftObjectPtr<UNiagaraSystem> BoundaryEffect;
-
-	/** Niagara 경계에 전달할 종족별 색상입니다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
-	FLinearColor BoundaryColor = FLinearColor::White;
 
 	/** 클러스터 진행 배지에 표시할 종족별 아이콘입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")

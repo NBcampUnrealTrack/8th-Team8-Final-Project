@@ -360,22 +360,5 @@ bool USFBuildingDefinition::CollectRuntimeAssetPaths(int32 InTierIndex, TArray<F
         DamagedBurningEffect.ToSoftObjectPath(),
         TEXT("DamagedBurningEffect"));
 
-	// 시너지 경계는 표현 전용 선택 에셋입니다. 미지정 상태도 정상입니다.
-	for (const FSFGrantedBuildingSynergy& GrantedSynergy : GrantedSynergies)
-	{
-		if (!IsValid(GrantedSynergy.Definition))
-		{
-			continue;
-		}
-
-		const FSoftObjectPath BoundaryPath =
-			GrantedSynergy.Definition->BoundaryEffect.ToSoftObjectPath();
-
-		if (!BoundaryPath.IsNull())
-		{
-			OutOptionalPaths.AddUnique(BoundaryPath);
-		}
-	}
-
     return bValid;
 }

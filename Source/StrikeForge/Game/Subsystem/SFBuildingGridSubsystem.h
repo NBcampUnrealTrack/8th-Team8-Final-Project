@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Math/Interval.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "Datas/Building/MiningData/SFMiningCellTarget.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -120,26 +121,20 @@ public:
 		const FBuildingGridInfo& OuterGridInfo,
 		const FIntPoint& InnerGridSize,
 		FBuildingGridInfo& OutInnerGridInfo) const;
-	
+
+	/**
+	 * 배치 모드 격자 표시에 사용할 셀을 수집합니다.
+	 * 건물 셀과 강조 대상이 아닌 자원 셀은 막힌 셀, 강조 자원 종류의 매장량이 남은 셀은 자원 셀입니다.
+	 */
+	void CollectPlacementDisplayCells(
+		bool bHighlightResource,
+		EResourceType HighlightResourceType,
+		TArray<FIntPoint>& OutBlockedCells,
+		TArray<FIntPoint>& OutResourceCells,
+		FFloatInterval& OutHeightRange) const;
+
 	FORCEINLINE float GetCellSize() const { return CellSize; }
 	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
-
-#pragma region Debug
-	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
-	void DebugDrawOccupiedCells() const;
-	/** 지정한 격자의 모든 셀을 원하는 색상과 두께로 표시하는 공용 디버그 함수입니다. */
-	void DebugDrawGridCells(
-		const FBuildingGridInfo& GridInfo,
-		float WorldZ,
-		const FColor& Color,
-		float Duration = 0.0f,
-		float ZOffset = 5.0f,
-		float Thickness = 3.0f) const;
-	void DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,const FIntPoint& ResourceSearchGridSize,float WorldZ,float Duration = 0.0f) const;
-	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
-	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;
-	void DebugDrawResourceCells(EResourceType ResourceType, float Duration = 5.0f) const;
-#pragma endregion 
 
 private: // functions
 

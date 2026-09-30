@@ -31,7 +31,7 @@ struct STRIKEFORGE_API FSFBuildingSynergyClusterProgressInfo
 	FVector BadgeWorldLocation = FVector::ZeroVector;
 };
 
-/** 생산 버프 판정과 Niagara 경계가 사용하는 원천 건물별 효과 구역입니다. */
+/** 생산 버프 판정과 격자 데칼 표시가 사용하는 원천 건물별 효과 구역입니다. */
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFBuildingSynergyZoneInfo
 {
@@ -47,17 +47,24 @@ struct STRIKEFORGE_API FSFBuildingSynergyZoneInfo
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	FBuildingGridInfo EffectGridInfo;
 
-	/** 효과 구역의 월드 중심으로, Niagara 경계의 기준 위치입니다. */
+	/** 효과 구역의 월드 중심입니다. Z는 원천 건물 높이이며 격자 데칼의 투영 높이에 사용합니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	FVector WorldCenter = FVector::ZeroVector;
-
-	/** 효과 구역의 월드 크기로, Niagara 경계 크기 계산에 사용합니다. */
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
-	FVector2D WorldSize = FVector2D::ZeroVector;
 
 	/** 연결된 클러스터에 포함된 전체 원천 건물 수입니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	int32 SourceBuildingCount = 0;
+
+	/**
+	 * 같은 재계산 결과 안에서 이 구역이 속한 클러스터 번호입니다.
+	 * 재계산마다 다시 매겨지므로 같은 조회 결과 안에서 구역을 묶을 때만 사용합니다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	int32 ClusterIndex = INDEX_NONE;
+
+	/** 이 구역의 중심이 되는 원천 건물입니다. 선택한 건물이 속한 클러스터를 찾을 때 사용합니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	TWeakObjectPtr<ASFBaseBuilding> SourceBuilding;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildingSynergyStateChanged);
@@ -90,11 +97,20 @@ public:
 	TArray<FSFBuildingSynergyClusterProgressInfo> GetClusterProgressInfosForTeam(
 		int32 TeamIndex) const;
 
+	/**
+	 * 지정한 팀의 활성 원천 건물마다 클러스터 연결 판정에 쓰는 링크 격자를 반환합니다.
+	 * 다른 원천 건물의 중심이 이 격자 안에 들어오면 두 건물이 같은 클러스터로 연결됩니다.
+	 */
+	void CollectClusterLinkGridInfos(
+		int32 TeamIndex,
+		const USFBuildingSynergyDefinition* SynergyDefinition,
+		TArray<FBuildingGridInfo>& OutLinkGridInfos) const;
+
 	/** 해당 건물에 HighestOnly로 적용 중인 가장 높은 배치 시너지 증가율을 반환합니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 
-	/** 구역과 클러스터 진행 정보가 모두 갱신됐음을 UI와 Niagara 표현 계층에 알립니다. */
+	/** 구역과 클러스터 진행 정보가 모두 갱신됐음을 UI와 격자 데칼 표시 계층에 알립니다. */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Building Synergy")
 	FSFOnBuildingSynergyStateChanged OnSynergyStateChanged;
 

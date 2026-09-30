@@ -215,6 +215,61 @@ USFBuildingSynergySubsystem::GetClusterProgressInfosForTeam(
 		});
 }
 
+// 팀·시너지가 같은 완성 원천 건물마다 클러스터 연결 판정용 링크 격자를 RecalculateSynergies와 같은 방식으로 계산합니다.
+// UBuildingPlacement::CollectExistingLinkRangeCells가 하늘색 링크 범위를 그릴 때 호출합니다.
+void USFBuildingSynergySubsystem::CollectClusterLinkGridInfos(
+	int32 TeamIndex,
+	const USFBuildingSynergyDefinition* SynergyDefinition,
+	TArray<FBuildingGridInfo>& OutLinkGridInfos) const
+{
+	OutLinkGridInfos.Reset();
+
+	const USFBuildingGridSubsystem* Grid =
+		GetWorld() ? GetWorld()->GetSubsystem<USFBuildingGridSubsystem>() : nullptr;
+
+	if (!IsValid(Grid) || !IsValid(SynergyDefinition))
+	{
+		return;
+	}
+
+	// RecalculateSynergies와 같은 조건의 원천 건물만 사용해야 표시와 실제 연결 판정이 일치합니다.
+	for (const TWeakObjectPtr<ASFBaseBuilding>& WeakBuilding : RegisteredBuildings)
+	{
+		const ASFBaseBuilding* Building = WeakBuilding.Get();
+		if (!IsValid(Building) ||
+			!Building->IsTierActivated() ||
+			Building->GetTeamIndex() != TeamIndex)
+		{
+			continue;
+		}
+
+		const USFBuildingDefinition* BuildingDefinition =
+			Building->GetBuildingDefinition();
+
+		const bool bGrantsSynergy =
+			IsValid(BuildingDefinition) &&
+			BuildingDefinition->GrantedSynergies.ContainsByPredicate(
+				[SynergyDefinition](const FSFGrantedBuildingSynergy& GrantedSynergy)
+				{
+					return GrantedSynergy.Definition == SynergyDefinition;
+				});
+
+		FBuildingGridInfo RegisteredGridInfo;
+		if (!bGrantsSynergy ||
+			!Building->TryGetRegisteredGridInfo(RegisteredGridInfo))
+		{
+			continue;
+		}
+
+		OutLinkGridInfos.Add(MakeCenteredGridInfo(
+			Grid,
+			RegisteredGridInfo,
+			GetRotatedGridSizeForBuilding(
+				SynergyDefinition->ClusterLinkSizeCells,
+				Building)));
+	}
+}
+
 float USFBuildingSynergySubsystem::GetProductionBonusPercent(
 	const ASFBaseBuilding* Building) const
 {
@@ -437,13 +492,13 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			Zone.Definition = SynergyDefinition;
 			Zone.TeamIndex = TeamIndex;
 			Zone.SourceBuildingCount = SourceCount;
+			// 방금 추가한 이 클러스터의 진행 정보 번호로 같은 클러스터 구역을 묶습니다.
+			Zone.ClusterIndex = ClusterProgressInfos.Num() - 1;
+			Zone.SourceBuilding = Source.Building;
 			Zone.EffectGridInfo = MakeCenteredGridInfo(
 				Grid, Source.GridInfo, EffectSize);
 			Zone.WorldCenter = Grid->GridInfoToWorldCenter(Zone.EffectGridInfo);
 			Zone.WorldCenter.Z = SourceBuilding->GetActorLocation().Z;
-			Zone.WorldSize = FVector2D(
-				Zone.EffectGridInfo.GridSize.X * Grid->GetCellSize(),
-				Zone.EffectGridInfo.GridSize.Y * Grid->GetCellSize());
 		}
 	}
 

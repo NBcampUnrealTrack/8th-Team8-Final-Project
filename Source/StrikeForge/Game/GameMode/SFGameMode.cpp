@@ -217,12 +217,12 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 	{
 		if (Anchor->GetBuildingType() == ESFBuildingType::None)
 		{
-			SF_LOG(Error,
-				"[SFGameMode] BuildingType이 None인 Anchor가 있습니다. "
+			SF_LOG(Warning,
+				"[SFGameMode] 미설정 Anchor를 건너뜁니다. "
 				"Anchor=%s",
 				*GetNameSafe(Anchor));
 
-			return false;
+			continue;
 		}
 
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
@@ -267,6 +267,12 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 	// House, Mine, Production 등은 실패한 Anchor만 건너뛴다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
+		if (Anchor->GetBuildingType() == ESFBuildingType::None)
+		{
+			++SkippedAnchorCount;
+			continue;
+		}
+
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
 		{
 			continue;
@@ -440,6 +446,9 @@ void ASFGameMode::BeginStageBootstrap()
 	}
 
 	// StageTable의 RowName
+#if WITH_EDITOR
+	SFGameInstance->ResolveEditorStageSelection(GetWorld());
+#endif
 	BootstrapStageRowName = SFGameInstance->GetSelectedStageRowName();
 	// 플레이어가 선택한 종족
 	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
@@ -707,6 +716,13 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		const ASFBuildingSpawnAnchor* Anchor = *It;
 
 		if (!IsValid(Anchor))
+		{
+			continue;
+		}
+
+		// Level authors may keep unconfigured placement markers while dressing a map.
+		// They request no assets and must not abort otherwise valid Nexus setup.
+		if (Anchor->GetBuildingType() == ESFBuildingType::None)
 		{
 			continue;
 		}

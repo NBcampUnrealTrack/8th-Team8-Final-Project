@@ -71,6 +71,9 @@ class STRIKEFORGE_API ASFInGamePlayerController
 public:
     ASFInGamePlayerController();
 
+    UFUNCTION(BlueprintPure, Category = "SF|Building|Placement")
+    UBuildingPlacement* GetBuildingPlacementComponent() const { return PlacementComponent; }
+
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|Input"

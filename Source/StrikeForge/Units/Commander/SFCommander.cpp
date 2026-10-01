@@ -84,6 +84,9 @@ void ASFCommander::BeginPlay()
 
 	if (bMyCommander)
 	{
+		// Selection traces use Visibility. Do not depend on an imported skeletal
+		// mesh's physics bodies being present or covering the visible character.
+		GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 		GetWorldTimerManager().SetTimer(
 			LoadPCTimer,
 			this,

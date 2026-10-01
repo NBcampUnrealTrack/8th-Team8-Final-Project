@@ -31,6 +31,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
 #include "CommonActivatableWidget.h"
@@ -908,6 +909,8 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 
         const bool bCanTierUp =
             bHasValidSelection &&
+            Cast<ASFBaseBuilding>(SelectedActor.Get()) &&
+            Cast<ASFBaseBuilding>(SelectedActor.Get())->HasNextUpgradeTier() &&
             (
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::MainBuilding ||
@@ -1960,7 +1963,9 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         return;
     }
 
-    if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
+    if (!SelectedBuilding->HasNextUpgradeTier() ||
+        !IsOwnedByLocalPlayer(SelectedBuilding) ||
+        !USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
     {
         SF_LOG(Log, "[SFInGameHUDWidget] Tier upgrade blocked by the current tutorial objective.");
         return;
@@ -2084,6 +2089,13 @@ void USFInGameHUDWidget::BindSelectedUnitStatsDelegate(
 {
     UnbindSelectedUnitStatsDelegate();
 
+    if (IsValid(Actor))
+    {
+        SelectedBuffComponent = Actor->FindComponentByClass<USFBuffComponent>();
+        if (SelectedBuffComponent.IsValid())
+            SelectedBuffComponent->OnBuffStatsChanged.AddUniqueDynamic(this, &ThisClass::HandleSelectedBuffStatsChanged);
+    }
+
     AUnitBase* Unit =
         Cast<AUnitBase>(Actor);
 
@@ -2114,6 +2126,9 @@ void USFInGameHUDWidget::BindSelectedUnitStatsDelegate(
 
 void USFInGameHUDWidget::UnbindSelectedUnitStatsDelegate()
 {
+    if (SelectedBuffComponent.IsValid())
+        SelectedBuffComponent->OnBuffStatsChanged.RemoveDynamic(this, &ThisClass::HandleSelectedBuffStatsChanged);
+    SelectedBuffComponent.Reset();
     AUnitBase* Unit =
         SelectedStatsUnit.Get();
 
@@ -2126,6 +2141,16 @@ void USFInGameHUDWidget::UnbindSelectedUnitStatsDelegate()
     }
 
     SelectedStatsUnit.Reset();
+}
+
+void USFInGameHUDWidget::HandleSelectedBuffStatsChanged()
+{
+    AActor* Actor = SelectedActor.Get();
+    if (!IsValid(Actor) || !SelectedBuffComponent.IsValid() ||
+        SelectedBuffComponent->GetOwner() != Actor || !Actor->Implements<USFSelectable>()) return;
+    SelectedInfo = ISFSelectable::Execute_GetSelectableInfo(Actor);
+    ApplySelectionUIData(Actor, SelectedInfo);
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::HandleSelectedUnitStatsChanged(
@@ -4245,18 +4270,7 @@ HandleSelectedProductionBuildingTierActivated(
 
     SelectedInfo = UpdatedInfo;
 
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
-
-        SelectionPanel->SetTierUpButtonVisible(
-            IsOwnedByLocalPlayer(Actor) &&
-            SelectedInfo.SelectableType ==
-            ESFSelectableType::ProductionBuilding
-        );
-    }
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier)
@@ -4284,12 +4298,7 @@ void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier
     SelectedInfo =
         UpdatedInfo;
 
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
-    }
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::RefreshRallyPointIndicator()

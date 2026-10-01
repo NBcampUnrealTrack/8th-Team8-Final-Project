@@ -395,9 +395,12 @@ void ASFRTSCameraPawn::ApplyCameraMovement(
         1.0f
     );
 
+    // Follow the view's ground-plane axes even when a level rotates PlayerStart.
+    const FRotationMatrix ViewAxes(FRotator(0.0f,
+        IsValid(Camera) ? Camera->GetComponentRotation().Yaw : GetActorRotation().Yaw, 0.0f));
     const FVector MovementDirection =
-        FVector::ForwardVector * MovementInput.Y
-        + FVector::RightVector * MovementInput.X;
+        ViewAxes.GetUnitAxis(EAxis::X) * MovementInput.Y
+        + ViewAxes.GetUnitAxis(EAxis::Y) * MovementInput.X;
 
     AddMovementInput(
         MovementDirection.GetSafeNormal(),

@@ -13,12 +13,14 @@ import unreal
 sys.path.insert(0,str(Path(__file__).parent))
 from hero_curve_layout import ROUTE, SECTIONS, ROUTE_HLSL, divider_y, distance_to_route
 
-MAP = '/Game/Game/Stage/Stage_Hero'
+MAP = '/Game/Game/Stage/PT_Stage_Hero'
 TAG = unreal.Name('SF_StageHeroScenery')
 ROOT = '/Game/Game/Stage/Props/asset/'
 rng = random.Random(93026)
 assert unreal.EditorLoadingAndSavingUtils.load_map(MAP)
 sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+if any(unreal.Name('SF_HeroScaled09') in a.tags for a in sub.get_all_level_actors()):
+    raise RuntimeError('Hero has an organic terrain layout. Edit the current map in Unreal Editor; legacy dressing would restore the old corridors.')
 saved = Path(unreal.Paths.project_saved_dir())
 assets = json.loads(Path(__file__).with_name('stage_hero_scenery_assets.json').read_text(encoding='utf-8-sig'))
 assets['Flower_bush_white']=dict(path=ROOT+'static_mesh/Flower_bush_white',materials=[ROOT+'texture_material/AllColors_Material'])

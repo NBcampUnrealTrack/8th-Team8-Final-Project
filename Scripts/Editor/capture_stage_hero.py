@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import unreal
 
-unreal.EditorLoadingAndSavingUtils.load_map('/Game/Game/Stage/Stage_Hero')
+unreal.EditorLoadingAndSavingUtils.load_map('/Game/Game/Stage/PT_Stage_Hero')
 sub=unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 world=unreal.EditorLevelLibrary.get_editor_world()
 unreal.SystemLibrary.execute_console_command(world,'RebuildNavigation')

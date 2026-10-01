@@ -8,7 +8,7 @@ import unreal
 sys.path.insert(0,str(Path(__file__).parent))
 from hero_curve_layout import ROUTE, SECTIONS
 
-MAP = '/Game/Game/Stage/Stage_Hero'
+MAP = '/Game/Game/Stage/PT_Stage_Hero'
 assert unreal.EditorLoadingAndSavingUtils.load_map(MAP)
 sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 actors = sub.get_all_level_actors()
@@ -19,7 +19,7 @@ hero = next(row for row in rows if row['Name'] == 'Stage_Hero')
 
 assert hero['PlayerRace'] == 'Human', hero
 assert hero['TeamSetups'] == ['(TeamIndex=1,Race=Beast)'], hero
-assert hero['StageLevel'] == MAP + '.Stage_Hero', hero
+assert hero['StageLevel'] == MAP + '.PT_Stage_Hero', hero
 assert len([r for r in rows if r['Name'] == 'Stage_Hero']) == 1
 assert any('BuildingId="EtherMining",bCanBuild=True' in rule for rule in hero['BuildingRules'])
 spline=by_label['Hero_PlayerRoute'].get_editor_property('spline')

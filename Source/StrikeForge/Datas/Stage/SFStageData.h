@@ -76,6 +76,11 @@ public:
     )
     float CaptureHeight = 10000.0f;
 
+    // Rotate terrain, fog, markers and pointer coordinates together in 90-degree steps.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Minimap",
+        meta = (ClampMin = "0", ClampMax = "3", UIMin = "0", UIMax = "3"))
+    int32 ClockwiseQuarterTurns = 0;
+
     UPROPERTY(
         EditAnywhere,
         BlueprintReadOnly,

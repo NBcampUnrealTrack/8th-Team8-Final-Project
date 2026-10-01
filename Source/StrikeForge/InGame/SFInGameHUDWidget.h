@@ -36,6 +36,7 @@ class ASFBaseBuilding;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
+class USFBuffComponent;
 // Badge Widget ( BuildingSynergy )
 class UCanvasPanel;
 class USFBuildingSynergyBadgeWidget;
@@ -195,6 +196,9 @@ protected:
     void BindSelectedUnitStatsDelegate(AActor* Actor);
 
     void UnbindSelectedUnitStatsDelegate();
+
+    UFUNCTION()
+    void HandleSelectedBuffStatsChanged();
 
     void BindSelectedHealthDelegate(AActor* Actor);
 
@@ -684,6 +688,9 @@ private:
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AUnitBase> SelectedStatsUnit;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<USFBuffComponent> SelectedBuffComponent;
 
     UPROPERTY(Transient)
     TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;

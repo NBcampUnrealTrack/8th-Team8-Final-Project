@@ -57,6 +57,7 @@ protected:
     virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
+    int32 MapClockwiseQuarterTurns = 0;
     friend class FSFMinimapRegistryTest;
     void BindMarkerRegistry();
     void UnbindMarkerRegistry();

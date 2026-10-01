@@ -96,6 +96,9 @@ void USFSelectionPanelWidget::ShowSelection(
         CurrentSelectableInfo
     );
 
+    // Blueprint refreshes (including health changes) must not resurrect a max-tier button.
+    if (CurrentSelectableInfo.Tier >= 3) SetTierUpButtonVisible(false);
+
     SetIsEnabled(true);
 
     SetVisibility(
@@ -268,6 +271,7 @@ void USFSelectionPanelWidget::HandleRallyPointButtonClicked()
 
 void USFSelectionPanelWidget::SetTierUpButtonVisible(bool bVisible)
 {
+    bVisible = bVisible && bHasSelection && CurrentSelectableInfo.Tier >= 1 && CurrentSelectableInfo.Tier < 3;
     if (!IsValid(TierUpButton))
     {
         return;

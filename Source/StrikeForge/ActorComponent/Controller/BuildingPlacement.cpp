@@ -22,6 +22,12 @@ namespace
 	}
 }
 
+EResourceType UBuildingPlacement::GetPlacementResourceType() const
+{
+	const IMinable* MiningBuilding = Cast<IMinable>(TargetBuilding.Get());
+	return MiningBuilding ? MiningBuilding->GetMineResourceType() : EResourceType::Mineral;
+}
+
 UBuildingPlacement::UBuildingPlacement()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -171,6 +177,10 @@ bool UBuildingPlacement::StartPlacementMode(
 	}
 
 	SetComponentTickEnabled(true);
+	if (bIsMiningPlacement)
+	{
+		OnMineableResourceAmountChanged.Broadcast(CachedMineableResourceAmount);
+	}
 	UpdatePlacementMode();
 
 	return	TargetBuilding.IsValid() &&	IsComponentTickEnabled();
@@ -260,8 +270,9 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 		if (bIsMiningPlacement)
 		{
+			CachedMineableResourceAmount = FMath::Max(0, Evaluation.MineableResourceAmount);
 			OnMineableResourceAmountChanged.Broadcast(
-				Evaluation.MineableResourceAmount);
+				CachedMineableResourceAmount);
 			SF_LOG(Log, "Total Resource Amount : %d", Evaluation.MineableResourceAmount);
 		}
 
@@ -293,6 +304,7 @@ void UBuildingPlacement::SetCurrentPlacementInvalid()
 	// 지형 밖에 머무는 동안 매 Tick 0을 전송하지 않습니다.
 	if (bIsMiningPlacement && bHadEvaluatedGrid)
 	{
+		CachedMineableResourceAmount = 0;
 		OnMineableResourceAmountChanged.Broadcast(0);
 	}
 
@@ -348,11 +360,7 @@ void UBuildingPlacement::EndPlacementSession()
 {
 	SetComponentTickEnabled(false);
 
-	if (bIsMiningPlacement)
-	{
-		// UI 표시 여부는 UI가 관리하고 값만 초기화합니다.
-		OnMineableResourceAmountChanged.Broadcast(0);
-	}
+	const bool bWasMiningPlacement = bIsMiningPlacement;
 
 	TargetBuilding.Reset();
 	OwnerController.Reset();
@@ -368,6 +376,10 @@ void UBuildingPlacement::EndPlacementSession()
 
 	bCanPlaceCurrentLocation = false;
 	bIsMiningPlacement = false;
+	CachedMineableResourceAmount = 0;
+	// Notify after ending the session: zero deposits remain visible during placement,
+	// whereas cancellation/confirmation hides the placement-only HUD.
+	if (bWasMiningPlacement) OnMineableResourceAmountChanged.Broadcast(0);
 
 	// 표시 액터는 파괴하지 않고 다음 배치 세션에서 재사용합니다.
 	if (ASFGridDecalVisualizer* Visualizer = GridVisualizer.Get())

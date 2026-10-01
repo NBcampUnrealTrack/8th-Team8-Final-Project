@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "Game/GameState/SFGameState.h"
 #include "BuildingPlacement.generated.h"
 
@@ -32,7 +33,16 @@ public: // functions
 	bool TryConfirmPlacementMode();
 	void EndPlacementSession();
 
-	/** 선택한 건물이 속한 활성 시너지 클러스터를 시너지 완성 표시(시너지 색)로 한 번 보여 줍니다. */
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	bool IsMiningPlacementActive() const { return bIsMiningPlacement && TargetBuilding.IsValid() && IsComponentTickEnabled(); }
+
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	int32 GetMineableResourceAmount() const { return CachedMineableResourceAmount; }
+
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	EResourceType GetPlacementResourceType() const;
+
+	/** 선택한 건물이 속한 활성 시너지 클러스터를 완성시너지색(노랑)으로 범위를 한 번 보여 줍니다. */
 	void FlashSynergyClustersOfBuilding(const ASFBaseBuilding* Building) const;
 public: // properties
 	UPROPERTY(BlueprintAssignable, Category = "Building|Placement")
@@ -74,6 +84,7 @@ private:
 
 	bool bHasEvaluatedGrid = false;
 	bool bIsMiningPlacement = false;
+	int32 CachedMineableResourceAmount = 0;
 	
 	// 가장 최근 미리보기 위치의 배치 가능 여부입니다.
 	UPROPERTY(Transient)

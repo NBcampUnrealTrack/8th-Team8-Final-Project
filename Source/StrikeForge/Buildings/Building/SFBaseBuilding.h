@@ -132,6 +132,10 @@ public:
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE int32 GetCurrentTier() const { return CurrentTier; }
+
+	/** Internal tiers are zero-based; UI tiers are 1..3. */
+	UFUNCTION(BlueprintPure, Category = "SF|Building")
+	bool HasNextUpgradeTier() const;
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FResources GetConstructCost() const;

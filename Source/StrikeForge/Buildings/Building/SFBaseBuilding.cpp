@@ -698,6 +698,11 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 	}
 }
 
+bool ASFBaseBuilding::HasNextUpgradeTier() const
+{
+	return CurrentTier >= 0 && CurrentTier < 2 && GetTierInfo(CurrentTier + 1) != nullptr;
+}
+
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
 	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
@@ -719,7 +724,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	const int32 NextTier =
 		CurrentTier + UpgradeValue;
 
-	if (!GetTierInfo(NextTier))
+	if (NextTier > 2 || !GetTierInfo(NextTier))
 	{
 		return;
 	}
@@ -1150,10 +1155,10 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	// 정적 Definition은 건드리지 않는다. Stage02/03의 튜토리얼 가이드에서
-	// 실제로 요구한 건설과 티어 업만 10초로 단축된다.
+	// 정적 Definition은 건드리지 않고 스테이지 튜토리얼 중에만
+	// 건설과 티어 업그레이드 시간을 5초로 적용한다.
 	const float RequiredWork =
-		USFTutorialSubsystem::ResolveBuildingRequiredWork(
+		USFTutorialSubsystem::ResolveTutorialRequiredWork(
 			this,
 			Tier->Construction.RequiredWork);
 	ProgressComponent->InitProgressWorks(RequiredWork, 1.f);
@@ -1214,6 +1219,14 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	// 가상 함수 실행 전에 내부 상태 확정
 	bIsTierActivated = true;
 	OnTierActivated();
+	if (IsValid(BuildingDefinition))
+	{
+		if (ASFGameState* GameState = GetWorld()->GetGameState<ASFGameState>())
+		{
+			GameState->RecordCompletedBuilding(GetTeamIndex(),
+				BuildingDefinition->BuildingId, BuildingDefinition->SelectionUIRowName);
+		}
+	}
 
 	OnBuildingTierActivated.Broadcast(CurrentTier);
 	USFTutorialSubsystem::NotifyBuildingTierActivated(this, this, CurrentTier);

@@ -14,6 +14,7 @@ class ASFBuildingSpawnAnchor;
 class AActor;
 class USFBuildingDefinition;
 class USFBuildingAssetSubsystem;
+class UAudioComponent;
 
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
@@ -59,8 +60,23 @@ protected:
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FSFStageMusicTest;
+#endif
+
+	/** 레벨에 배치된 BGM의 자동 재생을 막고 기존 곡과 볼륨을 가져온다. */
+	void PrepareStageMusic();
+	void StartStageMusic();
+	void HandleStageMusicFinished(UAudioComponent* FinishedComponent);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SF|Stage|Audio", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAudioComponent> StageMusicComponent;
+
+	bool bStageMusicStarted = false;
+
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
 	bool SpawnStageBuildingsFromAnchors();
 

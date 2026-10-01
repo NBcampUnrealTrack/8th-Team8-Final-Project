@@ -213,7 +213,9 @@ void UProductComponent::StartProductLine()
 {
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
-	Tracker.Reset(ProductLine[0].RequiredWork, 1.f); // 1씩오름
+	const float RequiredWork = USFTutorialSubsystem::ResolveTutorialRequiredWork(
+		this, ProductLine[0].RequiredWork);
+	Tracker.Reset(RequiredWork, 1.f); // 1씩오름
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 	

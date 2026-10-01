@@ -33,6 +33,9 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 	BoundGameState->OnStageStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStageStateChanged);
+	BoundGameState->OnStageBuildingPermissionsChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleStageBuildingPermissionsChanged);
 
 	if (BoundGameState->IsStagePlaying())
 	{
@@ -49,6 +52,9 @@ void USFBuildCatalogPanelWidget::NativeDestruct()
 		BoundGameState->OnStageStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleStageStateChanged);
+		BoundGameState->OnStageBuildingPermissionsChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleStageBuildingPermissionsChanged);
 	}
 
 	UnbindBuildingCompletionEvents();
@@ -68,6 +74,11 @@ void USFBuildCatalogPanelWidget::HandleStageStateChanged(ESFStageState NewState)
 		BindResourceData();
 		RefreshBuildingEntries();
 	}
+}
+
+void USFBuildCatalogPanelWidget::HandleStageBuildingPermissionsChanged()
+{
+	RefreshEntryAffordability();
 }
 
 void USFBuildCatalogPanelWidget::RefreshBuildingEntries()

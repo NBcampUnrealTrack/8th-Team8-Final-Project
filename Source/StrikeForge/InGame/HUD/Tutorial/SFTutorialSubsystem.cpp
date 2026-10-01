@@ -1127,24 +1127,25 @@ bool USFTutorialSubsystem::IsBuildingSelectionAllowed(const UObject* InWorldCont
     return bAllowed;
 }
 
-float USFTutorialSubsystem::ResolveBuildingRequiredWork(
+void USFTutorialSubsystem::SetStageTutorialActive(
+    const UObject* InWorldContext,
+    bool bInActive)
+{
+    if (USFTutorialSubsystem* Tutorial = Get(InWorldContext))
+    {
+        Tutorial->bStageTutorialActive = bInActive;
+    }
+}
+
+float USFTutorialSubsystem::ResolveTutorialRequiredWork(
     const UObject* InWorldContext,
     float InDefaultRequiredWork)
 {
-    constexpr float TutorialBuildingDurationSeconds = 10.f;
+    constexpr float TutorialDurationSeconds = 5.f;
 
     const USFTutorialSubsystem* Tutorial = Get(InWorldContext);
-    if (!IsValid(Tutorial) || !Tutorial->IsGuideActive())
-    {
-        return InDefaultRequiredWork;
-    }
-
-    const bool bUsesShortTutorialTiming =
-        Tutorial->PendingRowName == TEXT("Stage02") ||
-        Tutorial->PendingRowName == TEXT("Stage03");
-
-    return bUsesShortTutorialTiming
-        ? TutorialBuildingDurationSeconds
+    return IsValid(Tutorial) && Tutorial->bStageTutorialActive
+        ? TutorialDurationSeconds
         : InDefaultRequiredWork;
 }
 

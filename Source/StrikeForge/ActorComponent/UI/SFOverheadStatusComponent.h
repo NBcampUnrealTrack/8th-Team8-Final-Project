@@ -51,6 +51,10 @@ struct STRIKEFORGE_API FSFOverheadStatus
 
 	UPROPERTY(BlueprintReadOnly, Category = "Overhead")
 	FLinearColor ProgressColor = SFOverheadUIColors::Production;
+
+	/** 현재 건물에 실제 적용 중인 생산 시너지 증가율입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Overhead")
+	float SynergyBonusPercent = 0.f;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FSFOnOverheadStatusChanged, const FSFOverheadStatus&);
@@ -77,6 +81,7 @@ public:
 
 	void SetHealthColor(const FLinearColor& InColor);
 	void SetProgressColor(const FLinearColor& InColor);
+	void SetSynergyBonusPercent(float InBonusPercent);
 
 	// ── 진행도 출처에 직접 바인딩할 수 있는 형태로 열어둔다 ──
 

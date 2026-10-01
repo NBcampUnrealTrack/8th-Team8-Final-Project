@@ -55,6 +55,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     NewStageResult
 );
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnStageBuildingPermissionsChanged);
+
 UCLASS()
 class STRIKEFORGE_API ASFGameState : public AGameStateBase
 {
@@ -188,6 +190,9 @@ public:
         FName InBuildingId
     ) const;
 
+    /** 튜토리얼 종료 뒤에는 스테이지의 건설 금지만 해제한다. 선행 건물 조건은 유지된다. */
+    void ReleaseBuildingRestrictionsAfterTutorial();
+
     int32 GetMaxAllowedTierInCurrentStage(
         FName InBuildingId
     ) const;
@@ -197,12 +202,18 @@ public:
         FName InBuildingId
     ) const;
 
+    /** 완성한 건물의 해금 이력을 스테이지 동안 유지한다. */
+    void RecordCompletedBuilding(int32 TeamIndex, FName BuildingId, FName SelectionUIRowName) const;
+
 public:
 
     // UI 부분
     // UI가 나중에 상태 변화를 받을 때 이용 가능한 통로 생성
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
     FSFOnStageStateChanged OnStageStateChanged;
+
+    UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
+    FSFOnStageBuildingPermissionsChanged OnStageBuildingPermissionsChanged;
 
     // 결과 승 or 패배 시 받을 때 사용(결과창)
     UPROPERTY(BlueprintAssignable, Category = "SF|Stage")
@@ -231,6 +242,10 @@ private:
 
     UPROPERTY()
     TArray<FSFStageBuildingRule> CurrentStageBuildingRules;
+
+    bool bBuildingRestrictionsReleasedAfterTutorial = false;
+
+    mutable TMap<int32, TSet<FName>> CompletedBuildingUnlocksByTeam;
 	
     bool HasCompletedBuilding(
         int32 TeamIndex,

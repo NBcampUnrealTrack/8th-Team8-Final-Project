@@ -161,45 +161,40 @@ void UProductComponent::ResumeProductLine()
 	}
 }
 
-void UProductComponent::SetSpeedMultiplier(float InMultiplier)
+void UProductComponent::SetSpeedModifier(FName ModifierId, float InMultiplier)
 {
-	const float NewMultiplier =	FMath::Max(0.f, InMultiplier);
-
-	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	NewMultiplier))
+	if (!Tracker.WouldChangeWorkRateModifier(ModifierId, InMultiplier))
 	{
 		return;
 	}
 
-	/*
-	 * 마지막 갱신부터 현재까지는 기존 배율로 처리한다.
-	 * 이후 경과 시간부터 새로운 배율이 적용된다.
-	 */
-	// 이전 배율로 현재 시점까지 먼저 계산
+	// 마지막 갱신부터 현재까지는 기존 배율로 처리한다.
 	if (!ProductLine.IsEmpty() &&
 		!bProductionPaused &&
 		!bWaitingForPopulation)
 	{
 		ProcessProductionToNow();
 	}
-	
-	Tracker.WorkRateMultiplier = NewMultiplier;
+
+	Tracker.SetWorkRateModifier(ModifierId, InMultiplier);
 }
 
-void UProductComponent::ResetSpeedMultiplier()
+void UProductComponent::RemoveSpeedModifier(FName ModifierId)
 {
-	if (FMath::IsNearlyEqual(Tracker.WorkRateMultiplier,	1.f))
+	if (!Tracker.HasWorkRateModifier(ModifierId))
 	{
 		return;
 	}
-	
+
+	// 마지막 갱신부터 현재까지는 기존 배율로 처리한다.
 	if (!ProductLine.IsEmpty() &&
-	!bProductionPaused &&
-	!bWaitingForPopulation)
+		!bProductionPaused &&
+		!bWaitingForPopulation)
 	{
 		ProcessProductionToNow();
 	}
-	
-	Tracker.WorkRateMultiplier = 1.f;
+
+	Tracker.RemoveWorkRateModifier(ModifierId);
 }
 
 void UProductComponent::SetAssemblePoint(const FVector& InAssemblePoint)
@@ -218,7 +213,9 @@ void UProductComponent::StartProductLine()
 {
 	GetWorld()->GetTimerManager().ClearTimer(CurrentTimerHandle);
 	// 목표량 = 초 단위 Duration, 초당 1씩 누적 → ProgressComponent와 동일한 계산 방식
-	Tracker.Reset(ProductLine[0].RequiredWork, 1.f); // 1씩오름
+	const float RequiredWork = USFTutorialSubsystem::ResolveTutorialRequiredWork(
+		this, ProductLine[0].RequiredWork);
+	Tracker.Reset(RequiredWork, 1.f); // 1씩오름
 	LastAdvanceTime = GetWorld()->GetTimeSeconds();
 	OnProductRatioChanged.Broadcast(Tracker.GetRatio());
 	

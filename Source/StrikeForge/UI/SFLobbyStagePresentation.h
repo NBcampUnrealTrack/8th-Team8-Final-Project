@@ -69,6 +69,7 @@ private:
     UFUNCTION() void Click6() { RequestLaunch(5); }
     UFUNCTION() void Click7() { RequestLaunch(6); }
     UPROPERTY() TObjectPtr<UTexture2D> IconAtlas;
+    UPROPERTY() TObjectPtr<UTexture2D> ClearedIcon;
     UPROPERTY() TObjectPtr<UMaterialInterface> HeaderMaterial;
     UPROPERTY(Transient) TObjectPtr<USFMenuAtmosphereWidget> Atmosphere;
     UPROPERTY(Transient) TArray<FSFLobbyStageControl> Controls;

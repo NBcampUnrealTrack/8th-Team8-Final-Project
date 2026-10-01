@@ -50,6 +50,9 @@ private:
 	);
 
 	UFUNCTION()
+	void HandleStageBuildingPermissionsChanged();
+
+	UFUNCTION()
 	void HandleMineralChanged(
 		int32 NewMineral,
 		float NewIncomeRate

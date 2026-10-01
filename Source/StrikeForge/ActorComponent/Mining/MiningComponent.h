@@ -52,6 +52,11 @@ public:
 	bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets);
 	
 	void ClearMiningTargets();
+	/** 출처별 채굴 작업 배율을 추가하거나 같은 식별자의 기존 값을 교체합니다. */
+	void SetWorkRateModifier(FName ModifierId, float InMultiplier);
+	/** 지정한 출처의 배율을 제거하고 남은 배율들로 최종 작업속도를 다시 계산합니다. */
+	void RemoveWorkRateModifier(FName ModifierId);
+	/** 현재 자원 요구 작업량과 작업 배율을 기준으로 초당 예상 채굴량을 계산합니다. */
 	float GetIncomeRatePerSeconds() const;
 	FORCEINLINE void SetMineResourceType(EResourceType InResourceType) { MineResourceType = InResourceType; }
 	FORCEINLINE EResourceType GetMineResourceType() const { return MineResourceType; }

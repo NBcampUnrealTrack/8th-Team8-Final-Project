@@ -1507,6 +1507,12 @@ UWidget* USFInGameHUDWidget::GetTutorialBuildModeButton() const
     return BuildModeOpenButton.Get();
 }
 
+UWidget* USFInGameHUDWidget::FindTutorialProductionButton(FName UnitRowName) const
+{
+    return IsValid(ProductionBuildingPanel)
+        ? ProductionBuildingPanel->FindTutorialProductionButton(UnitRowName) : nullptr;
+}
+
 UWidget* USFInGameHUDWidget::FindTutorialBuildCatalogEntry(FName BuildingRowName) const
 {
     if (!IsValid(ActiveBuildingModeWidget) || !ActiveBuildingModeWidget->IsActivated())

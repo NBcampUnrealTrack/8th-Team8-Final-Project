@@ -37,7 +37,7 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
 {
     CurrentStep = InStep;
     bHasStep = true;
-    bTargetVisible = true;
+    bTargetVisible = USFTutorialSubsystem::GetProductionGuideUnit(CurrentStep.CompletionTag).IsNone();
     PulseTime = 0.f;
 
     // 월드 좌표 칸은 카메라 거리로 크기를 정하므로 축별 지정을 쓰지 않는다.
@@ -104,7 +104,9 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
 
     if (CurrentStep.TargetKind == ESFGuideTargetKind::ScreenRegion)
     {
-        UpdateFromScreenTargetWidget(MyGeometry);
+        const bool bResolved = UpdateFromScreenTargetWidget(MyGeometry);
+        if (!USFTutorialSubsystem::GetProductionGuideUnit(CurrentStep.CompletionTag).IsNone())
+            bTargetVisible = bResolved;
     }
 
     if (CurrentStep.TargetKind == ESFGuideTargetKind::WorldLocation)
@@ -137,6 +139,12 @@ UWidget* USFTutorialSpotlightWidget::ResolveScreenTargetWidget() const
     if (CurrentStep.CompletionTag == BuildModeOpenTag)
     {
         return HUD->GetTutorialBuildModeButton();
+    }
+
+    const FName ProductionUnit = USFTutorialSubsystem::GetProductionGuideUnit(CurrentStep.CompletionTag);
+    if (!ProductionUnit.IsNone())
+    {
+        return HUD->FindTutorialProductionButton(ProductionUnit);
     }
 
     static const FGameplayTag SelectBuildingTag =

@@ -254,6 +254,11 @@ public:
     /** 스테이지 튜토리얼이 시작되거나 종료될 때 진행 상태를 기록한다. */
     static void SetStageTutorialActive(const UObject* InWorldContext, bool bInActive);
 
+    bool IsStageTutorialActive() const { return bStageTutorialActive; }
+
+    /** Specific production objectives identify their required unit for resource help and highlighting. */
+    static FName GetProductionGuideUnit(FGameplayTag ObjectiveTag);
+
     /** 튜토리얼 중 건설, 티어 업그레이드, 유닛 생산은 5초로 맞춘다. */
     static float ResolveTutorialRequiredWork(
         const UObject* InWorldContext,

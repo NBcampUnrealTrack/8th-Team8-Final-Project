@@ -33,6 +33,20 @@ void USFGameInstance::ResolveEditorStageSelection(const UWorld* PlayWorld)
         if (!Row || Row->StageLevel.ToSoftObjectPath().GetLongPackageName() != MapPackage) continue;
         if (MatchedData)
         {
+            // Old prototype aliases can share a map with a numbered campaign stage.
+            // Direct PIE should use the campaign row; an explicit lobby selection
+            // was already preserved above.
+            const bool bCanonicalRow = RowName == FName(*FString::Printf(TEXT("Stage%02d"), Row->StageOrder));
+            const bool bCanonicalMatch = MatchedRow == FName(*FString::Printf(TEXT("Stage%02d"), MatchedData->StageOrder));
+            if (bCanonicalRow != bCanonicalMatch)
+            {
+                if (bCanonicalRow)
+                {
+                    MatchedRow = RowName;
+                    MatchedData = Row;
+                }
+                continue;
+            }
             SF_LOG(Warning, "[SFGameInstance] Direct PIE map has multiple stage rows: %s", *MapPackage);
             return;
         }

@@ -651,213 +651,61 @@ bool USFBuildingGridSubsystem::CanRegisterResourceGrid(const AResourceBase* Reso
 	return true;
 }
 
-void USFBuildingGridSubsystem::DebugDrawOccupiedCells() const
+// 배치 모드 표시용으로 막힌 셀(건물·자원), 채굴할 자원 셀, 그 대상들의 높이 범위를 GridCells에서 모읍니다.
+// UBuildingPlacement::StartPlacementMode가 호출하고 결과는 ASFGridDecalVisualizer::ShowOccupiedCells로 갑니다.
+void USFBuildingGridSubsystem::CollectPlacementDisplayCells(
+	bool bHighlightResource,
+	EResourceType HighlightResourceType,
+	TArray<FIntPoint>& OutBlockedCells,
+	TArray<FIntPoint>& OutResourceCells,
+	FFloatInterval& OutHeightRange) const
 {
-	UWorld* World = GetWorld();
-	if (!IsValid(World)) return;
+	OutBlockedCells.Reset();
+	OutResourceCells.Reset();
+	OutHeightRange = FFloatInterval();
 
-	/*
-	 * 이전 배치 세션에서 그린 점유 격자를 제거한 뒤,
-	 * 현재 점유 상태를 다시 그립니다.
-	 */
-	
-	const FVector BoxExtent(CellSize * 0.5f, CellSize * 0.5f, 10.0f);
-
-	for (const TPair<FIntPoint,	FSFGridCellData>& GridCell : GridCells)
+	for (const TPair<FIntPoint, FSFGridCellData>& GridCell : GridCells)
 	{
-		AActor* OccupiedActor =	GridCell.Value.BuildingActor.Get();
+		const FSFGridCellData& CellData = GridCell.Value;
 
-		if (!IsValid(OccupiedActor))
+		// 건물이 있는 셀은 자원과 관계없이 막힌 셀입니다.
+		const AActor* Building = CellData.BuildingActor.Get();
+		if (IsValid(Building))
 		{
-			for (const FSFGridResourceEntry& Entry : GridCell.Value.Resources)
-			{
-				AResourceBase* Resource = Entry.ResourceActor.Get();
-
-				if (IsValid(Resource))
-				{
-					OccupiedActor = Resource;
-					break;
-				}
-			}
+			OutBlockedCells.Add(GridCell.Key);
+			OutHeightRange.Include(Building->GetActorLocation().Z);
+			continue;
 		}
-		if (!IsValid(OccupiedActor)) continue;
 
-		FVector CellCenter =
-			GridToWorldCoordinate(GridCell.Key);
+		const AResourceBase* HighlightedResource = nullptr;
+		const AResourceBase* BlockingResource = nullptr;
 
-		// 점유 중인 건물의 높이를 기준으로 표시합니다.
-		CellCenter.Z =
-			OccupiedActor->GetActorLocation().Z + 10.0f;
-
-		DrawDebugBox(
-			World,
-			CellCenter,
-			BoxExtent,
-			FColor::Red,
-			true,
-			-1,
-			0,
-			3.0f);
-	}
-}
-
-void USFBuildingGridSubsystem::DebugDrawGridCells(
-	const FBuildingGridInfo& GridInfo,
-	float WorldZ,
-	const FColor& Color,
-	float Duration,
-	float ZOffset,
-	float Thickness) const
-{
-	if (!GridInfo.IsValid())
-	{
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	const float HalfCell = CellSize * 0.5f;
-	const FVector BoxExtent(HalfCell, HalfCell, 5.0f);
-
-	for (int32 Y = 0; Y < GridInfo.GridSize.Y; ++Y)
-	{
-		for (int32 X = 0; X < GridInfo.GridSize.X; ++X)
+		for (const FSFGridResourceEntry& Entry : CellData.Resources)
 		{
-			const FIntPoint CellCoordinate =
-				GridInfo.OriginCell + FIntPoint(X, Y);
-			FVector CellCenter = GridToWorldCoordinate(CellCoordinate);
-			CellCenter.Z = WorldZ + ZOffset;
+			const AResourceBase* Resource = Entry.ResourceActor.Get();
+			if (!IsValid(Resource)) continue;
 
-			DrawDebugBox(
-				World,
-				CellCenter,
-				BoxExtent,
-				Color,
-				false,
-				Duration,
-				0,
-				Thickness);
-		}
-	}
-}
-
-void USFBuildingGridSubsystem::DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,
-	const FIntPoint& ResourceSearchGridSize, float WorldZ, float Duration) const
-{
-	if (!BuildingGridInfo.IsValid()) return;
-
-	/*
-	 * 먼저 전체 건물 점유 영역을 검정색으로 그립니다.
-	 * 4×6 광산이면 24개 셀이 표시됩니다.
-	 */
-	DebugDrawGridCells(
-		BuildingGridInfo,
-		WorldZ,
-		FColor::Black,
-		Duration,
-		5.0f,
-		4.0f);
-
-	FBuildingGridInfo SearchGridInfo;
-
-	if (!TryMakeCenteredSubGrid(
-		BuildingGridInfo,
-		ResourceSearchGridSize,
-		SearchGridInfo))
-	{
-		return;
-	}
-
-	/*
-	 * 검색 영역을 검정색 영역보다 조금 위에 그립니다.
-	 * 두 DebugBox가 겹쳐 깜빡이는 현상을 줄일 수 있습니다.
-	 */
-	DebugDrawGridCells(
-		SearchGridInfo,
-		WorldZ,
-		FColor::Green,
-		Duration,
-		8.0f,
-		5.0f);
-}
-
-// 빌딩의 gridsize debug
-void USFBuildingGridSubsystem::DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ, bool bCanPlace,
-	float Duration) const
-{
-	const FColor GridColor = bCanPlace ?
-		FColor::Green: FColor::Red;
-
-	DebugDrawGridCells(GridInfo, WorldZ, GridColor, Duration);
-}
-
-void USFBuildingGridSubsystem::DebugDrawResourceCells(
-	EResourceType ResourceType,
-	float Duration) const
-{
-	UWorld* World = GetWorld();
-	if (!IsValid(World)) return;
-
-	const bool bPersistentLines = Duration < 0.0f;
-	
-	const FVector BoxExtent(
-		CellSize * 0.5f,CellSize * 0.5f,10.0f);
-
-	for (const TPair<FIntPoint, FSFGridCellData>& GridCell	: GridCells)
-	{
-		for (const FSFGridResourceEntry& Entry	: GridCell.Value.Resources)
-		{
-			AResourceBase* Resource = Entry.ResourceActor.Get();
-
-			if (!IsValid(Resource) || Entry.ResourceType != ResourceType)
+			// 광산 배치 중에는 채굴할 자원 종류의 남은 매장량 셀만 강조합니다.
+			if (bHighlightResource &&
+				Entry.ResourceType == HighlightResourceType &&
+				Resource->GetCellDeposit(Entry.ResourceCellIndex) > 0)
 			{
-				continue;
+				HighlightedResource = Resource;
+				break;
 			}
 
-			const int32 RemainingDeposit =
-				Resource->GetCellDeposit(Entry.ResourceCellIndex);
-			if (RemainingDeposit <= 0)	continue;
+			BlockingResource = Resource;
+		}
 
-			FVector CellCenter = GridToWorldCoordinate(GridCell.Key);
-
-			CellCenter.Z = Resource->GetActorLocation().Z + 10.0f;
-
-			DrawDebugBox(
-				World,
-				CellCenter,
-				BoxExtent,
-				FColor::Green,
-				bPersistentLines,
-				Duration,
-				0,
-				3.0f);
-
-			FVector TextLocation = CellCenter;
-			TextLocation.Z += 30.0f;
-
-			// const FString DebugText =
-			// 	FString::Printf(
-			// 		TEXT("%d"),
-			// 		RemainingDeposit);
-
-			// DrawDebugString(
-			// 	World,
-			// 	TextLocation,
-			// 	DebugText,
-			// 	nullptr,
-			// 	FColor::White,
-			// 	Duration,
-			// 	false);
-
-			/*
-			 * 동일한 종류의 자원은 한 셀에
-			 * 하나만 등록될 수 있습니다.
-			 */
-			break;
+		if (HighlightedResource != nullptr)
+		{
+			OutResourceCells.Add(GridCell.Key);
+			OutHeightRange.Include(HighlightedResource->GetActorLocation().Z);
+		}
+		else if (BlockingResource != nullptr)
+		{
+			OutBlockedCells.Add(GridCell.Key);
+			OutHeightRange.Include(BlockingResource->GetActorLocation().Z);
 		}
 	}
 }

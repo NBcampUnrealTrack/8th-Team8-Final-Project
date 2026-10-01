@@ -3,8 +3,6 @@
 #include "CoreMinimal.h"
 #include "SFBuildingSynergyTypes.generated.h"
 
-class UNiagaraSystem;
-class UTexture2D;
 class USFBuildingSynergyDefinition;
 
 /** 건물 수에 따라 선택되는 시너지 단계입니다. */
@@ -26,10 +24,7 @@ struct STRIKEFORGE_API FSFBuildingSynergyLevel
 	float ProductionBonusPercent = 25.f;
 };
 
-/**
- * 건물 Definition이 제공하는 시너지와 종족별 표현 설정입니다.
- * 규칙은 공용 Definition을 참조하고 Niagara·아이콘만 건물별로 다르게 지정합니다.
- */
+/** 건물 Definition이 제공하는 시너지 규칙을 참조합니다. */
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFGrantedBuildingSynergy
 {
@@ -37,13 +32,4 @@ struct STRIKEFORGE_API FSFGrantedBuildingSynergy
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy")
 	TObjectPtr<USFBuildingSynergyDefinition> Definition = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy|Presentation")
-	TSoftObjectPtr<UNiagaraSystem> BoundaryEffect;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy|Presentation")
-	FLinearColor BoundaryColor = FLinearColor::White;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Synergy|Presentation")
-	TSoftObjectPtr<UTexture2D> BadgeIcon;
 };

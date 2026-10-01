@@ -84,6 +84,16 @@ void USFOverheadStatusComponent::SetProgressColor(const FLinearColor& InColor)
 	NotifyChanged();
 }
 
+void USFOverheadStatusComponent::SetSynergyBonusPercent(float InBonusPercent)
+{
+	// 게임플레이에서 계산된 생산 보너스를 표시 상태에 보관하고, 실제 변경 때만 UI에 알린다.
+	const float NewBonusPercent = FMath::Max(0.f, InBonusPercent);
+	if (FMath::IsNearlyEqual(Status.SynergyBonusPercent, NewBonusPercent))	return;
+
+	Status.SynergyBonusPercent = NewBonusPercent;
+	NotifyChanged();
+}
+
 void USFOverheadStatusComponent::NotifyChanged()
 {
 	OnStatusChanged.Broadcast(Status);

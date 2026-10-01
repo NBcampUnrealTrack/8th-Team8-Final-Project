@@ -886,6 +886,8 @@ void ASFBaseBuilding::BeginPlay()
 		if (USFBuildingSynergySubsystem* Synergy =
 			USFBuildingSynergySubsystem::Get(this))
 		{
+			Synergy->OnSynergyStateChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleBuildingSynergyStateChanged);
 			Synergy->RegisterBuilding(this);
 		}
 	}
@@ -899,6 +901,8 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (USFBuildingSynergySubsystem* Synergy =
 		USFBuildingSynergySubsystem::Get(this))
 	{
+		Synergy->OnSynergyStateChanged.RemoveDynamic(
+			this, &ThisClass::HandleBuildingSynergyStateChanged);
 		Synergy->UnregisterBuilding(this);
 	}
 	
@@ -919,6 +923,17 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASFBaseBuilding::HandleBuildingSynergyStateChanged()
+{
+	// Subsystem이 계산해 둔 최종 증가율을 재사용하여 UI가 게임플레이 계산을 중복하지 않게 한다.
+	const USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this);
+	if (!IsValid(Synergy) || !IsValid(StatusComponent))	return;
+
+	StatusComponent->SetSynergyBonusPercent(
+		Synergy->GetProductionBonusPercent(this));
 }
 
 void ASFBaseBuilding::OnBuildingDefinitionLoaded()

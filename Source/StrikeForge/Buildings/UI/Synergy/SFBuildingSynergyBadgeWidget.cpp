@@ -1,6 +1,8 @@
 #include "SFBuildingSynergyBadgeWidget.h"
 
+#include "Animation/WidgetAnimation.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Datas/Building/Synergy/SFBuildingSynergyDefinition.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
@@ -57,8 +59,12 @@ void USFBuildingSynergyBadgeWidget::SetProgressInfo(
 
 	const int32 SourceBuildingCount =
 		FMath::Max(0, ProgressInfo.SourceBuildingCount);
+	const int32 ActiveLevelIndex =
+		Definition->FindLevelIndex(SourceBuildingCount);
 	const FSFBuildingSynergyLevel* ActiveLevel =
-		Definition->FindLevel(SourceBuildingCount);
+		Definition->Levels.IsValidIndex(ActiveLevelIndex)
+			? &Definition->Levels[ActiveLevelIndex]
+			: nullptr;
 	const FSFBuildingSynergyLevel* NextLevel =
 		Definition->FindNextLevel(SourceBuildingCount);
 	const int32 TargetBuildingCount =
@@ -104,7 +110,91 @@ void USFBuildingSynergyBadgeWidget::SetProgressInfo(
 		}
 	}
 
+	// 현재 적용 중인 단계 번호(Levels 인덱스 + 1)를 표시하고, 활성 단계가 없는 클러스터는 0으로 표시합니다.
+	if (IsValid(SynergyLevelText))
+	{
+		const int32 DisplayLevel =
+			ActiveLevelIndex != INDEX_NONE ? ActiveLevelIndex + 1 : 0;
+		SynergyLevelText->SetText(FText::AsNumber(DisplayLevel));
+	}
+
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
+// OverlapIconSizebox의 Slate 위젯에 마우스 진입·이탈 핸들러를 연결합니다.
+// SizeBox는 기본이 SelfHitTestInvisible이라 마우스를 감지하도록 Visible로 바꿉니다(클릭은 처리하지 않아 게임으로 전달됩니다).
+void USFBuildingSynergyBadgeWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (!IsValid(OverlapIconSizebox))
+	{
+		return;
+	}
+
+	OverlapIconSizebox->SetVisibility(ESlateVisibility::Visible);
+
+	if (const TSharedPtr<SWidget> SizeBoxWidget = OverlapIconSizebox->GetCachedWidget())
+	{
+		SizeBoxWidget->SetOnMouseEnter(FNoReplyPointerEventHandler::CreateUObject(
+			this, &ThisClass::HandleOverlapIconMouseEnter));
+		SizeBoxWidget->SetOnMouseLeave(FSimpleNoReplyPointerEventHandler::CreateUObject(
+			this, &ThisClass::HandleOverlapIconMouseLeave));
+	}
+}
+
+// 아이콘에 마우스가 올라왔음을 기록하고, 멈춰 있으면 정방향 재생을 시작합니다.
+// NativeConstruct에서 OverlapIconSizebox의 Slate 마우스 진입 핸들러로 연결됩니다.
+void USFBuildingSynergyBadgeWidget::HandleOverlapIconMouseEnter(
+	const FGeometry& Geometry,
+	const FPointerEvent& MouseEvent)
+{
+	bOverlapIconHovered = true;
+	UpdateOverlapAnimation();
+}
+
+// 아이콘에서 마우스가 나갔음을 기록하고, 끝에 멈춰 있으면 역방향 재생을 시작합니다.
+// NativeConstruct에서 OverlapIconSizebox의 Slate 마우스 이탈 핸들러로 연결됩니다.
+void USFBuildingSynergyBadgeWidget::HandleOverlapIconMouseLeave(const FPointerEvent& MouseEvent)
+{
+	bOverlapIconHovered = false;
+	UpdateOverlapAnimation();
+}
+
+// 재생 중에는 끝까지 두고, 멈춰 있을 때만 호버 상태에 맞춰 정방향(0→끝) 또는 역방향(끝→0)을 시작합니다.
+// 마우스 진입·이탈 핸들러와 OnAnimationFinished_Implementation이 호출합니다.
+void USFBuildingSynergyBadgeWidget::UpdateOverlapAnimation()
+{
+	if (!IsValid(OverlapAnimation) || IsAnimationPlaying(OverlapAnimation))
+	{
+		return;
+	}
+
+	if (bOverlapIconHovered && !bOverlapAnimationAtEnd)
+	{
+		bOverlapAnimationPlayingForward = true;
+		PlayAnimation(OverlapAnimation, 0.f, 1, EUMGSequencePlayMode::Forward);
+	}
+	else if (!bOverlapIconHovered && bOverlapAnimationAtEnd)
+	{
+		bOverlapAnimationPlayingForward = false;
+		PlayAnimation(OverlapAnimation, 0.f, 1, EUMGSequencePlayMode::Reverse);
+	}
+}
+
+// 한 방향을 끝까지 재생하면 도착한 끝을 기록하고, 재생 중 바뀐 호버 상태를 반영해 다음 재생을 정합니다.
+// 엔진은 재생 상태를 Stopped로 바꾼 뒤 이 함수를 호출하므로 여기서 바로 반대 방향을 재생할 수 있습니다.
+void USFBuildingSynergyBadgeWidget::OnAnimationFinished_Implementation(const UWidgetAnimation* Animation)
+{
+	Super::OnAnimationFinished_Implementation(Animation);
+
+	if (Animation != OverlapAnimation)
+	{
+		return;
+	}
+
+	bOverlapAnimationAtEnd = bOverlapAnimationPlayingForward;
+	UpdateOverlapAnimation();
 }
 
 #undef LOCTEXT_NAMESPACE

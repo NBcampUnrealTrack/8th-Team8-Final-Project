@@ -26,7 +26,7 @@ struct STRIKEFORGE_API FSFBuildingSynergyClusterProgressInfo
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	int32 SourceBuildingCount = 0;
 
-	/** 합쳐진 점유 격자의 XY 중앙과 가장 높은 건물 상단을 사용한 배지 기준점입니다. */
+	/** 배지 기준 건물(처음 지은 건물 또는 마지막으로 클릭한 건물)의 XY와 클러스터에서 가장 높은 건물 상단을 사용한 배지 기준점입니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	FVector BadgeWorldLocation = FVector::ZeroVector;
 };
@@ -110,6 +110,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 
+	/** 선택한 시너지 원천 건물을 소속 클러스터 배지의 기준 건물로 지정하고, 전체 재계산 없이 배지 X·Y만 옮깁니다. */
+	void SelectBadgeAnchorBuilding(ASFBaseBuilding* Building);
+
 	/** 구역과 클러스터 진행 정보가 모두 갱신됐음을 UI와 격자 데칼 표시 계층에 알립니다. */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Building Synergy")
 	FSFOnBuildingSynergyStateChanged OnSynergyStateChanged;
@@ -133,9 +136,22 @@ private:
 	UPROPERTY(Transient)
 	TArray<FSFBuildingSynergyZoneInfo> SynergyZones;
 
-	/** 이벤트 기반 클러스터 재계산 때만 갱신하며, UI가 Definition과 함께 진행 상태를 계산합니다. */
+	/** 이벤트 기반 클러스터 재계산 때 다시 만들고(배지 X·Y는 건물 클릭 때도 갱신), UI가 Definition과 함께 진행 상태를 계산합니다. */
 	UPROPERTY(Transient)
 	TArray<FSFBuildingSynergyClusterProgressInfo> ClusterProgressInfos;
+
+	/**
+	 * 마지막 재계산에서 원천 건물이 속한 ClusterProgressInfos 번호입니다. 시너지를 여러 개 주는 건물은 번호도 여러 개입니다.
+	 * 건물 클릭 시 전체 재계산 없이 소속 클러스터 배지 위치만 고칠 때 사용합니다.
+	 */
+	TMap<TWeakObjectPtr<ASFBaseBuilding>, TArray<int32>> BuildingClusterIndices;
+
+	/**
+	 * 클러스터 배지를 띄울 기준 건물과 기록 순번입니다. 클러스터마다 순번이 가장 큰 건물 위에 배지가 뜹니다.
+	 * 새 클러스터의 첫 건물이 기록되고, 건물을 클릭하면 더 큰 순번으로 다시 기록됩니다.
+	 */
+	TMap<TWeakObjectPtr<ASFBaseBuilding>, int32> BadgeAnchorStamps;
+	int32 NextBadgeAnchorStamp = 0;
 
 	bool bIsRecalculating = false;
 };

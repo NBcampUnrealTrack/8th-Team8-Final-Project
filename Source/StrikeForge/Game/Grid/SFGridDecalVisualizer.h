@@ -84,7 +84,7 @@ public:
 	void EndWarmUp();
 
 private:
-	/** 시너지 구역이 새로 생긴 클러스터의 구역 전체를 노란색으로 표시한 뒤 서서히 지웁니다. */
+	/** 시너지 구역이 새로 생긴 클러스터의 구역 전체를 시너지 색으로 표시한 뒤 서서히 지웁니다. */
 	UFUNCTION()
 	void HandleSynergyStateChanged();
 
@@ -103,12 +103,15 @@ private:
 		const TArray<FIntPoint>& PrimaryCells,
 		const TArray<FIntPoint>& SecondaryCells);
 
-	/** 지정한 클러스터들의 구역을 EffectSizeCells 칸으로 펼쳐 노란색으로 표시한 뒤 서서히 지웁니다. */
+	/** 지정한 클러스터들의 구역을 EffectSizeCells 칸으로 펼쳐 시너지 색(EffectZoneColor)으로 표시한 뒤 서서히 지웁니다. */
 	void FlashSynergyClusters(
 		const TArray<FSFBuildingSynergyZoneInfo>& Zones,
 		const TSet<int32>& ClusterIndices);
 
-	void StartSynergyFlash(const TArray<FIntPoint>& Cells, const FFloatInterval& HeightRange);
+	void StartSynergyFlash(
+		const TArray<FIntPoint>& Cells,
+		const FFloatInterval& HeightRange,
+		const FLinearColor& FlashColor);
 	void StopSynergyFlash();
 
 	UPROPERTY(VisibleAnywhere, Category = "Grid|Decal")
@@ -139,9 +142,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal")
 	FLinearColor LinkRangeColor = FLinearColor(0.2f, 0.75f, 1.f, 1.f);
-
-	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal")
-	FLinearColor SynergyFlashColor = FLinearColor(1.f, 0.85f, 0.1f, 1.f);
 
 	/** 시너지 완성 표시가 완전히 사라질 때까지 걸리는 시간(초)입니다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal", meta = (ClampMin = "0.1"))

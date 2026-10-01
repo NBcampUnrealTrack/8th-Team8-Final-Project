@@ -42,7 +42,7 @@ public: // functions
 	UFUNCTION(BlueprintPure, Category = "Building|Placement")
 	EResourceType GetPlacementResourceType() const;
 
-	/** 선택한 건물이 속한 활성 시너지 클러스터를 시너지 완성 표시(노란색)로 한 번 보여 줍니다. */
+	/** 선택한 건물이 속한 활성 시너지 클러스터를 완성시너지색(노랑)으로 범위를 한 번 보여 줍니다. */
 	void FlashSynergyClustersOfBuilding(const ASFBaseBuilding* Building) const;
 public: // properties
 	UPROPERTY(BlueprintAssignable, Category = "Building|Placement")

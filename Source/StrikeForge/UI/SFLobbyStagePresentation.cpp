@@ -304,7 +304,7 @@ int32 USFLobbyStagePresentation::NativePaint(const FPaintArgs& Args, const FGeom
         if (!bDrawRuin) Brush.SetUVRegion(FBox2D(FVector2D(.5,0),FVector2D(.75,.5)));
         const float IconSize=(Boss ? 211.f : 200.f)*(1+.035f*H)*S;
         FLinearColor Tint=Boss ? (State.bCleared ? FLinearColor(.85,.71,.94,Alpha) : FLinearColor(.61,.39,.78,Alpha)) : FLinearColor(1,1,1,Alpha);
-        if (!State.bEnabled && !State.bCleared) Tint=Boss ? FLinearColor(.48,.31,.57,Alpha*.9) : FLinearColor(.64,.64,.55,Alpha*.9);
+        if (!State.bEnabled && !State.bCleared) Tint=FLinearColor(.29,.30,.28,Alpha*.95f);
         Box(P-FVector2D(IconSize*.5,IconSize*.57)+FVector2D(0,bDrawRuin ? 10*S : 0),FVector2D(IconSize),Tint,5,&Brush);
         if (State.bCleared)
         {
@@ -318,15 +318,36 @@ int32 USFLobbyStagePresentation::NativePaint(const FPaintArgs& Args, const FGeom
         Box(Label,FVector2D(150,32)*S,FLinearColor(Ink.R,Ink.G,Ink.B,Alpha*.94),6,White);
         Box(Label,FVector2D(150,2)*S,FLinearColor(Rim.R,Rim.G,Rim.B,Alpha),7,White);
         Text(FString::Printf(TEXT("STAGE %02d"),I+1),Label+FVector2D(20,3)*S,20,FLinearColor(.96,.88,.66,Alpha),8);
-        FString Status=Launch ? TEXT("DEPLOYING") : State.bCleared ? TEXT("CLEARED") : Boss ? TEXT("FINAL BATTLE") : State.bEnabled ? TEXT("READY") : TEXT("LOCKED");
+        FString Status=Launch ? TEXT("DEPLOYING") : State.bCleared ? TEXT("CLEARED") : !State.bEnabled ? TEXT("LOCKED") : Boss ? TEXT("FINAL BATTLE") : TEXT("READY");
         float TextOffset=Status.Len()*4.f;
         Text(Status,P+FVector2D(-TextOffset,114)*S,13,FLinearColor(Boss ? .48f : .22f,.20f,.17f,Alpha),8);
-        if (!State.bEnabled)
+        if (!State.bEnabled && !State.bCleared)
         {
-            FVector2D Lock=P+FVector2D(48,32)*S;
-            Ring(Lock-FVector2D(0,6)*S,FVector2D(7,9)*S,FLinearColor(.94,.82,.56,Alpha),3,7,PI,PI);
-            Box(Lock-FVector2D(10,3)*S,FVector2D(20,17)*S,FLinearColor(.20,.24,.20,Alpha),7,White);
-            Box(Lock+FVector2D(-1,1)*S,FVector2D(2,7)*S,FLinearColor(.94,.82,.56,Alpha),8,White);
+            const FLinearColor Shadow(.045f,.045f,.035f,Alpha);
+            const FLinearColor Iron(.48f,.43f,.32f,Alpha);
+            const FLinearColor Edge(.86f,.72f,.43f,Alpha);
+            // Crossed linked chains seal the tower silhouette even at small UI scales.
+            for (int32 Direction : {-1,1})
+            {
+                const FVector2D A=P+FVector2D(-66,-62*Direction)*S;
+                const FVector2D B=P+FVector2D(66,48*Direction)*S;
+                Lines({A,B},Shadow,10,7);
+                for (int32 Link=0;Link<9;++Link)
+                {
+                    const FVector2D Q=FMath::Lerp(A,B,(Link+.5f)/9.f);
+                    const FVector2D Along=FVector2D(8,6.7f*Direction)*S;
+                    const FVector2D Across=FVector2D(-3.8f*Direction,4.5f)*S;
+                    Lines({Q-Along,Q-Across,Q+Along,Q+Across,Q-Along},Iron,3.5f,8);
+                }
+            }
+            const FVector2D Lock=P+FVector2D(0,2)*S;
+            Ring(Lock-FVector2D(0,19)*S,FVector2D(16,20)*S,Shadow,10,8,PI,PI);
+            Ring(Lock-FVector2D(0,19)*S,FVector2D(16,20)*S,Edge,5,8,PI,PI);
+            Box(Lock-FVector2D(29,19)*S,FVector2D(58,47)*S,Shadow,8,White);
+            Box(Lock-FVector2D(26,16)*S,FVector2D(52,41)*S,Edge,8,White);
+            Box(Lock-FVector2D(22,12)*S,FVector2D(44,33)*S,FLinearColor(.24f,.20f,.13f,Alpha),8,White);
+            Ring(Lock-FVector2D(0,2)*S,FVector2D(4,4)*S,Edge,4,9);
+            Box(Lock+FVector2D(-2,0)*S,FVector2D(4,11)*S,Edge,9,White);
         }
         if (Boss && !State.bCleared)
         {

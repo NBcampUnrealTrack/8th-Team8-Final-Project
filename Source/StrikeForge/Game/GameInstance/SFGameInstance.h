@@ -41,6 +41,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	FName GetSelectedStageRowName() const;
 
+#if WITH_EDITOR
+	/** Direct PIE starts use the current map's stage row without changing campaign progress. */
+	void ResolveEditorStageSelection(const UWorld* PlayWorld);
+#endif
+
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MoveToStage();
 

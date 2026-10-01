@@ -359,6 +359,9 @@ void ASFGameMode::BeginStageBootstrap()
 	}
 
 	// StageTable의 RowName
+#if WITH_EDITOR
+	SFGameInstance->ResolveEditorStageSelection(GetWorld());
+#endif
 	BootstrapStageRowName = SFGameInstance->GetSelectedStageRowName();
 	// 플레이어가 선택한 종족
 	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();

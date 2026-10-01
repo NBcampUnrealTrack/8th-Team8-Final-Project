@@ -34,6 +34,19 @@
 
 #include "Logging/SFLog.h"
 
+namespace
+{
+    FVector2D RotateMinimapUV(FVector2D UV, int32 QuarterTurns)
+    {
+        const int32 Turns = ((QuarterTurns % 4) + 4) % 4;
+        for (int32 Turn = 0; Turn < Turns; ++Turn)
+        {
+            UV = FVector2D(1.0 - UV.Y, UV.X);
+        }
+        return UV;
+    }
+}
+
 bool USFMinimapPanelWidget::HasValidMapBounds() const
 {
     return
@@ -94,22 +107,10 @@ FVector2D USFMinimapPanelWidget::WorldToMinimapPosition(
             1.0f
         );
 
-    const float MinimapX =
-        NormalizedHorizontal *
-        MinimapSize.X;
-
-    // UMG의 Y축은 아래쪽으로 증가하므로 반전한다.
-    const float MinimapY =
-        (
-            1.0f -
-            NormalizedVertical
-            ) *
-        MinimapSize.Y;
-
-    return FVector2D(
-        MinimapX,
-        MinimapY
-    );
+    const FVector2D DisplayUV = RotateMinimapUV(
+        FVector2D(NormalizedHorizontal, 1.0f - NormalizedVertical),
+        MapClockwiseQuarterTurns);
+    return DisplayUV * MinimapSize;
 }
 
 void USFMinimapPanelWidget::NativeConstruct()
@@ -175,6 +176,7 @@ void USFMinimapPanelWidget::InitializeMinimapCapture()
     FSFMinimapSettings Settings;
 
     LoadCurrentMinimapSettings(Settings);
+    MapClockwiseQuarterTurns = FMath::Clamp(Settings.ClockwiseQuarterTurns, 0, 3);
 
     bool bBoundsResolved = false;
 
@@ -486,7 +488,7 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
             ),
             FRotator(
                 -90.0f,
-                0.0f,
+                -90.0f * MapClockwiseQuarterTurns,
                 0.0f
             ),
             SpawnParameters
@@ -1797,10 +1799,12 @@ FVector USFMinimapPanelWidget::MinimapToWorldLocation(const FVector2D& MinimapPo
 
     const float NormalizedHorizontal = FMath::Clamp(MinimapPosition.X / MinimapSize.X, 0.0f, 1.0f);
     const float NormalizedVertical = FMath::Clamp(MinimapPosition.Y / MinimapSize.Y, 0.0f, 1.0f);
+    const FVector2D SourceUV = RotateMinimapUV(
+        FVector2D(NormalizedHorizontal, NormalizedVertical), -MapClockwiseQuarterTurns);
 
     return FVector(
-        FMath::Lerp(MapWorldMin.X, MapWorldMax.X, 1.0f - NormalizedVertical),
-        FMath::Lerp(MapWorldMin.Y, MapWorldMax.Y, NormalizedHorizontal),
+        FMath::Lerp(MapWorldMin.X, MapWorldMax.X, 1.0f - SourceUV.Y),
+        FMath::Lerp(MapWorldMin.Y, MapWorldMax.Y, SourceUV.X),
         0.0f
     );
 }
@@ -2180,10 +2184,19 @@ void USFMinimapPanelWidget::UpdateFogOverlay()
         FogOverlay = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
         FogOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
         FogOverlay->SetColorAndOpacity(FLinearColor::Black);
+        FogOverlay->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+        FogOverlay->SetRenderTransformAngle(90.0f * MapClockwiseQuarterTurns);
         UCanvasPanelSlot* FogSlot = MinimapMarkerLayer->AddChildToCanvas(FogOverlay);
         FogSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
         FogSlot->SetOffsets(FMargin(0.f));
         FogSlot->SetZOrder(0);
+    }
+    const FVector2D FogSize = MinimapMarkerLayer->GetCachedGeometry().GetLocalSize();
+    if (FogSize.X > 0.0 && FogSize.Y > 0.0)
+    {
+        FogOverlay->SetRenderScale((MapClockwiseQuarterTurns % 2) != 0
+            ? FVector2D(FogSize.Y / FogSize.X, FogSize.X / FogSize.Y)
+            : FVector2D(1.0f, 1.0f));
     }
     if (UTexture2D* Texture = Fog->GetMinimapFogTexture())
     {

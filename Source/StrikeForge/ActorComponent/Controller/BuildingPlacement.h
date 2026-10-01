@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
+#include "Datas/Resource/SFResourceTypes.h"
 #include "BuildingPlacement.generated.h"
 
 class ASFBaseBuilding;
@@ -26,6 +27,15 @@ public: // functions
 	
 	bool TryConfirmPlacementMode();
 	void EndPlacementSession();
+
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	bool IsMiningPlacementActive() const { return bIsMiningPlacement && TargetBuilding.IsValid() && IsComponentTickEnabled(); }
+
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	int32 GetMineableResourceAmount() const { return CachedMineableResourceAmount; }
+
+	UFUNCTION(BlueprintPure, Category = "Building|Placement")
+	EResourceType GetPlacementResourceType() const;
 public: // properties
 	UPROPERTY(BlueprintAssignable, Category = "Building|Placement")
 	FSFOnMineableResourceAmountChanged OnMineableResourceAmountChanged;
@@ -58,6 +68,7 @@ private:
 
 	bool bHasEvaluatedGrid = false;
 	bool bIsMiningPlacement = false;
+	int32 CachedMineableResourceAmount = 0;
 	
 	// 가장 최근 미리보기 위치의 배치 가능 여부입니다.
 	UPROPERTY(Transient)

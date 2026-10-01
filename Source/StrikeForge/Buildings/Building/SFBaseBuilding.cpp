@@ -698,6 +698,11 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 	}
 }
 
+bool ASFBaseBuilding::HasNextUpgradeTier() const
+{
+	return CurrentTier >= 0 && CurrentTier < 2 && GetTierInfo(CurrentTier + 1) != nullptr;
+}
+
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
 	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
@@ -719,7 +724,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	const int32 NextTier =
 		CurrentTier + UpgradeValue;
 
-	if (!GetTierInfo(NextTier))
+	if (NextTier > 2 || !GetTierInfo(NextTier))
 	{
 		return;
 	}

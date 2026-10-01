@@ -8,8 +8,10 @@ sub=unreal.get_editor_subsystem(unreal.EditorActorSubsystem); tools=unreal.Asset
 world=unreal.EditorLoadingAndSavingUtils.load_map(MAP)
 assert world
 actors=list(sub.get_all_level_actors())
+if any(unreal.Name('SF_Stage04_LayoutRotated90') in a.tags for a in actors):
+ raise RuntimeError('Stage04 now uses a rotated layout. Update this legacy generator to the new coordinates before redressing.')
 for a in actors:
- if TAG in a.tags:sub.destroy_actor(a)
+ if TAG in a.tags and not a.get_actor_label().startswith('S4_PerimeterGround_'):sub.destroy_actor(a)
 original=[a for a in sub.get_all_level_actors() if not isinstance(a,unreal.InstancedFoliageActor)]
 
 # World-aligned tiling lets floor and path layers share one grass sample, with organic shoulders.
@@ -90,7 +92,8 @@ for a in original:
 # Only additional perimeter ground: original walkable floor and NavMesh limits remain intact.
 plane=unreal.load_asset('/Engine/BasicShapes/Plane')
 for label,x,y,sx,sy in [('West',-17500,0,90,360),('East',17500,0,90,360),('North',0,13500,260,90),('South',0,-13500,260,90)]:
- a=sub.spawn_actor_from_class(unreal.StaticMeshActor,unreal.Vector(x,y,-.2))
+ a=next((item for item in original if item.get_actor_label()=='S4_PerimeterGround_'+label),None)
+ if a is None:a=sub.spawn_actor_from_class(unreal.StaticMeshActor,unreal.Vector(x,y,-.2))
  a.set_actor_label('S4_PerimeterGround_'+label);a.tags=[TAG];a.set_folder_path('Stage 04/Backdrop/Ground')
  c=a.static_mesh_component;c.set_static_mesh(plane);c.set_material(0,mats['grass']);c.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION);c.set_cast_shadow(False)
  a.set_actor_scale3d(unreal.Vector(sx,sy,1))
@@ -121,7 +124,8 @@ for key,mesh in meshes.items():
  ft=unreal.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else tools.create_asset(name,ART,unreal.FoliageType_InstancedStaticMesh,unreal.FoliageType_InstancedStaticMeshFactory())
  ft.set_editor_property('mesh',mesh)
  if key=='Fern':ft.set_editor_property('override_materials',[unreal.load_asset(BASE+'designmesh/Nature/Textures/baseline_palette_M')])
- if key in ['Rock','RockB','Pebble','Hill']:ft.set_editor_property('override_materials',[mats['stone']])
+ if key in ['Rock','RockB','Hill']:ft.set_editor_property('override_materials',[unreal.load_asset(BASE+'texture_material/rockpack/RocksStylized_M')])
+ if key in ['Wall','Rubble','Pebble']:ft.set_editor_property('override_materials',[unreal.load_asset(BASE+'designmesh/Nature/Textures/baseline_palette_M1')])
  large=key in ['Oak','Canopy','Pine','Hill','Wall','Rock','RockB']
  for prop in ['cast_shadow','cast_dynamic_shadow','cast_static_shadow']:ft.set_editor_property(prop,large)
  for prop in ['cast_contact_shadow','affect_distance_field_lighting','affect_dynamic_indirect_lighting','receives_decals','collision_with_world']:ft.set_editor_property(prop,False)
@@ -135,7 +139,7 @@ for key,mesh in meshes.items():
 def add(key,x,y,height,z=2,yaw=None,wide=1):
  mesh=meshes[key];b=mesh.get_bounds();o=b.origin;e=b.box_extent
  scale=height/max(e.z*2,1);scalevec=unreal.Vector(scale*wide,scale*wide,scale)
- rot=unreal.Rotator(0,R.uniform(0,360) if yaw is None else yaw,0)
+ rot=unreal.Rotator(pitch=0,yaw=R.uniform(0,360) if yaw is None else yaw,roll=0)
  offset=unreal.Transform(rotation=rot,scale=scalevec).transform_location(unreal.Vector(o.x,o.y,o.z-e.z))
  t=unreal.Transform(location=unreal.Vector(x,y,z)-offset,rotation=rot,scale=scalevec)
  instances[key].append(t);placements.append((key,x,y,height))
@@ -242,6 +246,17 @@ for side in [-1,1]:
   add('Hill',-17500+i*2700,side*(14500+R.uniform(-500,500)),R.uniform(800,1400),z=-100,wide=R.uniform(.8,1.2))
  for i in range(9):
   add('Hill',side*(18100+R.uniform(-400,400)),-11500+i*2800,R.uniform(800,1400),z=-100)
+
+# Thin only the outer tree belt by 15%, retaining the authored playable interior.
+# A separate seed keeps every other placement stable when density changes.
+for key in ['Oak','Canopy','Pine']:
+ b=meshes[key].get_bounds();bottom=unreal.Vector(b.origin.x,b.origin.y,b.origin.z-b.box_extent.z)
+ exterior=[]
+ for i,tr in enumerate(instances[key]):
+  p=tr.transform_location(bottom)
+  if abs(p.x)>12800 or abs(p.y)>8950:exterior.append(i)
+ removed=set(random.Random(430915+len(key)).sample(exterior,round(len(exterior)*.15)))
+ instances[key]=[tr for i,tr in enumerate(instances[key]) if i not in removed]
 
 for key,ft in types.items():
  if instances[key]:unreal.InstancedFoliageActor.add_instances(world,ft,instances[key])

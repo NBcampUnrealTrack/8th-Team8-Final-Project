@@ -36,6 +36,7 @@ class ASFBaseBuilding;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
+class USFBuffComponent;
 
 USTRUCT()
 struct FSFControlGroup
@@ -168,6 +169,9 @@ protected:
     void BindSelectedUnitStatsDelegate(AActor* Actor);
 
     void UnbindSelectedUnitStatsDelegate();
+
+    UFUNCTION()
+    void HandleSelectedBuffStatsChanged();
 
     void BindSelectedHealthDelegate(AActor* Actor);
 
@@ -657,6 +661,9 @@ private:
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AUnitBase> SelectedStatsUnit;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<USFBuffComponent> SelectedBuffComponent;
 
     UPROPERTY(Transient)
     TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;

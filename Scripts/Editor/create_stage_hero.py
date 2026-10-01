@@ -10,7 +10,7 @@ import json
 import math
 import unreal
 
-MAP = '/Game/Game/Stage/Stage_Hero'
+MAP = '/Game/Game/Stage/PT_Stage_Hero'
 TAG = unreal.Name('SF_StageHero')
 ROOT = '/Game/Core'
 
@@ -185,7 +185,7 @@ if any(row['Name'] == 'Stage_Hero' for row in rows):
     rows = [row for row in rows if row['Name'] != 'Stage_Hero']
 hero = next(row.copy() for row in rows if row['Name'] == 'Stage02')
 hero.update(Name='Stage_Hero', StageOrder=8, DisplayName='Stage_Hero',
-            StageLevel=MAP + '.Stage_Hero', PlayerRace='Human',
+            StageLevel=MAP + '.PT_Stage_Hero', PlayerRace='Human',
             TeamSetups=['(TeamIndex=1,Race=Beast)'],
             Minimap='(bAutoDetectBounds=False,WorldMin=(X=-19000,Y=-13500),WorldMax=(X=19000,Y=13500),CaptureHeight=18000,BoundsPadding=200)')
 rows.append(hero)

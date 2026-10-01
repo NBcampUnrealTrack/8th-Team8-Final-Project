@@ -95,8 +95,12 @@ void USFBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	RefreshBuffStats(DeltaTime);
+}
 
-	if (BuffList.Num() == 0)
+void USFBuffComponent::RefreshBuffStats(float DeltaTime)
+{
+	if (BuffList.Num() == 0 && Flag_Apply == EBuffApply::None)
 	{
 		return;
 	}
@@ -107,7 +111,7 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	/* 각 버프의 이벤트 실행 */
 	for (TWeakObjectPtr<UBuffData> Buff : BuffList)
 	{
-		if (!Buff.IsValid())
+		if (!Buff.IsValid() || Buff->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
 		{
 			continue;
 		}
@@ -180,11 +184,22 @@ void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		}
 	}
 
+	const bool bStatsApplied = Flag_Apply != EBuffApply::None;
 	Flag_Apply = EBuffApply::None;
+	ShrinkBuff();
+	if (bStatsApplied) OnBuffStatsChanged.Broadcast();
 }
 
 void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval, UNiagaraSystem* _Particle)
 {
+	ShrinkBuff();
+	if (BuffList.IsEmpty())
+	{
+		// Unit data / Blueprint initialization may set movement after BeginPlay.
+		if (const ACharacter* Character = GetOwner<ACharacter>())
+			if (const UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+				Origin_Status.Speed = Move->MaxWalkSpeed;
+	}
 	for (UBuffData* BD : BuffList)
 	{
 		if (BD->KeyName == _KeyName)
@@ -211,21 +226,30 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 
 	BuffList.Last()->ExecuteBuff();
 	ShrinkBuff();
+	// Zero-interval stat modifiers apply before AddBuff returns, not one tick later.
+	RefreshBuffStats(0.f);
 }
 
 void USFBuffComponent::ShrinkBuff()
 {
-	BuffList.Remove(nullptr);
+	// FinishBuff starts destruction immediately; such objects can still be non-null
+	// and pass IsValid until GC. Never repeat their end callback on subsequent ticks.
+	BuffList.RemoveAll([](const TObjectPtr<UBuffData>& Buff)
+	{
+		return !IsValid(Buff) || Buff->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
+	});
 	BuffList.Shrink();
 }
 
 void USFBuffComponent::ClearBuff()
 {
+	ShrinkBuff();
 	for (UBuffData* BD : BuffList)
 	{
 		BD->FinishBuff(true);
 	}
 	BuffList.Empty();
+	RefreshBuffStats(0.f);
 }
 
 const TArray<TObjectPtr<UBuffData>> USFBuffComponent::GetBuffList()

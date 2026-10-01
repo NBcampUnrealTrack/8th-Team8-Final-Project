@@ -13,7 +13,7 @@ void USFAudioLibrary::SetIgnoreGamePause(UAudioComponent* InAudioComponent, bool
         return;
     }
 
-    InAudioComponent->bIsUISound = bInIgnorePause;
+    InAudioComponent->SetUISound(bInIgnorePause);
 
     SF_LOG(Log, "[SFAudioLibrary] %s 를 일시정지 %s 로 설정했다.",
         *InAudioComponent->GetName(),
@@ -52,7 +52,7 @@ UAudioComponent* USFAudioLibrary::PlayMusic2D(
         return nullptr;
     }
 
-    Component->bIsUISound = true;
+    Component->SetUISound(true);
     Component->Play();
 
     SF_LOG(Log, "[SFAudioLibrary] 배경음 재생 | %s", *InSound->GetName());

@@ -37,6 +37,9 @@ class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
 class USFBuffComponent;
+// Badge Widget ( BuildingSynergy )
+class UCanvasPanel;
+class USFBuildingSynergyBadgeWidget;
 
 USTRUCT()
 struct FSFControlGroup
@@ -152,7 +155,31 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     bool RequestBuildingBySlot(int32 SlotIndex);
+#pragma region BuildingSynergy
+public:
+    UFUNCTION()
+    void HandleSynergyStateChanged();
 
+    void RefreshSynergyBadges();
+    void UpdateSynergyBadgeScreenPositions();
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+    TObjectPtr<UCanvasPanel> RootCanvas = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+    TSubclassOf<USFBuildingSynergyBadgeWidget> SynergyBadgeWidgetClass;
+    /** 뱃지가 화면 가장자리와 유지할 최소 간격입니다. */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|HUD|Building Synergy",
+        meta = (ClampMin = "0.0")
+    )
+    float SynergyBadgeScreenMargin = 8.f;
+    
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<USFBuildingSynergyBadgeWidget>> SynergyBadgeWidgets;
+#pragma endregion 
 protected:
     virtual void NativeConstruct() override;
 

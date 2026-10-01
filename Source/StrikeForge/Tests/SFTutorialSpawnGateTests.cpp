@@ -72,11 +72,15 @@ bool FSFStage02SpawnGateTest::RunTest(const FString& Parameters)
     Table->AddRow(TEXT("Stage02"), Row);
     USFStageIntroWidget* Widget = NewObject<USFStageIntroWidget>(World, WidgetClass);
     TestTrue(TEXT("Closing dialogue starts"), Widget->StartStageIntro(Table, TEXT("Stage02")));
+    TestEqual(TEXT("Stage intro enables five-second work"),
+        USFTutorialSubsystem::ResolveTutorialRequiredWork(World, 37.f), 5.f);
     TestFalse(TEXT("Dialogue does not publish completion"), Tutorial->IsObjectiveCompleted(Completed));
     TestFalse(TEXT("Enemies stay inactive throughout dialogue"), Spawner->IsSpawnerActivated());
 
     TestTrue(TEXT("Explicit End node starts"), Widget->StartStageIntroAt(Table, TEXT("Stage02"), 1));
     TestTrue(TEXT("End records tutorial completion"), Tutorial->IsObjectiveCompleted(Completed));
+    TestEqual(TEXT("Stage End restores authored work duration"),
+        USFTutorialSubsystem::ResolveTutorialRequiredWork(World, 37.f), 37.f);
     TestTrue(TEXT("End activates the waiting spawner"), Spawner->IsSpawnerActivated());
     TestEqual(TEXT("Activation respects InitialDelay (no immediate spawn)"), Spawner->GetAliveCount(), 0);
 
@@ -197,7 +201,7 @@ bool FSFStage03StoryDataTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFTutorialBuildingTimingTest,
-    "StrikeForge.Tutorial.Building.StageSpecificTiming",
+    "StrikeForge.Tutorial.StageWorkTiming",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FSFTutorialBuildingTimingTest::RunTest(const FString& Parameters)
@@ -229,36 +233,37 @@ bool FSFTutorialBuildingTimingTest::RunTest(const FString& Parameters)
     Steps.AddDefaulted();
 
     constexpr float DefaultRequiredWork = 37.f;
-    constexpr float TutorialRequiredWork = 10.f;
+    constexpr float TutorialRequiredWork = 5.f;
     TestEqual(
-        TEXT("Normal gameplay keeps the authored duration"),
-        USFTutorialSubsystem::ResolveBuildingRequiredWork(World, DefaultRequiredWork),
+        TEXT("Normal gameplay keeps the authored duration for buildings and units"),
+        USFTutorialSubsystem::ResolveTutorialRequiredWork(World, DefaultRequiredWork),
         DefaultRequiredWork);
 
-    TestTrue(TEXT("Stage02 guide starts"), Tutorial->BeginGuide(Table, TEXT("Stage02"), 0, Steps));
-    TestEqual(
-        TEXT("Stage02 tutorial construction and upgrades take 10 seconds"),
-        USFTutorialSubsystem::ResolveBuildingRequiredWork(World, DefaultRequiredWork),
-        TutorialRequiredWork);
-    Tutorial->CancelGuide();
-    TestEqual(
-        TEXT("Stage02 timing returns to normal after the guide"),
-        USFTutorialSubsystem::ResolveBuildingRequiredWork(World, DefaultRequiredWork),
-        DefaultRequiredWork);
+    for (const FName StageName : {FName(TEXT("Stage01")), FName(TEXT("Stage02")), FName(TEXT("Stage03"))})
+    {
+        USFTutorialSubsystem::SetStageTutorialActive(World, true);
+        TestEqual(
+            *FString::Printf(TEXT("%s tutorial construction, upgrades, and production take five seconds"), *StageName.ToString()),
+            USFTutorialSubsystem::ResolveTutorialRequiredWork(World, DefaultRequiredWork),
+            TutorialRequiredWork);
 
-    TestTrue(TEXT("Stage03 guide starts"), Tutorial->BeginGuide(Table, TEXT("Stage03"), 0, Steps));
-    TestEqual(
-        TEXT("Stage03 tutorial construction and upgrades take 10 seconds"),
-        USFTutorialSubsystem::ResolveBuildingRequiredWork(World, DefaultRequiredWork),
-        TutorialRequiredWork);
-    Tutorial->CancelGuide();
+        TestTrue(TEXT("Stage guide starts"), Tutorial->BeginGuide(Table, StageName, 0, Steps));
+        TestEqual(
+            TEXT("Guide keeps tutorial timing"),
+            USFTutorialSubsystem::ResolveTutorialRequiredWork(World, DefaultRequiredWork),
+            TutorialRequiredWork);
+        Tutorial->CancelGuide();
+        TestEqual(
+            TEXT("Timing persists while the tutorial is between guide nodes"),
+            USFTutorialSubsystem::ResolveTutorialRequiredWork(World, DefaultRequiredWork),
+            TutorialRequiredWork);
 
-    TestTrue(TEXT("Stage01 guide starts"), Tutorial->BeginGuide(Table, TEXT("Stage01"), 0, Steps));
-    TestEqual(
-        TEXT("Stage01 keeps its authored duration"),
-        USFTutorialSubsystem::ResolveBuildingRequiredWork(World, DefaultRequiredWork),
-        DefaultRequiredWork);
-    Tutorial->CancelGuide();
+        USFTutorialSubsystem::SetStageTutorialActive(World, false);
+        TestEqual(
+            TEXT("Completing the tutorial restores the authored duration"),
+            USFTutorialSubsystem::ResolveTutorialRequiredWork(World, DefaultRequiredWork),
+            DefaultRequiredWork);
+    }
 
     World->DestroyWorld(false);
     return true;

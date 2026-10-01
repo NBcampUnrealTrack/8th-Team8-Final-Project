@@ -64,6 +64,9 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "TimerManager.h"
+#include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Components/CanvasPanel.h"
+#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 
 #include "Logging/SFLog.h"
 
@@ -293,6 +296,21 @@ void USFInGameHUDWidget::NativeConstruct()
             );
         }
     }
+    
+    // BuildingSynergy
+    if (USFBuildingSynergySubsystem* SynergySubsystem =
+    USFBuildingSynergySubsystem::Get(this))
+    {
+        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+
+        SynergySubsystem->OnSynergyStateChanged.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+
+        RefreshSynergyBadges();
+    }
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -409,7 +427,19 @@ void USFInGameHUDWidget::NativeDestruct()
 
     UnbindSelectedCommandPathDelegates();
     HideQueuedMovePathIndicators();
+#pragma region BuildingSynergy
+    // HUD가 제거된 뒤 시너지 재계산 이벤트가 이 객체를 호출하지 않도록 연결을 해제합니다.
+    if (USFBuildingSynergySubsystem* SynergySubsystem =
+        USFBuildingSynergySubsystem::Get(this))
+    {
+        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+    }
 
+    // HUD가 소유하던 배지 참조를 정리합니다.
+    SynergyBadgeWidgets.Reset();
+#pragma endregion 
     Super::NativeDestruct();
 }
 
@@ -441,7 +471,9 @@ void USFInGameHUDWidget::NativeTick(
     UpdateEnemyHoverIndicator();
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
-
+#pragma region BuildingSynergy
+    UpdateSynergyBadgeScreenPositions();
+#pragma endregion 
     if (!bIsSelectionDragging ||
         !IsValid(SelectionDragBox))
     {
@@ -1242,7 +1274,155 @@ bool USFInGameHUDWidget::RequestBuildingBySlot(
         SlotIndex
     );
 }
+#pragma region BuildingSynergy
+void USFInGameHUDWidget::HandleSynergyStateChanged()
+{
+    RefreshSynergyBadges();
+}
 
+void USFInGameHUDWidget::RefreshSynergyBadges()
+{
+    if (!IsValid(RootCanvas) || !SynergyBadgeWidgetClass)
+    {
+        return;
+    }
+
+    const ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    USFBuildingSynergySubsystem* SynergySubsystem =
+        USFBuildingSynergySubsystem::Get(this);
+
+    if (!IsValid(PlayerController) || !IsValid(SynergySubsystem))
+    {
+        return;
+    }
+
+    const TArray<FSFBuildingSynergyClusterProgressInfo> ProgressInfos =
+        SynergySubsystem->GetClusterProgressInfosForTeam(
+            PlayerController->GetMyTeamIndex());
+
+    while (SynergyBadgeWidgets.Num() < ProgressInfos.Num())
+    {
+        USFBuildingSynergyBadgeWidget* NewBadge =
+            CreateWidget<USFBuildingSynergyBadgeWidget>(
+                GetOwningPlayer(),
+                SynergyBadgeWidgetClass);
+
+        if (!IsValid(NewBadge))
+        {
+            break;
+        }
+
+        UCanvasPanelSlot* CanvasSlot =
+            RootCanvas->AddChildToCanvas(NewBadge);
+
+        CanvasSlot->SetAutoSize(true);
+        CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+
+        SynergyBadgeWidgets.Add(NewBadge);
+    }
+
+    for (int32 Index = 0; Index < SynergyBadgeWidgets.Num(); ++Index)
+    {
+        USFBuildingSynergyBadgeWidget* Badge =
+            SynergyBadgeWidgets[Index];
+
+        if (!IsValid(Badge))
+        {
+            continue;
+        }
+
+        if (ProgressInfos.IsValidIndex(Index))
+        {
+            Badge->SetProgressInfo(ProgressInfos[Index]);
+        }
+        else
+        {
+            Badge->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()
+{
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (!IsValid(PlayerController) || !IsValid(RootCanvas))
+    {
+        return;
+    }
+
+    // 투영된 좌표와 같은 UI 좌표계를 사용하기 위해 실제 Canvas 크기를 사용합니다.
+    const FVector2D CanvasSize =
+        RootCanvas->GetCachedGeometry().GetLocalSize();
+
+    if (CanvasSize.X <= 0.f || CanvasSize.Y <= 0.f)
+    {
+        return;
+    }
+
+    const float SafeScreenMargin =
+        FMath::Max(0.f, SynergyBadgeScreenMargin);
+
+    for (USFBuildingSynergyBadgeWidget* Badge : SynergyBadgeWidgets)
+    {
+        // Collapsed는 현재 클러스터와 연결되지 않은 풀링용 뱃지입니다.
+        if (!IsValid(Badge) ||
+            Badge->GetVisibility() == ESlateVisibility::Collapsed)
+        {
+            continue;
+        }
+
+        FVector2D ScreenPosition;
+
+        const bool bProjected =
+            UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+                PlayerController,
+                Badge->GetBadgeWorldLocation(),
+                ScreenPosition,
+                true);
+
+        UCanvasPanelSlot* CanvasSlot =
+            Cast<UCanvasPanelSlot>(Badge->Slot);
+
+        if (!bProjected || !IsValid(CanvasSlot))
+        {
+            // Hidden은 다음 Tick에도 다시 화면 투영을 검사할 수 있습니다.
+            Badge->SetVisibility(ESlateVisibility::Hidden);
+            continue;
+        }
+
+        const FVector2D BadgeSize = Badge->GetDesiredSize();
+        const FVector2D BadgeAlignment = CanvasSlot->GetAlignment();
+
+        // CanvasSlot의 Alignment를 반영해 뱃지의 실제 좌상단과 우하단을 계산합니다.
+        const FVector2D BadgeTopLeft =
+            ScreenPosition - BadgeSize * BadgeAlignment;
+
+        const FVector2D BadgeBottomRight =
+            BadgeTopLeft + BadgeSize;
+
+        const bool bIsFullyInsideScreen =
+            BadgeTopLeft.X >= SafeScreenMargin &&
+            BadgeTopLeft.Y >= SafeScreenMargin &&
+            BadgeBottomRight.X <=
+                CanvasSize.X - SafeScreenMargin &&
+            BadgeBottomRight.Y <=
+                CanvasSize.Y - SafeScreenMargin;
+
+        if (!bIsFullyInsideScreen)
+        {
+            Badge->SetVisibility(ESlateVisibility::Hidden);
+            continue;
+        }
+
+        CanvasSlot->SetPosition(ScreenPosition);
+        Badge->SetVisibility(
+            ESlateVisibility::SelfHitTestInvisible);
+    }
+}
+#pragma endregion 
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (
@@ -3618,6 +3798,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
     if (!IsValid(StageIntroDataTable))
     {
         SF_LOG(Log, "[SFInGameHUDWidget] StageIntroDataTable is not set. Tutorial is skipped.");
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 
@@ -3628,6 +3812,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
             "[SFInGameHUDWidget] This stage has no tutorial, so it is skipped | Row: %s",
             *RowName.ToString()
         );
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 
@@ -3694,6 +3882,10 @@ bool USFInGameHUDWidget::OpenStageIntro(
         SF_LOG(Error, "[SFInGameHUDWidget] OwningPlayer is invalid.");
         return false;
     }
+
+    // 다음 안내가 열릴 때 이전 건설 메뉴가 남아 있으면 새 건물을 바로
+    // 선택할 수 있다. 메뉴와 배치 입력을 닫아 다음 안내에서 다시 열게 한다.
+    CloseBuildingMode();
 
     ActiveStageIntroWidget = CreateWidget<USFStageIntroWidget>(
         PlayerController,

@@ -891,6 +891,8 @@ void ASFBaseBuilding::BeginPlay()
 		if (USFBuildingSynergySubsystem* Synergy =
 			USFBuildingSynergySubsystem::Get(this))
 		{
+			Synergy->OnSynergyStateChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleBuildingSynergyStateChanged);
 			Synergy->RegisterBuilding(this);
 		}
 	}
@@ -904,6 +906,8 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (USFBuildingSynergySubsystem* Synergy =
 		USFBuildingSynergySubsystem::Get(this))
 	{
+		Synergy->OnSynergyStateChanged.RemoveDynamic(
+			this, &ThisClass::HandleBuildingSynergyStateChanged);
 		Synergy->UnregisterBuilding(this);
 	}
 	
@@ -924,6 +928,17 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASFBaseBuilding::HandleBuildingSynergyStateChanged()
+{
+	// Subsystem이 계산해 둔 최종 증가율을 재사용하여 UI가 게임플레이 계산을 중복하지 않게 한다.
+	const USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this);
+	if (!IsValid(Synergy) || !IsValid(StatusComponent))	return;
+
+	StatusComponent->SetSynergyBonusPercent(
+		Synergy->GetProductionBonusPercent(this));
 }
 
 void ASFBaseBuilding::OnBuildingDefinitionLoaded()
@@ -1140,10 +1155,10 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	// 정적 Definition은 건드리지 않는다. Stage02/03의 튜토리얼 가이드에서
-	// 실제로 요구한 건설과 티어 업만 10초로 단축된다.
+	// 정적 Definition은 건드리지 않고 스테이지 튜토리얼 중에만
+	// 건설과 티어 업그레이드 시간을 5초로 적용한다.
 	const float RequiredWork =
-		USFTutorialSubsystem::ResolveBuildingRequiredWork(
+		USFTutorialSubsystem::ResolveTutorialRequiredWork(
 			this,
 			Tier->Construction.RequiredWork);
 	ProgressComponent->InitProgressWorks(RequiredWork, 1.f);
@@ -1204,6 +1219,14 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	// 가상 함수 실행 전에 내부 상태 확정
 	bIsTierActivated = true;
 	OnTierActivated();
+	if (IsValid(BuildingDefinition))
+	{
+		if (ASFGameState* GameState = GetWorld()->GetGameState<ASFGameState>())
+		{
+			GameState->RecordCompletedBuilding(GetTeamIndex(),
+				BuildingDefinition->BuildingId, BuildingDefinition->SelectionUIRowName);
+		}
+	}
 
 	OnBuildingTierActivated.Broadcast(CurrentTier);
 	USFTutorialSubsystem::NotifyBuildingTierActivated(this, this, CurrentTier);

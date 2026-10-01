@@ -2,6 +2,7 @@
 
 #include "BuildingAppearance.h"
 #include "BuildingTierData/SFBuildingTierData.h"
+#include "Synergy/SFBuildingSynergyDefinition.h"
 
 // == AssetManager의 Primary Asset Type FName
 const FPrimaryAssetType
@@ -79,7 +80,12 @@ void USFBuildingDefinition::GetUIAssetPaths(TArray<FSoftObjectPath>& OutPaths) c
 	// 종족별 시너지 뱃지도 다른 건물 UI 텍스처와 함께 미리 로드합니다.
 	for (const FSFGrantedBuildingSynergy& GrantedSynergy : GrantedSynergies)
 	{
-		AddSoftPath(GrantedSynergy.BadgeIcon.ToSoftObjectPath(), OutPaths);
+		if (IsValid(GrantedSynergy.Definition))
+		{
+			AddSoftPath(
+				GrantedSynergy.Definition->BadgeIcon.ToSoftObjectPath(),
+				OutPaths);
+		}
 	}
 }
 
@@ -353,18 +359,6 @@ bool USFBuildingDefinition::CollectRuntimeAssetPaths(int32 InTierIndex, TArray<F
     AddOptional(
         DamagedBurningEffect.ToSoftObjectPath(),
         TEXT("DamagedBurningEffect"));
-
-	// 시너지 경계는 표현 전용 선택 에셋입니다. 미지정 상태도 정상입니다.
-	for (const FSFGrantedBuildingSynergy& GrantedSynergy : GrantedSynergies)
-	{
-		const FSoftObjectPath BoundaryPath =
-			GrantedSynergy.BoundaryEffect.ToSoftObjectPath();
-
-		if (!BoundaryPath.IsNull())
-		{
-			OutOptionalPaths.AddUnique(BoundaryPath);
-		}
-	}
 
     return bValid;
 }

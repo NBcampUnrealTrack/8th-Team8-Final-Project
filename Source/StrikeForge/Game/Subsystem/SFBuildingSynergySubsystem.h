@@ -9,7 +9,29 @@
 class ASFBaseBuilding;
 class USFBuildingSynergyDefinition;
 
-/** UI와 Niagara가 사용하는 클러스터별 단일 시너지 효과 구역입니다. */
+/** 아직 활성화되지 않은 1개짜리 구역까지 포함하는 클러스터 UI 진행 정보입니다. */
+USTRUCT(BlueprintType)
+struct STRIKEFORGE_API FSFBuildingSynergyClusterProgressInfo
+{
+	GENERATED_BODY()
+
+	/** 현재 단계·다음 요구 수·아이콘을 필요할 때 조회하는 단일 원본입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	TObjectPtr<USFBuildingSynergyDefinition> Definition = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	int32 TeamIndex = INDEX_NONE;
+
+	/** 연결된 클러스터에 포함된 전체 원천 건물 수입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	int32 SourceBuildingCount = 0;
+
+	/** 합쳐진 점유 격자의 XY 중앙과 가장 높은 건물 상단을 사용한 배지 기준점입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	FVector BadgeWorldLocation = FVector::ZeroVector;
+};
+
+/** 생산 버프 판정과 격자 데칼 표시가 사용하는 원천 건물별 효과 구역입니다. */
 USTRUCT(BlueprintType)
 struct STRIKEFORGE_API FSFBuildingSynergyZoneInfo
 {
@@ -19,41 +41,33 @@ struct STRIKEFORGE_API FSFBuildingSynergyZoneInfo
 	TObjectPtr<USFBuildingSynergyDefinition> Definition = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
-	FName SynergyId;
-
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	int32 TeamIndex = INDEX_NONE;
 
 	/** 실제 버프 판정과 경계 표시가 함께 사용하는 단일 효과 구역입니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	FBuildingGridInfo EffectGridInfo;
 
-	/** 효과 구역의 월드 중심으로, 클러스터 배지와 Niagara의 기준 위치입니다. */
+	/** 효과 구역의 월드 중심입니다. Z는 원천 건물 높이이며 격자 데칼의 투영 높이에 사용합니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	FVector WorldCenter = FVector::ZeroVector;
-
-	/** 효과 구역의 월드 크기로, Niagara 경계 크기 계산에 사용합니다. */
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
-	FVector2D WorldSize = FVector2D::ZeroVector;
 
 	/** 연결된 클러스터에 포함된 전체 원천 건물 수입니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
 	int32 SourceBuildingCount = 0;
 
+	/**
+	 * 같은 재계산 결과 안에서 이 구역이 속한 클러스터 번호입니다.
+	 * 재계산마다 다시 매겨지므로 같은 조회 결과 안에서 구역을 묶을 때만 사용합니다.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
-	float ProductionBonusPercent = 0.f;
+	int32 ClusterIndex = INDEX_NONE;
 
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy|Presentation")
-	TSoftObjectPtr<UNiagaraSystem> BoundaryEffect;
-
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy|Presentation")
-	FLinearColor BoundaryColor = FLinearColor::White;
-
-	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy|Presentation")
-	TSoftObjectPtr<UTexture2D> BadgeIcon;
+	/** 이 구역의 중심이 되는 원천 건물입니다. 선택한 건물이 속한 클러스터를 찾을 때 사용합니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "SF|Building Synergy")
+	TWeakObjectPtr<ASFBaseBuilding> SourceBuilding;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildingSynergyZonesChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildingSynergyStateChanged);
 
 /**
  * 건물 Definition이 제공하는 DataAsset 규칙을 읽어 배치 시너지를 계산합니다.
@@ -78,14 +92,27 @@ public:
 	/** 지정한 팀이 현재 보유한 계산 완료 시너지 구역만 반환합니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	TArray<FSFBuildingSynergyZoneInfo> GetSynergyZonesForTeam(int32 TeamIndex) const;
+	/** 지정한 팀의 비활성 단계를 포함한 클러스터 진행 정보만 반환합니다. */
+	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
+	TArray<FSFBuildingSynergyClusterProgressInfo> GetClusterProgressInfosForTeam(
+		int32 TeamIndex) const;
+
+	/**
+	 * 지정한 팀의 활성 원천 건물마다 클러스터 연결 판정에 쓰는 링크 격자를 반환합니다.
+	 * 다른 원천 건물의 중심이 이 격자 안에 들어오면 두 건물이 같은 클러스터로 연결됩니다.
+	 */
+	void CollectClusterLinkGridInfos(
+		int32 TeamIndex,
+		const USFBuildingSynergyDefinition* SynergyDefinition,
+		TArray<FBuildingGridInfo>& OutLinkGridInfos) const;
 
 	/** 해당 건물에 HighestOnly로 적용 중인 가장 높은 배치 시너지 증가율을 반환합니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 
-	/** 재계산된 구역 정보를 UI와 Niagara 표현 계층에 알립니다. */
+	/** 구역과 클러스터 진행 정보가 모두 갱신됐음을 UI와 격자 데칼 표시 계층에 알립니다. */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Building Synergy")
-	FSFOnBuildingSynergyZonesChanged OnSynergyZonesChanged;
+	FSFOnBuildingSynergyStateChanged OnSynergyStateChanged;
 
 	/** 월드 종료 시 적용했던 생산 배율과 임시 구역·건물 기록을 모두 정리합니다. */
 	virtual void Deinitialize() override;
@@ -105,6 +132,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FSFBuildingSynergyZoneInfo> SynergyZones;
+
+	/** 이벤트 기반 클러스터 재계산 때만 갱신하며, UI가 Definition과 함께 진행 상태를 계산합니다. */
+	UPROPERTY(Transient)
+	TArray<FSFBuildingSynergyClusterProgressInfo> ClusterProgressInfos;
 
 	bool bIsRecalculating = false;
 };

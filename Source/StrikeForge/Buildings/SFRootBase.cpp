@@ -14,6 +14,8 @@ ASFRootBase::ASFRootBase(const FObjectInitializer& ObjectInitializer)
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMesh");
 	StaticMeshComponent->SetupAttachment(GetRootComponent());
 	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 배치 격자 데칼이 건물 표면에 묻지 않도록 합니다.
+	StaticMeshComponent->bReceivesDecals = false;
 	
 	BoxComponent = CreateDefaultSubobject<UBoxComponent>("BoxComponent");
 	BoxComponent->SetupAttachment(GetRootComponent());

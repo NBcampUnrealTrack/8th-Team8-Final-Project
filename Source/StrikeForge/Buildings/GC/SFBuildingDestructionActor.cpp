@@ -194,6 +194,8 @@ ASFBuildingDestructionActor::ASFBuildingDestructionActor()
 
     GeometryCollectionComponent->SetMobility(EComponentMobility::Movable);
     GeometryCollectionComponent->SetVisibility(false);
+    // 완성 메시를 대신 표시하므로 배치 격자 데칼이 묻지 않도록 합니다.
+    GeometryCollectionComponent->bReceivesDecals = false;
     GeometryCollectionComponent->SetCollisionEnabled(
         ECollisionEnabled::NoCollision);
 

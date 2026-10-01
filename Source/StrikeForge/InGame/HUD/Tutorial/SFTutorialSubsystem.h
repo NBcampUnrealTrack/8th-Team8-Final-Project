@@ -251,12 +251,11 @@ public:
         meta = (WorldContext = "InWorldContext"))
     static bool IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName);
 
-    /**
-     * 튜토리얼 건설/티어 업에 사용할 작업량을 반환한다.
-     * Stage02와 Stage03의 단계별 가이드가 실제로 진행 중일 때만 10초로
-     * 단축하며, 일반 게임과 Stage01은 원래 값을 그대로 쓴다.
-     */
-    static float ResolveBuildingRequiredWork(
+    /** 스테이지 튜토리얼이 시작되거나 종료될 때 진행 상태를 기록한다. */
+    static void SetStageTutorialActive(const UObject* InWorldContext, bool bInActive);
+
+    /** 튜토리얼 중 건설, 티어 업그레이드, 유닛 생산은 5초로 맞춘다. */
+    static float ResolveTutorialRequiredWork(
         const UObject* InWorldContext,
         float InDefaultRequiredWork);
 
@@ -547,6 +546,9 @@ private:
      */
     UPROPERTY(Transient)
     FGameplayTagContainer LockedFeatures;
+
+    /** 목표 대기로 안내창이 잠시 닫혀도 유지되는 튜토리얼 진행 상태. */
+    bool bStageTutorialActive = false;
 
     /**
      * 이 스테이지의 기본 성공음. 인트로가 열릴 때 한 번 로드해 둔다.

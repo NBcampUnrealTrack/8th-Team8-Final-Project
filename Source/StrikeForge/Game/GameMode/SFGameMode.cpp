@@ -18,12 +18,28 @@
 #include "GameFramework/Actor.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
+#include "Components/AudioComponent.h"
+#include "Sound/AmbientSound.h"
+#include "Sound/SoundCue.h"
+#include "Sound/SoundNodeWavePlayer.h"
+#include "Sound/SoundWave.h"
+#include "UObject/ConstructorHelpers.h"
 
 ASFGameMode::ASFGameMode()
 {
 	// GameMode가 사용할 GameState 클래스 지정
 	// World Setting에서 별도로 잘못 설정하는 상황 방지
 	GameStateClass = ASFGameState::StaticClass();
+
+	StageMusicComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("StageMusic"));
+	SetRootComponent(StageMusicComponent);
+	StageMusicComponent->bAutoActivate = false;
+	StageMusicComponent->bAutoDestroy = false;
+	StageMusicComponent->bAllowSpatialization = false;
+	StageMusicComponent->SetUISound(true);
+	static ConstructorHelpers::FObjectFinder<USoundCue> DefaultStageMusic(
+		TEXT("/Game/Sound/BGM/StageBgm/Stage1_Cue.Stage1_Cue"));
+	StageMusicComponent->SetSound(DefaultStageMusic.Object);
 }
 
 void ASFGameMode::PostLogin(APlayerController* NewPlayer)
@@ -71,6 +87,8 @@ void ASFGameMode::Logout(AController* Exiting)
 void ASFGameMode::InitGameState()
 {
 	Super::InitGameState();
+	// 다른 레벨 액터의 컴포넌트가 자동 활성화되기 전에 BGM을 맡는다.
+	PrepareStageMusic();
 
 	SFGameState = GetGameState<ASFGameState>();
 
@@ -91,6 +109,75 @@ void ASFGameMode::BeginPlay()
 
 	// initgamestate에서 플레이어팀등록을 마친뒤 호출
 	BeginStageBootstrap();
+}
+
+void ASFGameMode::PrepareStageMusic()
+{
+	bool bFoundLevelMusic = false;
+	USoundClass* DefaultMusicClass = StageMusicComponent->Sound
+		? StageMusicComponent->Sound->GetSoundClass() : nullptr;
+	for (TActorIterator<AAmbientSound> It(GetWorld()); It; ++It)
+	{
+		UAudioComponent* Audio = It->GetAudioComponent();
+		USoundBase* Sound = IsValid(Audio) ? Audio->Sound.Get() : nullptr;
+		if (!IsValid(Sound) || !Sound->GetPathName().StartsWith(TEXT("/Game/Sound/BGM/")))
+		{
+			continue;
+		}
+
+		if (!bFoundLevelMusic)
+		{
+			StageMusicComponent->SetSound(Sound);
+			StageMusicComponent->SetVolumeMultiplier(Audio->VolumeMultiplier);
+			StageMusicComponent->SetPitchMultiplier(Audio->PitchMultiplier);
+			bFoundLevelMusic = true;
+		}
+		Audio->bAutoActivate = false;
+		Audio->Stop();
+	}
+
+	// 원본 SoundWave를 변경하지 않고 오디오 엔진에서 끊김 없이 반복한다.
+	if (USoundWave* Wave = Cast<USoundWave>(StageMusicComponent->Sound))
+	{
+		USoundCue* LoopingMusic = NewObject<USoundCue>(this);
+		USoundNodeWavePlayer* Player = NewObject<USoundNodeWavePlayer>(LoopingMusic);
+		Player->SetSoundWave(Wave);
+		Player->bLooping = true;
+		LoopingMusic->FirstNode = Player;
+		// 패키징된 게임에서도 루프 지속 시간이 0으로 남지 않도록 설정한다.
+		LoopingMusic->Duration = INDEFINITELY_LOOPING_DURATION;
+		LoopingMusic->VolumeMultiplier = 1.f;
+		LoopingMusic->SoundClassObject = Wave->GetSoundClass() ? Wave->GetSoundClass() : DefaultMusicClass;
+		LoopingMusic->CacheAggregateValues();
+		StageMusicComponent->SetSound(LoopingMusic);
+	}
+	StageMusicComponent->OnAudioFinishedNative.AddUObject(this, &ThisClass::HandleStageMusicFinished);
+}
+
+void ASFGameMode::StartStageMusic()
+{
+	if (bStageMusicStarted || !IsValid(StageMusicComponent->Sound)) return;
+	bStageMusicStarted = true;
+	StageMusicComponent->SetUISound(true);
+	StageMusicComponent->Play();
+	SF_LOG(Log, "[SFGameMode] Stage music started after loading screen.");
+}
+
+void ASFGameMode::HandleStageMusicFinished(UAudioComponent* FinishedComponent)
+{
+	// 루프가 없는 SoundCue를 지정해도 같은 곡을 다시 재생한다.
+	if (bStageMusicStarted && FinishedComponent == StageMusicComponent && !IsActorBeingDestroyed())
+	{
+		StageMusicComponent->Play();
+	}
+}
+
+void ASFGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bStageMusicStarted = false;
+	StageMusicComponent->OnAudioFinishedNative.RemoveAll(this);
+	StageMusicComponent->Stop();
+	Super::EndPlay(EndPlayReason);
 }
 
 bool ASFGameMode::SpawnStageBuildingsFromAnchors()
@@ -1105,6 +1192,9 @@ void ASFGameMode::StartStageAfterLoadingScreen()
 		FailStageBootstrap();
 		return;
 	}
+
+	// StartStage의 상태 알림에서 튜토리얼이 일시정지해도 UI 사운드는 바로 재생된다.
+	StartStageMusic();
 
 	SF_LOG(Log,
 		"[SFGameMode] 로딩 화면 종료 후 스테이지를 시작했습니다.");

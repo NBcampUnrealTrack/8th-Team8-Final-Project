@@ -673,7 +673,10 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		}
 	}
 
-	TMap<TWeakObjectPtr<ASFBaseBuilding>, float> DesiredMultipliers;
+	// 대상마다 시너지 종류별 최고 증가율(%)을 모읍니다.
+	// 같은 시너지 구역이 여러 개 겹치면 가장 높은 값 하나만, 서로 다른 시너지끼리는 합산합니다.
+	TMap<TWeakObjectPtr<ASFBaseBuilding>,
+		TMap<const USFBuildingSynergyDefinition*, float>> BonusPercentsByTarget;
 
 	// 시너지 부여
 	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
@@ -691,8 +694,8 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			continue;
 		}
 
-		const float Multiplier =
-			1.f + FMath::Max(0.f, ActiveLevel->ProductionBonusPercent) / 100.f;
+		const float BonusPercent =
+			FMath::Max(0.f, ActiveLevel->ProductionBonusPercent);
 
 		for (ASFBaseBuilding* Target : ActiveBuildings)
 		{
@@ -720,11 +723,31 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 				continue;
 			}
 
-			// 여러 원천의 효과 격자가 겹쳐도 대상별 최댓값 하나만 최종 배율로 등록합니다.
-			float& DesiredMultiplier = DesiredMultipliers.FindOrAdd(
-				Target, 1.f);
-			DesiredMultiplier = FMath::Max(DesiredMultiplier, Multiplier);
+			// 같은 시너지의 구역끼리는 가장 높은 증가율 하나만 남깁니다.
+			float& HighestBonus = BonusPercentsByTarget.FindOrAdd(Target)
+				.FindOrAdd(SynergyDefinition, 0.f);
+			HighestBonus = FMath::Max(HighestBonus, BonusPercent);
 		}
+	}
+
+	// 시너지 종류별 최고값을 더해 최종 배율을 만듭니다(예: 군사 +20% + 사격 +20% = ×1.4).
+	TMap<TWeakObjectPtr<ASFBaseBuilding>, float> DesiredMultipliers;
+
+	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>,
+		TMap<const USFBuildingSynergyDefinition*, float>>& TargetBonuses :
+		BonusPercentsByTarget)
+	{
+		float TotalBonusPercent = 0.f;
+
+		for (const TPair<const USFBuildingSynergyDefinition*, float>& SynergyBonus :
+			TargetBonuses.Value)
+		{
+			TotalBonusPercent += SynergyBonus.Value;
+		}
+
+		DesiredMultipliers.Add(
+			TargetBonuses.Key,
+			1.f + TotalBonusPercent / 100.f);
 	}
 
 	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>, float>& Applied :

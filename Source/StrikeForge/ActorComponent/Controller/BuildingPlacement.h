@@ -5,12 +5,14 @@
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "Game/GameState/SFGameState.h"
+#include "Math/Interval.h"
 #include "BuildingPlacement.generated.h"
 
 class ASFBaseBuilding;
 class ASFGridDecalVisualizer;
 class UMaterialInterface;
 class USFBuildingGridSubsystem;
+class USFBuildingSynergyDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnMineableResourceAmountChanged,
 	int32, MineableResourceAmount);
@@ -62,12 +64,27 @@ private:
 
 	bool CanPlaceOnNavMeshXY(const FBuildingGridInfo& GridInfo) const;
 
-	// 배치 중인 건물이 주는 시너지와 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모읍니다.
-	// 점유 칸은 제외합니다.
-	void CollectExistingLinkRangeCells(
+	// 배치 중인 건물 기준 시너지 안내를 표시합니다.
+	// 합류 범위(하늘색)와 받을 수 있는 효과 구역(시너지 색)을 함께 그리며, 두 표시 모두 점유 칸은 제외합니다.
+	void ShowPlacementSynergyHints(
+		ASFGridDecalVisualizer* Visualizer,
 		const ASFBaseBuilding* Building,
 		const TArray<FIntPoint>& BlockedCells,
+		const FFloatInterval& HeightRange) const;
+
+	// 배치 중인 건물이 주는 시너지와 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모읍니다.
+	void CollectExistingLinkRangeCells(
+		const ASFBaseBuilding* Building,
+		const TSet<FIntPoint>& BlockedCellSet,
 		TArray<FIntPoint>& OutLinkCells) const;
+
+	// 배치 중인 건물 종류가 버프 대상인 내 팀 시너지 효과 구역 칸을 시너지별로 모읍니다.
+	// 구역 원천 건물의 높이를 InOutHeightRange에 더합니다.
+	void CollectReceivableEffectCells(
+		const ASFBaseBuilding* Building,
+		const TSet<FIntPoint>& BlockedCellSet,
+		TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& OutCellsBySynergy,
+		FFloatInterval& InOutHeightRange) const;
 	// 현재 배치 중인 건물입니다.
 	UPROPERTY(Transient)
 	TWeakObjectPtr<ASFBaseBuilding> TargetBuilding;

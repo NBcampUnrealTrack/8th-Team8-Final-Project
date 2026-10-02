@@ -111,7 +111,7 @@ public:
 		const USFBuildingSynergyDefinition* SynergyDefinition,
 		TArray<FBuildingGridInfo>& OutLinkGridInfos) const;
 
-	/** 해당 건물에 HighestOnly로 적용 중인 가장 높은 배치 시너지 증가율을 반환합니다. */
+	/** 해당 건물에 적용 중인 배치 시너지 증가율을 반환합니다. 시너지별 최고값을 합산한 값입니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 

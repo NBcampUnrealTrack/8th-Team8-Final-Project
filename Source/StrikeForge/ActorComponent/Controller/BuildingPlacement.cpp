@@ -8,6 +8,7 @@
 #include "NavigationSystem.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
 #include "Datas/Building/SFBuildingDefinition.h"
+#include "Datas/Building/Synergy/SFBuildingSynergyDefinition.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 
 namespace
@@ -167,13 +168,9 @@ bool UBuildingPlacement::StartPlacementMode(
 		Visualizer->ShowOccupiedCells(
 			BlockedCells, ResourceCells, HeightRange);
 
-		// 시너지를 주는 건물(집)을 배치할 때는 이미 지은 같은 시너지 건물들의
-		// 클러스터 링크 범위를 하늘색으로 표시합니다.
-		TArray<FIntPoint> LinkCells;
-		CollectExistingLinkRangeCells(
-			InTargetBuilding, BlockedCells, LinkCells);
-
-		Visualizer->ShowLinkRangeCells(LinkCells, HeightRange);
+		// 시너지를 주는 건물이면 합류 범위를, 버프를 받는 건물이면 받을 수 있는 효과 구역을 함께 표시합니다.
+		ShowPlacementSynergyHints(
+			Visualizer, InTargetBuilding, BlockedCells, HeightRange);
 	}
 
 	SetComponentTickEnabled(true);
@@ -502,11 +499,39 @@ void UBuildingPlacement::FlashSynergyClustersOfBuilding(
 	}
 }
 
-// 배치 중인 건물과 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모으고 점유 칸은 뺍니다.
-// USFBuildingSynergySubsystem::CollectClusterLinkGridInfos를 쓰며 결과는 StartPlacementMode에서 ShowLinkRangeCells로 갑니다.
-void UBuildingPlacement::CollectExistingLinkRangeCells(
+// 합류 범위(하늘색)와 받을 수 있는 효과 구역(시너지 색)을 모아 격자 데칼에 함께 표시합니다.
+// StartPlacementMode가 점유 칸을 표시한 직후 호출하며, 점유 칸 집합은 두 수집 함수가 함께 씁니다.
+void UBuildingPlacement::ShowPlacementSynergyHints(
+	ASFGridDecalVisualizer* Visualizer,
 	const ASFBaseBuilding* Building,
 	const TArray<FIntPoint>& BlockedCells,
+	const FFloatInterval& HeightRange) const
+{
+	if (!IsValid(Visualizer))
+	{
+		return;
+	}
+
+	// 점유 칸은 이미 빨간색으로 표시되므로 두 안내 표시에서 모두 제외합니다.
+	TSet<FIntPoint> BlockedCellSet;
+	BlockedCellSet.Append(BlockedCells);
+
+	TArray<FIntPoint> LinkCells;
+	CollectExistingLinkRangeCells(Building, BlockedCellSet, LinkCells);
+	Visualizer->ShowLinkRangeCells(LinkCells, HeightRange);
+
+	TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>> EffectCellsBySynergy;
+	FFloatInterval EffectHeightRange = HeightRange;
+	CollectReceivableEffectCells(
+		Building, BlockedCellSet, EffectCellsBySynergy, EffectHeightRange);
+	Visualizer->ShowReceivableEffectCells(EffectCellsBySynergy, EffectHeightRange);
+}
+
+// 배치 중인 건물과 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모으고 점유 칸은 뺍니다.
+// USFBuildingSynergySubsystem::CollectClusterLinkGridInfos를 쓰며 ShowPlacementSynergyHints가 호출합니다.
+void UBuildingPlacement::CollectExistingLinkRangeCells(
+	const ASFBaseBuilding* Building,
+	const TSet<FIntPoint>& BlockedCellSet,
 	TArray<FIntPoint>& OutLinkCells) const
 {
 	OutLinkCells.Reset();
@@ -523,10 +548,6 @@ void UBuildingPlacement::CollectExistingLinkRangeCells(
 	{
 		return;
 	}
-
-	// 점유 칸은 이미 빨간색으로 표시되므로 링크 범위에서 제외합니다.
-	TSet<FIntPoint> BlockedCellSet;
-	BlockedCellSet.Append(BlockedCells);
 
 	TSet<FIntPoint> LinkCellSet;
 	TArray<FBuildingGridInfo> LinkGridInfos;
@@ -559,6 +580,70 @@ void UBuildingPlacement::CollectExistingLinkRangeCells(
 	}
 
 	OutLinkCells = LinkCellSet.Array();
+}
+
+// 배치 중인 건물 종류를 버프 대상으로 삼는 내 팀 시너지 효과 구역 칸을 시너지별로 모으고 점유 칸은 뺍니다.
+// USFBuildingSynergySubsystem::GetSynergyZonesForTeam(활성 구역)을 쓰며 ShowPlacementSynergyHints가 호출합니다.
+void UBuildingPlacement::CollectReceivableEffectCells(
+	const ASFBaseBuilding* Building,
+	const TSet<FIntPoint>& BlockedCellSet,
+	TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& OutCellsBySynergy,
+	FFloatInterval& InOutHeightRange) const
+{
+	OutCellsBySynergy.Reset();
+
+	const USFBuildingDefinition* Definition =
+		IsValid(Building) ? Building->GetBuildingDefinition() : nullptr;
+
+	const USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this);
+
+	if (!IsValid(Definition) || !IsValid(Synergy))
+	{
+		return;
+	}
+
+	// 같은 시너지 구역끼리 겹친 칸은 한 번만 칠하도록 시너지별 집합으로 모읍니다.
+	TMap<const USFBuildingSynergyDefinition*, TSet<FIntPoint>> CellSetsBySynergy;
+
+	for (const FSFBuildingSynergyZoneInfo& Zone :
+		Synergy->GetSynergyZonesForTeam(Building->GetTeamIndex()))
+	{
+		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
+
+		if (!IsValid(SynergyDefinition) ||
+			!SynergyDefinition->CanAffectBuildingType(Definition->BuildingType))
+		{
+			continue;
+		}
+
+		TSet<FIntPoint>& Cells = CellSetsBySynergy.FindOrAdd(SynergyDefinition);
+		const FBuildingGridInfo& EffectGridInfo = Zone.EffectGridInfo;
+
+		for (int32 Y = 0; Y < EffectGridInfo.GridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < EffectGridInfo.GridSize.X; ++X)
+			{
+				const FIntPoint Cell = EffectGridInfo.OriginCell + FIntPoint(X, Y);
+
+				if (!BlockedCellSet.Contains(Cell))
+				{
+					Cells.Add(Cell);
+				}
+			}
+		}
+
+		InOutHeightRange.Include(Zone.WorldCenter.Z);
+	}
+
+	for (const TPair<const USFBuildingSynergyDefinition*, TSet<FIntPoint>>& Pair :
+		CellSetsBySynergy)
+	{
+		if (!Pair.Value.IsEmpty())
+		{
+			OutCellsBySynergy.Add(Pair.Key, Pair.Value.Array());
+		}
+	}
 }
 
 // 격자 표시 액터를 한 번만 스폰해 InitializeVisualizer로 초기화하고 이후에는 재사용합니다.

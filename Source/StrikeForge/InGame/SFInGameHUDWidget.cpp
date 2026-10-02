@@ -65,6 +65,7 @@
 
 #include "TimerManager.h"
 #include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Buildings/UI/Synergy/SFPlacementSynergyBonusWidget.h"
 #include "Components/CanvasPanel.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 
@@ -311,6 +312,9 @@ void USFInGameHUDWidget::NativeConstruct()
 
         RefreshSynergyBadges();
     }
+
+    // 건물 배치 모드 동안 커서 옆에 시너지 보너스를 표시할 위젯을 만듭니다.
+    CreatePlacementSynergyBonusWidget();
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -1342,6 +1346,37 @@ void USFInGameHUDWidget::RefreshSynergyBadges()
             Badge->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
+}
+
+// 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번만 만들어 넣습니다. 표시·숨김과 커서 추적은 위젯이 스스로 처리합니다.
+// NativeConstruct가 호출하며, 클래스는 WBP_SFInGameHUD의 PlacementSynergyBonusWidgetClass에서 지정합니다.
+void USFInGameHUDWidget::CreatePlacementSynergyBonusWidget()
+{
+    if (IsValid(PlacementSynergyBonusWidget) ||
+        !IsValid(RootCanvas) ||
+        !PlacementSynergyBonusWidgetClass)
+    {
+        return;
+    }
+
+    PlacementSynergyBonusWidget =
+        CreateWidget<USFPlacementSynergyBonusWidget>(
+            GetOwningPlayer(),
+            PlacementSynergyBonusWidgetClass);
+
+    if (!IsValid(PlacementSynergyBonusWidget))
+    {
+        return;
+    }
+
+    UCanvasPanelSlot* CanvasSlot =
+        RootCanvas->AddChildToCanvas(PlacementSynergyBonusWidget);
+
+    CanvasSlot->SetAutoSize(true);
+    CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+
+    // 시너지 배지와 HUD 패널 위에 그립니다.
+    CanvasSlot->SetZOrder(100);
 }
 
 void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()

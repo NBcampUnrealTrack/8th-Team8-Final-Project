@@ -40,6 +40,7 @@ class USFBuffComponent;
 // Badge Widget ( BuildingSynergy )
 class UCanvasPanel;
 class USFBuildingSynergyBadgeWidget;
+class USFPlacementSynergyBonusWidget;
 
 USTRUCT()
 struct FSFControlGroup
@@ -180,7 +181,17 @@ public:
     
     UPROPERTY(Transient)
     TArray<TObjectPtr<USFBuildingSynergyBadgeWidget>> SynergyBadgeWidgets;
-#pragma endregion 
+
+    /** 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번 만들어 넣습니다. */
+    void CreatePlacementSynergyBonusWidget();
+
+    /** 건물 배치 모드 동안 커서 옆에 시너지 생산 보너스를 표시할 위젯 클래스입니다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Building Synergy")
+    TSubclassOf<USFPlacementSynergyBonusWidget> PlacementSynergyBonusWidgetClass;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFPlacementSynergyBonusWidget> PlacementSynergyBonusWidget;
+#pragma endregion
 protected:
     virtual void NativeConstruct() override;
 

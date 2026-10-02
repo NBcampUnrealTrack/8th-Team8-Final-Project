@@ -14,6 +14,8 @@
 #include "Units/Spawner/UnitSpawner.h"
 
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
+#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
+#include "Misc/ScopeExit.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/Actor.h"
 #include "NavigationData.h"
@@ -182,6 +184,22 @@ void ASFGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 {
+	// 선배치 건물은 등록만 모아 두고, 생성이 모두 끝난 뒤 시너지를 한 번만 계산합니다.
+	// 아래의 어떤 return 경로로 나가도 ON_SCOPE_EXIT가 EndUpdateBatch를 호출합니다.
+	USFBuildingSynergySubsystem* Synergy = USFBuildingSynergySubsystem::Get(this);
+	if (IsValid(Synergy))
+	{
+		Synergy->BeginUpdateBatch();
+	}
+
+	ON_SCOPE_EXIT
+	{
+		if (IsValid(Synergy))
+		{
+			Synergy->EndUpdateBatch();
+		}
+	};
+
 	UWorld* World = GetWorld();
 
 	if (!IsValid(World) || !IsValid(SFGameState))

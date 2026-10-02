@@ -103,6 +103,9 @@ protected:
     float PulseAmount = 0.35f;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FSFStage03ProductionTest;
+#endif
     /** 건설 메뉴/건물 카드 단계는 고정 좌표 대신 실제 위젯을 찾는다. */
     UWidget* ResolveScreenTargetWidget() const;
     bool UpdateFromScreenTargetWidget(const FGeometry& OverlayGeometry);

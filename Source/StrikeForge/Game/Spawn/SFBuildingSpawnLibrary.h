@@ -18,6 +18,10 @@ class STRIKEFORGE_API USFBuildingSpawnLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
+	/** Standard facing shared by player construction and authored starting buildings. */
+	UFUNCTION(BlueprintPure, Category = "SF|Building|Spawn")
+	static FRotator GetConstructionRotation();
+
 	/**
 	 * BeginPlay 전에 Definition, TeamIndex, SpawnMode를 주입하고
 	 * 생성이 완료된 건물을 반환한다.

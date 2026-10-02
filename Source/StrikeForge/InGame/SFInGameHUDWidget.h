@@ -63,6 +63,7 @@ public:
     /** 건설 안내가 고정 좌표 대신 실제 UI를 강조할 수 있게 대상 위젯을 돌려준다. */
     UWidget* GetTutorialBuildModeButton() const;
     UWidget* FindTutorialBuildCatalogEntry(FName BuildingRowName) const;
+    UWidget* FindTutorialProductionButton(FName UnitRowName) const;
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Building"

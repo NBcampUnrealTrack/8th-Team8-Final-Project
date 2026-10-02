@@ -74,8 +74,19 @@ void ASFCommander::StopMove_Implementation()
 void ASFCommander::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// BP에서 붙인 무기 메시까지 배치 격자 데칼이 묻지 않도록 모든 렌더링 컴포넌트에 적용합니다.
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Primitive : PrimitiveComponents)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
+
 	if (bMyCommander)
 	{
+		// Selection traces use Visibility. Do not depend on an imported skeletal
+		// mesh's physics bodies being present or covering the visible character.
+		GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 		GetWorldTimerManager().SetTimer(
 			LoadPCTimer,
 			this,

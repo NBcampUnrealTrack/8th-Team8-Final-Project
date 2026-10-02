@@ -7,6 +7,58 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Datas/Stage/SFStageData.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
+#include "Engine/World.h"
+
+#if WITH_EDITOR
+void USFGameInstance::ResolveEditorStageSelection(const UWorld* PlayWorld)
+{
+    if (!PlayWorld || PlayWorld->WorldType != EWorldType::PIE || !IsValid(StageDataTable))
+    {
+        return;
+    }
+
+    const FString MapPackage = UWorld::RemovePIEPrefix(PlayWorld->GetOutermost()->GetName());
+    const FSFStageData* Selected = StageDataTable->FindRow<FSFStageData>(SelectedStageRowName, TEXT("DirectPIE"), false);
+    if (Selected && Selected->StageLevel.ToSoftObjectPath().GetLongPackageName() == MapPackage)
+    {
+        // Keep a valid lobby selection (including its selected race).
+        return;
+    }
+
+    FName MatchedRow;
+    const FSFStageData* MatchedData = nullptr;
+    for (const FName RowName : StageDataTable->GetRowNames())
+    {
+        const FSFStageData* Row = StageDataTable->FindRow<FSFStageData>(RowName, TEXT("DirectPIE"), false);
+        if (!Row || Row->StageLevel.ToSoftObjectPath().GetLongPackageName() != MapPackage) continue;
+        if (MatchedData)
+        {
+            // Old prototype aliases can share a map with a numbered campaign stage.
+            // Direct PIE should use the campaign row; an explicit lobby selection
+            // was already preserved above.
+            const bool bCanonicalRow = RowName == FName(*FString::Printf(TEXT("Stage%02d"), Row->StageOrder));
+            const bool bCanonicalMatch = MatchedRow == FName(*FString::Printf(TEXT("Stage%02d"), MatchedData->StageOrder));
+            if (bCanonicalRow != bCanonicalMatch)
+            {
+                if (bCanonicalRow)
+                {
+                    MatchedRow = RowName;
+                    MatchedData = Row;
+                }
+                continue;
+            }
+            SF_LOG(Warning, "[SFGameInstance] Direct PIE map has multiple stage rows: %s", *MapPackage);
+            return;
+        }
+        MatchedRow = RowName;
+        MatchedData = Row;
+    }
+
+    if (!MatchedData || (MatchedData->PlayerRace != ESFRace::None && !SelectRace(MatchedData->PlayerRace))) return;
+    SelectedStageRowName = MatchedRow;
+    SF_LOG(Log, "[SFGameInstance] Direct PIE stage resolved: %s", *SelectedStageRowName.ToString());
+}
+#endif
 
 UDataTable* USFGameInstance::GetDataTableType(EDataTableType TableType) const
 {

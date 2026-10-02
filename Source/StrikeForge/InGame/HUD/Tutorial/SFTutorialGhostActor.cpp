@@ -25,6 +25,8 @@ ASFTutorialGhostActor::ASFTutorialGhostActor()
     GhostMeshComponent->SetGenerateOverlapEvents(false);
     GhostMeshComponent->SetCanEverAffectNavigation(false);
     GhostMeshComponent->SetCastShadow(false);
+    // 안내 모형 위에 배치 격자 데칼이 묻지 않도록 한다.
+    GhostMeshComponent->bReceivesDecals = false;
 
 }
 

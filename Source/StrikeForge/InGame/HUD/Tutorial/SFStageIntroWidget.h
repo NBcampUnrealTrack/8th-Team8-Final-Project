@@ -89,7 +89,6 @@ private:
     void UpdateCharacterFrames(const FSFStageIntroNode& Node);
     void CacheConversationLayout();
     void RestoreConversationLayout();
-    void CompactDialogueLayout(const FText& FullText);
     void PositionPortraitFrames(bool bHasFrame);
     void SetImageTexture(UImage* TargetImage, const TSoftObjectPtr<UTexture2D>& Texture);
     void UpdateGuidePageText();
@@ -237,10 +236,6 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Portrait Frame")
     FLinearColor PortraitBackdropColor = FLinearColor(0.025f, 0.04f, 0.065f, 1.f);
-
-    /** 기존 대사창 높이에 대한 비율. 긴 대사는 전문을 측정해 자동으로 높인다. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout", meta = (ClampMin = "0.5", ClampMax = "1.0"))
-    float DialogueHeightScale = 0.75f;
 
     /** 휘장을 대사창 양 끝에 코드로 붙인다. 끄면 WBP 에 잡아둔 Image 칸을 그대로 쓴다. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Stage Intro|Layout")

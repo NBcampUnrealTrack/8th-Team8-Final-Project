@@ -71,6 +71,9 @@ class STRIKEFORGE_API ASFInGamePlayerController
 public:
     ASFInGamePlayerController();
 
+    UFUNCTION(BlueprintPure, Category = "SF|Building|Placement")
+    UBuildingPlacement* GetBuildingPlacementComponent() const { return PlacementComponent; }
+
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|Input"
@@ -108,6 +111,12 @@ public:
     ASFCommander* GetMyCommander() const
     {
         return MyCommander.Get();
+    }
+
+    /** 튜토리얼 스포트라이트가 실제 HUD 버튼 위치를 찾을 때만 사용한다. */
+    USFInGameHUDWidget* GetInGameHUDWidget() const
+    {
+        return InGameHUDWidget;
     }
 
     void IssueMoveCommand(const FVector& Destination);
@@ -162,6 +171,11 @@ private:
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
+
+#if WITH_EDITOR
+    /** PT_StageDefence 레벨 BP에 빠진 에디터용 K 즉시 승리 입력. */
+    void HandleStage03DebugVictoryInput();
+#endif
 
     void HandleFocusCommanderInput();
 

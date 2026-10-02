@@ -1,6 +1,7 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
@@ -145,6 +146,31 @@ AUnitBase::AUnitBase()
 void AUnitBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// BP에서 붙인 무기 메시까지 배치 격자 데칼이 묻지 않도록 모든 렌더링 컴포넌트에 적용합니다.
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Primitive : PrimitiveComponents)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
+
+	if (UCapsuleComponent* Capsule =
+		GetCapsuleComponent())
+	{
+		Capsule->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Block
+		);
+	}
+
+	if (USkeletalMeshComponent* CharacterMesh =
+		GetMesh())
+	{
+		CharacterMesh->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Ignore
+		);
+	}
 
 	// 레벨에 직접 배치한 유닛은 스포너를 거치지 않으므로 여기서 주입한다.
 	// 스폰으로 이미 주입됐다면 건너뛴다.
@@ -954,7 +980,7 @@ bool AUnitBase::ExecuteNextQueuedCommand()
 		// 예약해둔 공격 대상이 이미 죽었다면 건너뛴다.
 		if (
 			NextCommand.bTargetRequired &&
-			!IsTargetUsable(NextCommand.Target.Get())
+			!CanForceAttackTarget(NextCommand.Target.Get())
 			)
 		{
 			SF_LOG(
@@ -1028,7 +1054,7 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 		return;
 	}
 
-	if (!IsTargetUsable(InTarget))
+	if (!CanForceAttackTarget(InTarget))
 	{
 		SF_LOG(Warning,
 			"[Unit] %s : %s 은(는) 공격할 수 없는 대상입니다. "
@@ -1161,11 +1187,18 @@ void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocatio
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
-	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
-	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
-	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
+	if (!CanForceAttackTarget(InTarget)) return false;
+	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	return InTarget == ForcedTarget || USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
 
-	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+bool AUnitBase::CanForceAttackTarget(const AActor* InTarget) const
+{
+	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
+	const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!Target || !Target->IsAlive() || Target->GetTeamIndex() == INDEX_NONE) return false;
+	const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(InTarget);
+	return !Building || Building->ProvidesVision();
 }
 
 void AUnitBase::SetWaitingForGroupMove(bool bWaiting)
@@ -2140,11 +2173,26 @@ void AUnitBase::Advance(float DeltaSeconds)
 
 		if (FVector::Dist2D(GetActorLocation(), Waypoint) < AssignedLane->GetLaneHalfWidth())
 		{
-			LaneAlpha = FMath::Min(1.f, LaneAlpha + 0.1f);
+			if (LaneAlpha >= 1.f - KINDA_SMALL_NUMBER)
+			{
+				// 경로 끝에 도착하면 핵심 건물 탐색으로 넘긴다.
+				// 그렇지 않으면 마지막 스플라인 점에 계속 이동 요청을 보낸다.
+				AssignedLane = nullptr;
+			}
+			// 긴 라인에서도 목표점이 한 번에 수십 m 앞으로 건너뛰지 않도록
+			// 월드 거리 기준으로 전진한다. 좁은 길의 굴곡을 따라가게 한다.
+			const float LaneLength = AssignedLane ? AssignedLane->GetSplineLength() : 0.f;
+			const float AlphaStep = LaneLength > KINDA_SMALL_NUMBER
+				? FMath::Min(1.f, 450.f / LaneLength)
+				: 1.f;
+			LaneAlpha = FMath::Min(1.f, LaneAlpha + AlphaStep);
 		}
 
-		AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
-		return;
+		if (AssignedLane)
+		{
+			AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
+			return;
+		}
 	}
 
 	// 주의: 여기서 멈춰 세우면(ClearMoveRequest) 유닛이 영구히 굳는다.

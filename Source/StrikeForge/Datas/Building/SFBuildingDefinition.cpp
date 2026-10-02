@@ -2,6 +2,7 @@
 
 #include "BuildingAppearance.h"
 #include "BuildingTierData/SFBuildingTierData.h"
+#include "Synergy/SFBuildingSynergyDefinition.h"
 
 // == AssetManager의 Primary Asset Type FName
 const FPrimaryAssetType
@@ -75,6 +76,17 @@ void USFBuildingDefinition::GetUIAssetPaths(TArray<FSoftObjectPath>& OutPaths) c
     AddSoftPath(
     Icon.ToSoftObjectPath(),
     OutPaths);
+
+	// 종족별 시너지 뱃지도 다른 건물 UI 텍스처와 함께 미리 로드합니다.
+	for (const FSFGrantedBuildingSynergy& GrantedSynergy : GrantedSynergies)
+	{
+		if (IsValid(GrantedSynergy.Definition))
+		{
+			AddSoftPath(
+				GrantedSynergy.Definition->BadgeIcon.ToSoftObjectPath(),
+				OutPaths);
+		}
+	}
 }
 
 bool USFBuildingDefinition::GetRuntimeAssetPaths(

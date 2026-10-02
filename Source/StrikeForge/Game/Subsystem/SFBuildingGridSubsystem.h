@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Math/Interval.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "Datas/Building/MiningData/SFMiningCellTarget.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -70,10 +71,12 @@ public:
 	FVector GridToWorldCoordinate(const FIntPoint& GridCoord) const;
 	
 	// 현재 건물 격자와 광산 자원 조건을 함께 검사합니다.
+	// 초기에 검사용도
 	FSFBuildingGridEvaluationResult EvaluatePlayerBuildingGrid(
 		const AActor* Building,	const FBuildingGridInfo& GridInfo) const;
 	
 	// 건물 점유를 검사한 뒤 성공한 경우에만 등록합니다.
+	// 등록직전에 재검사용도
 	bool TryRegisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 	void UnregisterBuildingGrid(AActor* Owner, const FBuildingGridInfo& GridInfo);
 
@@ -118,18 +121,20 @@ public:
 		const FBuildingGridInfo& OuterGridInfo,
 		const FIntPoint& InnerGridSize,
 		FBuildingGridInfo& OutInnerGridInfo) const;
-	
+
+	/**
+	 * 배치 모드 격자 표시에 사용할 셀을 수집합니다.
+	 * 건물 셀과 강조 대상이 아닌 자원 셀은 막힌 셀, 강조 자원 종류의 매장량이 남은 셀은 자원 셀입니다.
+	 */
+	void CollectPlacementDisplayCells(
+		bool bHighlightResource,
+		EResourceType HighlightResourceType,
+		TArray<FIntPoint>& OutBlockedCells,
+		TArray<FIntPoint>& OutResourceCells,
+		FFloatInterval& OutHeightRange) const;
+
 	FORCEINLINE float GetCellSize() const { return CellSize; }
 	FORCEINLINE const FVector& GetGridOrigin() const { return GridOrigin; }
-
-#pragma region Debug
-	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
-	void DebugDrawOccupiedCells() const;
-	void DebugDrawMiningPlacementGrid(const FBuildingGridInfo& BuildingGridInfo,const FIntPoint& ResourceSearchGridSize,float WorldZ,float Duration = 0.0f) const;
-	UFUNCTION(BlueprintCallable, Category = "SF|Grid|Debug")
-	void DebugDrawGridInfo(const FBuildingGridInfo& GridInfo, float WorldZ,	bool bCanPlace,	float Duration = 0.0f) const;
-	void DebugDrawResourceCells(EResourceType ResourceType, float Duration = 5.0f) const;
-#pragma endregion 
 
 private: // functions
 

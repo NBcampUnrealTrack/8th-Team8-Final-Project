@@ -132,6 +132,10 @@ public:
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE int32 GetCurrentTier() const { return CurrentTier; }
+
+	/** Internal tiers are zero-based; UI tiers are 1..3. */
+	UFUNCTION(BlueprintPure, Category = "SF|Building")
+	bool HasNextUpgradeTier() const;
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FResources GetConstructCost() const;
@@ -141,6 +145,18 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return ConfiguredGridSize; }
+
+	/** 실제 배치에 사용된 원점과 회전 반영 점유 크기를 반환합니다. 격자 등록 전이면 false입니다. */
+	FORCEINLINE bool TryGetRegisteredGridInfo(FBuildingGridInfo& OutGridInfo) const
+	{
+		if (!bGridRegistered || !RegisteredGridInfo.IsValid())
+		{
+			return false;
+		}
+
+		OutGridInfo = RegisteredGridInfo;
+		return true;
+	}
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
@@ -253,6 +269,9 @@ private:
 	// delegate
 	void BindComponentDelegates();
 	void UnbindComponentDelegates();
+	/** 시너지 재계산 결과에서 이 건물의 생산 보너스를 읽어 머리 위 UI 상태로 전달한다. */
+	UFUNCTION()
+	void HandleBuildingSynergyStateChanged();
 
 	// progress가 완료되면 호출되게 bind되있음
 	// Handle -> Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate

@@ -11,6 +11,7 @@ class UNiagaraComponent;
 class UNiagaraSystem;
 
 DECLARE_MULTICAST_DELEGATE(FOnBuffEvent);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuffStatsChanged);
 
 UCLASS()
 class STRIKEFORGE_API UBuffData : public UObject
@@ -56,7 +57,7 @@ struct FStatusData
 {
     GENERATED_BODY()
 
-    float Speed;
+    float Speed = 0.f;
     float AtkMul = 1.f;
     float HPMul = 1.f;
     float DmgMul = 1.f;
@@ -93,12 +94,17 @@ public:
     // 해당 스탯을 이번 프레임에 갱신하겠다.
     FORCEINLINE void ApplyBuffFlag(EBuffApply Flags) { EnumAddFlags(Flag_Apply, Flags); }
 
+    /** Fired after the effective movement/combat/health values have been applied. */
+    UPROPERTY(BlueprintAssignable, Category = "Buff|Stats")
+    FSFOnBuffStatsChanged OnBuffStatsChanged;
+
 protected:
 	USFBuffComponent();
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+    void RefreshBuffStats(float DeltaTime);
 
 public:
     FStatusData Current_Status;
@@ -111,5 +117,5 @@ protected:
     // 해당 오너가 가지고 있는 버프상태
     FStatusData Origin_Status;
 
-    EBuffApply Flag_Apply;   // 이번 프레임 내 특정 스탯의 갱신여부를 저장
+    EBuffApply Flag_Apply = EBuffApply::None;   // 이번 프레임 내 특정 스탯의 갱신여부를 저장
 };

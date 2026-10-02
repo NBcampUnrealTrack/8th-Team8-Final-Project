@@ -6,6 +6,7 @@
 #include "SFTutorialSpotlightWidget.generated.h"
 
 class UTextBlock;
+class UWidget;
 
 /**
  * 화면 한 곳만 밝게 남기고 나머지를 덮는 안내 오버레이.
@@ -102,6 +103,13 @@ protected:
     float PulseAmount = 0.35f;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FSFStage03ProductionTest;
+#endif
+    /** 건설 메뉴/건물 카드 단계는 고정 좌표 대신 실제 위젯을 찾는다. */
+    UWidget* ResolveScreenTargetWidget() const;
+    bool UpdateFromScreenTargetWidget(const FGeometry& OverlayGeometry);
+
     /** 월드 좌표를 화면 비율로 바꾼다. 화면 밖이면 false */
     bool ProjectStepToScreen(FVector2D& OutCenter, float& OutRadius) const;
 

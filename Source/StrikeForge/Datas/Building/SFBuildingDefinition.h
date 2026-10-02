@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "SFBuildingType.h"
+#include "Datas/Building/Synergy/SFBuildingSynergyTypes.h"
 #include "Engine/DataAsset.h"
 #include "OverHeadUI/SFOverheadUISettings.h"
 #include "SFBuildingDefinition.generated.h"
@@ -59,6 +60,10 @@ public:
     // 모든 종족의 건물 카테고리 분류
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
     ESFBuildingType BuildingType;
+
+	/** 이 건물이 완성됐을 때 원천이 되는 배치 시너지 목록입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Synergy")
+	TArray<FSFGrantedBuildingSynergy> GrantedSynergies;
     
     // * 건설 UI 등에 표시되는 건물 아이콘.
     UPROPERTY(

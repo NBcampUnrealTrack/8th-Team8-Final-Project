@@ -11,18 +11,35 @@
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
+#include "Units/Spawner/UnitSpawner.h"
 
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/Actor.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
+#include "Components/AudioComponent.h"
+#include "Sound/AmbientSound.h"
+#include "Sound/SoundCue.h"
+#include "Sound/SoundNodeWavePlayer.h"
+#include "Sound/SoundWave.h"
+#include "UObject/ConstructorHelpers.h"
 
 ASFGameMode::ASFGameMode()
 {
 	// GameMode가 사용할 GameState 클래스 지정
 	// World Setting에서 별도로 잘못 설정하는 상황 방지
 	GameStateClass = ASFGameState::StaticClass();
+
+	StageMusicComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("StageMusic"));
+	SetRootComponent(StageMusicComponent);
+	StageMusicComponent->bAutoActivate = false;
+	StageMusicComponent->bAutoDestroy = false;
+	StageMusicComponent->bAllowSpatialization = false;
+	StageMusicComponent->SetUISound(true);
+	static ConstructorHelpers::FObjectFinder<USoundCue> DefaultStageMusic(
+		TEXT("/Game/Sound/BGM/StageBgm/Stage1_Cue.Stage1_Cue"));
+	StageMusicComponent->SetSound(DefaultStageMusic.Object);
 }
 
 void ASFGameMode::PostLogin(APlayerController* NewPlayer)
@@ -70,6 +87,8 @@ void ASFGameMode::Logout(AController* Exiting)
 void ASFGameMode::InitGameState()
 {
 	Super::InitGameState();
+	// 다른 레벨 액터의 컴포넌트가 자동 활성화되기 전에 BGM을 맡는다.
+	PrepareStageMusic();
 
 	SFGameState = GetGameState<ASFGameState>();
 
@@ -90,6 +109,75 @@ void ASFGameMode::BeginPlay()
 
 	// initgamestate에서 플레이어팀등록을 마친뒤 호출
 	BeginStageBootstrap();
+}
+
+void ASFGameMode::PrepareStageMusic()
+{
+	bool bFoundLevelMusic = false;
+	USoundClass* DefaultMusicClass = StageMusicComponent->Sound
+		? StageMusicComponent->Sound->GetSoundClass() : nullptr;
+	for (TActorIterator<AAmbientSound> It(GetWorld()); It; ++It)
+	{
+		UAudioComponent* Audio = It->GetAudioComponent();
+		USoundBase* Sound = IsValid(Audio) ? Audio->Sound.Get() : nullptr;
+		if (!IsValid(Sound) || !Sound->GetPathName().StartsWith(TEXT("/Game/Sound/BGM/")))
+		{
+			continue;
+		}
+
+		if (!bFoundLevelMusic)
+		{
+			StageMusicComponent->SetSound(Sound);
+			StageMusicComponent->SetVolumeMultiplier(Audio->VolumeMultiplier);
+			StageMusicComponent->SetPitchMultiplier(Audio->PitchMultiplier);
+			bFoundLevelMusic = true;
+		}
+		Audio->bAutoActivate = false;
+		Audio->Stop();
+	}
+
+	// 원본 SoundWave를 변경하지 않고 오디오 엔진에서 끊김 없이 반복한다.
+	if (USoundWave* Wave = Cast<USoundWave>(StageMusicComponent->Sound))
+	{
+		USoundCue* LoopingMusic = NewObject<USoundCue>(this);
+		USoundNodeWavePlayer* Player = NewObject<USoundNodeWavePlayer>(LoopingMusic);
+		Player->SetSoundWave(Wave);
+		Player->bLooping = true;
+		LoopingMusic->FirstNode = Player;
+		// 패키징된 게임에서도 루프 지속 시간이 0으로 남지 않도록 설정한다.
+		LoopingMusic->Duration = INDEFINITELY_LOOPING_DURATION;
+		LoopingMusic->VolumeMultiplier = 1.f;
+		LoopingMusic->SoundClassObject = Wave->GetSoundClass() ? Wave->GetSoundClass() : DefaultMusicClass;
+		LoopingMusic->CacheAggregateValues();
+		StageMusicComponent->SetSound(LoopingMusic);
+	}
+	StageMusicComponent->OnAudioFinishedNative.AddUObject(this, &ThisClass::HandleStageMusicFinished);
+}
+
+void ASFGameMode::StartStageMusic()
+{
+	if (bStageMusicStarted || !IsValid(StageMusicComponent->Sound)) return;
+	bStageMusicStarted = true;
+	StageMusicComponent->SetUISound(true);
+	StageMusicComponent->Play();
+	SF_LOG(Log, "[SFGameMode] Stage music started after loading screen.");
+}
+
+void ASFGameMode::HandleStageMusicFinished(UAudioComponent* FinishedComponent)
+{
+	// 루프가 없는 SoundCue를 지정해도 같은 곡을 다시 재생한다.
+	if (bStageMusicStarted && FinishedComponent == StageMusicComponent && !IsActorBeingDestroyed())
+	{
+		StageMusicComponent->Play();
+	}
+}
+
+void ASFGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bStageMusicStarted = false;
+	StageMusicComponent->OnAudioFinishedNative.RemoveAll(this);
+	StageMusicComponent->Stop();
+	Super::EndPlay(EndPlayReason);
 }
 
 bool ASFGameMode::SpawnStageBuildingsFromAnchors()
@@ -129,12 +217,12 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 	{
 		if (Anchor->GetBuildingType() == ESFBuildingType::None)
 		{
-			SF_LOG(Error,
-				"[SFGameMode] BuildingType이 None인 Anchor가 있습니다. "
+			SF_LOG(Warning,
+				"[SFGameMode] 미설정 Anchor를 건너뜁니다. "
 				"Anchor=%s",
 				*GetNameSafe(Anchor));
 
-			return false;
+			continue;
 		}
 
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
@@ -179,6 +267,12 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 	// House, Mine, Production 등은 실패한 Anchor만 건너뛴다.
 	for (const ASFBuildingSpawnAnchor* Anchor : Anchors)
 	{
+		if (Anchor->GetBuildingType() == ESFBuildingType::None)
+		{
+			++SkippedAnchorCount;
+			continue;
+		}
+
 		if (Anchor->GetBuildingType() == ESFBuildingType::Nexus)
 		{
 			continue;
@@ -288,6 +382,25 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 		return false;
 	}
 
+	// 앵커는 곧 제거된다. 그 전에 같은 위치의 스포너를 실제 생산 건물에
+	// 연결해 두어야 로딩이 길어져도 파괴 신호를 놓치지 않는다.
+	if (BuildingType == ESFBuildingType::Barracks ||
+		BuildingType == ESFBuildingType::RangedProduction ||
+		BuildingType == ESFBuildingType::SpecialProduction)
+	{
+		constexpr float SpawnerAnchorRadius = 150.f;
+		for (TActorIterator<AUnitSpawner> It(GetWorld()); It; ++It)
+		{
+			AUnitSpawner* Spawner = *It;
+			if (IsValid(Spawner) &&
+				FVector::DistSquared2D(Spawner->GetActorLocation(), InAnchor->GetActorLocation()) <=
+				FMath::Square(SpawnerAnchorRadius))
+			{
+				Spawner->AssignOwnerBuilding(SpawnedBuilding);
+			}
+		}
+	}
+
 
 	return true;
 }
@@ -333,6 +446,9 @@ void ASFGameMode::BeginStageBootstrap()
 	}
 
 	// StageTable의 RowName
+#if WITH_EDITOR
+	SFGameInstance->ResolveEditorStageSelection(GetWorld());
+#endif
 	BootstrapStageRowName = SFGameInstance->GetSelectedStageRowName();
 	// 플레이어가 선택한 종족
 	const ESFRace PlayerRace = SFGameInstance->GetSelectedRace();
@@ -600,6 +716,13 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		const ASFBuildingSpawnAnchor* Anchor = *It;
 
 		if (!IsValid(Anchor))
+		{
+			continue;
+		}
+
+		// Level authors may keep unconfigured placement markers while dressing a map.
+		// They request no assets and must not abort otherwise valid Nexus setup.
+		if (Anchor->GetBuildingType() == ESFBuildingType::None)
 		{
 			continue;
 		}
@@ -1069,6 +1192,9 @@ void ASFGameMode::StartStageAfterLoadingScreen()
 		FailStageBootstrap();
 		return;
 	}
+
+	// StartStage의 상태 알림에서 튜토리얼이 일시정지해도 UI 사운드는 바로 재생된다.
+	StartStageMusic();
 
 	SF_LOG(Log,
 		"[SFGameMode] 로딩 화면 종료 후 스테이지를 시작했습니다.");

@@ -36,6 +36,10 @@ class ASFBaseBuilding;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UWidget;
+class USFBuffComponent;
+// Badge Widget ( BuildingSynergy )
+class UCanvasPanel;
+class USFBuildingSynergyBadgeWidget;
 
 USTRUCT()
 struct FSFControlGroup
@@ -51,10 +55,15 @@ class STRIKEFORGE_API USFInGameHUDWidget
     : public UUserWidget
 {
     GENERATED_BODY()
+    friend struct FSFForcedAttackTestAccess;
 
     // ==================== Functions ====================
 
 public:
+    /** 건설 안내가 고정 좌표 대신 실제 UI를 강조할 수 있게 대상 위젯을 돌려준다. */
+    UWidget* GetTutorialBuildModeButton() const;
+    UWidget* FindTutorialBuildCatalogEntry(FName BuildingRowName) const;
+    UWidget* FindTutorialProductionButton(FName UnitRowName) const;
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Building"
@@ -74,6 +83,11 @@ public:
     void ToggleSettings();
 
     void ShowResultWidget(bool bIsWin);
+
+#if WITH_EDITOR
+    /** K 즉시 승리 테스트 전에 재생 중인 시작 스토리를 정리한다. */
+    void DismissActiveStageIntroForDebug();
+#endif
 
     void SelectActor(AActor* Actor);
 
@@ -142,7 +156,31 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
     bool RequestBuildingBySlot(int32 SlotIndex);
+#pragma region BuildingSynergy
+public:
+    UFUNCTION()
+    void HandleSynergyStateChanged();
 
+    void RefreshSynergyBadges();
+    void UpdateSynergyBadgeScreenPositions();
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+    TObjectPtr<UCanvasPanel> RootCanvas = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+    TSubclassOf<USFBuildingSynergyBadgeWidget> SynergyBadgeWidgetClass;
+    /** 뱃지가 화면 가장자리와 유지할 최소 간격입니다. */
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|HUD|Building Synergy",
+        meta = (ClampMin = "0.0")
+    )
+    float SynergyBadgeScreenMargin = 8.f;
+    
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<USFBuildingSynergyBadgeWidget>> SynergyBadgeWidgets;
+#pragma endregion 
 protected:
     virtual void NativeConstruct() override;
 
@@ -159,6 +197,9 @@ protected:
     void BindSelectedUnitStatsDelegate(AActor* Actor);
 
     void UnbindSelectedUnitStatsDelegate();
+
+    UFUNCTION()
+    void HandleSelectedBuffStatsChanged();
 
     void BindSelectedHealthDelegate(AActor* Actor);
 
@@ -347,6 +388,12 @@ private:
     void HandleStageIntroDeactivated();
 
     FName ResolveStageIntroRowName() const;
+
+    /**
+     * 현재 스테이지와 같은 이름에 Clear 접미사를 붙인 후일담 행을 연다.
+     * 예: Stage03 -> Stage03Clear. 행이 없으면 일반 승리 화면을 사용한다.
+     */
+    bool TryStartVictoryEpilogue();
 
     UFUNCTION()
     void HandleRallyPointRequested();
@@ -631,11 +678,20 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<UResultWidget> ResultWidget = nullptr;
 
+    /** 승리 후일담이 끝날 때까지 결과 UI를 보류하고 있는가. */
+    bool bPendingVictoryResultAfterEpilogue = false;
+
+    /** 같은 승리 결과 신호가 다시 와도 후일담을 두 번 재생하지 않는다. */
+    bool bVictoryEpilogueCompleted = false;
+
     UPROPERTY(Transient)
     TWeakObjectPtr<UHealthComponent> SelectedHealthComponent;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AUnitBase> SelectedStatsUnit;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<USFBuffComponent> SelectedBuffComponent;
 
     UPROPERTY(Transient)
     TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;

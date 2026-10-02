@@ -8,6 +8,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
+#include "Game/GameState/SFGameState.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "InGame/HUD/Tutorial/SFStageIntroPortraitFrame.h"
 #include "Kismet/GameplayStatics.h"
@@ -128,43 +129,6 @@ void USFStageIntroWidget::RestoreConversationLayout()
     for (const auto& Entry : OriginalConversationLayouts)
     {
         if (IsValid(Entry.Key)) Entry.Key->SetLayout(Entry.Value);
-    }
-}
-
-void USFStageIntroWidget::CompactDialogueLayout(const FText& FullText)
-{
-    UCanvasPanelSlot* PanelSlot = IsValid(StageIntroSwitcher) ? Cast<UCanvasPanelSlot>(StageIntroSwitcher->Slot) : nullptr;
-    UCanvasPanelSlot* BackgroundSlot = IsValid(NextIndicatorImage) ? Cast<UCanvasPanelSlot>(NextIndicatorImage->Slot) : nullptr;
-    UCanvasPanelSlot* TextSlot = IsValid(DialogueText) ? Cast<UCanvasPanelSlot>(DialogueText->Slot) : nullptr;
-    if (!PanelSlot || !BackgroundSlot || !TextSlot) return;
-
-    const FVector2D PanelSize = PanelSlot->GetSize();
-    const FVector2D BackgroundSize = BackgroundSlot->GetSize();
-    // 현재 WBP는 NextIndicatorImage에 대사창 배경을 넣는다. 작은 '다음' 아이콘에는 적용하지 않는다.
-    if (PanelSize.Y <= 0.f || BackgroundSize.X < PanelSize.X * 0.8f || BackgroundSize.Y < PanelSize.Y * 0.8f) return;
-
-    const float Ratio = FMath::Clamp(DialogueHeightScale, 0.5f, 1.f);
-    const FVector2D TextPosition = TextSlot->GetPosition();
-    const FVector2D TextSize = TextSlot->GetSize();
-    const float TextTop = TextPosition.Y * Ratio;
-    const float BottomPadding = FMath::Max(32.f, static_cast<float>(PanelSize.Y - TextPosition.Y - TextSize.Y) * Ratio);
-
-    // 전문을 먼저 측정한다. 타자 효과 도중에는 패널 높이가 변하지 않는다.
-    DialogueText->SetWrapTextAt(TextSize.X);
-    DialogueText->SetText(FullText);
-    DialogueText->ForceLayoutPrepass();
-    const float Height = FMath::Max(static_cast<float>(PanelSize.Y) * Ratio,
-        TextTop + static_cast<float>(DialogueText->GetDesiredSize().Y) + BottomPadding + 8.f);
-    PanelSlot->SetSize(FVector2D(PanelSize.X, Height));
-    BackgroundSlot->SetSize(FVector2D(BackgroundSize.X, Height));
-    TextSlot->SetPosition(FVector2D(TextPosition.X, TextTop));
-    TextSlot->SetSize(FVector2D(TextSize.X, Height - TextTop - BottomPadding));
-
-    if (UCanvasPanelSlot* NameSlot = IsValid(SpeakerNameText) ? Cast<UCanvasPanelSlot>(SpeakerNameText->Slot) : nullptr)
-    {
-        const FVector2D Position = NameSlot->GetPosition();
-        const double HalfHeight = NameSlot->GetSize().Y * 0.5;
-        NameSlot->SetPosition(FVector2D(Position.X, (Position.Y + HalfHeight) * Height / PanelSize.Y - HalfHeight));
     }
 }
 
@@ -357,6 +321,7 @@ bool USFStageIntroWidget::StartStageIntroAt(UDataTable* InDataTable, FName InRow
     //
     // 목표 대기에서 재개될 때 이 함수가 다시 불리는데, 같은 행의 같은 값을
     // 다시 넣는 것이라 무해하다. 오히려 그래야 재개 뒤에도 잠금이 유지된다.
+    USFTutorialSubsystem::SetStageTutorialActive(this, true);
     USFTutorialSubsystem::SetStageFeatureLocks(this, IntroRow->LockedFeatures);
 
     // 목표를 달성하는 순간은 이 위젯이 닫혀 있을 때다.
@@ -460,7 +425,19 @@ void USFStageIntroWidget::ShowDialogueNode(const FSFStageIntroNode& Node)
         SpeakerNameText->SetText(Node.TitleText);
     }
 
-    CompactDialogueLayout(Node.BodyText);
+    // 패널과 배경은 WBP의 원래 크기를 유지한다. 대사 길이는 줄바꿈으로 처리한다.
+    if (IsValid(DialogueText))
+    {
+        DialogueText->SetAutoWrapText(true);
+        if (UCanvasPanelSlot* TextSlot = Cast<UCanvasPanelSlot>(DialogueText->Slot))
+        {
+            TextSlot->SetAutoSize(false);
+            if (!TextSlot->GetAnchors().IsStretchedHorizontal() && TextSlot->GetSize().X > 0.f)
+            {
+                DialogueText->SetWrapTextAt(TextSlot->GetSize().X);
+            }
+        }
+    }
 
     // 선택지·조작 설명 노드가 이 이미지를 Collapsed 로 만들어 두므로
     // 대사 노드로 돌아올 때마다 되살려야 한다.
@@ -1126,16 +1103,38 @@ void USFStageIntroWidget::HandleNextGuideClicked()
 
 void USFStageIntroWidget::FinishStageIntro()
 {
+    // 개별 임무 완료와 전체 튜토리얼 완료는 다르다. 마지막 대화 뒤의 명시적인
+    // End 노드에 도달했을 때만 완료 신호를 보낸다 (잘못된 인덱스로 닫힐 때 제외).
+    const FSFStageIntroNode* EndNode = GetCurrentNode();
+    const FGameplayTag CompletionTag = EndNode && EndNode->NodeType == ESFStageIntroNodeType::End
+        ? EndNode->ObjectiveTag : FGameplayTag();
+    UWorld* const IntroWorld = GetWorld();
+
     // 튜토리얼이 끝났으니 스테이지 잠금도 푼다.
     //
     // SuspendStageIntro 는 이 함수를 부르지 않는다. 목표 대기로 창이 닫혀
     // 있는 동안에는 잠금이 유지되어야 하기 때문이다.
+    USFTutorialSubsystem::SetStageTutorialActive(this, false);
     USFTutorialSubsystem::SetStageFeatureLocks(this, FGameplayTagContainer());
     USFTutorialSubsystem::SetStageObjectiveSuccessSound(this, TSoftObjectPtr<USoundBase>());
+
+    if (IsValid(IntroWorld))
+    {
+        if (ASFGameState* GameState = IntroWorld->GetGameState<ASFGameState>())
+        {
+            GameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
+    }
 
     ActiveNodes.Empty();
     ActiveDataTable = nullptr;
     ActiveRowName = NAME_None;
     CurrentNodeIndex = INDEX_NONE;
     DeactivateWidget();
+
+    // HUD가 복구되고 대화로 인한 일시정지가 풀린 다음에 스폰 타이머를 시작한다.
+    if (IsValid(IntroWorld) && CompletionTag.IsValid())
+    {
+        USFTutorialSubsystem::NotifyObjective(IntroWorld, CompletionTag, true);
+    }
 }

@@ -15,6 +15,8 @@ AResourceBase::AResourceBase()
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMeshComponent");
 	StaticMeshComponent->SetupAttachment(GetRootComponent());
 	StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 배치 격자 데칼이 자원 표면에 묻지 않도록 합니다.
+	StaticMeshComponent->bReceivesDecals = false;
 	
 	BoxComponent = CreateDefaultSubobject<UBoxComponent>("BoxComponent");
 	BoxComponent->SetupAttachment(GetRootComponent());

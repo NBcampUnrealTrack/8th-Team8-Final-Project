@@ -17,6 +17,7 @@
 #include "Components/TimelineComponent.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h" //gc
 #include "InGame/Controller/SFInGamePlayerController.h"
@@ -697,6 +698,11 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 	}
 }
 
+bool ASFBaseBuilding::HasNextUpgradeTier() const
+{
+	return CurrentTier >= 0 && CurrentTier < 2 && GetTierInfo(CurrentTier + 1) != nullptr;
+}
+
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
 	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
@@ -718,7 +724,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	const int32 NextTier =
 		CurrentTier + UpgradeValue;
 
-	if (!GetTierInfo(NextTier))
+	if (NextTier > 2 || !GetTierInfo(NextTier))
 	{
 		return;
 	}
@@ -878,11 +884,32 @@ void ASFBaseBuilding::BeginPlay()
 			//	TL_TimelineLength :: 시간을 다 소비하고 끝냄
 			//	TL_LastKeyFrame	  :: Key를 다 지나면 끝냄
 	}
+
+	// Definition 로딩과 초기 활성화가 끝난 건물을 월드 시너지 계산 목록에 등록합니다.
+	if (!IsActorBeingDestroyed())
+	{
+		if (USFBuildingSynergySubsystem* Synergy =
+			USFBuildingSynergySubsystem::Get(this))
+		{
+			Synergy->OnSynergyStateChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleBuildingSynergyStateChanged);
+			Synergy->RegisterBuilding(this);
+		}
+	}
 }
 
 void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopHitReaction();
+
+	// 종료되는 건물을 먼저 제외하여 남은 구역과 생산 배율을 즉시 갱신합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->OnSynergyStateChanged.RemoveDynamic(
+			this, &ThisClass::HandleBuildingSynergyStateChanged);
+		Synergy->UnregisterBuilding(this);
+	}
 	
 	if (IsValid(DestructionActor))
 	{
@@ -901,6 +928,17 @@ void ASFBaseBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	UnbindComponentDelegates();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASFBaseBuilding::HandleBuildingSynergyStateChanged()
+{
+	// Subsystem이 계산해 둔 최종 증가율을 재사용하여 UI가 게임플레이 계산을 중복하지 않게 한다.
+	const USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this);
+	if (!IsValid(Synergy) || !IsValid(StatusComponent))	return;
+
+	StatusComponent->SetSynergyBonusPercent(
+		Synergy->GetProductionBonusPercent(this));
 }
 
 void ASFBaseBuilding::OnBuildingDefinitionLoaded()
@@ -1117,7 +1155,13 @@ bool ASFBaseBuilding::PrepareLoadedTier(int32 TierIndex)
 	PendingTierAssets = MoveTemp(NewAssets);
 	PendingTier = TierIndex;
 
-	ProgressComponent->InitProgressWorks(Tier->Construction.RequiredWork, 1.f);
+	// 정적 Definition은 건드리지 않고 스테이지 튜토리얼 중에만
+	// 건설과 티어 업그레이드 시간을 5초로 적용한다.
+	const float RequiredWork =
+		USFTutorialSubsystem::ResolveTutorialRequiredWork(
+			this,
+			Tier->Construction.RequiredWork);
+	ProgressComponent->InitProgressWorks(RequiredWork, 1.f);
 
 	CurrentStageIndex = 0;
 
@@ -1175,10 +1219,25 @@ bool ASFBaseBuilding::FinalizeTierActivation()
 	// 가상 함수 실행 전에 내부 상태 확정
 	bIsTierActivated = true;
 	OnTierActivated();
+	if (IsValid(BuildingDefinition))
+	{
+		if (ASFGameState* GameState = GetWorld()->GetGameState<ASFGameState>())
+		{
+			GameState->RecordCompletedBuilding(GetTeamIndex(),
+				BuildingDefinition->BuildingId, BuildingDefinition->SelectionUIRowName);
+		}
+	}
 
 	OnBuildingTierActivated.Broadcast(CurrentTier);
 	USFTutorialSubsystem::NotifyBuildingTierActivated(this, this, CurrentTier);
 	USFTutorialSubsystem::NotifyBuildingConstructionCompleted(this, this, CurrentTier);
+
+	// 완성 상태가 확정됐으므로 이 건물을 포함해 시너지 구역을 다시 계산합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->NotifyBuildingChanged(this);
+	}
 
 	return true;
 }
@@ -1194,6 +1253,13 @@ void ASFBaseBuilding::DeactivateActiveTier()
 	// 파생 훅에서 재진입해도 중복 비활성화되지 않도록 먼저 변경
 	bIsTierActivated = false;
 	OnTierDeactivated();
+
+	// 파괴·업그레이드로 비활성화된 건물을 원천과 대상 계산에서 즉시 제외합니다.
+	if (USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->NotifyBuildingChanged(this);
+	}
 }
 
 #pragma region Sound

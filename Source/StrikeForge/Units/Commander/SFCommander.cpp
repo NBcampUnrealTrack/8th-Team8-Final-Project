@@ -17,6 +17,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "Logging/SFLog.h"
@@ -138,7 +139,7 @@ void ASFCommander::PossessedBy(AController* NewController)
 
 	if (IsValid(GetController<AUnitAIController>()))
 	{
-		GetController<AUnitAIController>()->OnCompleteMoving.AddUniqueDynamic(
+		GetController<AUnitAIController>()->OnCompleteMoving.AddUObject(
 			this,
 			&ASFCommander::CheckFailMoving
 		);
@@ -297,7 +298,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	}
 }
 
-void ASFCommander::CheckFailMoving(bool IsSuccessed)
+void ASFCommander::CheckFailMoving(const FPathFollowingResult& Result)
 {
 	// ★CHANGED: 건설 명령이 아니면 관심 없음 (조기 반환으로 중첩 제거)
 	if (CommandAction != ECommandAction::BUILD)
@@ -307,11 +308,8 @@ void ASFCommander::CheckFailMoving(bool IsSuccessed)
 
 	// ★ADD: 성공/중단은 실패가 아니다.
 	//   - 도착 성공  → Tick 의 CheckCanBuild() 가 건설을 시작한다
-	//   - 중단(Aborted) → 새 이동 요청이 이어받은 것이므로 건드리면 안 된다
-	AUnitAIController* AI = GetController<AUnitAIController>();
-	const bool bStillMoving = IsValid(AI) && AI->IsMoving();
-
-	if (IsSuccessed || bStillMoving)
+	//   - 중단(Aborted) → 새 요청이 이어받은 것이므로 실패 판정 시 빌딩 에러가 발생하므로 이어 건설한다.
+	if (Result.IsSuccess() || Result.IsInterrupted())
 	{
 		return;
 	}

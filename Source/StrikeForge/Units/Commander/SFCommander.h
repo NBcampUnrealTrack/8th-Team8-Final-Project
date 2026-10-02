@@ -14,6 +14,7 @@ class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
+struct FPathFollowingResult;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -85,8 +86,7 @@ protected:
 
 	void LoadPlayerController();
 
-	UFUNCTION()
-	void CheckFailMoving(bool IsSuccessed);
+	void CheckFailMoving(const FPathFollowingResult& Result);
 
 	void MoveToAction(FVector Dest, ECommandAction Action);
 

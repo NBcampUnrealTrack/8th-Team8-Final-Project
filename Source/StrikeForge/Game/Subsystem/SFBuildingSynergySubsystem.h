@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Building/SFBuildingType.h"
 #include "Datas/Building/Synergy/SFBuildingSynergyTypes.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -110,6 +111,15 @@ public:
 		int32 TeamIndex,
 		const USFBuildingSynergyDefinition* SynergyDefinition,
 		TArray<FBuildingGridInfo>& OutLinkGridInfos) const;
+
+	/**
+	 * 지정한 격자에 그 종류의 건물이 있다고 할 때 받을 생산 증가율(%)을 현재 구역으로 계산합니다.
+	 * 같은 시너지는 최고값, 다른 시너지끼리는 합산합니다. 실제 버프 적용과 배치 미리보기가 같은 함수를 씁니다.
+	 */
+	float CalculateProductionBonusPercentAt(
+		int32 TeamIndex,
+		ESFBuildingType BuildingType,
+		const FBuildingGridInfo& GridInfo) const;
 
 	/** 해당 건물에 적용 중인 배치 시너지 증가율을 반환합니다. 시너지별 최고값을 합산한 값입니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")

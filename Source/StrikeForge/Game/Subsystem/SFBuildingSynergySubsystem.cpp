@@ -374,6 +374,58 @@ void USFBuildingSynergySubsystem::CollectClusterLinkGridInfos(
 	}
 }
 
+// 지정한 격자에 그 종류의 건물이 있다고 할 때 받을 생산 증가율(%)을 현재 구역으로 계산합니다.
+// 같은 시너지는 최고값, 다른 시너지끼리는 합산하며 RecalculateSynergies와 UBuildingPlacement(배치 미리보기)가 함께 씁니다.
+float USFBuildingSynergySubsystem::CalculateProductionBonusPercentAt(
+	int32 TeamIndex,
+	ESFBuildingType BuildingType,
+	const FBuildingGridInfo& GridInfo) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return 0.f;
+	}
+
+	TMap<const USFBuildingSynergyDefinition*, float> HighestBonusBySynergy;
+
+	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
+	{
+		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
+
+		if (Zone.TeamIndex != TeamIndex ||
+			!IsValid(SynergyDefinition) ||
+			!SynergyDefinition->CanAffectBuildingType(BuildingType) ||
+			!Zone.EffectGridInfo.Overlaps(GridInfo))
+		{
+			continue;
+		}
+
+		const FSFBuildingSynergyLevel* ActiveLevel =
+			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
+		if (!ActiveLevel)
+		{
+			continue;
+		}
+
+		// 같은 시너지의 구역끼리는 가장 높은 증가율 하나만 남깁니다.
+		float& HighestBonus = HighestBonusBySynergy.FindOrAdd(SynergyDefinition, 0.f);
+		HighestBonus = FMath::Max(
+			HighestBonus,
+			FMath::Max(0.f, ActiveLevel->ProductionBonusPercent));
+	}
+
+	// 시너지 종류별 최고값을 더합니다(예: 군사 +20% + 사격 +20% = +40%).
+	float TotalBonusPercent = 0.f;
+
+	for (const TPair<const USFBuildingSynergyDefinition*, float>& SynergyBonus :
+		HighestBonusBySynergy)
+	{
+		TotalBonusPercent += SynergyBonus.Value;
+	}
+
+	return TotalBonusPercent;
+}
+
 float USFBuildingSynergySubsystem::GetProductionBonusPercent(
 	const ASFBaseBuilding* Building) const
 {
@@ -673,81 +725,37 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		}
 	}
 
-	// 대상마다 시너지 종류별 최고 증가율(%)을 모읍니다.
-	// 같은 시너지 구역이 여러 개 겹치면 가장 높은 값 하나만, 서로 다른 시너지끼리는 합산합니다.
-	TMap<TWeakObjectPtr<ASFBaseBuilding>,
-		TMap<const USFBuildingSynergyDefinition*, float>> BonusPercentsByTarget;
-
-	// 시너지 부여
-	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
-	{
-		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
-		if (!IsValid(SynergyDefinition))
-		{
-			continue;
-		}
-
-		const FSFBuildingSynergyLevel* ActiveLevel =
-			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
-		if (!ActiveLevel)
-		{
-			continue;
-		}
-
-		const float BonusPercent =
-			FMath::Max(0.f, ActiveLevel->ProductionBonusPercent);
-
-		for (ASFBaseBuilding* Target : ActiveBuildings)
-		{
-			if (Target->GetTeamIndex() != Zone.TeamIndex ||
-				!Target->GetClass()->ImplementsInterface(
-					USFProductionRateModifiable::StaticClass()))
-			{
-				continue;
-			}
-
-			const USFBuildingDefinition* TargetDefinition =
-				Target->GetBuildingDefinition();
-
-			if (!IsValid(TargetDefinition) ||
-				!SynergyDefinition->CanAffectBuildingType(
-					TargetDefinition->BuildingType))
-			{
-				continue;
-			}
-
-			FBuildingGridInfo TargetGridInfo;
-			if (!Target->TryGetRegisteredGridInfo(TargetGridInfo) ||
-				!Zone.EffectGridInfo.Overlaps(TargetGridInfo))
-			{
-				continue;
-			}
-
-			// 같은 시너지의 구역끼리는 가장 높은 증가율 하나만 남깁니다.
-			float& HighestBonus = BonusPercentsByTarget.FindOrAdd(Target)
-				.FindOrAdd(SynergyDefinition, 0.f);
-			HighestBonus = FMath::Max(HighestBonus, BonusPercent);
-		}
-	}
-
-	// 시너지 종류별 최고값을 더해 최종 배율을 만듭니다(예: 군사 +20% + 사격 +20% = ×1.4).
+	// 시너지 부여: 대상 건물마다 방금 만든 구역으로 최종 증가율을 구합니다.
+	// 배치 미리보기도 같은 CalculateProductionBonusPercentAt을 쓰므로 미리보기 값과 실제 버프가 항상 같습니다.
 	TMap<TWeakObjectPtr<ASFBaseBuilding>, float> DesiredMultipliers;
 
-	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>,
-		TMap<const USFBuildingSynergyDefinition*, float>>& TargetBonuses :
-		BonusPercentsByTarget)
+	for (ASFBaseBuilding* Target : ActiveBuildings)
 	{
-		float TotalBonusPercent = 0.f;
-
-		for (const TPair<const USFBuildingSynergyDefinition*, float>& SynergyBonus :
-			TargetBonuses.Value)
+		if (!Target->GetClass()->ImplementsInterface(
+				USFProductionRateModifiable::StaticClass()))
 		{
-			TotalBonusPercent += SynergyBonus.Value;
+			continue;
 		}
 
-		DesiredMultipliers.Add(
-			TargetBonuses.Key,
-			1.f + TotalBonusPercent / 100.f);
+		const USFBuildingDefinition* TargetDefinition =
+			Target->GetBuildingDefinition();
+
+		FBuildingGridInfo TargetGridInfo;
+		if (!IsValid(TargetDefinition) ||
+			!Target->TryGetRegisteredGridInfo(TargetGridInfo))
+		{
+			continue;
+		}
+
+		const float BonusPercent = CalculateProductionBonusPercentAt(
+			Target->GetTeamIndex(),
+			TargetDefinition->BuildingType,
+			TargetGridInfo);
+
+		if (BonusPercent > 0.f)
+		{
+			DesiredMultipliers.Add(Target, 1.f + BonusPercent / 100.f);
+		}
 	}
 
 	for (const TPair<TWeakObjectPtr<ASFBaseBuilding>, float>& Applied :

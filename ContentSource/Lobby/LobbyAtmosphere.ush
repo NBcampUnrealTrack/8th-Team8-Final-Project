@@ -1,0 +1,136 @@
+// Layered sanctuary + independent atlas. Only cylindrical roll samples warp.
+struct AtmosphereNoise
+{
+    float Hash(float2 p) { return frac(sin(dot(p,float2(127.1,311.7)))*43758.5453); }
+    float Noise(float2 p)
+    {
+        float2 i=floor(p), f=frac(p); f=f*f*(3-2*f);
+        return lerp(lerp(Hash(i),Hash(i+float2(1,0)),f.x),lerp(Hash(i+float2(0,1)),Hash(i+1),f.x),f.y);
+    }
+    float Cloud(float2 p) { return Noise(p)*.57+Noise(p*2.03+5.7)*.29+Noise(p*4.07+11.3)*.14; }
+    float Glow(float2 uv,float2 at,float2 scale) { float2 d=(uv-at)*scale; return exp(-dot(d,d)); }
+};
+AtmosphereNoise n;
+float t=Elapsed;
+float2 uv=UV;
+float cloud=n.Cloud(uv*float2(5,4)+float2(t*.12,-t*.035));
+float3 mistColor=lerp(float3(.028,.06,.066),float3(.24,.34,.31),cloud);
+if (Departure>.5)
+{
+    // Match USFMenuAtmosphereWidget::DepartureDuration. Accelerating cloud layers
+    // expand away from a clear central opening as the camera pushes through them.
+    float p=saturate(t/.62);
+    float2 ray=(uv-float2(.50,.46))*float2(1.55,1);
+    float radius=length(ray);
+    float travel=p*p*(3-2*p);
+    float nearCloud=n.Cloud(ray*(7.5/(1+travel*4.5))+float2(3.7,-2.1+p*.30));
+    float farCloud=n.Cloud(ray*(11/(1+travel*2.8))+float2(-4.2,8.3-p*.22));
+    float density=nearCloud*.66+farCloud*.34;
+    // Radial trailing wisps, blended with soft billows rather than hard speed lines.
+    float wake=n.Cloud(ray*(6.8/(1+travel*4.5))+float2(3.7,-2.1+p*.30));
+    density=lerp(density,wake,.28);
+    float hole=lerp(.48,-.16,smoothstep(.10,.82,p));
+    float bank=smoothstep(hole-.12,hole+.17,radius+(density-.5)*.23);
+    float alpha=smoothstep(0,.20,p)*bank*(.62+density*.48);
+    alpha=lerp(saturate(alpha),1,smoothstep(.70,.92,p));
+    float3 rushing=lerp(float3(.065,.13,.14),float3(.38,.49,.45),smoothstep(.22,.80,density));
+    rushing+=float3(.08,.115,.095)*exp(-radius*4)*sin(p*3.14159);
+    // Settle into the lobby's initial mist color to avoid a brightness pop on travel.
+    float arrivalCloud=n.Cloud(uv*float2(5,4));
+    float3 arrivalColor=lerp(float3(.028,.06,.066),float3(.24,.34,.31),arrivalCloud);
+    return float4(lerp(rushing,arrivalColor,smoothstep(.78,1,p)),alpha);
+}
+// Foreground props and table use fixed UVs. Wind only affects the distant canopy.
+float2 backUV=(uv-.5)/1.065+.5;
+float windMask=(1-smoothstep(.20,.29,backUV.y))*smoothstep(.19,.30,backUV.x)*(1-smoothstep(.77,.82,backUV.x));
+backUV.x+=sin(t*.65+uv.y*12)*.0012*windMask;
+backUV.y+=sin(t*.42+uv.x*9)*.0006*windMask;
+float3 color=Texture2DSample(Table,TableSampler,backUV).rgb;
+float forest=1-smoothstep(.28,.39,uv.y);
+float valleyMist=smoothstep(.43,.77,n.Cloud(backUV*float2(6,9)+float2(t*.14,-t*.025)));
+color=lerp(color,float3(.16,.30,.32),valleyMist*forest*.34);
+float water=step(color.r*1.15,color.g)*step(color.r*1.2,color.b)*forest
+    *n.Glow(backUV,float2(.713,.325),float2(32,27));
+color+=water*float3(.025,.05,.065)*pow(.5+.5*sin(backUV.y*370-t*4+sin(backUV.x*90)),5);
+float crystalPulse=.6+.4*sin(t*1.8);
+color+=float3(.005,.11,.19)*n.Glow(backUV,float2(.13,.335),float2(11,7))*crystalPulse;
+float flame=.6+.23*sin(t*5)+.12*sin(t*9.3)+.05*sin(t*17);
+color+=float3(.19,.075,.008)*n.Glow(backUV,float2(.848,.35),float2(21,21))*flame;
+color+=float3(.06,.025,.003)*n.Glow(uv,float2(.79,.55),float2(4,3))*flame;
+// Independent perspective paper surface; no opening-dependent global UV scale.
+float mapY=(uv.y-.245)/.65;
+float mapLeft=lerp(.175,.065,mapY), mapRight=lerp(.855,.94,mapY);
+float mapX=(uv.x-mapLeft)/(mapRight-mapLeft);
+// A short traveling flex and damped landing, then the sheet is perfectly still.
+float landingAge=max(0,t-1.10);
+float landing=sin(landingAge*27)*exp(-landingAge*10)*smoothstep(1.10,1.16,t)*(1-smoothstep(1.35,1.48,t));
+mapY+=landing*.014*pow(saturate(abs(mapX-.5)*2),2);
+float2 mapUV=float2(mapX,mapY);
+float paperVertical=smoothstep(0,.003,mapY)*(1-smoothstep(.997,1,mapY));
+// Left and right scrolls release asymmetrically, revealing stationary geography.
+float l=1-pow(1-saturate((t-.36)/.86),2.2);
+float r=1-pow(1-saturate((t-.42)/.90),2.2);
+float lFront=lerp(.485,0,l), rFront=lerp(.515,1,r);
+lFront+=sin(mapY*8+t*5)*.012*sin(l*3.14159);
+rFront+=sin(mapY*7-t*4+.8)*.014*sin(r*3.14159);
+float leftRadius=.078*pow(1-l,.55)+.0025;
+float rightRadius=.083*pow(1-r,.55)+.0025;
+float leftCenter=lFront+leftRadius, rightCenter=rFront-rightRadius;
+float leftD=(mapX-leftCenter)/leftRadius, rightD=(mapX-rightCenter)/rightRadius;
+float leftCurl=(1-smoothstep(.975,1,abs(leftD)))*(1-smoothstep(.94,1,l));
+float rightCurl=(1-smoothstep(.975,1,abs(rightD)))*(1-smoothstep(.94,1,r));
+float reveal=smoothstep(lFront-.001,lFront+.002,mapX)*(1-smoothstep(rFront-.002,rFront+.001,mapX))*paperVertical;
+float outerShadow=smoothstep(-.018,-.002,mapY)*(1-smoothstep(1.005,1.025,mapY));
+outerShadow*=smoothstep(lFront-.018,lFront,mapX)*(1-smoothstep(rFront+.006,rFront+.028,mapX));
+color*=1-outerShadow*.50;
+float3 atlas=Texture2DSample(Map,MapSampler,saturate(mapUV)).rgb;
+float river=step(atlas.r*1.05,atlas.g)*step(atlas.r*1.02,atlas.b);
+atlas+=river*float3(.006,.026,.035)*pow(.5+.5*sin(mapY*290-t*3.1+sin(mapX*73)),4);
+// Cylindrical normal, foreshortened printed face, warm blank reverse and bright lip.
+float side=leftCurl>rightCurl?-1:1;
+float d=leftCurl>rightCurl?leftD:rightD;
+float radius=leftCurl>rightCurl?leftRadius:rightRadius;
+float center=leftCurl>rightCurl?leftCenter:rightCenter;
+float rollMask=max(leftCurl,rightCurl);
+float angle=asin(clamp(d,-.999,.999));
+float2 rollUV=float2(center+angle*radius,mapY);
+float3 rollPrint=Texture2DSample(Map,MapSampler,saturate(rollUV)).rgb;
+float reverse=smoothstep(-.20,.42,d*side);
+float grain=n.Noise(mapUV*float2(150,100));
+float3 paperBack=float3(.66,.43,.19)+grain*.055;
+float normal=sqrt(saturate(1-d*d));
+float rollLight=.40+.70*normal+.14*d;
+float3 rolled=lerp(rollPrint,paperBack,reverse)*rollLight;
+rolled+=float3(.14,.09,.025)*pow(normal,15);
+atlas=lerp(atlas,rolled,rollMask);
+float lip=exp(-abs(abs(d)-.94)*70)*rollMask;
+atlas+=lip*float3(.10,.065,.02);
+float castShadow=(exp(-abs(mapX-(leftCenter+leftRadius+.012))*100)*(1-l)
+    +exp(-abs(mapX-(rightCenter-rightRadius-.01))*100)*(1-r));
+atlas*=1-saturate(castShadow)*.32*(1-rollMask);
+// A broad raised-paper shadow trails each roll instead of scaling the whole image.
+float raised=(exp(-abs(mapX-(leftCenter+leftRadius+.03))*36)*(1-l)
+    +exp(-abs(mapX-(rightCenter-rightRadius-.03))*36)*(1-r));
+atlas*=1-saturate(raised)*.20*(1-rollMask);
+// Mist and motes are behind the parchment; never distort table/lantern/crystal geometry.
+float bottomMist=smoothstep(.66,1,uv.y);
+float rimMist=(1-smoothstep(.04,.25,min(uv.x,1-uv.x)))+bottomMist*.6;
+float flowing=n.Cloud(uv*float2(5,8)+float2(-t*.15,t*.045));
+color=lerp(color,float3(.10,.24,.25),saturate(rimMist)*smoothstep(.46,.78,flowing)*.13);
+for (int layer=0;layer<2;++layer)
+{
+    float2 dustUV=uv*float2(17+layer*7,11+layer*5)+float2(t*(.12+layer*.04),t*(.20+layer*.055));
+    float2 cell=floor(dustUV), local=frac(dustUV);
+    float seed=n.Hash(cell+layer*51);
+    float2 pos=float2(.25+.5*seed,.25+.5*n.Hash(cell+13));
+    pos.x+=sin(t*1.4+seed*20)*.12;
+    float dist=dot(local-pos,local-pos);
+    float mote=(exp(-dist*700)+exp(-dist*65)*.12)*step(.82,seed);
+    mote*=pow(.5+.5*sin(t*1.7+seed*41),2);
+    color+=mote*lerp(float3(.08,.48,.62),float3(.68,.38,.06),step(.48,seed))*.38;
+}
+color=lerp(color,atlas,reveal);
+float openingLight=exp(-pow((mapX-(t-.40)*1.3)*12,2))*reveal;
+color+=float3(.095,.057,.014)*openingLight*(1-smoothstep(1.2,1.5,t));
+float arrival=saturate((1-smoothstep(.03,.38,t))*(1.25+cloud*.35));
+return float4(lerp(color,mistColor,arrival),1);

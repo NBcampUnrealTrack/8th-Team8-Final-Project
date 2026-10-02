@@ -1,7 +1,6 @@
 #include "SFProductionBuildingPanelWidget.h"
 
 #include "SFProductionUnitEntryWidget.h"
-
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "Buildings/SFRootBase.h"
 #include "Components/VerticalBox.h"
@@ -17,11 +16,25 @@
 #include "ActorComponent/Product/ProductInfo.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
+#include "SFProductionQueueFeedbackWidget.h"
+#include "Components/ButtonSlot.h"
 
 #include "SFProductionUIDataRow.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Kismet/GameplayStatics.h"
+
+UWidget* USFProductionBuildingPanelWidget::FindTutorialProductionButton(FName UnitRowName) const
+{
+    if (!HasProductionBuilding() || !IsVisible() || !UnitEntryBox) return nullptr;
+    for (UWidget* Child : UnitEntryBox->GetAllChildren())
+    {
+        const USFProductionUnitEntryWidget* Entry = Cast<USFProductionUnitEntryWidget>(Child);
+        if (Entry && Entry->GetProductionRowName() == UnitRowName)
+            return Entry->GetTutorialProductionButton();
+    }
+    return nullptr;
+}
 
 void USFProductionBuildingPanelWidget::NativeConstruct()
 {
@@ -61,6 +74,36 @@ void USFProductionBuildingPanelWidget::NativeConstruct()
         &USFProductionBuildingPanelWidget::HandleQueueButton05Clicked
     );
 
+    QueueButtons = {QueueButton01, QueueButton02, QueueButton03, QueueButton04, QueueButton05};
+    for (UButton* Button : QueueButtons)
+    {
+        if (!Button) continue;
+        FButtonStyle Style = Button->GetStyle();
+        Style.Disabled = Style.Normal;
+        Style.Disabled.TintColor = FSlateColor(FLinearColor(.62f,.62f,.62f,1.f));
+        Style.Hovered = Style.Normal;
+        Style.Pressed = Style.Normal;
+        Style.Pressed.TintColor = FSlateColor(FLinearColor(.8f,.72f,.64f,1.f));
+        Button->SetStyle(Style);
+        Button->SetToolTipText(NSLOCTEXT("SFProduction", "CancelHint", "클릭하여 생산 취소 · 비용 반환"));
+    }
+    QueueFeedback.Reset();
+    for (UButton* Button : QueueButtons)
+    {
+        auto* Feedback=CreateWidget<USFProductionQueueFeedbackWidget>(GetOwningPlayer());
+        QueueFeedback.Add(Feedback);
+        if (!Button || !Feedback) continue;
+        Feedback->InitializeContent(Button->GetContent());
+        Button->SetContent(Feedback);
+        FButtonStyle Style=Button->GetStyle();
+        Style.NormalPadding=Style.PressedPadding=FMargin(0);
+        Button->SetStyle(Style);
+        if (auto* ContentSlot=Cast<UButtonSlot>(Feedback->Slot))
+        {
+            ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+            ContentSlot->SetVerticalAlignment(VAlign_Fill);
+        }
+    }
     HideProductionBuilding();
 }
 
@@ -90,6 +133,8 @@ void USFProductionBuildingPanelWidget::ShowProductionBuilding(
         return;
     }
 
+    if (CurrentProductionBuilding.Get() != InProductionBuilding)
+        for (int32 I=0;I<5;++I) { QueueHover[I]=0.f; QueueCancelFlash[I]=0.f; }
     CurrentProductionBuilding =
         InProductionBuilding;
 
@@ -141,6 +186,7 @@ void USFProductionBuildingPanelWidget::HideProductionBuilding()
     UnbindProductionBuilding();
     UnbindProductComponent();
 
+    for (int32 I=0;I<5;++I) { QueueHover[I]=0.f; QueueCancelFlash[I]=0.f; }
     CurrentProductionBuilding.Reset();
     CurrentProductableUnitRowNames.Reset();
 
@@ -201,10 +247,12 @@ bool USFProductionBuildingPanelWidget::RequestProductionOnBuilding(
     FName UnitRowName
 )
 {
-    return TryRequestProduction(
-        InProductionBuilding,
-        UnitRowName
-    );
+    const bool bAccepted = TryRequestProduction(InProductionBuilding, UnitRowName);
+    if (CurrentProductionBuilding.Get() == InProductionBuilding && UnitEntryBox)
+        for (UWidget* Child : UnitEntryBox->GetAllChildren())
+            if (auto* Entry = Cast<USFProductionUnitEntryWidget>(Child))
+                if (Entry->GetProductionRowName() == UnitRowName) Entry->ShowRequestFeedback(bAccepted);
+    return bAccepted;
 }
 
 void USFProductionBuildingPanelWidget::RefreshProductionUnitEntries(
@@ -290,10 +338,7 @@ void USFProductionBuildingPanelWidget::HandleProductionUnitClicked(
     FName UnitRowName
 )
 {
-    TryRequestProduction(
-        CurrentProductionBuilding.Get(),
-        UnitRowName
-    );
+    RequestProductionOnBuilding(CurrentProductionBuilding.Get(), UnitRowName);
 }
 
 bool USFProductionBuildingPanelWidget::TryRequestProduction(
@@ -371,18 +416,14 @@ bool USFProductionBuildingPanelWidget::TryRequestProduction(
         }
     }
 
+    UProductComponent* Component = ProductableData.ProductComponent.Get();
+    const int32 PreviousCount = IsValid(Component) ? Component->GetProductLine().Num() : 0;
+    IProductable::Execute_ProductUnits(ProductionBuilding, UnitRowName);
+    // Full queue, population limit, construction and tutorial restrictions can reject a request.
+    const bool bAccepted = IsValid(Component) && Component->GetProductLine().Num() > PreviousCount;
+    if (!bAccepted) return false;
     if (IsValid(UnitProductionClickSound))
-    {
-        UGameplayStatics::PlaySound2D(
-            this,
-            UnitProductionClickSound
-        );
-    }
-
-    IProductable::Execute_ProductUnits(
-        ProductionBuilding,
-        UnitRowName
-    );
+        UGameplayStatics::PlaySound2D(this, UnitProductionClickSound);
 
     return true;
 }
@@ -492,6 +533,15 @@ void USFProductionBuildingPanelWidget::RefreshProductionQueue(
     const TArray<FProductInfo>& ProductLine
 )
 {
+    OccupiedQueueCount = FMath::Min(5, ProductLine.Num());
+    for (int32 I=0;I<QueueButtons.Num();++I)
+        if (QueueButtons[I])
+        {
+            QueueButtons[I]->SetIsEnabled(I < OccupiedQueueCount);
+            QueueButtons[I]->SetToolTipText(I < OccupiedQueueCount
+                ? NSLOCTEXT("SFProduction", "CancelHint", "클릭하여 생산 취소 · 비용 반환") : FText::GetEmpty());
+        }
+
     UGameInstance* GameInstance =
         GetGameInstance();
 
@@ -565,7 +615,7 @@ void USFProductionBuildingPanelWidget::RefreshProductionQueue(
         );
 
         QueueSlot->SetVisibility(
-            ESlateVisibility::Visible
+            ESlateVisibility::HitTestInvisible
         );
     }
 }
@@ -583,6 +633,7 @@ void USFProductionBuildingPanelWidget::RefreshProductionProgress(
     float ProductRatio
 )
 {
+    PresentedProgress = FMath::Clamp(ProductRatio, 0.f, 1.f);
     if (!IsValid(ProductionProgressBar))
     {
         return;
@@ -637,6 +688,7 @@ void USFProductionBuildingPanelWidget::CancelProductionAtQueueIndex(
     }
 
     CurrentProductComponent->RemoveProductInLine(QueueIndex);
+    if (QueueIndex < 5) QueueCancelFlash[QueueIndex] = .32f;
 }
 
 void USFProductionBuildingPanelWidget::HandleSpawnableUnitsChanged(
@@ -717,4 +769,32 @@ IsPointerOverProductionPanel() const
     }
 
     return false;
+}
+
+void USFProductionBuildingPanelWidget::NativeDestruct()
+{
+    UnbindProductionBuilding();
+    UnbindProductComponent();
+    for (int32 I=0; I<QueueFeedback.Num(); ++I)
+        if (QueueButtons.IsValidIndex(I) && QueueButtons[I] && QueueFeedback[I])
+            QueueButtons[I]->SetContent(QueueFeedback[I]->ReleaseContent());
+    QueueFeedback.Reset();
+    Super::NativeDestruct();
+}
+
+void USFProductionBuildingPanelWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+    Super::NativeTick(Geometry, DeltaTime);
+    for (int32 I=0; I<QueueButtons.Num(); ++I)
+    {
+        bool bHover = I < OccupiedQueueCount && QueueButtons[I] && QueueButtons[I]->IsHovered();
+#if WITH_DEV_AUTOMATION_TESTS
+        bHover |= I < OccupiedQueueCount && PreviewQueueHover == I;
+#endif
+        QueueHover[I] = FMath::FInterpTo(QueueHover[I], bHover ? 1.f : 0.f, DeltaTime, 18.f);
+        QueueCancelFlash[I] = FMath::Max(0.f, QueueCancelFlash[I] - DeltaTime);
+        if (QueueFeedback.IsValidIndex(I) && QueueFeedback[I])
+            QueueFeedback[I]->SetPresentation(QueueHover[I],QueueCancelFlash[I]/.32f,
+                I<OccupiedQueueCount,I==0,PresentedProgress);
+    }
 }

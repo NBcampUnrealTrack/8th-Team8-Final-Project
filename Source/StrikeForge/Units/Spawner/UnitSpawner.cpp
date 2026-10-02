@@ -213,6 +213,30 @@ AActor* AUnitSpawner::GetOwnerBuilding() const
 	return OwnerBuilding.Get();
 }
 
+bool AUnitSpawner::AssignOwnerBuilding(AActor* InBuilding)
+{
+	if (!bStopWhenOwnerBuildingDestroyed || bOwnerBuildingDestroyed || !IsValid(InBuilding))
+	{
+		return false;
+	}
+
+	UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InBuilding);
+	if (!IsValid(Target) || Target->GetTeamIndex() != TeamIndex ||
+		!IsBuildingTargetType(Target->GetTargetType()))
+	{
+		return false;
+	}
+
+	if (OwnerBuilding.Get() == InBuilding && OwnerBuildingTarget.Get() == Target)
+	{
+		return true;
+	}
+
+	UnbindOwnerBuilding();
+	BindOwnerBuilding(Target);
+	return true;
+}
+
 bool AUnitSpawner::IsShutDownByOwnerBuilding() const
 {
 	return bOwnerBuildingDestroyed;
@@ -352,6 +376,10 @@ void AUnitSpawner::BindOwnerBuilding(UCombatTargetComponent* InTarget)
 	OwnerBuilding = InTarget->GetOwner();
 
 	InTarget->OnTargetDestroyed.AddUniqueDynamic(this, &AUnitSpawner::HandleOwnerBuildingDestroyed);
+	if (AActor* Building = OwnerBuilding.Get())
+	{
+		Building->OnDestroyed.AddUniqueDynamic(this, &AUnitSpawner::HandleOwnerActorDestroyed);
+	}
 
 	SF_LOG(Log, "[UnitSpawner] %s : 소유 건물 연결 | Building: %s | Team: %d",
 		*GetName(), *GetNameSafe(OwnerBuilding.Get()), TeamIndex);
@@ -365,12 +393,26 @@ void AUnitSpawner::BindOwnerBuilding(UCombatTargetComponent* InTarget)
 
 void AUnitSpawner::UnbindOwnerBuilding()
 {
+	if (AActor* Building = OwnerBuilding.Get())
+	{
+		Building->OnDestroyed.RemoveDynamic(this, &AUnitSpawner::HandleOwnerActorDestroyed);
+	}
+
 	if (UCombatTargetComponent* Target = OwnerBuildingTarget.Get())
 	{
 		Target->OnTargetDestroyed.RemoveDynamic(this, &AUnitSpawner::HandleOwnerBuildingDestroyed);
 	}
 
+	OwnerBuilding.Reset();
 	OwnerBuildingTarget.Reset();
+}
+
+void AUnitSpawner::HandleOwnerActorDestroyed(AActor* InDestroyedActor)
+{
+	if (InDestroyedActor == OwnerBuilding.Get())
+	{
+		HandleOwnerBuildingDestroyed(OwnerBuildingTarget.Get());
+	}
 }
 
 void AUnitSpawner::HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget)
@@ -401,6 +443,7 @@ void AUnitSpawner::HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget
 
 void AUnitSpawner::StartSpawnTimer(float InFirstDelay)
 {
+	if (bWaveControlled) return;
 	if (GetWorldTimerManager().IsTimerActive(SpawnTimerHandle))
 	{
 		return;
@@ -504,7 +547,8 @@ void AUnitSpawner::HandleSpawnCycle()
 
 bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 {
-	const FVector Origin = SpawnPoint ? SpawnPoint->GetComponentLocation() : GetActorLocation();
+	const FTransform SpawnTransform = SpawnPoint ? SpawnPoint->GetComponentTransform() : GetActorTransform();
+	const FVector Origin = SpawnTransform.TransformPosition(SpawnOffset);
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 
@@ -538,6 +582,11 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 
 AUnitBase* AUnitSpawner::SpawnOne()
 {
+	if (bWaveControlled && !bExecutingWaveSpawn) return nullptr;
+    // BP의 직접 호출도 타이머와 같은 게이트를 통과해야 한다.
+    if (!bActivated || !bSpawningEnabled || bOwnerBuildingDestroyed) return nullptr;
+    if (bStopWhenOwnerBuildingDestroyed && bRequireOwnerBuilding && !OwnerBuildingTarget.IsValid()) return nullptr;
+
 	if (!UnitClass)
 	{
 		SF_LOG(Warning, "[UnitSpawner] %s : UnitClass 가 비어 있습니다.", *GetName());
@@ -545,7 +594,7 @@ AUnitBase* AUnitSpawner::SpawnOne()
 	}
 
 	FVector SpawnLocation;
-	FindSpawnLocation(SpawnLocation);
+	if (!FindSpawnLocation(SpawnLocation) && bWaveControlled) return nullptr;
 
 	// 캡슐 절반 높이만큼 띄워야 바닥에 파묻히지 않는다
 	SpawnLocation.Z += 90.f;
@@ -582,5 +631,25 @@ AUnitBase* AUnitSpawner::SpawnOne()
 
 	OnUnitSpawned(Unit);
 
+	return Unit;
+}
+
+void AUnitSpawner::SetWaveControlled(bool bInControlled)
+{
+	bWaveControlled = bInControlled;
+	if (bWaveControlled) StopSpawnTimer();
+}
+
+AUnitBase* AUnitSpawner::SpawnWaveUnit(FName InRowName, TSubclassOf<AUnitBase> InClass)
+{
+	if (!bWaveControlled || !InClass) return nullptr;
+	TGuardValue<bool> WaveGuard(bExecutingWaveSpawn, true);
+	const FName PreviousRow = UnitRowName;
+	const TSubclassOf<AUnitBase> PreviousClass = UnitClass;
+	UnitRowName = InRowName;
+	UnitClass = InClass;
+	AUnitBase* Unit = SpawnOne();
+	UnitRowName = PreviousRow;
+	UnitClass = PreviousClass;
 	return Unit;
 }

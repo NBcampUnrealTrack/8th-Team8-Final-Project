@@ -13,22 +13,27 @@ void UMiningComponent::InitMineProperties(float InBaseWorkAmount, int32 InExtrac
 	ExtractAmount         = FMath::Max(1, InExtractAmount);
 }
 
-void UMiningComponent::StartMining()
+bool UMiningComponent::TryStartMining()
 {
-	const AResourceBase* Resource = LinkedResource.Get();
-	if (!IsValid(Resource) || Resource->IsDepleted()) return;
-	
-	FTimerManager& TimerManager =
-		GetWorld()->GetTimerManager();
-	// 두번활성화 금지
+	UWorld* World = GetWorld();
+
+	if (!World || !PrepareFrontTarget())
+	{
+		return false;
+	}
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+
+	// 이미 채굴 중이라면 정상적인 채굴 상태입니다.
 	if (TimerManager.IsTimerActive(MiningTimerHandle))
 	{
-		return;
+		return true;
 	}
-	
-	// 타이머 시작시간 저장
-	LastAdvanceTime = GetWorld()->GetTimeSeconds();
-	OnExtractProgressRatioChanged.Broadcast(MineResourceType, Tracker.GetRatio());
+
+	LastAdvanceTime = World->GetTimeSeconds();
+
+	OnExtractProgressRatioChanged.Broadcast(
+		MineResourceType, Tracker.GetRatio());
 
 	TimerManager.SetTimer(
 		MiningTimerHandle,
@@ -36,77 +41,240 @@ void UMiningComponent::StartMining()
 		&ThisClass::TickMining,
 		TickInterval,
 		true);
+
+	return true;
 }
 
 void UMiningComponent::TickMining()
 {
-	AResourceBase* Resource = LinkedResource.Get();
-	if (!IsValid(Resource))
+	if (!PrepareFrontTarget())
 	{
-		StopMining();// 자원이 사라지면 타이머도 멈춘다
-		OnResourceDepleted.Broadcast(); 
+		FinishMiningTargets();
 		return;
 	}
-	
-	const float Now = GetWorld()->GetTimeSeconds();
-	const float DeltaTime = FMath::Max(0.f, Now - LastAdvanceTime);
+
+	const FSFMiningCellTarget* CurrentTarget =
+		GetCurrentMiningTarget();
+
+	AResourceBase* Resource = GetCurrentResource();
+	if (!CurrentTarget || !Resource)
+	{
+		FinishMiningTargets();
+		return;
+	}
+
+	const int32 ResourceCellIndex =
+		CurrentTarget->ResourceCellIndex;
+
+	const float Now =
+		GetWorld()->GetTimeSeconds();
+
+	const float DeltaTime =
+		FMath::Max(0.f,	Now - LastAdvanceTime);
+
 	LastAdvanceTime = Now;
-	
+
 	if (Tracker.Advance(DeltaTime))
 	{
-		Tracker.CurrentWork -= Tracker.RequiredWork;   // ★ current 초기화
+		Tracker.CurrentWork -= Tracker.RequiredWork;
 
-		const int32 Extracted = Resource->Extract(ExtractAmount);
+		const int32 Extracted =
+			Resource->ExtractFromCell(
+				ResourceCellIndex, ExtractAmount);
 
 		if (Extracted > 0)
 		{
-			OnResourceExtracted.Broadcast(MineResourceType, Extracted);
+			OnResourceExtracted.Broadcast(
+				MineResourceType, Extracted);
+
+			OnRemainingDepositChanged.Broadcast(
+				MineResourceType, GetRemainingDeposit());
 		}
-		// 고갈은 자원이 broadcast
+
+		const bool bCurrentCellStillUsable =
+			IsValid(Resource) &&
+			Resource->GetCellDeposit(ResourceCellIndex) > 0;
+
+		if (!bCurrentCellStillUsable)
+		{
+			/*
+			 * 정렬된 순서를 유지해야 하므로
+			 * RemoveAtSwap(0)은 사용하지 않습니다.
+			 */
+			MiningTargets.RemoveAt(0);
+			Tracker.CurrentWork = 0.f;
+
+			if (!PrepareFrontTarget())
+			{
+				FinishMiningTargets();
+				return;
+			}
+		}
 	}
-	
+
 	if (GetWorld()->GetTimerManager().IsTimerActive(MiningTimerHandle))
 	{
-		OnExtractProgressRatioChanged.Broadcast(MineResourceType, Tracker.GetRatio());
+		OnExtractProgressRatioChanged.Broadcast(
+			MineResourceType, Tracker.GetRatio());
 	}
-	//SF_LOG(Warning, "%s:: Ratio: %f", *UEnum::GetValueAsString(MineResourceType), Tracker.GetRatio());
+}
+
+void UMiningComponent::SortMiningTargetsByDeposit()
+{
+	MiningTargets.Sort(
+		[](const FSFMiningCellTarget& Left,
+		   const FSFMiningCellTarget& Right)
+		{
+			const AResourceBase* LeftResource =
+				Left.ResourceActor.Get();
+
+			const AResourceBase* RightResource =
+				Right.ResourceActor.Get();
+
+			const bool bLeftValid =
+				IsValid(LeftResource);
+
+			const bool bRightValid =
+				IsValid(RightResource);
+
+			if (bLeftValid != bRightValid)
+			{
+				return bLeftValid;
+			}
+
+			if (!bLeftValid)
+			{
+				return false;
+			}
+
+			return
+				LeftResource->GetCellDeposit(
+					Left.ResourceCellIndex)
+				<
+				RightResource->GetCellDeposit(
+					Right.ResourceCellIndex);
+		});
+}
+
+bool UMiningComponent::PrepareFrontTarget()
+{
+	bool bRemovedTarget = false;
+
+	while (!MiningTargets.IsEmpty())
+	{
+		const FSFMiningCellTarget& Target =
+			MiningTargets[0];
+
+		AResourceBase* Resource =
+			Target.ResourceActor.Get();
+
+		const bool bUsable =
+			IsValid(Resource) &&
+			Resource->GetResourceType() ==
+				MineResourceType &&
+			Resource->GetCellDeposit(
+				Target.ResourceCellIndex) > 0;
+
+		if (bUsable)
+		{
+			if (bRemovedTarget)
+			{
+				Tracker.CurrentWork = 0.f;
+			}
+
+			Tracker.RequiredWork =
+				FMath::Max(
+					KINDA_SMALL_NUMBER,
+					Resource
+						->GetResourceRequiredWork());
+
+			return true;
+		}
+
+		/*
+		 * 앞쪽 대상이 고갈됐거나 자원 액터가 사라졌다면
+		 * 배열에서 제거합니다.
+		 */
+		MiningTargets.RemoveAt(0);
+		bRemovedTarget = true;
+	}
+
+	if (bRemovedTarget)
+	{
+		Tracker.CurrentWork = 0.f;
+	}
+
+	return false;
 }
 
 void UMiningComponent::StopMining()
 {
-	GetWorld()->GetTimerManager().ClearTimer(MiningTimerHandle);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MiningTimerHandle);
+	}
 }
 
-bool UMiningComponent::TryLinkResource(AResourceBase* InResource)
+bool UMiningComponent::SetMiningTargets(
+	const TArray<FSFMiningCellTarget>& InTargets)
 {
-	if (!IsValid(InResource)) return false;
-	if (InResource->GetResourceType() != MineResourceType) return false;
-	if (InResource->IsDepleted()) return false;          // ★ 고갈된 광맥은 거부
-	// 같은 자원이 이미 연결돼 있으면 구독을 다시 만들지 않는다.
-	if (LinkedResource.Get() == InResource) return true;
+	ClearMiningTargets();
 
-	UnlinkResource();                                     // 기존 구독 해제
+	for (const FSFMiningCellTarget& Target : InTargets)
+	{
+		AResourceBase* Resource = Target.ResourceActor.Get();
 
-	LinkedResource = InResource;
-	Tracker.RequiredWork = InResource->GetResourceRequiredWork();
-	InResource->OnDepleted.AddUniqueDynamic(this, &ThisClass::HandleResourceDepleted);
-	return true;
-}
+		if (!IsValid(Resource))	continue;
+		
+		if (Resource->GetResourceType() != MineResourceType)
+		{
+			continue;
+		}
 
-bool UMiningComponent::HasUsableLinkedResource() const
-{
-	const AResourceBase* Resource = LinkedResource.Get();
+		if (Resource->GetCellDeposit(Target.ResourceCellIndex) <= 0)
+		{
+			continue;
+		}
 
-	return IsValid(Resource) &&
-		!Resource->IsDepleted();
+		const bool bAlreadyAdded =
+			MiningTargets.ContainsByPredicate(
+				[&Target](
+					const FSFMiningCellTarget& ExistingTarget)
+				{
+					return
+						ExistingTarget.ResourceActor ==
+							Target.ResourceActor &&
+						ExistingTarget.ResourceCellIndex ==
+							Target.ResourceCellIndex;
+				});
+
+		if (!bAlreadyAdded)
+		{
+			MiningTargets.Add(Target);
+		}
+	}
+	
+	// 유효성과 중복 검사를 통과한 대상만 정렬합니다.
+	SortMiningTargetsByDeposit();
+
+	return PrepareFrontTarget();
 }
 
 int32 UMiningComponent::GetRemainingDeposit() const
 {
-	AResourceBase* GetLinkedResource = LinkedResource.Get();
-	if (!IsValid(GetLinkedResource)) return 0;
-	
-	return GetLinkedResource->GetResourceDeposit();
+	int32 TotalRemainingDeposit = 0;
+
+	for (const FSFMiningCellTarget& Target : MiningTargets)
+	{
+		const AResourceBase* Resource =	Target.ResourceActor.Get();
+
+		if (!IsValid(Resource)) continue;
+
+		TotalRemainingDeposit +=
+			Resource->GetCellDeposit(Target.ResourceCellIndex);
+	}
+
+	return TotalRemainingDeposit;
 }
 
 float UMiningComponent::GetExtractProgressRatio() const
@@ -114,44 +282,132 @@ float UMiningComponent::GetExtractProgressRatio() const
 	return Tracker.GetRatio();
 }
 
-bool UMiningComponent::IsLinkedResource(const AResourceBase* InResource) const
-{
-	return LinkedResource.Get() == InResource;
-}
-
-void UMiningComponent::UnlinkResource()
-{
-	if (AResourceBase* Old = LinkedResource.Get())
-	{
-		Old->OnDepleted.RemoveDynamic(this, &ThisClass::HandleResourceDepleted);
-	}
-	LinkedResource = nullptr;
-}
-void UMiningComponent::HandleResourceDepleted(AResourceBase* Resource)
+void UMiningComponent::ClearMiningTargets()
 {
 	StopMining();
-	OnResourceDepleted.Broadcast();      // 건물 → 수입률 회수
+
+	MiningTargets.Reset();
+	Tracker.CurrentWork = 0.f;
+}
+
+void UMiningComponent::SetWorkRateModifier(FName ModifierId, float InMultiplier)
+{
+	// InMultiplier가 0아닌지 검사하고 ModifierId가 None이 아닌지 검사함
+	if (!Tracker.WouldChangeWorkRateModifier(ModifierId, InMultiplier))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.SetWorkRateModifier(ModifierId, InMultiplier);
+	
+	SF_LOG(Display, "[MiningComponent::SetWorkRateModifier] 광산의기본작업배율증가!: Causer: %s, Amount: %.1f",
+		*ModifierId.ToString(), InMultiplier);
+}
+
+void UMiningComponent::RemoveWorkRateModifier(FName ModifierId)
+{
+	if (!Tracker.HasWorkRateModifier(ModifierId))
+	{
+		return;
+	}
+
+	// 배율 변경 전까지 흐른 시간은 이전 배율로 먼저 반영한다.
+	if (UWorld* World = GetWorld();
+		World && World->GetTimerManager().IsTimerActive(MiningTimerHandle))
+	{
+		TickMining();
+	}
+
+	Tracker.RemoveWorkRateModifier(ModifierId);
+}
+
+const FSFMiningCellTarget*
+UMiningComponent::GetCurrentMiningTarget() const
+{
+	if (MiningTargets.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	return &MiningTargets[0];
+}
+
+AResourceBase*
+UMiningComponent::GetCurrentResource() const
+{
+	const FSFMiningCellTarget* Target =
+		GetCurrentMiningTarget();
+
+	if (!Target)
+	{
+		return nullptr;
+	}
+
+	AResourceBase* Resource =
+		Target->ResourceActor.Get();
+
+	if (!IsValid(Resource))
+	{
+		return nullptr;
+	}
+
+	if (Resource->GetResourceType() != MineResourceType)
+	{
+		return nullptr;
+	}
+
+	if (Resource->GetCellDeposit(
+		Target->ResourceCellIndex) <= 0)
+	{
+		return nullptr;
+	}
+
+	return Resource;
+}
+
+void UMiningComponent::FinishMiningTargets()
+{
+	StopMining();
+
+	MiningTargets.Reset();
+	Tracker.CurrentWork = 0.f;
+
+	OnExtractProgressRatioChanged.Broadcast(
+		MineResourceType,0.f);
+
+	OnResourceDepleted.Broadcast();
 }
 
 float UMiningComponent::GetIncomeRatePerSeconds() const
 {
-	const AResourceBase* Resource = LinkedResource.Get();
-	if (!IsValid(Resource) || Resource->IsDepleted()) return 0.f;
+	const AResourceBase* Resource = GetCurrentResource();
+	if (!IsValid(Resource)) return 0.f;
 
-	const float RequiredWork  = Resource->GetResourceRequiredWork();
-	const float WorkPerSecond = Tracker.BaseWorkAmount * Tracker.WorkRateMultiplier;
+	const float RequiredWork =
+		Resource->GetResourceRequiredWork();
 
-	if (RequiredWork <= KINDA_SMALL_NUMBER) return 0.f;   // 0 나눗셈 방어
+	const float WorkPerSecond =
+		Tracker.BaseWorkAmount * Tracker.WorkRateMultiplier;
 
-	// 1회 채굴 시간 = RequiredWork / WorkPerSecond
-	// 수입률       = ExtractAmount / 1회 채굴 시간
-	return ExtractAmount * WorkPerSecond / RequiredWork;
+	if (RequiredWork <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+
+	return ExtractAmount *
+		WorkPerSecond /	RequiredWork;
 }
 
 void UMiningComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopMining();
-	UnlinkResource();
+	ClearMiningTargets();
 	Super::EndPlay(EndPlayReason);
 }
 

@@ -40,6 +40,8 @@ bool ASFGameState::InitializeStage(FName StageRowName,
 
 	CurrentStageRowName = StageRowName;
 	CurrentStageBuildingRules =	InBuildingRules;
+	bBuildingRestrictionsReleasedAfterTutorial = false;
+	CompletedBuildingUnlocksByTeam.Reset();
 
 	SF_LOG(Log, "[SFGameState] Stage initialized : %s | BuildingRules: %d",
 		*CurrentStageRowName.ToString(), CurrentStageBuildingRules.Num()
@@ -497,6 +499,11 @@ bool ASFGameState::IsBuildingAllowedInCurrentStage(
 		return false;
 	}
 
+	if (bBuildingRestrictionsReleasedAfterTutorial)
+	{
+		return true;
+	}
+
 	for (const FSFStageBuildingRule& Rule
 		: CurrentStageBuildingRules)
 	{
@@ -508,6 +515,17 @@ bool ASFGameState::IsBuildingAllowedInCurrentStage(
 
 	// 규칙에 없는 건물은 기본적으로 허용
 	return true;
+}
+
+void ASFGameState::ReleaseBuildingRestrictionsAfterTutorial()
+{
+	if (bBuildingRestrictionsReleasedAfterTutorial)
+	{
+		return;
+	}
+
+	bBuildingRestrictionsReleasedAfterTutorial = true;
+	OnStageBuildingPermissionsChanged.Broadcast();
 }
 
 bool ASFGameState::AreBuildingRequirementsMet(
@@ -560,6 +578,25 @@ bool ASFGameState::AreBuildingRequirementsMet(
 	return true;
 }
 
+void ASFGameState::RecordCompletedBuilding(
+	int32 TeamIndex, FName BuildingId, FName SelectionUIRowName) const
+{
+	if (TeamIndex < 0)
+	{
+		return;
+	}
+
+	TSet<FName>& Unlocks = CompletedBuildingUnlocksByTeam.FindOrAdd(TeamIndex);
+	if (!BuildingId.IsNone())
+	{
+		Unlocks.Add(BuildingId);
+	}
+	if (!SelectionUIRowName.IsNone())
+	{
+		Unlocks.Add(SelectionUIRowName);
+	}
+}
+
 int32 ASFGameState::GetMaxAllowedTierInCurrentStage(
 	FName InBuildingId
 ) const
@@ -590,6 +627,14 @@ bool ASFGameState::HasCompletedBuilding(
 	if (InBuildingId.IsNone())
 	{
 		return false;
+	}
+
+	if (const TSet<FName>* Unlocks = CompletedBuildingUnlocksByTeam.Find(TeamIndex))
+	{
+		if (Unlocks->Contains(InBuildingId))
+		{
+			return true;
+		}
 	}
 
 	UWorld* World =
@@ -646,6 +691,8 @@ bool ASFGameState::HasCompletedBuilding(
 			bMatchesBuildingId
 			)
 		{
+			RecordCompletedBuilding(TeamIndex, Definition->BuildingId,
+				Definition->SelectionUIRowName);
 			return true;
 		}
 	}

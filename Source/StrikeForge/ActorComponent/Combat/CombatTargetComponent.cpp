@@ -2,6 +2,7 @@
 
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "Interfaces/Units/Damagable.h"
 #include "GameFramework/Pawn.h"
 #include "Units/Unit/UnitBase.h"
@@ -18,6 +19,7 @@ UCombatTargetComponent::UCombatTargetComponent()
 void UCombatTargetComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->RegisterSource(this);
 
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner)) return;
@@ -73,6 +75,7 @@ void UCombatTargetComponent::BeginPlay()
 
 void UCombatTargetComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->UnregisterSource(this);
 	// 체력 통지 구독을 되돌린다.
 	//
 	// 컴포넌트만 제거되고 소유 액터와 체력 컴포넌트가 살아남는 경우
@@ -137,6 +140,7 @@ void UCombatTargetComponent::SetTeamIndex(int32 InTeamIndex)
 	if (TeamIndex == InTeamIndex) return;
 
 	TeamIndex = InTeamIndex;
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this)) Fog->OnSourceChanged.Broadcast(this);
 
 	// 이미 등록된 뒤에 팀이 바뀌면 버킷을 옮겨야 한다
 	if (bRegistered)
@@ -161,6 +165,12 @@ bool UCombatTargetComponent::IsAlive() const
 	if (!IsValid(Owner) || Owner->IsActorBeingDestroyed()) return false;
 
 	return IsValid(HealthComponent) && !HealthComponent->GetIsDead();
+}
+
+bool UCombatTargetComponent::IsWithinSight(const AActor* Target) const
+{
+	return IsAlive() && IsValid(Target) && GetSightRadius() > 0.f &&
+		FVector::DistSquared2D(GetOwner()->GetActorLocation(), Target->GetActorLocation()) <= FMath::Square(GetSightRadius());
 }
 
 void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InInstigator)

@@ -3,9 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Resource/SFResourceTypes.h"
+#include "Datas/Building/MiningData/SFMiningCellTarget.h"
 #include "ActorComponent/Progress/SFProgressTracker.h"
 #include "Components/ActorComponent.h"
-#include "Datas/Resource/SFResourceTypes.h"
 #include "MiningComponent.generated.h"
 
 class AResourceBase;
@@ -41,39 +42,49 @@ public:
 	// BaseWorkRate
 	void InitMineProperties(float InBaseWorkAmount, int32 InExtractAmount);
 	
-	void StartMining();
+	bool TryStartMining();
 
 	// void PauseMining();
 	// void ResumeMining();
 	void StopMining();
 	
+	// 광산이 실제로 채굴할 셀 목록을 등록합니다.
+	bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets);
 	
-	bool TryLinkResource(AResourceBase* InResource);
-	bool HasUsableLinkedResource() const; // 등록을 마치고 자원검사( 자원이 사라졋는지, 매말랐는지 )
-	// ui?
+	void ClearMiningTargets();
+	/** 출처별 채굴 작업 배율을 추가하거나 같은 식별자의 기존 값을 교체합니다. */
+	void SetWorkRateModifier(FName ModifierId, float InMultiplier);
+	/** 지정한 출처의 배율을 제거하고 남은 배율들로 최종 작업속도를 다시 계산합니다. */
+	void RemoveWorkRateModifier(FName ModifierId);
+	/** 현재 자원 요구 작업량과 작업 배율을 기준으로 초당 예상 채굴량을 계산합니다. */
 	float GetIncomeRatePerSeconds() const;
-	// setter
 	FORCEINLINE void SetMineResourceType(EResourceType InResourceType) { MineResourceType = InResourceType; }
-	// getter
 	FORCEINLINE EResourceType GetMineResourceType() const { return MineResourceType; }
 	FORCEINLINE int32 GetExtractAmount() const { return ExtractAmount; }
-	// 현재 남은 자원량 get
 	int32 GetRemainingDeposit() const;
-	/** 현재 채굴 진행률. get */
 	float GetExtractProgressRatio() const;
-	
-	
-	// 자원이 연결되있는지 확인
-	bool IsLinkedResource(const AResourceBase* InResource) const;
-	void UnlinkResource();
-	UFUNCTION()
-	void HandleResourceDepleted(AResourceBase* Resource);
-
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void TickMining();
 
+	// 실제 채굴 정책에 따라 대상 셀을 정렬합니다.
+	void SortMiningTargetsByDeposit();
+	
+	// 사용할 수 없는 앞쪽 대상을 제거하고
+	// MiningTargets[0]을 현재 대상으로 준비합니다.
+	bool PrepareFrontTarget();
+
+	// 현재 선택된 셀 정보입니다.
+	const FSFMiningCellTarget* GetCurrentMiningTarget() const;
+
+	// 현재 선택된 셀의 자원 액터입니다.
+	// 셀이 고갈되었거나 액터가 사라졌으면 nullptr을 반환합니다.
+	AResourceBase* GetCurrentResource() const;
+
+	// 모든 채굴 대상이 고갈됐을 때 호출합니다.
+	void FinishMiningTargets();
+	
 private:
 	/** ProgressComponent와 동일한 계산기를 재사용한다 */
 	UPROPERTY(BlueprintReadOnly, Category = "Mining", meta = (AllowPrivateAccess = true))
@@ -87,7 +98,7 @@ private:
 	UPROPERTY(VisibleInstanceOnly, Category = "Mining|Info")
 	EResourceType MineResourceType = EResourceType::Mineral;
 	UPROPERTY(VisibleInstanceOnly, Category = "Mining|Info")
-	int32 ExtractAmount = 5;; // 작업이 완료되면 채굴할 양
+	int32 ExtractAmount = 5; // 작업이 완료되면 채굴할 양
 	// UPROPERTY(VisibleInstanceOnly, Category = "Mining|Info")
 	// float ExtractBaseWorkAmount = 10.f;   // 티어가 정하는 초당 작업량
 	// UPROPERTY(VisibleInstanceOnly, Category = "Mining|Info")
@@ -96,5 +107,7 @@ private:
 	// float ExtractInterval;
 	// 작업총량, 수행당 작업증가량, 속도
 	FTimerHandle MiningTimerHandle;
-	TWeakObjectPtr<AResourceBase> LinkedResource;
+	
+	// 채굴 가능한 셀을 매장량이 적은 순서대로 보관합니다.
+	TArray<FSFMiningCellTarget> MiningTargets;
 };

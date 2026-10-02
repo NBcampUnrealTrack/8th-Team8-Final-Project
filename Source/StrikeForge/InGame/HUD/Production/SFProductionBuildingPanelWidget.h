@@ -8,6 +8,7 @@
 class AActor;
 class UVerticalBox;
 class USFProductionUnitEntryWidget;
+class USFProductionQueueFeedbackWidget;
 class UImage;
 class UProductComponent;
 class UProgressBar;
@@ -131,9 +132,16 @@ public:
         OnProductionResourceWarningRequested;
 
     bool IsPointerOverProductionPanel() const;
+    UWidget* FindTutorialProductionButton(FName UnitRowName) const;
 
 protected:
     virtual void NativeConstruct() override;
+    virtual void NativeDestruct() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float DeltaTime) override;
+public:
+#if WITH_DEV_AUTOMATION_TESTS
+    int32 PreviewQueueHover = INDEX_NONE;
+#endif
 
 private:
     void RefreshProductionUnitEntries(
@@ -227,6 +235,12 @@ private:
     TObjectPtr<UProductComponent> CurrentProductComponent = nullptr;
 
     TArray<TObjectPtr<UImage>> QueueSlots;
+    TArray<TObjectPtr<UButton>> QueueButtons;
+    UPROPERTY(Transient) TArray<TObjectPtr<USFProductionQueueFeedbackWidget>> QueueFeedback;
+    float QueueHover[5] = {};
+    float QueueCancelFlash[5] = {};
+    int32 OccupiedQueueCount = 0;
+    float PresentedProgress = 0.f;
 
     UPROPERTY(Transient)
     TArray<FName> CurrentProductableUnitRowNames;

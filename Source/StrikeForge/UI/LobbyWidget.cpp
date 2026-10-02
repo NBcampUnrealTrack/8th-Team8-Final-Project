@@ -1,4 +1,4 @@
-﻿#include "LobbyWidget.h"
+#include "LobbyWidget.h"
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
@@ -6,50 +6,115 @@
 #include "Engine/Texture2D.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Styling/SlateTypes.h"
+#include "SFMenuAtmosphereWidget.h"
+#include "SFLobbyStagePresentation.h"
+#include "SFStoryWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 
 void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (IsValid(Story_Btn) && !bStoryBound)
+	{
+		// Replace the Blueprint's old story placeholder with the modal chronicle.
+		OriginalStoryClick = Story_Btn->OnClicked;
+		Story_Btn->OnClicked.Clear();
+		Story_Btn->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStoryButtonClicked);
+		bStoryBound = true;
+	}
 
 	if (IsValid(Back_Btn))
 	{
-		Back_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnBackButtonClicked);
+		Back_Btn->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnBackButtonClicked);
 	}
 	if (IsValid(Setting_Btn))
 	{
-		Setting_Btn->OnClicked.AddDynamic(this, &ULobbyWidget::OnSettingButtonClicked);
+		Setting_Btn->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnSettingButtonClicked);
 	}
 	if (IsValid(Stage1))
 	{
-		Stage1->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage1Clicked);
+		Stage1->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage1Clicked);
 	}
 	if (IsValid(Stage2))
 	{
-		Stage2->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage2Clicked);
+		Stage2->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage2Clicked);
 	}
 	if (IsValid(Stage3))
 	{
-		Stage3->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage3Clicked);
+		Stage3->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage3Clicked);
 	}
 	if (IsValid(Stage4))
 	{
-		Stage4->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage4Clicked);
+		Stage4->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage4Clicked);
 	}
 	if (IsValid(Stage5))
 	{
-		Stage5->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage5Clicked);
+		Stage5->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage5Clicked);
 	}
 	if (IsValid(Stage6))
 	{
-		Stage6->OnClicked.AddDynamic(this, &ULobbyWidget::OnStage6Clicked);
+		Stage6->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
 
 	// 로비 진입 시 스테이지 버튼들 잠금/클리어 상태 갱신
 	RefreshStageButtons();
+
+	// Keep the existing Blueprint controls and navigation; add presentation siblings.
+	OriginalBackdrop = WidgetTree ? WidgetTree->FindWidget(TEXT("BackGround")) : nullptr;
+	UCanvasPanel* Canvas = OriginalBackdrop ? Cast<UCanvasPanel>(OriginalBackdrop->GetParent()) : nullptr;
+	UCanvasPanelSlot* OriginalSlot = OriginalBackdrop ? Cast<UCanvasPanelSlot>(OriginalBackdrop->Slot) : nullptr;
+	if (Canvas && OriginalSlot && !AnimatedBackdrop)
+	{
+		AnimatedBackdrop = CreateWidget<USFMenuAtmosphereWidget>(GetOwningPlayer());
+		if (AnimatedBackdrop && AnimatedBackdrop->IsReady())
+		{
+			UCanvasPanelSlot* BackdropSlot = Canvas->AddChildToCanvas(AnimatedBackdrop);
+			BackdropSlot->SetLayout(OriginalSlot->GetLayout());
+			BackdropSlot->SetZOrder(OriginalSlot->GetZOrder() - 1);
+			OriginalBackdropVisibility = OriginalBackdrop->GetVisibility();
+			OriginalBackdrop->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else AnimatedBackdrop = nullptr;
+	}
+	if (Canvas && AnimatedBackdrop && !StagePresentation)
+	{
+		StagePresentation = CreateWidget<USFLobbyStagePresentation>(GetOwningPlayer());
+		UCanvasPanelSlot* PresentationSlot = Canvas->AddChildToCanvas(StagePresentation);
+		PresentationSlot->SetAnchors(FAnchors(0.f,0.f,1.f,1.f));
+		PresentationSlot->SetOffsets(FMargin(0.f));
+		PresentationSlot->SetZOrder(-1);
+		StagePresentation->InitializeControls(this,AnimatedBackdrop,StageRowNames);
+	}
+}
+
+void ULobbyWidget::NativeDestruct()
+{
+	if (StoryWidget)
+	{
+		StoryWidget->OnClosed.Clear();
+		StoryWidget->RemoveFromParent();
+		StoryWidget = nullptr;
+	}
+	if (Story_Btn && bStoryBound) Story_Btn->OnClicked = OriginalStoryClick;
+	bStoryBound = false;
+	if (StagePresentation)
+	{
+		StagePresentation->RestoreControls();
+		StagePresentation->RemoveFromParent();
+	}
+	StagePresentation = nullptr;
+	if (AnimatedBackdrop) AnimatedBackdrop->RemoveFromParent();
+	AnimatedBackdrop = nullptr;
+	if (OriginalBackdrop) OriginalBackdrop->SetVisibility(OriginalBackdropVisibility);
+	OriginalBackdrop = nullptr;
+	Super::NativeDestruct();
 }
 
 void ULobbyWidget::OnBackButtonClicked()
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	USFGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<USFGameInstance>() : nullptr;
 	if (!IsValid(GameInstance))
 	{
@@ -61,10 +126,29 @@ void ULobbyWidget::OnBackButtonClicked()
 
 void ULobbyWidget::OnSettingButtonClicked()
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (IsValid(SettingWidget))
 	{
 		SettingWidget->OpenSetting();
 	}
+}
+
+void ULobbyWidget::OnStoryButtonClicked()
+{
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
+	if (SettingWidget && SettingWidget->IsVisible()) return;
+	if (!StoryWidget)
+	{
+		StoryWidget = CreateWidget<USFStoryWidget>(GetOwningPlayer());
+		if (!StoryWidget) return;
+		StoryWidget->OnClosed.AddWeakLambda(this, [this]()
+		{
+			if (StoryWidget) StoryWidget->RemoveFromParent();
+			if (Story_Btn) Story_Btn->SetFocus();
+		});
+	}
+	StoryWidget->AddToViewport(500);
+	StoryWidget->OpenStory();
 }
 
 void ULobbyWidget::OnStage1Clicked() { OpenStageLevel(0); }
@@ -76,6 +160,7 @@ void ULobbyWidget::OnStage6Clicked() { OpenStageLevel(5); }
 
 void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (!StageRowNames.IsValidIndex(StageIndex))
 	{
 		return;

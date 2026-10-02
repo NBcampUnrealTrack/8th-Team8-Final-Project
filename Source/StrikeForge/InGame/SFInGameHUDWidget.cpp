@@ -1,6 +1,8 @@
 ﻿#include "SFInGameHUDWidget.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
@@ -29,6 +31,7 @@
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 
 #include "CommonActivatableWidget.h"
@@ -61,6 +64,9 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "TimerManager.h"
+#include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Components/CanvasPanel.h"
+#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 
 #include "Logging/SFLog.h"
 
@@ -290,6 +296,21 @@ void USFInGameHUDWidget::NativeConstruct()
             );
         }
     }
+    
+    // BuildingSynergy
+    if (USFBuildingSynergySubsystem* SynergySubsystem =
+    USFBuildingSynergySubsystem::Get(this))
+    {
+        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+
+        SynergySubsystem->OnSynergyStateChanged.AddUniqueDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+
+        RefreshSynergyBadges();
+    }
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -406,7 +427,19 @@ void USFInGameHUDWidget::NativeDestruct()
 
     UnbindSelectedCommandPathDelegates();
     HideQueuedMovePathIndicators();
+#pragma region BuildingSynergy
+    // HUD가 제거된 뒤 시너지 재계산 이벤트가 이 객체를 호출하지 않도록 연결을 해제합니다.
+    if (USFBuildingSynergySubsystem* SynergySubsystem =
+        USFBuildingSynergySubsystem::Get(this))
+    {
+        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
+            this,
+            &USFInGameHUDWidget::HandleSynergyStateChanged);
+    }
 
+    // HUD가 소유하던 배지 참조를 정리합니다.
+    SynergyBadgeWidgets.Reset();
+#pragma endregion 
     Super::NativeDestruct();
 }
 
@@ -419,6 +452,11 @@ void USFInGameHUDWidget::NativeTick(
         MyGeometry,
         InDeltaTime
     );
+
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (IsValid(SelectedActor) && !Fog->IsActorVisibleToLocalPlayer(SelectedActor)) ClearSelection();
+    }
 
     if (bQueuedMovePathRefreshPending)
     {
@@ -433,7 +471,9 @@ void USFInGameHUDWidget::NativeTick(
     UpdateEnemyHoverIndicator();
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
-
+#pragma region BuildingSynergy
+    UpdateSynergyBadgeScreenPositions();
+#pragma endregion 
     if (!bIsSelectionDragging ||
         !IsValid(SelectionDragBox))
     {
@@ -869,6 +909,8 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
 
         const bool bCanTierUp =
             bHasValidSelection &&
+            Cast<ASFBaseBuilding>(SelectedActor.Get()) &&
+            Cast<ASFBaseBuilding>(SelectedActor.Get())->HasNextUpgradeTier() &&
             (
                 SelectedInfo.SelectableType ==
                 ESFSelectableType::MainBuilding ||
@@ -1232,7 +1274,155 @@ bool USFInGameHUDWidget::RequestBuildingBySlot(
         SlotIndex
     );
 }
+#pragma region BuildingSynergy
+void USFInGameHUDWidget::HandleSynergyStateChanged()
+{
+    RefreshSynergyBadges();
+}
 
+void USFInGameHUDWidget::RefreshSynergyBadges()
+{
+    if (!IsValid(RootCanvas) || !SynergyBadgeWidgetClass)
+    {
+        return;
+    }
+
+    const ASFInGamePlayerController* PlayerController =
+        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+
+    USFBuildingSynergySubsystem* SynergySubsystem =
+        USFBuildingSynergySubsystem::Get(this);
+
+    if (!IsValid(PlayerController) || !IsValid(SynergySubsystem))
+    {
+        return;
+    }
+
+    const TArray<FSFBuildingSynergyClusterProgressInfo> ProgressInfos =
+        SynergySubsystem->GetClusterProgressInfosForTeam(
+            PlayerController->GetMyTeamIndex());
+
+    while (SynergyBadgeWidgets.Num() < ProgressInfos.Num())
+    {
+        USFBuildingSynergyBadgeWidget* NewBadge =
+            CreateWidget<USFBuildingSynergyBadgeWidget>(
+                GetOwningPlayer(),
+                SynergyBadgeWidgetClass);
+
+        if (!IsValid(NewBadge))
+        {
+            break;
+        }
+
+        UCanvasPanelSlot* CanvasSlot =
+            RootCanvas->AddChildToCanvas(NewBadge);
+
+        CanvasSlot->SetAutoSize(true);
+        CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+
+        SynergyBadgeWidgets.Add(NewBadge);
+    }
+
+    for (int32 Index = 0; Index < SynergyBadgeWidgets.Num(); ++Index)
+    {
+        USFBuildingSynergyBadgeWidget* Badge =
+            SynergyBadgeWidgets[Index];
+
+        if (!IsValid(Badge))
+        {
+            continue;
+        }
+
+        if (ProgressInfos.IsValidIndex(Index))
+        {
+            Badge->SetProgressInfo(ProgressInfos[Index]);
+        }
+        else
+        {
+            Badge->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+}
+
+void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()
+{
+    APlayerController* PlayerController = GetOwningPlayer();
+
+    if (!IsValid(PlayerController) || !IsValid(RootCanvas))
+    {
+        return;
+    }
+
+    // 투영된 좌표와 같은 UI 좌표계를 사용하기 위해 실제 Canvas 크기를 사용합니다.
+    const FVector2D CanvasSize =
+        RootCanvas->GetCachedGeometry().GetLocalSize();
+
+    if (CanvasSize.X <= 0.f || CanvasSize.Y <= 0.f)
+    {
+        return;
+    }
+
+    const float SafeScreenMargin =
+        FMath::Max(0.f, SynergyBadgeScreenMargin);
+
+    for (USFBuildingSynergyBadgeWidget* Badge : SynergyBadgeWidgets)
+    {
+        // Collapsed는 현재 클러스터와 연결되지 않은 풀링용 뱃지입니다.
+        if (!IsValid(Badge) ||
+            Badge->GetVisibility() == ESlateVisibility::Collapsed)
+        {
+            continue;
+        }
+
+        FVector2D ScreenPosition;
+
+        const bool bProjected =
+            UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+                PlayerController,
+                Badge->GetBadgeWorldLocation(),
+                ScreenPosition,
+                true);
+
+        UCanvasPanelSlot* CanvasSlot =
+            Cast<UCanvasPanelSlot>(Badge->Slot);
+
+        if (!bProjected || !IsValid(CanvasSlot))
+        {
+            // Hidden은 다음 Tick에도 다시 화면 투영을 검사할 수 있습니다.
+            Badge->SetVisibility(ESlateVisibility::Hidden);
+            continue;
+        }
+
+        const FVector2D BadgeSize = Badge->GetDesiredSize();
+        const FVector2D BadgeAlignment = CanvasSlot->GetAlignment();
+
+        // CanvasSlot의 Alignment를 반영해 뱃지의 실제 좌상단과 우하단을 계산합니다.
+        const FVector2D BadgeTopLeft =
+            ScreenPosition - BadgeSize * BadgeAlignment;
+
+        const FVector2D BadgeBottomRight =
+            BadgeTopLeft + BadgeSize;
+
+        const bool bIsFullyInsideScreen =
+            BadgeTopLeft.X >= SafeScreenMargin &&
+            BadgeTopLeft.Y >= SafeScreenMargin &&
+            BadgeBottomRight.X <=
+                CanvasSize.X - SafeScreenMargin &&
+            BadgeBottomRight.Y <=
+                CanvasSize.Y - SafeScreenMargin;
+
+        if (!bIsFullyInsideScreen)
+        {
+            Badge->SetVisibility(ESlateVisibility::Hidden);
+            continue;
+        }
+
+        CanvasSlot->SetPosition(ScreenPosition);
+        Badge->SetVisibility(
+            ESlateVisibility::SelfHitTestInvisible);
+    }
+}
+#pragma endregion 
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (
@@ -1303,6 +1493,36 @@ void USFInGameHUDWidget::OpenBuildingMode()
     RefreshBuildModeOpenButtonVisibility();
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
+
+    static const FGameplayTag BuildModeOpenTag =
+        FGameplayTag::RequestGameplayTag(TEXT("Tutorial.BuildMode.Open"), false);
+    if (BuildModeOpenTag.IsValid())
+    {
+        USFTutorialSubsystem::NotifyObjective(this, BuildModeOpenTag, false);
+    }
+}
+
+UWidget* USFInGameHUDWidget::GetTutorialBuildModeButton() const
+{
+    return BuildModeOpenButton.Get();
+}
+
+UWidget* USFInGameHUDWidget::FindTutorialProductionButton(FName UnitRowName) const
+{
+    return IsValid(ProductionBuildingPanel)
+        ? ProductionBuildingPanel->FindTutorialProductionButton(UnitRowName) : nullptr;
+}
+
+UWidget* USFInGameHUDWidget::FindTutorialBuildCatalogEntry(FName BuildingRowName) const
+{
+    if (!IsValid(ActiveBuildingModeWidget) || !ActiveBuildingModeWidget->IsActivated())
+    {
+        return nullptr;
+    }
+
+    USFBuildCatalogPanelWidget* Panel = Cast<USFBuildCatalogPanelWidget>(
+        ActiveBuildingModeWidget->GetWidgetFromName(TEXT("BuildCatalogPanel")));
+    return IsValid(Panel) ? Panel->FindTutorialEntryWidget(BuildingRowName) : nullptr;
 }
 
 void USFInGameHUDWidget::CloseBuildingMode()
@@ -1382,10 +1602,35 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
     );
 }
 
+#if WITH_EDITOR
+void USFInGameHUDWidget::DismissActiveStageIntroForDebug()
+{
+    if (IsValid(ActiveStageIntroWidget))
+    {
+        ActiveStageIntroWidget->DeactivateWidget();
+    }
+}
+#endif
+
 void USFInGameHUDWidget::ShowResultWidget(
     bool bIsWin
 )
 {
+    // Stage03Clear처럼 현재 스테이지 이름 뒤에 Clear를 붙인 행이 있으면
+    // 승리 화면보다 먼저 재생한다. 패배는 지연하지 않는다.
+    if (bIsWin && bPendingVictoryResultAfterEpilogue)
+    {
+        // 결과 신호가 중복으로 들어와도 후일담 위에 승리 UI를 덮지 않는다.
+        return;
+    }
+
+    if (bIsWin &&
+        !bVictoryEpilogueCompleted &&
+        TryStartVictoryEpilogue())
+    {
+        return;
+    }
+
     if (!IsValid(ResultWidget))
     {
         if (!ResultWidgetClass)
@@ -1428,6 +1673,10 @@ void USFInGameHUDWidget::ShowResultWidget(
 
 void USFInGameHUDWidget::SelectActor(AActor* Actor)
 {
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+    {
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return;
+    }
     if (!IsValid(Actor))
     {
         return;
@@ -1720,7 +1969,9 @@ void USFInGameHUDWidget::HandleTierUpgradeRequested()
         return;
     }
 
-    if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
+    if (!SelectedBuilding->HasNextUpgradeTier() ||
+        !IsOwnedByLocalPlayer(SelectedBuilding) ||
+        !USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, SelectedBuilding))
     {
         SF_LOG(Log, "[SFInGameHUDWidget] Tier upgrade blocked by the current tutorial objective.");
         return;
@@ -1844,6 +2095,13 @@ void USFInGameHUDWidget::BindSelectedUnitStatsDelegate(
 {
     UnbindSelectedUnitStatsDelegate();
 
+    if (IsValid(Actor))
+    {
+        SelectedBuffComponent = Actor->FindComponentByClass<USFBuffComponent>();
+        if (SelectedBuffComponent.IsValid())
+            SelectedBuffComponent->OnBuffStatsChanged.AddUniqueDynamic(this, &ThisClass::HandleSelectedBuffStatsChanged);
+    }
+
     AUnitBase* Unit =
         Cast<AUnitBase>(Actor);
 
@@ -1874,6 +2132,9 @@ void USFInGameHUDWidget::BindSelectedUnitStatsDelegate(
 
 void USFInGameHUDWidget::UnbindSelectedUnitStatsDelegate()
 {
+    if (SelectedBuffComponent.IsValid())
+        SelectedBuffComponent->OnBuffStatsChanged.RemoveDynamic(this, &ThisClass::HandleSelectedBuffStatsChanged);
+    SelectedBuffComponent.Reset();
     AUnitBase* Unit =
         SelectedStatsUnit.Get();
 
@@ -1886,6 +2147,16 @@ void USFInGameHUDWidget::UnbindSelectedUnitStatsDelegate()
     }
 
     SelectedStatsUnit.Reset();
+}
+
+void USFInGameHUDWidget::HandleSelectedBuffStatsChanged()
+{
+    AActor* Actor = SelectedActor.Get();
+    if (!IsValid(Actor) || !SelectedBuffComponent.IsValid() ||
+        SelectedBuffComponent->GetOwner() != Actor || !Actor->Implements<USFSelectable>()) return;
+    SelectedInfo = ISFSelectable::Execute_GetSelectableInfo(Actor);
+    ApplySelectionUIData(Actor, SelectedInfo);
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::HandleSelectedUnitStatsChanged(
@@ -1999,6 +2270,10 @@ void USFInGameHUDWidget::ShowSelectionIndicator(AActor* Actor)
     {
         return;
     }
+
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if ((Target && !Target->IsAlive()) || (Fog && !Fog->IsActorVisibleToLocalPlayer(Actor))) return;
 
     const bool bIsEnemyTarget =
         IsValidEnemyHoverTarget(
@@ -2201,36 +2476,17 @@ bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
     AActor* Actor
 ) const
 {
-    AUnitBase* Unit =
-        Cast<AUnitBase>(Actor);
-
-    if (!IsValid(Unit))
+    if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
     {
-        return false;
+        if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
     }
-
-    if (IsOwnedByLocalPlayer(Unit))
-    {
-        return false;
-    }
-
-    const UCombatTargetComponent* CombatTarget =
-        Unit->FindComponentByClass<
-        UCombatTargetComponent
-        >();
-
-    if (!IsValid(CombatTarget))
-    {
-        return false;
-    }
-
-    if (!CombatTarget->IsAlive())
-    {
-        return false;
-    }
-
-    return CombatTarget->GetTeamIndex() !=
-        Targetable::PlayerTeam;
+    if (!IsValid(Actor)) return false;
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
+    const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+    if (!Target || !Target->IsAlive() || !Combat) return false;
+    const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(Actor);
+    return (!Building || Building->ProvidesVision()) &&
+        USFCombatSubsystem::IsHostileTeam(Combat->GetLocalPlayerTeam(), Target->GetTeamIndex());
 }
 
 void USFInGameHUDWidget::ShowEnemyHoverIndicator(
@@ -2251,35 +2507,14 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(
         return;
     }
 
-    FVector BoundsOrigin;
-    FVector BoundsExtent;
-
-    Actor->GetActorBounds(
-        true,
-        BoundsOrigin,
-        BoundsExtent
-    );
-
-    const float UnitBaseRadius =
-        FMath::Max(
-            BoundsExtent.X,
-            BoundsExtent.Y
-        );
-
-    const float RingRadius =
-        FMath::Clamp(
-            UnitBaseRadius * 0.85f,
-            40.f,
-            180.f
-        );
-
-    const FVector IndicatorLocation(
-        BoundsOrigin.X,
-        BoundsOrigin.Y,
-        BoundsOrigin.Z -
-        BoundsExtent.Z +
-        8.f
-    );
+    FVector BoundsOrigin, BoundsExtent;
+    const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
+    Actor->GetActorBounds(!bIsBuilding || Actor->IsA<ASFProductionBuilding>(), BoundsOrigin, BoundsExtent);
+    const float RingRadius = bIsBuilding
+        ? FMath::Clamp(FVector2D(BoundsExtent.X, BoundsExtent.Y).Size() * 1.05f, 100.f, 1500.f)
+        : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
+    const FVector Center = bIsBuilding ? Actor->GetActorLocation() : BoundsOrigin;
+    const FVector IndicatorLocation(Center.X, Center.Y, BoundsOrigin.Z - BoundsExtent.Z + 8.f);
 
     UDecalComponent* Indicator =
         NewObject<UDecalComponent>(Actor);
@@ -2444,10 +2679,25 @@ void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
     AActor* Target
 )
 {
-    if (!IsValid(Target) ||
-        HoveredEnemyActor.Get() != Target ||
-        !IsValid(EnemyHoverIndicator))
+    if (!IsValid(Target)) return;
+    const UCombatTargetComponent* CombatTarget = USFCombatSubsystem::FindTargetComponent(Target);
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if (!CombatTarget || !CombatTarget->IsAlive() || (Fog && !Fog->IsActorVisibleToLocalPlayer(Target))) return;
+
+    // Command acknowledgement is independent of ordinary enemy hover and team.
+    // Repeated commands restart the existing two-pulse animation on the new target.
+    bEnemyHoverFeedbackActive = false;
+    HideEnemyHoverIndicator();
+    if (SelectionIndicatorComponents.Contains(Target))
     {
+        HoverSuppressedSelectionActor = Target;
+        bHoverSuppressedSelectionIndicator = true;
+        HideSelectionIndicator(Target);
+    }
+    ShowEnemyHoverIndicator(Target);
+    if (!IsValid(EnemyHoverIndicator))
+    {
+        HideEnemyHoverIndicator();
         return;
     }
 
@@ -2471,9 +2721,14 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     float InDeltaTime
 )
 {
-    if (!bEnemyHoverFeedbackActive ||
-        !IsValid(EnemyHoverIndicator))
+    if (!bEnemyHoverFeedbackActive) return;
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(HoveredEnemyActor.Get());
+    const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+    if (!IsValid(EnemyHoverIndicator) || !Target || !Target->IsAlive() ||
+        (Fog && !Fog->IsActorVisibleToLocalPlayer(HoveredEnemyActor.Get())))
     {
+        bEnemyHoverFeedbackActive = false;
+        HideEnemyHoverIndicator();
         return;
     }
 
@@ -2665,9 +2920,11 @@ void USFInGameHUDWidget::PerformDragSelection(
     APlayerController* PlayerController =
         GetOwningPlayer();
 
-    UWorld* World = GetWorld();
+    UWorld* World =
+        GetWorld();
 
-    if (!IsValid(PlayerController) || !IsValid(World))
+    if (!IsValid(PlayerController) ||
+        !IsValid(World))
     {
         return;
     }
@@ -2702,9 +2959,15 @@ void USFInGameHUDWidget::PerformDragSelection(
     TArray<AActor*> FoundActors;
     TArray<AActor*> EnemyActors;
 
-    for (TActorIterator<AActor> Iterator(World); Iterator; ++Iterator)
+    const USFFogOfWarSubsystem* Fog =
+        USFFogOfWarSubsystem::Get(this);
+
+    for (TActorIterator<AActor> Iterator(World);
+        Iterator;
+        ++Iterator)
     {
-        AActor* Actor = *Iterator;
+        AActor* Actor =
+            *Iterator;
 
         if (!IsValid(Actor))
         {
@@ -2721,12 +2984,59 @@ void USFInGameHUDWidget::PerformDragSelection(
         const bool bIsOwnedByLocalPlayer =
             IsOwnedByLocalPlayer(Actor);
 
+        // 아군은 항상 선택 가능하게 두고,
+        // 적 유닛만 현재 시야 안에 있을 때 선택 가능하게 한다.
+        if (!bIsOwnedByLocalPlayer &&
+            Fog &&
+            !Fog->IsActorVisibleToLocalPlayer(Actor))
+        {
+            continue;
+        }
+
         FVector BoundsOrigin;
         FVector BoundsExtent;
-        Actor->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+
+        /*
+         * 캐릭터 계열은 CharacterMesh가 아니라
+         * CapsuleComponent 기준으로 선택 범위를 계산한다.
+         */
+        if (const ACharacter* Character =
+            Cast<ACharacter>(Actor))
+        {
+            if (const UCapsuleComponent* Capsule =
+                Character->GetCapsuleComponent())
+            {
+                BoundsOrigin =
+                    Capsule->GetComponentLocation();
+
+                BoundsExtent = FVector(
+                    Capsule->GetScaledCapsuleRadius(),
+                    Capsule->GetScaledCapsuleRadius(),
+                    Capsule->GetScaledCapsuleHalfHeight()
+                );
+            }
+            else
+            {
+                Actor->GetActorBounds(
+                    true,
+                    BoundsOrigin,
+                    BoundsExtent
+                );
+            }
+        }
+        else
+        {
+            Actor->GetActorBounds(
+                true,
+                BoundsOrigin,
+                BoundsExtent
+            );
+        }
 
         const FSFSelectableInfo SelectableInfo =
-            ISFSelectable::Execute_GetSelectableInfo(Actor);
+            ISFSelectable::Execute_GetSelectableInfo(
+                Actor
+            );
 
         FVector2D ActorScreenPosition;
 
@@ -2743,59 +3053,96 @@ void USFInGameHUDWidget::PerformDragSelection(
         }
 
         const bool bUsesBoundsOverlap =
-            SelectableInfo.SelectableType == ESFSelectableType::Commander ||
-            SelectableInfo.SelectableType == ESFSelectableType::Unit;
+            SelectableInfo.SelectableType ==
+            ESFSelectableType::Commander ||
+            SelectableInfo.SelectableType ==
+            ESFSelectableType::Unit;
 
+        /*
+         * 일반 액터는 중심점이 선택 영역 안에 있는지 확인한다.
+         */
         if (!bUsesBoundsOverlap)
         {
-            if (!SelectionRectangle.IsInsideOrOn(ActorScreenPosition))
+            if (!SelectionRectangle.IsInsideOrOn(
+                ActorScreenPosition
+            ))
             {
                 continue;
             }
         }
+        /*
+         * 유닛과 지휘관은 Capsule Bounds의
+         * 화면상 범위가 선택 영역과 겹치는지 확인한다.
+         */
         else
         {
-            FVector2D ScreenBoundsMin = ActorScreenPosition;
-            FVector2D ScreenBoundsMax = ActorScreenPosition;
-            bool bHasProjectedCorner = false;
+            FVector2D ScreenBoundsMin =
+                ActorScreenPosition;
 
-            for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
+            FVector2D ScreenBoundsMax =
+                ActorScreenPosition;
+
+            bool bHasProjectedCorner =
+                false;
+
+            for (int32 CornerIndex = 0;
+                CornerIndex < 8;
+                ++CornerIndex)
             {
-                const FVector CornerLocation = BoundsOrigin + FVector(
-                    (CornerIndex & 1) != 0 ? BoundsExtent.X : -BoundsExtent.X,
-                    (CornerIndex & 2) != 0 ? BoundsExtent.Y : -BoundsExtent.Y,
-                    (CornerIndex & 4) != 0 ? BoundsExtent.Z : -BoundsExtent.Z
-                );
+                const FVector CornerLocation =
+                    BoundsOrigin +
+                    FVector(
+                        (CornerIndex & 1) != 0
+                        ? BoundsExtent.X
+                        : -BoundsExtent.X,
+
+                        (CornerIndex & 2) != 0
+                        ? BoundsExtent.Y
+                        : -BoundsExtent.Y,
+
+                        (CornerIndex & 4) != 0
+                        ? BoundsExtent.Z
+                        : -BoundsExtent.Z
+                    );
 
                 FVector2D CornerScreenPosition;
 
-                if (!PlayerController->ProjectWorldLocationToScreen(
-                    CornerLocation,
-                    CornerScreenPosition,
-                    true
-                ))
+                if (!PlayerController->
+                    ProjectWorldLocationToScreen(
+                        CornerLocation,
+                        CornerScreenPosition,
+                        true
+                    ))
                 {
                     continue;
                 }
 
-                ScreenBoundsMin.X = FMath::Min(
-                    ScreenBoundsMin.X,
-                    CornerScreenPosition.X
-                );
-                ScreenBoundsMin.Y = FMath::Min(
-                    ScreenBoundsMin.Y,
-                    CornerScreenPosition.Y
-                );
-                ScreenBoundsMax.X = FMath::Max(
-                    ScreenBoundsMax.X,
-                    CornerScreenPosition.X
-                );
-                ScreenBoundsMax.Y = FMath::Max(
-                    ScreenBoundsMax.Y,
-                    CornerScreenPosition.Y
-                );
+                ScreenBoundsMin.X =
+                    FMath::Min(
+                        ScreenBoundsMin.X,
+                        CornerScreenPosition.X
+                    );
 
-                bHasProjectedCorner = true;
+                ScreenBoundsMin.Y =
+                    FMath::Min(
+                        ScreenBoundsMin.Y,
+                        CornerScreenPosition.Y
+                    );
+
+                ScreenBoundsMax.X =
+                    FMath::Max(
+                        ScreenBoundsMax.X,
+                        CornerScreenPosition.X
+                    );
+
+                ScreenBoundsMax.Y =
+                    FMath::Max(
+                        ScreenBoundsMax.Y,
+                        CornerScreenPosition.Y
+                    );
+
+                bHasProjectedCorner =
+                    true;
             }
 
             if (!bHasProjectedCorner)
@@ -2825,8 +3172,14 @@ void USFInGameHUDWidget::PerformDragSelection(
         }
     }
 
+    /*
+     * 선택 우선순위가 높은 액터가 먼저 오도록 정렬한다.
+     */
     FoundActors.Sort(
-        [this](const AActor& Left, const AActor& Right)
+        [this](
+            const AActor& Left,
+            const AActor& Right
+            )
         {
             const int32 LeftPriority =
                 GetSelectionPriority(
@@ -2843,15 +3196,23 @@ void USFInGameHUDWidget::PerformDragSelection(
                 return LeftPriority < RightPriority;
             }
 
-            return Left.GetName() < Right.GetName();
+            return Left.GetName() <
+                Right.GetName();
         }
     );
 
+    /*
+     * 한 번에 선택할 수 있는 최대 유닛 수를 제한한다.
+     */
     if (FoundActors.Num() > 30)
     {
         FoundActors.SetNum(30);
     }
 
+    /*
+     * Shift를 누른 추가 선택이라면
+     * 기존 아군 선택 목록과 새 선택 목록을 합친다.
+     */
     if (bAddToExistingSelection)
     {
         TArray<AActor*> CombinedActors;
@@ -2859,7 +3220,8 @@ void USFInGameHUDWidget::PerformDragSelection(
         for (const TObjectPtr<AActor>& ExistingActor :
             SelectedActors)
         {
-            AActor* Actor = ExistingActor.Get();
+            AActor* Actor =
+                ExistingActor.Get();
 
             if (IsValid(Actor) &&
                 IsOwnedByLocalPlayer(Actor))
@@ -2881,30 +3243,51 @@ void USFInGameHUDWidget::PerformDragSelection(
             CombinedActors.SetNum(30);
         }
 
-        FoundActors = MoveTemp(CombinedActors);
+        FoundActors =
+            MoveTemp(CombinedActors);
     }
 
+    /*
+     * 아군이 선택됐다면 아군 다중 선택을 적용한다.
+     */
     if (!FoundActors.IsEmpty())
     {
-        ApplyMultipleSelection(FoundActors);
+        ApplyMultipleSelection(
+            FoundActors
+        );
+
         return;
     }
 
+    /*
+     * Shift 추가 선택 중 빈 공간을 드래그한 경우에는
+     * 기존 선택을 유지한다.
+     */
     if (bAddToExistingSelection)
     {
         return;
     }
 
+    /*
+     * 아군이 없고 적만 드래그했다면
+     * 가장 먼저 정렬된 적 하나만 선택한다.
+     */
     if (!EnemyActors.IsEmpty())
     {
         EnemyActors.Sort(
-            [](const AActor& Left, const AActor& Right)
+            [](
+                const AActor& Left,
+                const AActor& Right
+                )
             {
-                return Left.GetName() < Right.GetName();
+                return Left.GetName() <
+                    Right.GetName();
             }
         );
 
-        SelectActor(EnemyActors[0]);
+        SelectActor(
+            EnemyActors[0]
+        );
 
         SF_LOG(
             Log,
@@ -2915,6 +3298,9 @@ void USFInGameHUDWidget::PerformDragSelection(
         return;
     }
 
+    /*
+     * 아무것도 선택되지 않았다면 현재 선택을 해제한다.
+     */
     ClearSelection();
 }
 
@@ -3312,6 +3698,42 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
     return StageIntroFallbackRowName;
 }
 
+bool USFInGameHUDWidget::TryStartVictoryEpilogue()
+{
+    if (!IsValid(StageIntroDataTable) || IsValid(ActiveStageIntroWidget))
+    {
+        return false;
+    }
+
+    const FName StageRowName = ResolveStageIntroRowName();
+    if (StageRowName.IsNone())
+    {
+        return false;
+    }
+
+    const FName EpilogueRowName(*(StageRowName.ToString() + TEXT("Clear")));
+    if (!StageIntroDataTable->GetRowNames().Contains(EpilogueRowName))
+    {
+        return false;
+    }
+
+    bPendingVictoryResultAfterEpilogue = true;
+    SF_LOG(Log,
+        "[SFInGameHUDWidget] 승리 후일담을 먼저 재생합니다 | Stage: %s | Row: %s",
+        *StageRowName.ToString(), *EpilogueRowName.ToString());
+
+    if (OpenStageIntro(StageIntroDataTable, EpilogueRowName, INDEX_NONE))
+    {
+        return true;
+    }
+
+    // OpenStageIntro가 위젯 생성 뒤 실패했다면 정리 콜백에서 이미 결과 UI를
+    // 열었을 수 있다. 그 경우 외부 ShowResultWidget이 한 번 더 열지 않게 한다.
+    const bool bResultWasHandled = bVictoryEpilogueCompleted;
+    bPendingVictoryResultAfterEpilogue = false;
+    return bResultWasHandled;
+}
+
 void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
 {
     /*
@@ -3382,6 +3804,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
     if (!IsValid(StageIntroDataTable))
     {
         SF_LOG(Log, "[SFInGameHUDWidget] StageIntroDataTable is not set. Tutorial is skipped.");
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 
@@ -3392,6 +3818,10 @@ void USFInGameHUDWidget::TryStartStageIntro()
             "[SFInGameHUDWidget] This stage has no tutorial, so it is skipped | Row: %s",
             *RowName.ToString()
         );
+        if (IsValid(BoundStageGameState))
+        {
+            BoundStageGameState->ReleaseBuildingRestrictionsAfterTutorial();
+        }
         return;
     }
 
@@ -3458,6 +3888,10 @@ bool USFInGameHUDWidget::OpenStageIntro(
         SF_LOG(Error, "[SFInGameHUDWidget] OwningPlayer is invalid.");
         return false;
     }
+
+    // 다음 안내가 열릴 때 이전 건설 메뉴가 남아 있으면 새 건물을 바로
+    // 선택할 수 있다. 메뉴와 배치 입력을 닫아 다음 안내에서 다시 열게 한다.
+    CloseBuildingMode();
 
     ActiveStageIntroWidget = CreateWidget<USFStageIntroWidget>(
         PlayerController,
@@ -3556,6 +3990,9 @@ void USFInGameHUDWidget::HandleTutorialResumeRequested(
 
 void USFInGameHUDWidget::HandleStageIntroDeactivated()
 {
+    const bool bShowDeferredVictoryResult =
+        bPendingVictoryResultAfterEpilogue;
+
     if (IsValid(ActiveStageIntroWidget))
     {
         ActiveStageIntroWidget->OnDeactivated().RemoveAll(this);
@@ -3591,6 +4028,13 @@ void USFInGameHUDWidget::HandleStageIntroDeactivated()
         Log,
         "[SFInGameHUDWidget] Stage intro finished."
     );
+
+    if (bShowDeferredVictoryResult)
+    {
+        bPendingVictoryResultAfterEpilogue = false;
+        bVictoryEpilogueCompleted = true;
+        ShowResultWidget(true);
+    }
 }
 
 bool USFInGameHUDWidget::RequestProductionBySlot(
@@ -3832,18 +4276,7 @@ HandleSelectedProductionBuildingTierActivated(
 
     SelectedInfo = UpdatedInfo;
 
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
-
-        SelectionPanel->SetTierUpButtonVisible(
-            IsOwnedByLocalPlayer(Actor) &&
-            SelectedInfo.SelectableType ==
-            ESFSelectableType::ProductionBuilding
-        );
-    }
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier)
@@ -3871,12 +4304,7 @@ void USFInGameHUDWidget::HandleSelectedBuildingTierActivated(int32 ActivatedTier
     SelectedInfo =
         UpdatedInfo;
 
-    if (IsValid(SelectionPanel))
-    {
-        SelectionPanel->ShowSelection(
-            SelectedInfo
-        );
-    }
+    RefreshSelectionPanels();
 }
 
 void USFInGameHUDWidget::RefreshRallyPointIndicator()

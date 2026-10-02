@@ -33,6 +33,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Spawn")
 	void SetSpawningEnabled(bool bInEnabled);
 
+	/** Defence controller owns the schedule; autonomous timers and direct BP calls are gated. */
+	void SetWaveControlled(bool bInControlled);
+	AUnitBase* SpawnWaveUnit(FName InRowName, TSubclassOf<AUnitBase> InClass);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Defence")
+	bool bWaveControlled = false;
+
 	/**
 	 * 스포너를 깨운다. 이미 깨어 있으면 아무 일도 하지 않는다.
 	 *
@@ -63,6 +70,9 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
 	AActor* GetOwnerBuilding() const;
+
+	/** 앵커에서 생성한 실제 생산 건물을 스포너에 직접 연결한다. */
+	bool AssignOwnerBuilding(AActor* InBuilding);
 
 	/** 소유 건물이 파괴돼 영구 정지한 상태인가 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
@@ -116,6 +126,9 @@ protected:
 	UFUNCTION()
 	void HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget);
 
+	UFUNCTION()
+	void HandleOwnerActorDestroyed(AActor* InDestroyedActor);
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USceneComponent> SpawnPoint;
 
@@ -162,6 +175,10 @@ private:
 	/** 스폰 지점 주변 산포 반경(cm). 같은 자리에 겹쳐 나오는 것을 막는다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Limit", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float SpawnScatterRadius = 300.f;
+
+	/** Keep the actor at its factory anchor for ownership, but spawn outside its footprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawn", meta = (AllowPrivateAccess = true))
+	FVector SpawnOffset = FVector::ZeroVector;
 
 #pragma endregion
 
@@ -251,6 +268,7 @@ private:
 #pragma endregion
 
 	FTimerHandle SpawnTimerHandle;
+	bool bExecutingWaveSpawn = false;
 
 	FTimerHandle OwnerBuildingResolveTimerHandle;
 

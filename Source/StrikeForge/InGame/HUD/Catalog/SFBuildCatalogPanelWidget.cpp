@@ -33,6 +33,9 @@ void USFBuildCatalogPanelWidget::NativeConstruct()
 	BoundGameState->OnStageStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStageStateChanged);
+	BoundGameState->OnStageBuildingPermissionsChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleStageBuildingPermissionsChanged);
 
 	if (BoundGameState->IsStagePlaying())
 	{
@@ -49,6 +52,9 @@ void USFBuildCatalogPanelWidget::NativeDestruct()
 		BoundGameState->OnStageStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleStageStateChanged);
+		BoundGameState->OnStageBuildingPermissionsChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleStageBuildingPermissionsChanged);
 	}
 
 	UnbindBuildingCompletionEvents();
@@ -68,6 +74,11 @@ void USFBuildCatalogPanelWidget::HandleStageStateChanged(ESFStageState NewState)
 		BindResourceData();
 		RefreshBuildingEntries();
 	}
+}
+
+void USFBuildCatalogPanelWidget::HandleStageBuildingPermissionsChanged()
+{
+	RefreshEntryAffordability();
 }
 
 void USFBuildCatalogPanelWidget::RefreshBuildingEntries()
@@ -543,4 +554,17 @@ bool USFBuildCatalogPanelWidget::RequestBuildingBySlot(
 	EntryWidget->TriggerEntryClickedFromHotkey();
 
 	return true;
+}
+
+UWidget* USFBuildCatalogPanelWidget::FindTutorialEntryWidget(FName BuildingRowName) const
+{
+	for (const USFBuildCatalogEntryWidget* Entry : CurrentEntryWidgets)
+	{
+		if (IsValid(Entry) && Entry->GetBuildingRowName() == BuildingRowName)
+		{
+			return const_cast<USFBuildCatalogEntryWidget*>(Entry);
+		}
+	}
+
+	return nullptr;
 }

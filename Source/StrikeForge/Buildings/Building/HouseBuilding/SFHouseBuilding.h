@@ -16,8 +16,7 @@ public:
 	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
 
-	// when construct destroyed, play effects
-	// OnDestroyed2
+	// 건물이 파괴될 때 적용했던 인구 증가량을 회수합니다.
 	virtual void OnBuildingDestroyed() override;
 	
 protected:

@@ -1,6 +1,7 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
+#include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
@@ -11,6 +12,7 @@
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
 #include "AIController.h"
+#include "Units/Projectile/SFUnitProjectile.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -144,6 +146,31 @@ AUnitBase::AUnitBase()
 void AUnitBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// BP에서 붙인 무기 메시까지 배치 격자 데칼이 묻지 않도록 모든 렌더링 컴포넌트에 적용합니다.
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Primitive : PrimitiveComponents)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
+
+	if (UCapsuleComponent* Capsule =
+		GetCapsuleComponent())
+	{
+		Capsule->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Block
+		);
+	}
+
+	if (USkeletalMeshComponent* CharacterMesh =
+		GetMesh())
+	{
+		CharacterMesh->SetCollisionResponseToChannel(
+			ECC_Visibility,
+			ECR_Ignore
+		);
+	}
 
 	// 레벨에 직접 배치한 유닛은 스포너를 거치지 않으므로 여기서 주입한다.
 	// 스폰으로 이미 주입됐다면 건너뛴다.
@@ -953,7 +980,7 @@ bool AUnitBase::ExecuteNextQueuedCommand()
 		// 예약해둔 공격 대상이 이미 죽었다면 건너뛴다.
 		if (
 			NextCommand.bTargetRequired &&
-			!IsTargetUsable(NextCommand.Target.Get())
+			!CanForceAttackTarget(NextCommand.Target.Get())
 			)
 		{
 			SF_LOG(
@@ -1027,7 +1054,7 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 		return;
 	}
 
-	if (!IsTargetUsable(InTarget))
+	if (!CanForceAttackTarget(InTarget))
 	{
 		SF_LOG(Warning,
 			"[Unit] %s : %s 은(는) 공격할 수 없는 대상입니다. "
@@ -1160,10 +1187,18 @@ void AUnitBase::SpawnEffectAt(UNiagaraSystem* InSystem, const FVector& InLocatio
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
-	UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
-	if (!IsValid(Comp) || !Comp->IsAlive()) return false;
+	if (!CanForceAttackTarget(InTarget)) return false;
+	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
+	return InTarget == ForcedTarget || USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+}
 
-	return USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+bool AUnitBase::CanForceAttackTarget(const AActor* InTarget) const
+{
+	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
+	const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InTarget);
+	if (!Target || !Target->IsAlive() || Target->GetTeamIndex() == INDEX_NONE) return false;
+	const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(InTarget);
+	return !Building || Building->ProvidesVision();
 }
 
 void AUnitBase::SetWaitingForGroupMove(bool bWaiting)
@@ -1521,6 +1556,8 @@ float AUnitBase::GetDistanceToTargetEdge(const AActor* InTarget) const
 
 bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 {
+	// Artillery/building obstacle exceptions never bypass personal sight range.
+	if (!CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
 	if (!bRequireLineOfSight) return true;		// 곡사 유닛은 시야를 요구하지 않는다
 	if (!IsValid(InTarget)) return false;
 
@@ -1624,6 +1661,7 @@ AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 
 	for (AActor* Candidate : Candidates)
 	{
+		if (!IsTargetUsable(Candidate)) continue;
 		// 슬롯 접근에 실패한 기존 타겟은 이번 재탐색에서 제외한다.
 		if (Candidate == InExcludedTarget)
 		{
@@ -1692,7 +1730,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 	 * 기존의 즉시 피해 계산은 Notify 피해와 중복될 수 있으므로 제거하고,
 	 * 실제 피해는 공격 애니메이션의 타격 Notify 시점에 적용한다.
 	 */
-	if (!IsTargetUsable(InTarget))
+	if (!IsTargetUsable(InTarget) || !HasLineOfSight(InTarget))
 	{
 		return;
 	}
@@ -1718,7 +1756,14 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 
 	// 몽타주가 없거나 재생에 실패한 경우의 안전장치.
 	// 이 경우에는 즉시 한 번의 전체 피해를 적용한다.
-	HandleAttackHit(1.f);
+	if (ProjectileClass)
+	{
+		HandleProjectileLaunch(1.f);
+	}
+	else
+	{
+		HandleAttackHit(1.f);
+	}
 
 	OnAttackPerformed(InTarget);
 }
@@ -1765,10 +1810,105 @@ void AUnitBase::HandleAttackHit(float DamageRatio)
 	}
 }
 
+/** 원거리 공격 애니메이션의 발사 Notify에서 호출한다 */
+void AUnitBase::HandleProjectileLaunch(float DamageRatio)
+{
+	// 죽은 유닛의 늦은 Notify에서는 발사하지 않는다.
+	if (CombatState == EUnitCombatState::Dead)
+	{
+		return;
+	}
+
+	if (DamageRatio <= 0.f)
+	{
+		return;
+	}
+
+	// 현재 공격에서 허용된 발사 횟수를 모두 사용했다.
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		return;
+	}
+
+	AActor* Target = PendingAttackTarget.Get();
+
+	if (!IsTargetUsable(Target))
+	{
+		PendingAttackTarget.Reset();
+		return;
+	}
+
+	if (!ProjectileClass)
+	{
+		SF_LOG(Warning, "[Unit] %s : ProjectileClass가 설정되지 않아 원거리 공격을 발사하지 못했습니다.", *GetName());
+		return;
+	}
+
+	USkeletalMeshComponent* UnitMesh = GetMesh();
+
+	if (!IsValid(UnitMesh))
+	{
+		return;
+	}
+
+	FVector SpawnLocation = UnitMesh->GetComponentLocation();
+
+	if (ProjectileSocketName != NAME_None && UnitMesh->DoesSocketExist(ProjectileSocketName))
+	{
+		SpawnLocation = UnitMesh->GetSocketLocation(ProjectileSocketName);
+	}
+	else
+	{
+		SF_LOG(Warning, "[Unit] %s : 발사 소켓 '%s'을 찾지 못해 Mesh 위치에서 발사합니다.", *GetName(), *ProjectileSocketName.ToString());
+	}
+
+	const FVector TargetLocation = Target->GetActorLocation();
+	const FRotator SpawnRotation = (TargetLocation - SpawnLocation).Rotation();
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	ASFUnitProjectile* Projectile = GetWorld()->SpawnActor<ASFUnitProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, SpawnParams);
+
+	if (!IsValid(Projectile))
+	{
+		SF_LOG(Warning, "[Unit] %s : 발사체 생성에 실패했습니다.", *GetName());
+		return;
+	}
+
+	Projectile->InitializeProjectile(this, Target, DamageRatio, ProjectileSpeed);
+
+	// 이 값은 근거리에서는 타격 횟수,
+	// 원거리에서는 발사 횟수로 사용한다.
+	++AppliedAttackHitCount;
+
+	if (AppliedAttackHitCount >= AttackHitCount)
+	{
+		PendingAttackTarget.Reset();
+	}
+}
+
+void AUnitBase::HandleProjectileImpact(AActor* InTarget, float DamageRatio)
+{
+	if (!IsTargetUsable(InTarget))
+	{
+		return;
+	}
+
+	if (DamageRatio <= 0.f)
+	{
+		return;
+	}
+
+	ApplyAttackDamage(InTarget, DamageRatio);
+}
+
 /** 공격 Notify가 발생했을 때 실제 피해를 계산하고 적용한다 */
 void AUnitBase::ApplyAttackDamage(AActor* InTarget, float DamageRatio)
 {
-	if (!IsTargetUsable(InTarget))
+	if (!IsTargetUsable(InTarget) || !HasLineOfSight(InTarget))
 	{
 		return;
 	}
@@ -2033,11 +2173,26 @@ void AUnitBase::Advance(float DeltaSeconds)
 
 		if (FVector::Dist2D(GetActorLocation(), Waypoint) < AssignedLane->GetLaneHalfWidth())
 		{
-			LaneAlpha = FMath::Min(1.f, LaneAlpha + 0.1f);
+			if (LaneAlpha >= 1.f - KINDA_SMALL_NUMBER)
+			{
+				// 경로 끝에 도착하면 핵심 건물 탐색으로 넘긴다.
+				// 그렇지 않으면 마지막 스플라인 점에 계속 이동 요청을 보낸다.
+				AssignedLane = nullptr;
+			}
+			// 긴 라인에서도 목표점이 한 번에 수십 m 앞으로 건너뛰지 않도록
+			// 월드 거리 기준으로 전진한다. 좁은 길의 굴곡을 따라가게 한다.
+			const float LaneLength = AssignedLane ? AssignedLane->GetSplineLength() : 0.f;
+			const float AlphaStep = LaneLength > KINDA_SMALL_NUMBER
+				? FMath::Min(1.f, 450.f / LaneLength)
+				: 1.f;
+			LaneAlpha = FMath::Min(1.f, LaneAlpha + AlphaStep);
 		}
 
-		AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
-		return;
+		if (AssignedLane)
+		{
+			AI->RequestMoveToLocation(AssignedLane->GetPointAtAlpha(LaneAlpha), MoveAcceptanceRadius);
+			return;
+		}
 	}
 
 	// 주의: 여기서 멈춰 세우면(ClearMoveRequest) 유닛이 영구히 굳는다.

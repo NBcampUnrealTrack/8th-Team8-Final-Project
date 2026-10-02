@@ -19,6 +19,7 @@ class UAnimMontage;
 class ALanePath;
 class USoundBase;
 class UAnimationAsset;
+class ASFUnitProjectile;
 
 /** 전투 상태 머신 */
 UENUM(BlueprintType)
@@ -111,6 +112,7 @@ UCLASS()
 class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable, public IMovable
 {
 	GENERATED_BODY()
+	friend struct FSFForcedAttackTestAccess;
 
 public:
 	AUnitBase();
@@ -211,6 +213,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void HandleAttackHit(float DamageRatio = 1.f);
 
+	/** 원거리 공격 애니메이션의 발사 Notify에서 호출한다 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void HandleProjectileLaunch(float DamageRatio = 1.f);
+
+	/** 발사체가 목표에 도착했을 때 호출한다 */
+	void HandleProjectileImpact(AActor* InTarget, float DamageRatio);
+
 	/** 사망 애니메이션이 완전히 누운 자세에 도달했을 때 호출한다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Animation")
 	void HandleDeathPose();
@@ -266,11 +275,14 @@ public:
 	 * 지정 대상 강제 공격. 그 대상이 쓰러질 때까지 다른 적으로 갈아타지 않는다.
 	 *
 	 * TObjectPtr 은 UFUNCTION 인자로 쓸 수 없으므로 원시 포인터를 받는다.
-	 * 현재는 적대 진영만 지정할 수 있다 — 중립(TeamIndex -1) 강제 공격은
-	 * IsHostileTeam 우회가 필요하며 기획 확정 후 붙인다.
+	 * 아군/적군 유닛과 건물을 지정할 수 있다. 자신, 중립, 사망, 건설 미리보기는 제외한다.
+	 * 자동 탐색은 계속 적대 진영만 대상으로 삼는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Command")
 	void CommandAttackTarget(AActor* InTarget);
+
+	/** Explicit player target: permits allies, but retains sight/life/preview checks. */
+	bool CanForceAttackTarget(const AActor* InTarget) const;
 
 	/** 모든 명령 해제(S). 선 자리를 대기 지점으로 삼고 평소대로 싸운다 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Command")
@@ -926,6 +938,18 @@ private:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/** 이 유닛이 발사할 발사체. 비어 있으면 원거리 발사를 할 수 없다 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<ASFUnitProjectile> ProjectileClass;
+
+	/** 발사체가 생성될 Mesh Socket */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (AllowPrivateAccess = "true"))
+	FName ProjectileSocketName = TEXT("ProjectileSocket");
+
+	/** 발사체 이동속도 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Combat|Projectile", meta = (ClampMin = "1.0", AllowPrivateAccess = "true"))
+	float ProjectileSpeed = 1500.f;
 
 	/**
 	 * 공격 몽타주를 끊을 때의 블렌드 아웃 시간(초).

@@ -251,6 +251,19 @@ public:
         meta = (WorldContext = "InWorldContext"))
     static bool IsBuildingSelectionAllowed(const UObject* InWorldContext, FName InBuildingRowName);
 
+    /** 스테이지 튜토리얼이 시작되거나 종료될 때 진행 상태를 기록한다. */
+    static void SetStageTutorialActive(const UObject* InWorldContext, bool bInActive);
+
+    bool IsStageTutorialActive() const { return bStageTutorialActive; }
+
+    /** Specific production objectives identify their required unit for resource help and highlighting. */
+    static FName GetProductionGuideUnit(FGameplayTag ObjectiveTag);
+
+    /** 튜토리얼 중 건설, 티어 업그레이드, 유닛 생산은 5초로 맞춘다. */
+    static float ResolveTutorialRequiredWork(
+        const UObject* InWorldContext,
+        float InDefaultRequiredWork);
+
     /**
      * 건물 선택 제한을 강제로 푼다.
      *
@@ -538,6 +551,9 @@ private:
      */
     UPROPERTY(Transient)
     FGameplayTagContainer LockedFeatures;
+
+    /** 목표 대기로 안내창이 잠시 닫혀도 유지되는 튜토리얼 진행 상태. */
+    bool bStageTutorialActive = false;
 
     /**
      * 이 스테이지의 기본 성공음. 인트로가 열릴 때 한 번 로드해 둔다.

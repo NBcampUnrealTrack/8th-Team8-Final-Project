@@ -5,6 +5,11 @@
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
+namespace SFProductionBuildingSpeedModifiers
+{
+	const FName CommanderSkill(TEXT("CommanderSkill"));
+}
+
 ASFProductionBuilding::ASFProductionBuilding(const FObjectInitializer& ObjectInitializer)
 	:Super(ObjectInitializer)
 {
@@ -108,14 +113,36 @@ void ASFProductionBuilding::SetAssembleVectorPoint(const FVector& InAssemblePoin
 	ProductComponent->SetAssemblePoint(InAssemblePoint);
 }
 
-void ASFProductionBuilding::ApplySpeedBuff(float InMultiflyValue) const
+void ASFProductionBuilding::ApplySpeedBuff(float InMultiflyValue)
 {
-	ProductComponent->SetSpeedMultiplier(InMultiflyValue);
+	SetProductionSpeedModifier(
+		SFProductionBuildingSpeedModifiers::CommanderSkill,
+		InMultiflyValue);
 }
 
 void ASFProductionBuilding::ResetSpeedMultiplier()
 {
-	ProductComponent->ResetSpeedMultiplier();
+	RemoveProductionSpeedModifier(
+		SFProductionBuildingSpeedModifiers::CommanderSkill);
+}
+
+void ASFProductionBuilding::SetProductionSpeedModifier(
+	FName ModifierId,
+	float InMultiplier)
+{
+	if (IsValid(ProductComponent))
+	{
+		ProductComponent->SetSpeedModifier(ModifierId, InMultiplier);
+	}
+}
+
+void ASFProductionBuilding::RemoveProductionSpeedModifier(
+	FName ModifierId)
+{
+	if (IsValid(ProductComponent))
+	{
+		ProductComponent->RemoveSpeedModifier(ModifierId);
+	}
 }
 
 void ASFProductionBuilding::BeginPlay()

@@ -128,11 +128,14 @@ public:
 	// Grid System
 	
 	bool TryRegisterGrid(const FBuildingGridInfo& GridInfo);
-	//FIntPoint GetEffectiveGridSize() const;
 	
 	// Getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE int32 GetCurrentTier() const { return CurrentTier; }
+
+	/** Internal tiers are zero-based; UI tiers are 1..3. */
+	UFUNCTION(BlueprintPure, Category = "SF|Building")
+	bool HasNextUpgradeTier() const;
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FResources GetConstructCost() const;
@@ -142,6 +145,18 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE FIntPoint GetGridSize() const { return ConfiguredGridSize; }
+
+	/** 실제 배치에 사용된 원점과 회전 반영 점유 크기를 반환합니다. 격자 등록 전이면 false입니다. */
+	FORCEINLINE bool TryGetRegisteredGridInfo(FBuildingGridInfo& OutGridInfo) const
+	{
+		if (!bGridRegistered || !RegisteredGridInfo.IsValid())
+		{
+			return false;
+		}
+
+		OutGridInfo = RegisteredGridInfo;
+		return true;
+	}
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Building")
 	FORCEINLINE ESFBuildingSpawnMode GetSpawnMode() const { return SpawnMode; }
@@ -153,6 +168,10 @@ public:
 	FORCEINLINE USFBuildingDefinition* GetBuildingDefinition() const { return BuildingDefinition; }
 	
 	FORCEINLINE bool IsTierActivated() const { return bIsTierActivated; }
+	bool ProvidesVision() const
+	{
+		return CurrentBuildingState == EBuildingState::UnderConstruction || CurrentBuildingState == EBuildingState::Completed;
+	}
 
 	/**
 	 * 이 건물이 로컬 플레이어의 것인지.
@@ -217,8 +236,8 @@ protected:
 	UFUNCTION()
 	void FinishHitReaction();
 	
-	// grid system
-	bool TryRegistInitialGrid();
+	// 선배치 건물의 격자를 계산하고 등록합니다.
+	bool TryRegisterInitialGrid();
 	bool bGridRegistered = false;
 private:
 	/** 로드된 Definition의 공통 데이터를 건물에 캐시한다. BeginPlay에서 호출되며 PrepareLoadedTier로 이어진다. */
@@ -250,6 +269,9 @@ private:
 	// delegate
 	void BindComponentDelegates();
 	void UnbindComponentDelegates();
+	/** 시너지 재계산 결과에서 이 건물의 생산 보너스를 읽어 머리 위 UI 상태로 전달한다. */
+	UFUNCTION()
+	void HandleBuildingSynergyStateChanged();
 
 	// progress가 완료되면 호출되게 bind되있음
 	// Handle -> Finalize -> Committed(pre값->cur값) -> Set(completed)State -> Activate

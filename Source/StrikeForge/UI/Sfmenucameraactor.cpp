@@ -1,104 +1,116 @@
 #include "SFMenuCameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 
 ASFMenuCameraActor::ASFMenuCameraActor()
 {
-	PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = true;
+    GetCameraComponent()->bConstrainAspectRatio = false;
 }
 
 void ASFMenuCameraActor::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	const FVector InitialLocation = GetActorLocation();
+    const FVector InitialLocation = GetActorLocation();
 
-	if (LookTarget.IsZero())
-	{
-		LookTarget = InitialLocation;
-	}
+    // Old maps without a target keep their placed view instead of aiming at themselves.
+    bHasLookTarget = !LookTarget.IsZero();
+    GetCameraComponent()->bConstrainAspectRatio = false;
+    GetCameraComponent()->bOverrideAspectRatioAxisConstraint = true;
+    GetCameraComponent()->AspectRatioAxisConstraint = EAspectRatioAxisConstraint::AspectRatio_MaintainYFOV;
 
-	// 시작 위치를 기준으로 반지름/기준 각도/높이를 고정해서 계산
-	// 이후 이동은 이 반지름을 유지한 채 각도만 바뀌므로 거리(줌인/줌아웃)는 절대 변하지 않음
-	const FVector ToInitial = InitialLocation - LookTarget;
-	OrbitRadius = FVector(ToInitial.X, ToInitial.Y, 0.0f).Size();
-	BaseYawDegrees = FMath::RadiansToDegrees(FMath::Atan2(ToInitial.Y, ToInitial.X));
-	HeightOffset = ToInitial.Z;
+    const FVector ToInitial = InitialLocation - LookTarget;
+    OrbitRadius = FVector(ToInitial.X, ToInitial.Y, 0.0f).Size();
+    BaseYawDegrees = FMath::RadiansToDegrees(FMath::Atan2(ToInitial.Y, ToInitial.X));
+    HeightOffset = ToInitial.Z;
 
-	if (AngleWaypoints.Num() == 0)
-	{
-		AngleWaypoints.Add(0.0f);
-	}
+    if (AngleWaypoints.Num() == 0)
+    {
+        AngleWaypoints.Add(0.0f);
+    }
 
-	CurrentWaypointIndex = 0;
-	NextWaypointIndex = (AngleWaypoints.Num() > 1) ? 1 : 0;
-	bIsMoving = false;
-	PhaseTimer = 0.0f;
+    CurrentWaypointIndex = 0;
+    NextWaypointIndex = (AngleWaypoints.Num() > 1) ? 1 : 0;
+    bIsMoving = false;
+    PhaseTimer = 0.0f;
+    if (bHasLookTarget) ApplyOrbit(BaseYawDegrees);
 
-	// 이 카메라를 플레이어의 View Target으로 자동 지정
-	if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
-	{
-		PlayerController->SetViewTarget(this);
-	}
+    if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
+    {
+        PlayerController->SetViewTarget(this);
+    }
 }
 
 void ASFMenuCameraActor::AdvanceWaypoint()
 {
-	if (AngleWaypoints.Num() <= 1)
-	{
-		return;
-	}
+    if (AngleWaypoints.Num() <= 1)
+    {
+        return;
+    }
 
-	CurrentWaypointIndex = NextWaypointIndex;
-	NextWaypointIndex = (NextWaypointIndex + 1) % AngleWaypoints.Num();
+    CurrentWaypointIndex = NextWaypointIndex;
+    NextWaypointIndex = (NextWaypointIndex + 1) % AngleWaypoints.Num();
 }
 
 void ASFMenuCameraActor::Tick(float DeltaTime)
 {
-	Super::Tick(DeltaTime);
+    Super::Tick(DeltaTime);
+    if (!bHasLookTarget) return;
+    if (bContinuousDrift)
+    {
+        DriftTime += DeltaTime;
+        const float Phase = DriftTime * 2.f * PI / FMath::Max(DriftPeriod, 8.f);
+        ApplyOrbit(BaseYawDegrees + DriftAngle * FMath::Sin(Phase), DriftHeight * FMath::Sin(Phase * 2.f));
+        return;
+    }
 
-	if (AngleWaypoints.Num() <= 1)
-	{
-		return;
-	}
+    if (AngleWaypoints.Num() <= 1)
+    {
+        return;
+    }
 
-	PhaseTimer += DeltaTime;
+    PhaseTimer += DeltaTime;
 
-	float CurrentAngle = BaseYawDegrees + AngleWaypoints[CurrentWaypointIndex];
+    float CurrentAngle = BaseYawDegrees + AngleWaypoints[CurrentWaypointIndex];
 
-	if (bIsMoving)
-	{
-		const float Alpha = FMath::Clamp(PhaseTimer / TravelTime, 0.0f, 1.0f);
-		const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);
+    if (bIsMoving)
+    {
+        const float Alpha = FMath::Clamp(PhaseTimer / FMath::Max(TravelTime, .01f), 0.0f, 1.0f);
+        const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);
 
-		const float StartAngle = BaseYawDegrees + AngleWaypoints[CurrentWaypointIndex];
-		const float TargetAngle = BaseYawDegrees + AngleWaypoints[NextWaypointIndex];
-		CurrentAngle = FMath::Lerp(StartAngle, TargetAngle, SmoothAlpha);
+        const float StartAngle = BaseYawDegrees + AngleWaypoints[CurrentWaypointIndex];
+        const float TargetAngle = BaseYawDegrees + AngleWaypoints[NextWaypointIndex];
+        CurrentAngle = FMath::Lerp(StartAngle, TargetAngle, SmoothAlpha);
 
-		if (Alpha >= 1.0f)
-		{
-			AdvanceWaypoint();
-			bIsMoving = false;
-			PhaseTimer = 0.0f;
-		}
-	}
-	else
-	{
-		if (PhaseTimer >= DwellTime)
-		{
-			bIsMoving = true;
-			PhaseTimer = 0.0f;
-		}
-	}
+        if (Alpha >= 1.0f)
+        {
+            AdvanceWaypoint();
+            bIsMoving = false;
+            PhaseTimer = 0.0f;
+        }
+    }
+    else
+    {
+        if (PhaseTimer >= DwellTime)
+        {
+            bIsMoving = true;
+            PhaseTimer = 0.0f;
+        }
+    }
 
-	// 반지름/높이는 고정한 채 각도만 바꿔서 이동 (거리 변화 없음 = 줌인/줌아웃 없음)
-	const float AngleRad = FMath::DegreesToRadians(CurrentAngle);
-	FVector NewLocation = LookTarget + FVector(FMath::Cos(AngleRad), FMath::Sin(AngleRad), 0.0f) * OrbitRadius;
-	NewLocation.Z = LookTarget.Z + HeightOffset;
+    ApplyOrbit(CurrentAngle);
+}
 
-	SetActorLocation(NewLocation);
+void ASFMenuCameraActor::ApplyOrbit(float Angle, float Lift)
+{
+    const float AngleRad = FMath::DegreesToRadians(Angle);
+    FVector NewLocation = LookTarget + FVector(FMath::Cos(AngleRad), FMath::Sin(AngleRad), 0.0f) * OrbitRadius;
+    NewLocation.Z = LookTarget.Z + HeightOffset + Lift;
 
-	// 항상 LookTarget(캐릭터)을 바라보게 회전
-	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(NewLocation, LookTarget);
-	SetActorRotation(LookAtRotation);
+    SetActorLocation(NewLocation);
+
+    const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(NewLocation, LookTarget);
+    SetActorRotation(LookAtRotation);
 }

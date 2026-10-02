@@ -3,16 +3,17 @@
 #include "CoreMinimal.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
+#include "Interfaces/Building/SFProductionRateModifiable.h"
 #include "Datas/Resource/SFResourceTypes.h"
 #include "SFMiningBuilding.generated.h"
 
 class UMiningComponent;
-class AResourceBase;
 
 UCLASS()
 class STRIKEFORGE_API ASFMiningBuilding 
 	: public ASFBaseBuilding
 	, public IMinable
+	, public ISFProductionRateModifiable
 {
 	GENERATED_BODY()
 
@@ -24,24 +25,26 @@ public:
 	void BindDelegateFunction();
 	void UnBindDelegateFunction();
 	virtual void OnBuildingDefinitionLoaded() override;
-	// APPLY BUILDING's ABILITY
 	virtual void OnTierActivated() override;
 
-	// DELETE BUILDING's ABILITY
-	// OnDestroyed1
 	virtual void OnTierDeactivated() override;
 	
 	void SetProgressColorByResourceType(EResourceType InResourceType);
-	// Minable
-	virtual bool CanAcceptResource(const AResourceBase* InResource) const override;
-	virtual bool TryLinkResource(AResourceBase* InResource) override;
-	virtual void UnlinkResource(const AResourceBase* InResource) override;
-
-	// getter ui 초기값 설정
-	EResourceType GetMineResourceType() const;
+	// IMinable
+	virtual bool SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets) override;
+	virtual void ClearMiningTargets() override;
+	
+	virtual FIntPoint GetResourceSearchGridSize() const override;
+	
+	virtual EResourceType GetMineResourceType() const override;
 	int32 GetExtractAmount() const;
 	int32 GetResourceAmount() const;
 	float GetMiningProgressRatio() const;
+
+	/** 생산속도 인터페이스 요청을 MiningComponent의 작업 배율로 전달합니다. */
+	virtual void SetProductionSpeedModifier(FName ModifierId, float InMultiplier) override;
+	/** MiningComponent에서 지정된 출처의 작업 배율만 제거합니다. */
+	virtual void RemoveProductionSpeedModifier(FName ModifierId) override;
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -58,4 +61,7 @@ protected:
 	TObjectPtr<UMiningComponent> MiningComponent;
 private:
 	float CurrentIncomeRatePerSecond = 0.f;
+	
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Mining|Grid", meta = (AllowPrivateAccess = true))
+	FIntPoint ConfiguredResourceSearchGridSize = FIntPoint(1, 1);
 };

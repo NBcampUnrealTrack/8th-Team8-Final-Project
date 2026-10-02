@@ -15,6 +15,11 @@
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Logging/SFLog.h"
 
+UWidget* USFProductionUnitEntryWidget::GetTutorialProductionButton() const
+{
+    return ProductionButton.Get();
+}
+
 void USFProductionUnitEntryWidget::NativeConstruct()
 {
     Super::NativeConstruct();

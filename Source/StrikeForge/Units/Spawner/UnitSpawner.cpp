@@ -443,6 +443,7 @@ void AUnitSpawner::HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget
 
 void AUnitSpawner::StartSpawnTimer(float InFirstDelay)
 {
+	if (bWaveControlled) return;
 	if (GetWorldTimerManager().IsTimerActive(SpawnTimerHandle))
 	{
 		return;
@@ -546,7 +547,8 @@ void AUnitSpawner::HandleSpawnCycle()
 
 bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 {
-	const FVector Origin = SpawnPoint ? SpawnPoint->GetComponentLocation() : GetActorLocation();
+	const FTransform SpawnTransform = SpawnPoint ? SpawnPoint->GetComponentTransform() : GetActorTransform();
+	const FVector Origin = SpawnTransform.TransformPosition(SpawnOffset);
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 
@@ -580,6 +582,7 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 
 AUnitBase* AUnitSpawner::SpawnOne()
 {
+	if (bWaveControlled && !bExecutingWaveSpawn) return nullptr;
     // BP의 직접 호출도 타이머와 같은 게이트를 통과해야 한다.
     if (!bActivated || !bSpawningEnabled || bOwnerBuildingDestroyed) return nullptr;
     if (bStopWhenOwnerBuildingDestroyed && bRequireOwnerBuilding && !OwnerBuildingTarget.IsValid()) return nullptr;
@@ -591,7 +594,7 @@ AUnitBase* AUnitSpawner::SpawnOne()
 	}
 
 	FVector SpawnLocation;
-	FindSpawnLocation(SpawnLocation);
+	if (!FindSpawnLocation(SpawnLocation) && bWaveControlled) return nullptr;
 
 	// 캡슐 절반 높이만큼 띄워야 바닥에 파묻히지 않는다
 	SpawnLocation.Z += 90.f;
@@ -628,5 +631,25 @@ AUnitBase* AUnitSpawner::SpawnOne()
 
 	OnUnitSpawned(Unit);
 
+	return Unit;
+}
+
+void AUnitSpawner::SetWaveControlled(bool bInControlled)
+{
+	bWaveControlled = bInControlled;
+	if (bWaveControlled) StopSpawnTimer();
+}
+
+AUnitBase* AUnitSpawner::SpawnWaveUnit(FName InRowName, TSubclassOf<AUnitBase> InClass)
+{
+	if (!bWaveControlled || !InClass) return nullptr;
+	TGuardValue<bool> WaveGuard(bExecutingWaveSpawn, true);
+	const FName PreviousRow = UnitRowName;
+	const TSubclassOf<AUnitBase> PreviousClass = UnitClass;
+	UnitRowName = InRowName;
+	UnitClass = InClass;
+	AUnitBase* Unit = SpawnOne();
+	UnitRowName = PreviousRow;
+	UnitClass = PreviousClass;
 	return Unit;
 }

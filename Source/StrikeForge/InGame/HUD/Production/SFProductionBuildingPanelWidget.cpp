@@ -1,7 +1,6 @@
 #include "SFProductionBuildingPanelWidget.h"
 
 #include "SFProductionUnitEntryWidget.h"
-
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "Buildings/SFRootBase.h"
 #include "Components/VerticalBox.h"
@@ -24,6 +23,18 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "Game/GameInstance/SFGameInstance.h"
 #include "Kismet/GameplayStatics.h"
+
+UWidget* USFProductionBuildingPanelWidget::FindTutorialProductionButton(FName UnitRowName) const
+{
+    if (!HasProductionBuilding() || !IsVisible() || !UnitEntryBox) return nullptr;
+    for (UWidget* Child : UnitEntryBox->GetAllChildren())
+    {
+        const USFProductionUnitEntryWidget* Entry = Cast<USFProductionUnitEntryWidget>(Child);
+        if (Entry && Entry->GetProductionRowName() == UnitRowName)
+            return Entry->GetTutorialProductionButton();
+    }
+    return nullptr;
+}
 
 void USFProductionBuildingPanelWidget::NativeConstruct()
 {

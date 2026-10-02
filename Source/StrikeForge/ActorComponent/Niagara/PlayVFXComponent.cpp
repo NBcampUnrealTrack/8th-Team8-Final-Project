@@ -140,6 +140,11 @@ void UPlayVFXComponent::PlayDestroyNiagaraEffect(
 		FVector::OneVector,
 		true,  // 재생 완료 후 자동 제거
 		false); // 즉시 재생
+	// Dedicated/headless worlds and failed effect creation can return no component.
+	if (!IsValid(SpawnedNiagaraEffect))
+	{
+		return;
+	}
 	
 	SpawnedNiagaraEffect->SetVariableVec3(
 		SFVFXParameters::BuildingScale, MeshCompScale);

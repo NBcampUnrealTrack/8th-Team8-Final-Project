@@ -31,6 +31,7 @@ public:
 
     void ShowRequestFeedback(bool bAccepted);
     FName GetProductionRowName() const { return UnitRowName; }
+    UWidget* GetTutorialProductionButton() const;
 #if WITH_DEV_AUTOMATION_TESTS
     bool bPreviewHover = false;
 #endif

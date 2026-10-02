@@ -33,6 +33,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Spawn")
 	void SetSpawningEnabled(bool bInEnabled);
 
+	/** Defence controller owns the schedule; autonomous timers and direct BP calls are gated. */
+	void SetWaveControlled(bool bInControlled);
+	AUnitBase* SpawnWaveUnit(FName InRowName, TSubclassOf<AUnitBase> InClass);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Defence")
+	bool bWaveControlled = false;
+
 	/**
 	 * 스포너를 깨운다. 이미 깨어 있으면 아무 일도 하지 않는다.
 	 *
@@ -169,6 +176,10 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Limit", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
 	float SpawnScatterRadius = 300.f;
 
+	/** Keep the actor at its factory anchor for ownership, but spawn outside its footprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawn", meta = (AllowPrivateAccess = true))
+	FVector SpawnOffset = FVector::ZeroVector;
+
 #pragma endregion
 
 #pragma region Activation
@@ -257,6 +268,7 @@ private:
 #pragma endregion
 
 	FTimerHandle SpawnTimerHandle;
+	bool bExecutingWaveSpawn = false;
 
 	FTimerHandle OwnerBuildingResolveTimerHandle;
 

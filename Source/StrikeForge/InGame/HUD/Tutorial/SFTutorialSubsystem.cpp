@@ -764,6 +764,13 @@ bool USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(
     return false;
 }
 
+FName USFTutorialSubsystem::GetProductionGuideUnit(FGameplayTag ObjectiveTag)
+{
+    if (ObjectiveTag == TAG_SF_Tutorial_Unit_Produced_SpecialWarBeast) return TEXT("WarBeast");
+    if (ObjectiveTag == TAG_SF_Tutorial_Unit_Produced_AfterBarrackUpgrade) return TEXT("Berserker");
+    return NAME_None;
+}
+
 bool USFTutorialSubsystem::IsUnitProductionAllowed(
     const UObject* InWorldContext,
     const ASFBaseBuilding* InBuilding,

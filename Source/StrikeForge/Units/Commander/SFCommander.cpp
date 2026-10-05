@@ -225,7 +225,6 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 
 						// 도착점 확정
 						Dest = OutLoc;
-						//GEngine->AddOnScreenDebugMessage(3, 2.f, FColor::Cyan, FString::Printf(TEXT("i: %d"), i));
 						break;
 					}
 				}
@@ -289,6 +288,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	//DrawDebugPoint(GetWorld(), Dest, 20.f, FColor::Red, false, 2.f);
 	if (CheckCanBuild())
 	{
+		StopMoving();
 		BeginBuild();
 	}
 	else
@@ -357,7 +357,6 @@ bool ASFCommander::CheckCanBuild()
 	float Dist = FVector::Dist(GetActorLocation(), BuildLocation);
 	float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	float CapsuleRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
-	//GEngine->AddOnScreenDebugMessage(1, 2.f, FColor::Magenta, FString::Printf(TEXT("BuildDistance: %f"), Dist));
 	const FBox BuildBox = BuildBoundary.GetBox();
 	if (BuildBox.IsValid)
 	{
@@ -375,7 +374,6 @@ bool ASFCommander::CheckCanBuild()
 		{
 			EdgeDistFromBound = FVector::Dist(LocalLoc, BuildBox.GetClosestPointTo(LocalLoc));
 		}
-		//GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Cyan, FString::Printf(TEXT("EdgeDistFromBound: %f"), EdgeDistFromBound));
 		if (EdgeDistFromBound > CapsuleRadius && EdgeDistFromBound <= CapsuleRadius + MaxDistToBuild)
 		{
 			//DrawDebugBox(GetWorld(), BuildLocation + FVector::UpVector * BuildBoundary.BoxExtent.Z, BuildBoundary.BoxExtent, FQuat::MakeFromRotator(FRotator(0.f, BuildRotation, 0.f)), FColor::Blue, false, 2.f, 0U, 20.f);
@@ -416,7 +414,7 @@ void ASFCommander::BeginBuild()
 void ASFCommander::PrintMessage(FString Msg)
 {
 	// TODO : Msg 출력값을 UI와 연동해주세요. 현재 이곳에는 건설시도 실패 메세지가 주로 들어갑니다.
-	GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, Msg);
+	SF_LOG(Warning, "%s", *Msg);
 }
 
 void ASFCommander::StopMoving()
@@ -437,8 +435,50 @@ void ASFCommander::StopMoving()
 	OwnerController->ClearMoveRequest();
 }
 
+int32 ASFCommander::GetUnlockedSkillTier() const
+{
+	const ASFGameState* GS = GetWorld() ? GetWorld()->GetGameState<ASFGameState>() : nullptr;
+	const int32 Team = CombatTargetComponent ? CombatTargetComponent->GetTeamIndex() : INDEX_NONE;
+	return GS && GS->GetNexus(Team) ? FMath::Clamp(GS->GetNexusTier(Team) + 1, 0, 3) : 0;
+}
+
+bool ASFCommander::IsSkillTierUnlocked(int32 SkillTier) const
+{
+	return SkillTier >= 1 && SkillTier <= 3 && SkillTier <= GetUnlockedSkillTier();
+}
+
+float ASFCommander::GetSkillCooldownRemaining(int32 SkillTier) const
+{
+	if (SkillTier < 1 || SkillTier > 3 || !GetWorld()) return 0.f;
+	return static_cast<float>(FMath::Max(0.0, SkillCooldownEnds[SkillTier - 1] - GetWorld()->GetTimeSeconds()));
+}
+
+FText ASFCommander::GetSkillName(int32 SkillTier) const
+{
+	if (SkillTier < 1 || SkillTier > 3) return FText::GetEmpty();
+	const TCHAR* Beast[] = {TEXT("돌격 명령"), TEXT("전장의 포효"), TEXT("위압")};
+	const TCHAR* Ether[] = {TEXT("성역의 축복"), TEXT("빨리빨리"), TEXT("천상의 수호")};
+	return FText::FromString(Race == ERace::BEAST ? Beast[SkillTier - 1] : Ether[SkillTier - 1]);
+}
+
+FText ASFCommander::GetSkillEffectDescription(int32 SkillTier) const
+{
+	if (SkillTier < 1 || SkillTier > 3) return FText::GetEmpty();
+	const TCHAR* Beast[] = {
+		TEXT("반경 7.5m 안의 아군 유닛과 지휘관에게 5초간 이동 속도 50% 증가"),
+		TEXT("반경 7.5m 안의 아군 유닛과 지휘관에게 10초간 공격력 30%, 최대 체력 50% 증가"),
+		TEXT("반경 10m 안의 적에게 10초간 받는 피해 50% 증가")};
+	const TCHAR* Ether[] = {
+		TEXT("미구현: 체력 회복 효과가 아직 적용되지 않습니다."),
+		TEXT("모든 아군 생산 건물에 10초간 생산 속도 100% 증가"),
+		TEXT("미구현: 받는 피해 감소 효과가 아직 적용되지 않습니다.")};
+	return FText::FromString(Race == ERace::BEAST ? Beast[SkillTier - 1] : Ether[SkillTier - 1]);
+}
+
 void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 {
+	if (!IsSkillTierUnlocked(SkillTier) || GetSkillCooldownRemaining(SkillTier) > 0.f
+		|| (HealthComponent && HealthComponent->GetIsDead())) return;
 	TWeakObjectPtr<USFCommanderAnim> Anim = Cast<USFCommanderAnim>(GetMesh()->GetAnimInstance());
 	if (!Anim.IsValid())
 	{
@@ -447,10 +487,12 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 	}
 
 	// 스킬 시전중에는 실행되지 않음.
-	if (Anim->OnSkillActiveDelegate.IsBound())
+	if (Anim->Montage_IsPlaying(SkillMontage))
 	{
 		return;
 	}
+	// An interrupted montage may not reach its skill notify. Drop that stale binding.
+	Anim->OnSkillActiveDelegate.Unbind();
 
 	if (!IsValid(SkillMontage))
 	{
@@ -458,7 +500,8 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 		return;
 	}
 	Anim->bSkillFloating = false;
-	Anim->Montage_Play(SkillMontage);
+	if (Anim->Montage_Play(SkillMontage) <= 0.f) return;
+	SkillCooldownEnds[SkillTier - 1] = GetWorld()->GetTimeSeconds() + SkillCooldownSeconds;
 	switch (SkillTier)
 	{
 	case 1:
@@ -535,18 +578,15 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
 						[TG, SpeedMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							//GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::White, FString::Printf(TEXT("[%s] SpeedUp Buff Tick..."), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->Current_Status.Speed *= SpeedMul;
 						},
 						[TG]()	// 버프 시작 시 실행(Begin)
 						{
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] SpeedUp Buff Begin"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
 						},
 						[TG]()	// 버프 종료 시 실행(End)
 						{
-							//GEngine->AddOnScreenDebugMessage(1, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] SpeedUp Buff End"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
 						},
 						BuffTime,
@@ -605,21 +645,18 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
 						[TG, AtkMul, HPMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							//GEngine->AddOnScreenDebugMessage(2, 0.f, FColor::White, FString::Printf(TEXT("[%s] AtkDefUp Buff Tick..."), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->Current_Status.AtkMul *= AtkMul;
 							TG.BuffCompPtr->Current_Status.HPMul *= HPMul;
 						},
 						[TG, HPMul]()	// 버프 시작 시 실행(Begin)
 						{
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] AtkDefUp Buff Begin"), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
 						},
 						[TG, HPMul]()	// 버프 종료 시 실행(End)
 						{
-							//GEngine->AddOnScreenDebugMessage(2, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] AtkDefUp Buff End"), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
@@ -677,18 +714,15 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
 						[TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							//GEngine->AddOnScreenDebugMessage(3, 0.f, FColor::White, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff Tick..."), *TG.ActorPtr->GetName()));
 
 							TG.BuffCompPtr->Current_Status.DmgMul *= DmgMul;
 						},
 						[TG]()	// 버프 시작 시 실행(Begin)
 						{
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff Begin"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						[TG]()	// 버프 종료 시 실행(End)
 						{
-							//GEngine->AddOnScreenDebugMessage(3, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgUp Buff End"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
 						BuffTime,
@@ -749,17 +783,14 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White, FString::Printf(TEXT("[%s] HealUp Buff Tick..."), *Target->GetName()));
 						},
 						[Target]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] HealUp Buff Begin"), *Target->GetName()));
 						},
 						[Target]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(4, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] HealUp Buff End"), *Target->GetName()));
 						},
 						BuffTime,
 						BuffInterval,
@@ -806,18 +837,15 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							//GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::White, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Tick..."), *Target->GetName()));
 						},
 						[Target, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ProdSpeedUp Buff Begin"), *Target->GetName()));
 							Target->ApplySpeedBuff(ProductionSpeedMultiplier);
 						},
 						[Target]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(5, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ProdSpeedUp Buff End"), *Target->GetName()));
 							Target->ResetSpeedMultiplier();
 						},
 						BuffDuration,
@@ -857,17 +885,14 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 						[Target]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
-							GEngine->AddOnScreenDebugMessage(6, 0.f, FColor::White, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff Tick..."), *Target->GetName()));
 						},
 						[Target]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff Begin"), *Target->GetName()));
 						},
 						[Target]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
-							GEngine->AddOnScreenDebugMessage(6, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] ReceiveDmgDown Buff End"), *Target->GetName()));
 						},
 						BuffTime,
 						BuffInterval,

@@ -47,10 +47,16 @@ def node_text(row, index, data):
     suffix = dialogue_template[dialogue_template.index(',LeftCharacterImage='):]
     node = '(NodeType=Dialogue,TitleText=' + localized(row, index, 'Title', data.get('title', ''))
     node += ',BodyText=' + localized(row, index, 'Body', data['body']) + suffix
-    if data.get('right') == 'agent':
-        node = node.replace('RightCharacterImage=None', 'RightCharacterImage=' + quoted(agent))
-        node = node.replace('PortraitFrameImage=None', 'PortraitFrameImage=' + quoted(frame))
-        node = node.replace('SpeakerSide=None', 'SpeakerSide=Right')
+    portrait = '/Game/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_' + data['portrait']
+    portrait += '.' + portrait.rsplit('/', 1)[1]
+    assert unreal.load_asset(portrait), portrait
+    narration = not data.get('title') or data.get('title') in ('독백', '나레이션', '내레이션')
+    for field, value in [('LeftCharacterImage', None if narration else portrait), ('RightCharacterImage', agent if not narration and data.get('right') == 'agent' else None), ('PortraitFrameImage', None if narration else frame)]:
+        node = re.sub(field + r'=(?:"[^"\n]*"|None)', lambda _: field + '=' + (quoted(value) if value else 'None'), node)
+    side = 'Right' if data.get('right') == 'agent' else ('Left' if data.get('title') == '대주교' else 'None')
+    node = re.sub(r'SpeakerSide=\w+', 'SpeakerSide=' + side, node)
+    # Match the established commander portraits: fill the badge down to its lower edge.
+    node = re.sub(r'LeftPortraitZoom=[0-9.]+', 'LeftPortraitZoom=1.100000', node)
     return re.sub(r'NextNodeIndex=-?\d+', f'NextNodeIndex={index + 1}', node)
 
 

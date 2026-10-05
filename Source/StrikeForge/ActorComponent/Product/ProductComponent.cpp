@@ -344,6 +344,7 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 	// OnPopulationChanged 를 다시 브로드캐스트하는데, 그 시점에 이 슬롯이
 	// 이미 비어 있어야 같은 항목이 두 번 처리되지 않는다.
 	// InRowName 을 값으로 받는 이유도 이것이다 — RemoveAt 이 원본을 파괴한다.
+	const FProductInfo CompletedInfo = ProductLine[0];
 	ProductLine.RemoveAt(0);
 	OnProductLineChanged.Broadcast(ProductLine);
 
@@ -353,6 +354,20 @@ void UProductComponent::SpawnAndAdvance(FName InRowName)
 	// ========== 건물의 렐리포인트를 유닛에 전달 하는 지점.===========
 	// AssemblePoint == 현재 할당된 집결지 벡터
 	AUnitBase* UnitRef = USFUnitSpawnLibrary::SpawnUnitFromRow(GetOwner(), InRowName);
+	if (!IsValid(UnitRef))
+	{
+		// Keep the paid, completed item while every exit is obstructed.
+		ProductLine.Insert(CompletedInfo, 0);
+		OnProductLineChanged.Broadcast(ProductLine);
+		GetWorld()->GetTimerManager().SetTimer(CurrentTimerHandle,
+			FTimerDelegate::CreateWeakLambda(this, [this, InRowName]()
+			{
+				if (!ProductLine.IsEmpty() && ProductLine[0].RowName == InRowName)
+					CompletedProduct(InRowName);
+			}), 0.5f, false);
+		if (bProductionPaused) GetWorld()->GetTimerManager().PauseTimer(CurrentTimerHandle);
+		return;
+	}
 	
 	if (IsValid(UnitRef))
 	{

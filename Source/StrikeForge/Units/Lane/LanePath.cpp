@@ -132,6 +132,7 @@ void ALanePath::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 #if ENABLE_DRAW_DEBUG
+	if (GetWorld() && GetWorld()->IsGameWorld()) return;
 	if (CVarDrawLaneDebug.GetValueOnGameThread() == 0) return;
 	if (!Spline) return;
 

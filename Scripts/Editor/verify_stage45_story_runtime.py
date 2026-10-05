@@ -59,20 +59,28 @@ def tick(delta):
             intro = intros[0]
             assert intro.is_activated()
             assert unreal.GameplayStatics.is_game_paused(world)
-            # Use the real widget's normal End path, including pause/HUD restoration.
-            intro.start_stage_intro_at(table, 'Stage05', len(source['Stage05']))
-            assert not unreal.GameplayStatics.is_game_paused(world)
-            state['checks'].append(dict(stage05_auto_open=True, pause_restored=True))
-            # Campaign progress lives only in this disposable PIE GameInstance.
-            assert unreal.GameplayStatics.get_game_mode(world).process_victory()
-            state['phase'] = 'epilogue'
-        elif state['phase'] == 'epilogue':
+            unreal.SystemLibrary.execute_console_command(world, 'Shot SHOWUI filename=' + str(out/'stage05_opening.png'))
+            state.update(phase='press_k', at=time.time())
+        elif state['phase'] == 'press_k' and time.time()-state['at'] > 3:
+            # K must work even while the opening dialogue has paused the game.
+            unreal.SystemLibrary.execute_console_command(world,'SF.Story.PressVictoryKey')
+            assert gs.get_stage_result() == unreal.SFStageResult.VICTORY
+            state['checks'].append(dict(stage05_auto_open=True, k_victory_while_intro_paused=True))
+            state.update(phase='epilogue', at=time.time())
+        elif state['phase'] == 'epilogue' and time.time()-state['at'] > 3:
             epilogues = widgets(world, unreal.SFStageIntroWidget)
             assert len(epilogues) == 1
             epilogue = epilogues[0]
             assert epilogue.is_activated()
             assert not widgets(world, unreal.ResultWidget)
             assert unreal.GameplayStatics.is_game_paused(world)
+            unreal.SystemLibrary.execute_console_command(world, 'Shot SHOWUI filename=' + str(out/'stage05_epilogue.png'))
+            # A second K press must leave the existing epilogue intact.
+            unreal.SystemLibrary.execute_console_command(world,'SF.Story.PressVictoryKey')
+            assert widgets(world, unreal.SFStageIntroWidget) == epilogues
+            state.update(phase='finish_epilogue', at=time.time())
+        elif state['phase'] == 'finish_epilogue' and time.time()-state['at'] > 3:
+            epilogue = widgets(world, unreal.SFStageIntroWidget)[0]
             assert epilogue.start_stage_intro_at(table, 'Stage05Clear', len(source['Stage05Clear']))
             state['checks'].append(dict(epilogue_before_victory=True))
             state['phase'] = 'result'

@@ -116,6 +116,7 @@ public:
 	// 커맨더 건설 시작 시작함수
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
+	bool HasLivingUnitInFootprint() const;
 	
 	// 업그레이드 함수
 	/** 다음 Tier 리소스를 비동기로 요청한다. 업그레이드 UI나 Blueprint에서 호출되며 HandleUpgradeAssetsReady로 이어진다. */

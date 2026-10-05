@@ -4,6 +4,25 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Logging/SFLog.h"
+#include "Sound/SoundAttenuation.h"
+#include "UObject/StrongObjectPtr.h"
+
+void USFAudioLibrary::PlayBattleSound(const UObject* WorldContext, USoundBase* Sound, FVector Location)
+{
+    if (!IsValid(Sound)) return;
+    static TStrongObjectPtr<USoundAttenuation> Attenuation;
+    if (!Attenuation.IsValid())
+    {
+        Attenuation.Reset(NewObject<USoundAttenuation>());
+        auto& Settings = Attenuation->Attenuation;
+        Settings.bAttenuate = true;
+        Settings.bSpatialize = true;
+        Settings.AttenuationShape = EAttenuationShape::Sphere;
+        Settings.AttenuationShapeExtents = FVector(300.f);
+        Settings.FalloffDistance = 2200.f;
+    }
+    UGameplayStatics::PlaySoundAtLocation(WorldContext, Sound, Location, 1.f, 1.f, 0.f, Attenuation.Get());
+}
 
 void USFAudioLibrary::SetIgnoreGamePause(UAudioComponent* InAudioComponent, bool bInIgnorePause)
 {

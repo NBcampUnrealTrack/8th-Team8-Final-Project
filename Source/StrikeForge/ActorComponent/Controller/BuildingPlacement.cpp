@@ -7,8 +7,11 @@
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "NavigationSystem.h"
 #include "Buildings/Resource/Interface/SFMinable.h"
+#include "Datas/Building/SFBuildingCatalog.h"
 #include "Datas/Building/SFBuildingDefinition.h"
+#include "Datas/Building/Synergy/SFBuildingSynergyDefinition.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
+#include "Interfaces/Building/SFProductionRateModifiable.h"
 
 namespace
 {
@@ -39,6 +42,13 @@ UBuildingPlacement::UBuildingPlacement()
 void UBuildingPlacement::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 배치 중에 시너지가 바뀌면 격자 표시와 커서 옆 보너스를 다시 계산합니다.
+	if (USFBuildingSynergySubsystem* Synergy = USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->OnSynergyStateChanged.AddUniqueDynamic(
+			this, &ThisClass::HandleSynergyStateChanged);
+	}
 
 	// 패키지 빌드는 표시 액터를 만드는 순간 엔진이 데칼 PSO를 비동기로 미리 컴파일합니다.
 	ASFGridDecalVisualizer* Visualizer = GetOrCreateGridVisualizer();
@@ -145,36 +155,14 @@ bool UBuildingPlacement::StartPlacementMode(
 	const IMinable* MiningBuilding = Cast<IMinable>(InTargetBuilding);
 	bIsMiningPlacement = MiningBuilding != nullptr;
 
+	// 시너지 버프를 받을 수 없는 건물(집·넥서스·일반 병영 등)은 커서 옆 보너스 위젯을 띄우지 않습니다.
+	bCanReceivePlacementSynergyBonus = CanReceiveSynergyBonus(InTargetBuilding);
+
 	ResetPlacementEvaluation();
 	bCanPlaceCurrentLocation = false;
 
-	// 배치 세션 동안 점유 셀(빨강)과 채굴 가능한 자원 셀(초록)을 표시합니다.
-	if (ASFGridDecalVisualizer* Visualizer = GetOrCreateGridVisualizer())
-	{
-		TArray<FIntPoint> BlockedCells;
-		TArray<FIntPoint> ResourceCells;
-		FFloatInterval HeightRange;
-
-		GridSubsystem->CollectPlacementDisplayCells(
-			MiningBuilding != nullptr,
-			MiningBuilding != nullptr
-				? MiningBuilding->GetMineResourceType()
-				: EResourceType::Mineral,
-			BlockedCells,
-			ResourceCells,
-			HeightRange);
-
-		Visualizer->ShowOccupiedCells(
-			BlockedCells, ResourceCells, HeightRange);
-
-		// 시너지를 주는 건물(집)을 배치할 때는 이미 지은 같은 시너지 건물들의
-		// 클러스터 링크 범위를 하늘색으로 표시합니다.
-		TArray<FIntPoint> LinkCells;
-		CollectExistingLinkRangeCells(
-			InTargetBuilding, BlockedCells, LinkCells);
-
-		Visualizer->ShowLinkRangeCells(LinkCells, HeightRange);
-	}
+	// 배치 세션 동안 점유 셀(빨강)·채굴 가능한 자원 셀(초록)과 시너지 안내를 표시합니다.
+	RefreshPlacementDisplays();
 
 	SetComponentTickEnabled(true);
 	if (bIsMiningPlacement)
@@ -183,7 +171,144 @@ bool UBuildingPlacement::StartPlacementMode(
 	}
 	UpdatePlacementMode();
 
+	// 커서가 지형 밖에서 시작해도 보너스 표시(+0%)가 배치 모드 동안 보이도록 한 번 알립니다.
+	UpdatePlacementSynergyBonus();
+
 	return	TargetBuilding.IsValid() &&	IsComponentTickEnabled();
+}
+
+// 점유 칸(빨강)·채굴 자원 칸(초록)과 시너지 안내(합류 범위·받을 수 있는 효과 구역)를 현재 월드 상태로 다시 그립니다.
+// StartPlacementMode와, 배치 중 시너지가 바뀐 HandleSynergyStateChanged가 호출합니다.
+void UBuildingPlacement::RefreshPlacementDisplays()
+{
+	ASFBaseBuilding* Building = TargetBuilding.Get();
+	ASFGridDecalVisualizer* Visualizer = GetOrCreateGridVisualizer();
+
+	if (!IsValid(Building) ||
+		!IsValid(CachedGridSubsystem) ||
+		!IsValid(Visualizer))
+	{
+		return;
+	}
+
+	const IMinable* MiningBuilding = Cast<IMinable>(Building);
+
+	TArray<FIntPoint> BlockedCells;
+	TArray<FIntPoint> ResourceCells;
+	FFloatInterval HeightRange;
+
+	CachedGridSubsystem->CollectPlacementDisplayCells(
+		MiningBuilding != nullptr,
+		MiningBuilding != nullptr
+			? MiningBuilding->GetMineResourceType()
+			: EResourceType::Mineral,
+		BlockedCells,
+		ResourceCells,
+		HeightRange);
+
+	Visualizer->ShowOccupiedCells(
+		BlockedCells, ResourceCells, HeightRange);
+
+	// 시너지를 주는 건물이면 합류 범위를, 버프를 받는 건물이면 받을 수 있는 효과 구역을 함께 표시합니다.
+	ShowPlacementSynergyHints(
+		Visualizer, Building, BlockedCells, HeightRange);
+}
+
+// 배치 중인 건물이 마지막 평가 격자에서 받을 시너지 생산 증가율을 계산하고, 바뀌었거나 아직 알리지 않았으면 알립니다.
+// 실제 버프와 같은 USFBuildingSynergySubsystem::CalculateProductionBonusPercentAt을 쓰며, 격자 밖이면 0입니다.
+void UBuildingPlacement::UpdatePlacementSynergyBonus()
+{
+	// 버프를 받을 수 없는 건물은 알리지 않으므로 위젯이 숨겨진 상태로 남습니다.
+	if (!IsPlacementModeActive() || !bCanReceivePlacementSynergyBonus)
+	{
+		return;
+	}
+
+	const ASFBaseBuilding* Building = TargetBuilding.Get();
+	const USFBuildingDefinition* Definition = Building->GetBuildingDefinition();
+	const USFBuildingSynergySubsystem* Synergy = USFBuildingSynergySubsystem::Get(this);
+
+	float BonusPercent = 0.f;
+
+	if (bHasEvaluatedGrid &&
+		IsValid(Definition) &&
+		IsValid(Synergy))
+	{
+		BonusPercent = Synergy->CalculateProductionBonusPercentAt(
+			Building->GetTeamIndex(),
+			Definition->BuildingType,
+			LastEvaluatedGridInfo);
+	}
+
+	if (bPlacementSynergyBonusShown &&
+		FMath::IsNearlyEqual(BonusPercent, CachedPlacementSynergyBonusPercent))
+	{
+		return;
+	}
+
+	CachedPlacementSynergyBonusPercent = BonusPercent;
+	bPlacementSynergyBonusShown = true;
+	OnPlacementSynergyBonusChanged.Broadcast(true, BonusPercent);
+}
+
+// 생산 속도 인터페이스(실제 버프 적용 조건)를 구현하고, 팀 카탈로그의 건설 가능 건물이 주는 시너지 중
+// 이 건물 종류를 버프 대상으로 삼는 것이 있으면 true입니다. StartPlacementMode가 세션마다 한 번 확인합니다.
+bool UBuildingPlacement::CanReceiveSynergyBonus(const ASFBaseBuilding* Building) const
+{
+	if (!IsValid(Building) ||
+		!Building->GetClass()->ImplementsInterface(
+			USFProductionRateModifiable::StaticClass()))
+	{
+		return false;
+	}
+
+	const USFBuildingDefinition* Definition = Building->GetBuildingDefinition();
+	const UWorld* World = GetWorld();
+	const ASFGameState* SFGameState =
+		IsValid(World) ? World->GetGameState<ASFGameState>() : nullptr;
+	const USFBuildingCatalog* Catalog =
+		IsValid(SFGameState) ? SFGameState->GetTeamBuildingCatalog(Building->GetTeamIndex()) : nullptr;
+
+	if (!IsValid(Definition) || !IsValid(Catalog))
+	{
+		return false;
+	}
+
+	// 넥서스는 시너지를 주지 않으므로 건설 가능 목록만 확인합니다.
+	for (const TSoftObjectPtr<USFBuildingDefinition>& SourceDefinitionPtr :
+		Catalog->BuildableDefinitions)
+	{
+		const USFBuildingDefinition* SourceDefinition = SourceDefinitionPtr.Get();
+		if (!IsValid(SourceDefinition))
+		{
+			continue;
+		}
+
+		for (const FSFGrantedBuildingSynergy& GrantedSynergy :
+			SourceDefinition->GrantedSynergies)
+		{
+			if (IsValid(GrantedSynergy.Definition) &&
+				GrantedSynergy.Definition->CanAffectBuildingType(Definition->BuildingType))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+// 배치 중에 다른 건물이 완성·파괴되어 시너지 구역이 바뀌면 격자 표시와 커서 옆 보너스를 다시 계산합니다.
+// BeginPlay에서 USFBuildingSynergySubsystem::OnSynergyStateChanged에 연결됩니다.
+void UBuildingPlacement::HandleSynergyStateChanged()
+{
+	if (!IsPlacementModeActive())
+	{
+		return;
+	}
+
+	RefreshPlacementDisplays();
+	UpdatePlacementSynergyBonus();
 }
 
 void UBuildingPlacement::UpdatePlacementMode()
@@ -257,7 +382,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 	TargetBuildingGridInfo = NewGridInfo;
 
-	if (bGridChanged)
+	if (bGridChanged || !bCanPlaceCurrentLocation)
 	{
 		Building->SetActorLocation(NewBuildingLocation);
 
@@ -282,6 +407,9 @@ void UBuildingPlacement::UpdatePlacementMode()
 		LastEvaluatedGridInfo = NewGridInfo;
 		bHasEvaluatedGrid = true;
 
+		// 새 격자에서 받을 시너지 보너스를 커서 옆 위젯에 알립니다.
+		UpdatePlacementSynergyBonus();
+
 		// 데칼은 유지되므로 격자가 바뀐 프레임에만 위치와 색을 갱신합니다.
 		if (ASFGridDecalVisualizer* Visualizer = GridVisualizer.Get())
 		{
@@ -300,6 +428,9 @@ void UBuildingPlacement::SetCurrentPlacementInvalid()
 
 	bCanPlaceCurrentLocation = false;
 	bHasEvaluatedGrid = false;
+
+	// 격자 밖에서는 보너스를 0으로 알립니다. 값이 같으면 다시 알리지 않습니다.
+	UpdatePlacementSynergyBonus();
 
 	// 지형 밖에 머무는 동안 매 Tick 0을 전송하지 않습니다.
 	if (bIsMiningPlacement && bHadEvaluatedGrid)
@@ -351,6 +482,7 @@ bool UBuildingPlacement::CanPlaceAtCurrentLocation(
 	return
 		bCanPlaceOnGrid &&
 		bCanPlaceOnNavigation &&
+		!Building->HasLivingUnitInFootprint() &&
 		USFTutorialSubsystem::IsBuildLocationAllowed(
 			this,
 			Building->GetActorLocation());
@@ -380,6 +512,15 @@ void UBuildingPlacement::EndPlacementSession()
 	// Notify after ending the session: zero deposits remain visible during placement,
 	// whereas cancellation/confirmation hides the placement-only HUD.
 	if (bWasMiningPlacement) OnMineableResourceAmountChanged.Broadcast(0);
+
+	// 배치 모드가 끝나면 커서 옆 시너지 보너스 표시를 숨깁니다.
+	bCanReceivePlacementSynergyBonus = false;
+	CachedPlacementSynergyBonusPercent = 0.f;
+	if (bPlacementSynergyBonusShown)
+	{
+		bPlacementSynergyBonusShown = false;
+		OnPlacementSynergyBonusChanged.Broadcast(false, 0.f);
+	}
 
 	// 표시 액터는 파괴하지 않고 다음 배치 세션에서 재사용합니다.
 	if (ASFGridDecalVisualizer* Visualizer = GridVisualizer.Get())
@@ -502,11 +643,39 @@ void UBuildingPlacement::FlashSynergyClustersOfBuilding(
 	}
 }
 
-// 배치 중인 건물과 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모으고 점유 칸은 뺍니다.
-// USFBuildingSynergySubsystem::CollectClusterLinkGridInfos를 쓰며 결과는 StartPlacementMode에서 ShowLinkRangeCells로 갑니다.
-void UBuildingPlacement::CollectExistingLinkRangeCells(
+// 합류 범위(하늘색)와 받을 수 있는 효과 구역(시너지 색)을 모아 격자 데칼에 함께 표시합니다.
+// StartPlacementMode가 점유 칸을 표시한 직후 호출하며, 점유 칸 집합은 두 수집 함수가 함께 씁니다.
+void UBuildingPlacement::ShowPlacementSynergyHints(
+	ASFGridDecalVisualizer* Visualizer,
 	const ASFBaseBuilding* Building,
 	const TArray<FIntPoint>& BlockedCells,
+	const FFloatInterval& HeightRange) const
+{
+	if (!IsValid(Visualizer))
+	{
+		return;
+	}
+
+	// 점유 칸은 이미 빨간색으로 표시되므로 두 안내 표시에서 모두 제외합니다.
+	TSet<FIntPoint> BlockedCellSet;
+	BlockedCellSet.Append(BlockedCells);
+
+	TArray<FIntPoint> LinkCells;
+	CollectExistingLinkRangeCells(Building, BlockedCellSet, LinkCells);
+	Visualizer->ShowLinkRangeCells(LinkCells, HeightRange);
+
+	TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>> EffectCellsBySynergy;
+	FFloatInterval EffectHeightRange = HeightRange;
+	CollectReceivableEffectCells(
+		Building, BlockedCellSet, EffectCellsBySynergy, EffectHeightRange);
+	Visualizer->ShowReceivableEffectCells(EffectCellsBySynergy, EffectHeightRange);
+}
+
+// 배치 중인 건물과 같은 시너지를 주는 완성 건물들의 링크 범위 칸을 모으고 점유 칸은 뺍니다.
+// USFBuildingSynergySubsystem::CollectClusterLinkGridInfos를 쓰며 ShowPlacementSynergyHints가 호출합니다.
+void UBuildingPlacement::CollectExistingLinkRangeCells(
+	const ASFBaseBuilding* Building,
+	const TSet<FIntPoint>& BlockedCellSet,
 	TArray<FIntPoint>& OutLinkCells) const
 {
 	OutLinkCells.Reset();
@@ -523,10 +692,6 @@ void UBuildingPlacement::CollectExistingLinkRangeCells(
 	{
 		return;
 	}
-
-	// 점유 칸은 이미 빨간색으로 표시되므로 링크 범위에서 제외합니다.
-	TSet<FIntPoint> BlockedCellSet;
-	BlockedCellSet.Append(BlockedCells);
 
 	TSet<FIntPoint> LinkCellSet;
 	TArray<FBuildingGridInfo> LinkGridInfos;
@@ -559,6 +724,70 @@ void UBuildingPlacement::CollectExistingLinkRangeCells(
 	}
 
 	OutLinkCells = LinkCellSet.Array();
+}
+
+// 배치 중인 건물 종류를 버프 대상으로 삼는 내 팀 시너지 효과 구역 칸을 시너지별로 모으고 점유 칸은 뺍니다.
+// USFBuildingSynergySubsystem::GetSynergyZonesForTeam(활성 구역)을 쓰며 ShowPlacementSynergyHints가 호출합니다.
+void UBuildingPlacement::CollectReceivableEffectCells(
+	const ASFBaseBuilding* Building,
+	const TSet<FIntPoint>& BlockedCellSet,
+	TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& OutCellsBySynergy,
+	FFloatInterval& InOutHeightRange) const
+{
+	OutCellsBySynergy.Reset();
+
+	const USFBuildingDefinition* Definition =
+		IsValid(Building) ? Building->GetBuildingDefinition() : nullptr;
+
+	const USFBuildingSynergySubsystem* Synergy =
+		USFBuildingSynergySubsystem::Get(this);
+
+	if (!IsValid(Definition) || !IsValid(Synergy))
+	{
+		return;
+	}
+
+	// 같은 시너지 구역끼리 겹친 칸은 한 번만 칠하도록 시너지별 집합으로 모읍니다.
+	TMap<const USFBuildingSynergyDefinition*, TSet<FIntPoint>> CellSetsBySynergy;
+
+	for (const FSFBuildingSynergyZoneInfo& Zone :
+		Synergy->GetSynergyZonesForTeam(Building->GetTeamIndex()))
+	{
+		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
+
+		if (!IsValid(SynergyDefinition) ||
+			!SynergyDefinition->CanAffectBuildingType(Definition->BuildingType))
+		{
+			continue;
+		}
+
+		TSet<FIntPoint>& Cells = CellSetsBySynergy.FindOrAdd(SynergyDefinition);
+		const FBuildingGridInfo& EffectGridInfo = Zone.EffectGridInfo;
+
+		for (int32 Y = 0; Y < EffectGridInfo.GridSize.Y; ++Y)
+		{
+			for (int32 X = 0; X < EffectGridInfo.GridSize.X; ++X)
+			{
+				const FIntPoint Cell = EffectGridInfo.OriginCell + FIntPoint(X, Y);
+
+				if (!BlockedCellSet.Contains(Cell))
+				{
+					Cells.Add(Cell);
+				}
+			}
+		}
+
+		InOutHeightRange.Include(Zone.WorldCenter.Z);
+	}
+
+	for (const TPair<const USFBuildingSynergyDefinition*, TSet<FIntPoint>>& Pair :
+		CellSetsBySynergy)
+	{
+		if (!Pair.Value.IsEmpty())
+		{
+			OutCellsBySynergy.Add(Pair.Key, Pair.Value.Array());
+		}
+	}
 }
 
 // 격자 표시 액터를 한 번만 스폰해 InitializeVisualizer로 초기화하고 이후에는 재사용합니다.
@@ -608,6 +837,12 @@ ASFGridDecalVisualizer* UBuildingPlacement::GetOrCreateGridVisualizer()
 void UBuildingPlacement::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopGridDecalWarmUp();
+
+	if (USFBuildingSynergySubsystem* Synergy = USFBuildingSynergySubsystem::Get(this))
+	{
+		Synergy->OnSynergyStateChanged.RemoveDynamic(
+			this, &ThisClass::HandleSynergyStateChanged);
+	}
 
 	if (IsValid(GridVisualizer))
 	{

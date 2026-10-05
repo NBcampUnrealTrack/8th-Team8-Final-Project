@@ -315,13 +315,12 @@ void ASFInGamePlayerController::SetupInputComponent()
 #if WITH_EDITOR
     if (IsValid(InputComponent))
     {
-        // ProtoType/PT_Stage_2의 레벨 BP에는 K 승리 이벤트가 있지만
-        // PT_StageDefence에는 누락돼 있다. 에디터 테스트에서만 보완한다.
+        // Stage03/05 use the normal victory flow, including the clear epilogue.
         FInputKeyBinding& DebugVictoryBinding = InputComponent->BindKey(
             EKeys::K,
             IE_Pressed,
             this,
-            &ASFInGamePlayerController::HandleStage03DebugVictoryInput);
+            &ASFInGamePlayerController::HandleStageDebugVictoryInput);
         DebugVictoryBinding.bExecuteWhenPaused = true;
         // ProtoType과 PT_Stage_2의 레벨 BP도 같은 K 입력을 사용한다.
         // 여기서 소비하면 Stage03이 아닌 경우 기존 즉시 승리가 막힌다.
@@ -932,7 +931,7 @@ void ASFInGamePlayerController::HandleCancelBuildInput()
 }
 
 #if WITH_EDITOR
-void ASFInGamePlayerController::HandleStage03DebugVictoryInput()
+void ASFInGamePlayerController::HandleStageDebugVictoryInput()
 {
     UWorld* World = GetWorld();
     ASFGameState* GameState = IsValid(World)
@@ -940,7 +939,8 @@ void ASFInGamePlayerController::HandleStage03DebugVictoryInput()
         : nullptr;
 
     if (!IsValid(GameState) ||
-        GameState->GetCurrentStageRowName() != TEXT("Stage03") ||
+        (GameState->GetCurrentStageRowName() != TEXT("Stage03") &&
+         GameState->GetCurrentStageRowName() != TEXT("Stage05")) ||
         !GameState->IsStagePlaying())
     {
         return;
@@ -951,6 +951,7 @@ void ASFInGamePlayerController::HandleStage03DebugVictoryInput()
     if (USFTutorialSubsystem* Tutorial = World->GetSubsystem<USFTutorialSubsystem>())
     {
         Tutorial->CancelGuide();
+        Tutorial->CancelObjectiveWait();
     }
 
     if (IsValid(InGameHUDWidget))
@@ -961,7 +962,7 @@ void ASFInGamePlayerController::HandleStage03DebugVictoryInput()
     ASFGameMode* GameMode = World->GetAuthGameMode<ASFGameMode>();
     if (IsValid(GameMode))
     {
-        SF_LOG(Log, "[SFInGamePlayerController] Stage03 editor debug victory (K).");
+        SF_LOG(Log, "[SFInGamePlayerController] %s editor debug victory (K).", *GameState->GetCurrentStageRowName().ToString());
         GameMode->ProcessVictory();
     }
 }
@@ -1532,6 +1533,7 @@ void ASFInGamePlayerController::HandleMoveCommandModeInput()
 
 void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
 {
+    if (CurrentControlMode != ESFControlMode::Gameplay || IsPaused()) return;
     SF_LOG(Log, "Commander Skill: Tier%d", Tier);
 
     OnSkillInput.Broadcast(Tier);
@@ -1550,6 +1552,29 @@ void ASFInGamePlayerController::RequestProductionBySlot(int32 SlotIndex)
     }
 
     InGameHUDWidget->RequestProductionBySlot(SlotIndex);
+}
+
+bool ASFInGamePlayerController::ExecutePendingUnitCommandAtLocation(const FVector& Destination)
+{
+    if (CurrentControlMode != ESFControlMode::Gameplay ||
+        PendingUnitCommandMode == ESFUnitCommandMode::None) return false;
+
+    const ESFUnitCommandMode Mode = PendingUnitCommandMode;
+    PendingUnitCommandMode = ESFUnitCommandMode::None;
+    if (Mode == ESFUnitCommandMode::Move)
+    {
+        IssueMoveCommand(Destination);
+        return true;
+    }
+    TArray<AActor*> Actors;
+    CollectLocallyControllableActors(Actors);
+    for (AActor* Actor : Actors)
+    {
+        ExecuteUnitCommandForActor(Actor, Mode, Destination, nullptr, IsShiftCommandModifierDown());
+    }
+    if (Actors.Num() > 0 && IsValid(InGameHUDWidget))
+        InGameHUDWidget->ShowMoveDestinationIndicator(Destination, true);
+    return true;
 }
 
 bool ASFInGamePlayerController::ExecutePendingUnitCommandUnderCursor()

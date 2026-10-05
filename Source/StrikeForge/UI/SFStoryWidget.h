@@ -25,6 +25,7 @@ public:
     bool HasLiveIllustration() const;
     FSFStoryClosed OnClosed;
     int32 GetChapterIndex() const { return ChapterIndex; }
+    int32 GetAvailableChapterCount() const { return AvailableChapterCount; }
     bool IsClosing() const { return bClosing; }
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -47,6 +48,7 @@ private:
     void RefreshPresentation();
     TSharedPtr<SSFStoryScroll> Scroll;
     int32 ChapterIndex = 0;
+    int32 AvailableChapterCount = 5;
     float OpeningElapsed = 0.f;
     float PageElapsed = 0.f;
     float ClosingElapsed = 0.f;

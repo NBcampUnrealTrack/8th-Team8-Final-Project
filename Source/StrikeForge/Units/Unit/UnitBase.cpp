@@ -24,6 +24,7 @@
 #include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "Game/Audio/SFAudioLibrary.h"
 #include "EngineUtils.h"
 #include "Logging/SFLog.h"
 
@@ -166,6 +167,8 @@ void AUnitBase::BeginPlay()
 	if (USkeletalMeshComponent* CharacterMesh =
 		GetMesh())
 	{
+		// Attack-hit notifies are gameplay: they must also run off screen.
+		CharacterMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPose;
 		CharacterMesh->SetCollisionResponseToChannel(
 			ECC_Visibility,
 			ECR_Ignore
@@ -430,7 +433,8 @@ AUnitAIController* AUnitBase::GetUnitAI() const
 bool AUnitBase::ShouldDrawDebug() const
 {
 #if ENABLE_DRAW_DEBUG
-	return bDrawCombatDebug || CVarDrawCombatDebug.GetValueOnGameThread() > 0;
+	return GetWorld() && !GetWorld()->IsGameWorld() &&
+		(bDrawCombatDebug || CVarDrawCombatDebug.GetValueOnGameThread() > 0);
 #else
 	return false;
 #endif
@@ -1747,7 +1751,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 
 		if (MontageDuration > 0.f)
 		{
-			AttackAnimHoldRemaining = FMath::Min(MontageDuration, AttackCooldown);
+			AttackAnimHoldRemaining = MontageDuration;
 
 			OnAttackPerformed(InTarget);
 			return;
@@ -1972,7 +1976,7 @@ void AUnitBase::ApplyAttackDamage(AActor* InTarget, float DamageRatio)
 
 	if (IsValid(HitSound))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, HitSound, InTarget->GetActorLocation());
+		USFAudioLibrary::PlayBattleSound(this, HitSound, InTarget->GetActorLocation());
 	}
 }
 
@@ -2351,7 +2355,7 @@ void AUnitBase::HandleCombatDamaged(UCombatTargetComponent* InTarget, float InDa
 		return;
 	}
 
-	UGameplayStatics::PlaySoundAtLocation(this, DamagedSound, GetActorLocation());
+	USFAudioLibrary::PlayBattleSound(this, DamagedSound, GetActorLocation());
 }
 
 #if !UE_BUILD_SHIPPING
@@ -2652,7 +2656,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 
 		FaceTarget(DeltaSeconds);
 
-		if (AttackCooldownRemaining <= 0.f)
+		if (AttackCooldownRemaining <= 0.f && AttackAnimHoldRemaining <= 0.f)
 		{
 			PerformAttack(CurrentTarget);
 			AttackCooldownRemaining = AttackCooldown;

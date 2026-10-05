@@ -62,6 +62,14 @@ public:
 		const FFloatInterval& HeightRange);
 
 	/**
+	 * 배치 중인 건물이 버프를 받을 수 있는 시너지 효과 구역을 시너지마다 한 층씩 EffectZoneColor로 표시합니다.
+	 * 서로 다른 시너지 구역이 겹친 칸은 색이 섞여 진하게 보이며, 두 버프를 모두 받는 자리입니다.
+	 */
+	void ShowReceivableEffectCells(
+		const TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& CellsBySynergy,
+		const FFloatInterval& HeightRange);
+
+	/**
 	 * 배치 중인 건물 영역 전체를 배치 가능 여부에 따라 초록색 또는 빨간색으로 표시합니다.
 	 * WorldCenter는 격자 Subsystem이 GridInfo로 스냅한 월드 중심입니다.
 	 */
@@ -69,7 +77,7 @@ public:
 
 	void HidePlacementPreview();
 
-	/** 배치 모드 표시(점유·링크·미리보기)를 숨깁니다. 시너지 완성 표시는 스스로 사라집니다. */
+	/** 배치 모드 표시(점유·링크·효과 구역·미리보기)를 숨깁니다. 시너지 완성 표시는 스스로 사라집니다. */
 	void HidePlacementDisplays();
 
 	/** 건물이 속한 활성 시너지 클러스터의 구역 전체를 시너지 완성 표시로 한 번 보여 줍니다. */
@@ -125,6 +133,13 @@ private:
 
 	UPROPERTY()
 	FSFGridMaskDecalLayer SynergyFlashLayer;
+
+	/**
+	 * 배치 중 받을 수 있는 효과 구역을 시너지마다 한 층씩 그리는 층들입니다(색이 시너지마다 다름).
+	 * 한 건물이 동시에 받을 수 있는 시너지는 현재 최대 2개(특수 병영)라 여유를 두고 3개를 만듭니다.
+	 */
+	UPROPERTY()
+	TArray<FSFGridMaskDecalLayer> EffectZoneLayers;
 
 	UPROPERTY(VisibleAnywhere, Category = "Grid|Decal")
 	TObjectPtr<UDecalComponent> PlacementPreviewDecal;

@@ -2,6 +2,11 @@
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/TextBlock.h"
+#include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
+#include "Blueprint/WidgetTree.h"
 #include "GameFramework/PlayerController.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/SFInGameHUDWidget.h"
@@ -12,6 +17,7 @@
 void USFTutorialSpotlightWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    ForceVolatile(true);
 
     // 우측 상단 안내 배너는 두 줄 문구가 자주 들어간다. 기존 크기에서는
     // 외곽선까지 겹쳐 보이므로 폰트만 조금 낮추고 줄 간격을 확보한다.
@@ -77,6 +83,71 @@ void USFTutorialSpotlightWidget::ApplyGuideStep(
         : ESlateVisibility::HitTestInvisible);
 
     OnGuideStepApplied(CurrentStep);
+    UpdateSkillGuideCard();
+}
+
+void USFTutorialSpotlightWidget::UpdateSkillGuideCard()
+{
+    if (!WidgetTree || !InstructionText) return;
+    UCanvasPanel* Root = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+    if (!Root) return;
+    const bool bSkillGuide = CurrentStep.CommanderSkillTier > 0;
+    if (!bSkillGuide)
+    {
+        if (SkillGuideCard) SkillGuideCard->SetVisibility(ESlateVisibility::Collapsed);
+        for (UBorder* Edge : SkillHighlightEdges) Edge->SetVisibility(ESlateVisibility::Collapsed);
+        for (const auto& Entry : OriginalGuideVisibility)
+            if (Entry.Key.IsValid()) Entry.Key->SetVisibility(Entry.Value);
+        OriginalGuideVisibility.Reset();
+        return;
+    }
+    if (!SkillGuideCard)
+    {
+        SkillGuideCard = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CommanderSkillGuideCard"));
+        SkillGuideCard->SetBrushColor(FLinearColor(1.f, 0.78f, 0.12f));
+        SkillGuideCard->SetPadding(FMargin(3.f));
+        USizeBox* Width = WidgetTree->ConstructWidget<USizeBox>();
+        Width->SetWidthOverride(520.f);
+        SkillGuideCard->SetContent(Width);
+        UBorder* Backdrop = WidgetTree->ConstructWidget<UBorder>();
+        Backdrop->SetBrushColor(FLinearColor(0.018f, 0.022f, 0.03f, 0.96f));
+        Backdrop->SetPadding(FMargin(18.f, 14.f));
+        Width->SetContent(Backdrop);
+        SkillGuideText = WidgetTree->ConstructWidget<UTextBlock>();
+        FSlateFontInfo Font = InstructionText->GetFont();
+        Font.Size = 28;
+        SkillGuideText->SetFont(Font);
+        SkillGuideText->SetColorAndOpacity(FLinearColor::White);
+        SkillGuideText->SetWrapTextAt(484.f);
+        SkillGuideText->SetLineHeightPercentage(1.18f);
+        Backdrop->SetContent(SkillGuideText);
+        UCanvasPanelSlot* CardSlot = Root->AddChildToCanvas(SkillGuideCard);
+        CardSlot->SetAnchors(FAnchors(1.f, 0.f));
+        CardSlot->SetAlignment(FVector2D(1.f, 0.f));
+        CardSlot->SetPosition(FVector2D(-24.f, 24.f));
+        CardSlot->SetAutoSize(true);
+        CardSlot->SetZOrder(10);
+    }
+    for (UWidget* Child : Root->GetAllChildren())
+    {
+        if (Child == SkillGuideCard || SkillHighlightEdges.Contains(Cast<UBorder>(Child))) continue;
+        if (!OriginalGuideVisibility.Contains(Child)) OriginalGuideVisibility.Add(Child, Child->GetVisibility());
+        Child->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    SkillGuideCard->SetVisibility(ESlateVisibility::HitTestInvisible);
+    SkillGuideText->SetText(CurrentStep.InstructionText);
+    if (SkillHighlightEdges.IsEmpty())
+    {
+        for (int32 Index = 0; Index < 4; ++Index)
+        {
+            UBorder* Edge = WidgetTree->ConstructWidget<UBorder>();
+            Edge->SetBrushColor(FLinearColor(1.f, 0.9f, 0.f));
+            Edge->SetPadding(FMargin(0.f));
+            Edge->SetVisibility(ESlateVisibility::HitTestInvisible);
+            Root->AddChildToCanvas(Edge)->SetZOrder(100);
+            SkillHighlightEdges.Add(Edge);
+        }
+    }
 }
 
 void USFTutorialSpotlightWidget::ClearGuide()
@@ -105,8 +176,27 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
     if (CurrentStep.TargetKind == ESFGuideTargetKind::ScreenRegion)
     {
         const bool bResolved = UpdateFromScreenTargetWidget(MyGeometry);
-        if (!USFTutorialSubsystem::GetProductionGuideUnit(CurrentStep.CompletionTag).IsNone())
+        if (CurrentStep.CommanderSkillTier > 0 || !USFTutorialSubsystem::GetProductionGuideUnit(CurrentStep.CompletionTag).IsNone())
             bTargetVisible = bResolved;
+        if (CurrentStep.CommanderSkillTier > 0 && SkillHighlightEdges.Num() == 4)
+        {
+            const FVector2D Center = HoleCenterNorm * MyGeometry.GetLocalSize();
+            const FVector2D Extent = HoleExtentNorm * MyGeometry.GetLocalSize();
+            const FVector2D TopLeft = Center - Extent;
+            const FVector2D Size = Extent * 2.f;
+            const float Thickness = 2.f / FMath::Max(0.1f, MyGeometry.GetAccumulatedLayoutTransform().GetScale());
+            const FVector2D Positions[] = {TopLeft, TopLeft + FVector2D(0, Size.Y-Thickness), TopLeft, TopLeft + FVector2D(Size.X-Thickness, 0)};
+            const FVector2D Sizes[] = {FVector2D(Size.X, Thickness), FVector2D(Size.X, Thickness), FVector2D(Thickness, Size.Y), FVector2D(Thickness, Size.Y)};
+            for (int32 Index = 0; Index < 4; ++Index)
+            {
+                SkillHighlightEdges[Index]->SetVisibility(bResolved ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+                if (auto* EdgeSlot = Cast<UCanvasPanelSlot>(SkillHighlightEdges[Index]->Slot))
+                {
+                    EdgeSlot->SetPosition(Positions[Index]);
+                    EdgeSlot->SetSize(Sizes[Index]);
+                }
+            }
+        }
     }
 
     if (CurrentStep.TargetKind == ESFGuideTargetKind::WorldLocation)
@@ -128,10 +218,16 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
 UWidget* USFTutorialSpotlightWidget::ResolveScreenTargetWidget() const
 {
     const ASFInGamePlayerController* Controller = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!Controller && GetWorld()) Controller = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>();
     USFInGameHUDWidget* HUD = IsValid(Controller) ? Controller->GetInGameHUDWidget() : nullptr;
     if (!IsValid(HUD))
     {
         return nullptr;
+    }
+
+    if (CurrentStep.CommanderSkillTier > 0)
+    {
+        return HUD->GetTutorialCommanderSkillWidget(CurrentStep.CommanderSkillTier);
     }
 
     static const FGameplayTag BuildModeOpenTag =
@@ -279,6 +375,8 @@ int32 USFTutorialSpotlightWidget::NativePaint(
     bool bParentEnabled
 ) const
 {
+    // Skill guides use real UMG borders so the square stays visible in cached HUDs.
+    if (CurrentStep.CommanderSkillTier > 0) return LayerId;
     const int32 BaseLayer = Super::NativePaint(
         Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
@@ -294,7 +392,7 @@ int32 USFTutorialSpotlightWidget::NativePaint(
         return BaseLayer;
     }
 
-    const FSlateBrush* Brush = DimBrush.GetResourceObject() != nullptr
+    const FSlateBrush* Brush = CurrentStep.CommanderSkillTier == 0 && DimBrush.GetResourceObject() != nullptr
         ? &DimBrush
         : FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
 
@@ -378,11 +476,13 @@ int32 USFTutorialSpotlightWidget::NativePaint(
 
     const float PulseScale = 1.f - PulseAmount + PulseAmount * Pulse;
 
-    FLinearColor RingColor = HighlightColor;
+    FLinearColor RingColor = CurrentStep.CommanderSkillTier > 0 ? FLinearColor(1.f, 0.9f, 0.f) : HighlightColor;
     RingColor.A *= PulseScale;
 
     const int32 RingLayer = DimLayer + 1;
-    const float Thickness = FMath::Max(1.f, HighlightThickness * PulseScale);
+    const float MinimumThickness = CurrentStep.CommanderSkillTier > 0
+        ? 2.f / FMath::Max(0.1f, AllottedGeometry.GetAccumulatedLayoutTransform().GetScale()) : 1.f;
+    const float Thickness = FMath::Max(MinimumThickness, HighlightThickness * PulseScale);
     const float Width = Right - Left;
     const float Height = Bottom - Top;
 

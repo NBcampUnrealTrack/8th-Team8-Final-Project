@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "Units/Unit/UnitBase.h"
@@ -15,13 +15,40 @@
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "UObject/UnrealType.h"
+#include "UObject/Script.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "Animation/AnimTypes.h"
+#include "Units/Commander/SFCommander.h"
+#include "Units/Unit/UnitAIController.h"
+#include "Navigation/PathFollowingComponent.h"
+
+struct FSFPlaytestMovementAccess
+{
+	static void Bind(AUnitAIController* AI, ASFCommander* Commander)
+	{ AI->OnCompleteMoving.AddUObject(Commander, &ASFCommander::CheckFailMoving); }
+	static void Arm(ASFCommander* Commander) { Commander->CommandAction = ECommandAction::BUILD; }
+	static bool IsBuilding(ASFCommander* Commander) { return Commander->CommandAction == ECommandAction::BUILD; }
+	static void Complete(AUnitAIController* AI, EPathFollowingResult::Type Result)
+	{ AI->OnMoveCompleted(FAIRequestID(1), FPathFollowingResult(Result, 0)); }
+};
 
 // Fixtures skip asset-dependent building construction and UI initialization.
 // All targeting, damage, queue validation and pulse updates use production methods.
 struct FSFForcedAttackTestAccess
 {
 	static void PrepareUnit(AUnitBase* Unit) { Unit->bRequireLineOfSight = false; }
+	static UAnimMontage* PrepareNotifyAttack(AUnitBase* Unit, AActor* Target)
+	{
+		Unit->PendingAttackTarget = Target;
+		Unit->AppliedAttackHitCount = 0;
+		Unit->bRequireLineOfSight = false;
+		return Unit->AttackMontage;
+	}
 	static bool NextCommand(AUnitBase* Unit) { return Unit->ExecuteNextQueuedCommand(); }
+	static bool IsAttackMove(AUnitBase* Unit) { return Unit->bCommandIsAttackMove; }
+	static void SelectForCommand(USFInGameHUDWidget* HUD, AActor* Actor) { HUD->SelectedActors.Add(Actor); }
 	static void SetMaterials(USFInGameHUDWidget* HUD, UMaterialInterface* Red, UMaterialInterface* Green)
 	{
 		HUD->EnemyHoverIndicatorMaterial = Red;
@@ -203,4 +230,68 @@ bool FSFForcedAttackRingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFWarBeastNotifyTest, "StrikeForge.Playtest.WarBeastDamage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FSFWarBeastNotifyTest::RunTest(const FString& Parameters)
+{
+	FEditorScriptExecutionGuard ScriptGuard;
+	using namespace SFForcedAttackTests;
+	FWorldFixture Fixture;
+	UClass* Class = LoadClass<AUnitBase>(nullptr, TEXT("/Game/Core/Units/Beast_Fox/BP_Fox_WarBeast.BP_Fox_WarBeast_C"));
+	if (!Class) return false;
+	AUnitBase* Beast = Fixture.World->SpawnActor<AUnitBase>(Class, FVector::ZeroVector, FRotator::ZeroRotator);
+	Fixture.PrepareTarget(Beast, 0);
+	AUnitBase* Target = Fixture.Unit(1, FVector(160.f, 0.f, 0.f));
+	Target->FindComponentByClass<UHealthComponent>()->InitializeHealth(1000.f);
+	UAnimMontage* Montage = FSFForcedAttackTestAccess::PrepareNotifyAttack(Beast, Target);
+	if (!TestNotNull(TEXT("Real WarBeast attack montage"), Montage)) return false;
+	const float Before = Health(Target);
+	for (const auto& Event : Montage->Notifies)
+		if (Event.Notify) Event.Notify->Notify(Beast->GetMesh(), Montage, FAnimNotifyEventReference());
+	TestTrue(TEXT("Actual WarBeast montage notifies reduce enemy health"), Health(Target) < Before);
+	const float After = Health(Target);
+	for (const auto& Event : Montage->Notifies)
+		if (Event.Notify) Event.Notify->Notify(Beast->GetMesh(), Montage, FAnimNotifyEventReference());
+	TestEqual(TEXT("Duplicate notifies cannot damage twice"), Health(Target), After);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFMinimapAttackTest, "StrikeForge.Playtest.MinimapAttackMove",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FSFMinimapAttackTest::RunTest(const FString& Parameters)
+{
+	using namespace SFForcedAttackTests;
+	FWorldFixture Fixture;
+	AUnitBase* Unit = Fixture.Unit(0, FVector::ZeroVector);
+	ASFInGamePlayerController* PC = Fixture.World->SpawnActor<ASFInGamePlayerController>();
+	PC->SetMyTeamIndex(0);
+	USFInGameHUDWidget* HUD = NewObject<USFInGameHUDWidget>(PC);
+	FSFForcedAttackTestAccess::SelectForCommand(HUD, Unit);
+	FindFProperty<FObjectPropertyBase>(PC->GetClass(), TEXT("InGameHUDWidget"))->SetObjectPropertyValue_InContainer(PC, HUD);
+	PC->BeginAttackCommand();
+	TestTrue(TEXT("Minimap consumes the pending A command"), PC->ExecutePendingUnitCommandAtLocation(FVector(900, 900, 0)));
+	TestTrue(TEXT("Ground attack becomes attack-move"), FSFForcedAttackTestAccess::IsAttackMove(Unit));
+	TestFalse(TEXT("Next minimap click is free to move the camera"), PC->ExecutePendingUnitCommandAtLocation(FVector::ZeroVector));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFBuildMoveReplacementTest, "StrikeForge.Playtest.BuildMoveReplacement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FSFBuildMoveReplacementTest::RunTest(const FString& Parameters)
+{
+	FEditorScriptExecutionGuard ScriptGuard;
+	SFForcedAttackTests::FWorldFixture Fixture;
+	auto* Commander = Fixture.World->SpawnActor<ASFCommander>();
+	auto* AI = Fixture.World->SpawnActor<AUnitAIController>();
+	AI->Possess(Commander);
+	FSFPlaytestMovementAccess::Bind(AI, Commander);
+	TestTrue(TEXT("Move completion callback is bound"), AI->OnCompleteMoving.IsBound());
+	TestTrue(TEXT("Commander remains valid"), IsValid(Commander));
+	FSFPlaytestMovementAccess::Arm(Commander);
+	FSFPlaytestMovementAccess::Complete(AI, EPathFollowingResult::Aborted);
+	TestTrue(TEXT("Replacing a move preserves the new build request"), FSFPlaytestMovementAccess::IsBuilding(Commander));
+	FSFPlaytestMovementAccess::Complete(AI, EPathFollowingResult::Blocked);
+	TestFalse(TEXT("A real path failure still cancels the build request"), FSFPlaytestMovementAccess::IsBuilding(Commander));
+	return true;
+}
 #endif

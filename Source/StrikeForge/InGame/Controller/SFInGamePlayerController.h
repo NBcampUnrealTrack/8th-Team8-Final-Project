@@ -121,6 +121,9 @@ public:
 
     void IssueMoveCommand(const FVector& Destination);
 
+    /** Consume a pending A/M command on the minimap. */
+    bool ExecutePendingUnitCommandAtLocation(const FVector& Destination);
+
     UFUNCTION(BlueprintCallable, Category = "SF|Command")
     void BeginAttackCommand();
 
@@ -173,8 +176,8 @@ private:
     void HandleCancelBuildInput();
 
 #if WITH_EDITOR
-    /** PT_StageDefence 레벨 BP에 빠진 에디터용 K 즉시 승리 입력. */
-    void HandleStage03DebugVictoryInput();
+    /** Stage03/05: K instant victory followed by the authored clear epilogue. */
+    void HandleStageDebugVictoryInput();
 #endif
 
     void HandleFocusCommanderInput();

@@ -146,6 +146,84 @@ void ASFCommander::PossessedBy(AController* NewController)
 	}
 }
 
+#if WITH_EDITOR
+void ASFCommander::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// 변경된 프로퍼티의 이름을 가져옵니다.
+	FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+
+	// 우리가 원하는 특정 변수(MyTargetValue)가 변경되었는지 확인합니다.
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(ASFCommander, Race))
+	{
+		// 특정 변수가 변경되었을 때 실행할 함수나 로직을 여기에 작성합니다.
+		SkillAsset.Empty();
+		InitSkillAsset();
+	}
+}
+
+void ASFCommander::InitSkillAsset()
+{
+	if (!SkillAsset.IsEmpty())
+	{
+		return;
+	}
+	SkillAsset.SetNum(3);
+
+	switch (Race)
+	{
+	case ERace::BEAST:
+		do {
+			SkillAsset[0].Name = TEXT("돌격명령");
+			SkillAsset[0].Time = 5.f;
+			SkillAsset[0].Interval = 0.f;
+			SkillAsset[0].Radius = 750.f;
+			SkillAsset[0].SkillValue.Emplace(TEXT("SpeedMul"), 1.5f);
+		} while (false);
+		do {
+			SkillAsset[1].Name = TEXT("전장의 포효");
+			SkillAsset[1].Time = 10.f;
+			SkillAsset[1].Interval = 0.f;
+			SkillAsset[1].Radius = 750.f;
+			SkillAsset[1].SkillValue.Emplace(TEXT("AtkMul"), 1.3f);
+			SkillAsset[1].SkillValue.Emplace(TEXT("HPMul"), 1.5f);
+		} while (false);
+		do {
+			SkillAsset[2].Name = TEXT("위압");
+			SkillAsset[2].Time = 10.f;
+			SkillAsset[2].Interval = 0.f;
+			SkillAsset[2].Radius = 1000.f;
+			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 1.5f);
+		} while (false);
+		break;
+	case ERace::ETHERIAN:
+		do {
+			SkillAsset[0].Name = TEXT("성역의 축복");
+			SkillAsset[0].Time = 30.f;
+			SkillAsset[0].Interval = 1.f;
+			SkillAsset[0].Radius = 2000.f;
+			SkillAsset[0].SkillValue.Emplace(TEXT("HealAmount"), 5.f);
+		} while (false);
+		do {
+			SkillAsset[1].Name = TEXT("빨리빨리");
+			SkillAsset[1].Time = 10.f;
+			SkillAsset[1].Interval = 0.f;
+			SkillAsset[1].Radius = -1.f;
+			SkillAsset[1].SkillValue.Emplace(TEXT("ProdSpeedMul"), 2.f);
+		} while (false);
+		do {
+			SkillAsset[2].Name = TEXT("천상의 수호");
+			SkillAsset[2].Time = 5.f;
+			SkillAsset[2].Interval = 0.f;
+			SkillAsset[2].Radius = 600.f;
+			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 0.1f);
+		} while (false);
+		break;
+	}
+}
+#endif
+
 void ASFCommander::LoadPlayerController()
 {
 	SF_LOG(Log, "ASFCommander: LoadPlayerController()");
@@ -454,29 +532,70 @@ float ASFCommander::GetSkillCooldownRemaining(int32 SkillTier) const
 FText ASFCommander::GetSkillName(int32 SkillTier) const
 {
 	if (SkillTier < 1 || SkillTier > 3) return FText::GetEmpty();
-	const TCHAR* Beast[] = {TEXT("돌격 명령"), TEXT("전장의 포효"), TEXT("위압")};
-	const TCHAR* Ether[] = {TEXT("성역의 축복"), TEXT("빨리빨리"), TEXT("천상의 수호")};
-	return FText::FromString(Race == ERace::BEAST ? Beast[SkillTier - 1] : Ether[SkillTier - 1]);
+	const FString SkillNames[] = {SkillAsset[0].Name, SkillAsset[1].Name, SkillAsset[2].Name };
+	return FText::FromString(SkillNames[SkillTier - 1]);
 }
 
-FText ASFCommander::GetSkillEffectDescription(int32 SkillTier) const
+FText ASFCommander::ReadSkillEffectDescription(int32 SkillTier)
 {
 	if (SkillTier < 1 || SkillTier > 3) return FText::GetEmpty();
-	const TCHAR* Beast[] = {
-		TEXT("반경 7.5m 안의 아군 유닛과 지휘관에게 5초간 이동 속도 50% 증가"),
-		TEXT("반경 7.5m 안의 아군 유닛과 지휘관에게 10초간 공격력 30%, 최대 체력 50% 증가"),
-		TEXT("반경 10m 안의 적에게 10초간 받는 피해 50% 증가")};
-	const TCHAR* Ether[] = {
-		TEXT("미구현: 체력 회복 효과가 아직 적용되지 않습니다."),
-		TEXT("모든 아군 생산 건물에 10초간 생산 속도 100% 증가"),
-		TEXT("미구현: 받는 피해 감소 효과가 아직 적용되지 않습니다.")};
-	return FText::FromString(Race == ERace::BEAST ? Beast[SkillTier - 1] : Ether[SkillTier - 1]);
+	FString ToolTip;
+	switch(Race)
+	{
+	case ERace::BEAST:
+		switch (SkillTier)
+		{
+		case 1:
+			ToolTip = FString::Printf(TEXT("반경 %.1fm 안의 아군 유닛과 지휘관에게 이동 속도 %d%% 증가 부여 (지속시간: %.1f초)"),
+				SkillAsset[SkillTier - 1].Radius / 100.f,
+				FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("SpeedMul")) - 1.f) * 100.f),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		case 2:
+			ToolTip = FString::Printf(TEXT("반경 %.1fm 안의 아군 유닛과 지휘관에게 공격력 %d%%, 최대 체력 %d%% 증가 부여 (지속시간: %.1f초)"),
+				SkillAsset[SkillTier - 1].Radius / 100.f,
+				FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("AtkMul")) - 1.f) * 100.f),
+				FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("HPMul")) - 1.f) * 100.f),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		case 3:
+			ToolTip = FString::Printf(TEXT("반경 %.1fm 안의 적에게 받는 피해 %d%% 증가 부여 (지속시간: %.1f초)"),
+				SkillAsset[SkillTier - 1].Radius / 100.f,
+				FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul")) - 1.f) * 100.f),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		}
+		break;
+	case ERace::ETHERIAN:
+		switch (SkillTier)
+		{
+		case 1:
+			ToolTip = FString::Printf(TEXT("반경 %.1fm 안의 아군 유닛과 지휘관에게 초당 %d 회복 부여 (지속시간: %.1f초)"),
+				SkillAsset[SkillTier - 1].Radius / 100.f,
+				FMath::RoundToInt32(SkillAsset[SkillTier - 1].FindValue(TEXT("HealAmount"))),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		case 2:
+			ToolTip = FString::Printf(TEXT("모든 아군 생산 건물에 생산 속도 %d%% 증가 부여 (지속시간: %.1f초)"),
+				FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("ProdSpeedMul")) - 1.f) * 100.f),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		case 3:
+			ToolTip = FString::Printf(TEXT("반경 %.1fm 안의 아군에게 받는 피해 %d%% 감소 부여 (지속시간: %.1f초)"),
+				SkillAsset[SkillTier - 1].Radius / 100.f,
+				FMath::RoundToInt32((1.f - SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul"))) * 100.f),
+				SkillAsset[SkillTier - 1].Time);
+			break;
+		}
+	};
+	return FText::FromString(ToolTip);
 }
 
 void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 {
 	if (!IsSkillTierUnlocked(SkillTier) || GetSkillCooldownRemaining(SkillTier) > 0.f
-		|| (HealthComponent && HealthComponent->GetIsDead())) return;
+		|| (HealthComponent && HealthComponent->GetIsDead())
+		|| !SkillAsset.IsValidIndex(SkillTier - 1)) return;
 	TWeakObjectPtr<USFCommanderAnim> Anim = Cast<USFCommanderAnim>(GetMesh()->GetAnimInstance());
 	if (!Anim.IsValid())
 	{
@@ -485,33 +604,29 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 	}
 
 	// 스킬 시전중에는 실행되지 않음.
-	if (Anim->Montage_IsPlaying(SkillMontage))
+	//  - 현재 실행중인 몽타주의 스킬 Delegate가 아직 남아있으면 실행하지 않는다. 스킬 Delegate는 효과가 한번 발동되기전까지 존재한다.
+	//  - 만약 스킬이 발동되기 전에 다른 스킬을 사용한다면 이전 스킬은 효과가 발동되지 않고 쿨타임 적용만 발생한다. 이를 방지하기 위한 것.
+	TWeakObjectPtr<UAnimMontage> CurrentSkillMontage = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillMontage)) ? SkillAsset[SkillTier - 1].SkillMontage : nullptr;
+	if (Anim->OnSkillActiveDelegate.IsBound())
 	{
 		return;
 	}
-	// An interrupted montage may not reach its skill notify. Drop that stale binding.
-	Anim->OnSkillActiveDelegate.Unbind();
 
-	if (!IsValid(SkillMontage))
+	if (!IsValid(CurrentSkillMontage.Get()))
 	{
 		SF_LOG(Error, "ASFCommander: SkillMontage Is Invalid.");
 		return;
 	}
 	Anim->bSkillFloating = false;
-	if (Anim->Montage_Play(SkillMontage) <= 0.f) return;
-	SkillCooldownEnds[SkillTier - 1] = GetWorld()->GetTimeSeconds() + SkillCooldownSeconds;
-	switch (SkillTier)
+	if (Anim->Montage_Play(CurrentSkillMontage.Get()) <= 0.f)
 	{
-	case 1:
-		Anim->CurrentSkillSound = SkillSound1;
-		break;
-	case 2:
-		Anim->CurrentSkillSound = SkillSound2;
-		break;
-	case 3:
-		Anim->CurrentSkillSound = SkillSound3;
-		break;
+		return;
 	}
+	SkillCooldownEnds[SkillTier - 1] = GetWorld()->GetTimeSeconds() + SkillCooldownSeconds;
+
+	Anim->CurrentSkillSound = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillSound)) ? SkillAsset[SkillTier - 1].SkillSound : nullptr;
+	Anim->CurrentSkillEffect = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillEffect)) ? SkillAsset[SkillTier - 1].SkillEffect : nullptr;
+	Anim->CurrentSkillHitEffect = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillHitEffect)) ? SkillAsset[SkillTier - 1].SkillHitEffect : nullptr;
 
 	Anim->SkillDelegateTier = SkillTier;
 	switch (Race)
@@ -525,8 +640,11 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 	}
 }
 
-void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
+void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
+
 	TWeakObjectPtr<UWorld> World = GetWorld();
 	if (!World.IsValid())
 	{
@@ -541,19 +659,26 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-			
-			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("SpeedUp"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("돌격명령"));	// 버프 UI표시명
-			const float BuffTime = 5.f;	// 버프 지속시간(초)
-			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 750.f; // 버프가 적용되는 스킬 반경
-			const float SpeedMul = 1.5f;	// 이동속도 배율
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float SpeedMul = SkillAsset[SkillTier - 1].FindValue(TEXT("SpeedMul")); // 이동속도 배율
 			//-------------------
 
-			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, SkillRadius);
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 액터에 한함)
+				Targets = GetSkillActors(World, AActor::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -589,15 +714,14 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 						},
 						BuffTime,
 						BuffInterval,
-						SkillHitEffect1);
+						CurrentSkillHitEffectWPtr.Get());
 				}
 			}
 
-			if (IsValid(SkillEffect1))
+			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f};
-				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect1, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
 				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
@@ -607,20 +731,28 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-
 			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("AtkDefUp"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("전장의 포효"));	// 버프 UI표시명
-			const float BuffTime = 10.f;	// 버프 지속시간(초)
-			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 750.f; // 버프가 적용되는 스킬 반경
-			const float AtkMul = 1.3;	// 공격력 배율
-			const float HPMul = 1.5;	// 최대체력 증가 배율
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float AtkMul = SkillAsset[SkillTier - 1].FindValue(TEXT("AtkMul")); // 공격력 배율
+			const float HPMul = SkillAsset[SkillTier - 1].FindValue(TEXT("HPMul")); // 체력 배율
 			//-------------------
 
-			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, SkillRadius);
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 액터에 한함)
+				Targets = GetSkillActors(World, AActor::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -661,14 +793,14 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 						},
 						BuffTime,
 						BuffInterval,
-						SkillHitEffect2);
+						CurrentSkillHitEffectWPtr.Get());
 				}
 			}
-			if (IsValid(SkillEffect2))
+			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
 				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect2, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
 				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
@@ -678,19 +810,26 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-
-			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("ReceiveDmgUp"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("위압"));	// 버프 UI표시명
-			const float BuffTime = 10.f;	// 버프 지속시간(초)
-			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 1000.f; // 버프가 적용되는 스킬 반경
-			const float DmgMul = 1.5f;	// 받는 피해 증가 배율
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float DmgMul = SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul"));	// 받는 피해 증가 배율
 			//-------------------
 
-			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, SkillRadius);
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 액터에 한함)
+				Targets = GetSkillActors(World, AActor::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -725,14 +864,14 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 						},
 						BuffTime,
 						BuffInterval,
-						SkillHitEffect3);
+						CurrentSkillHitEffectWPtr.Get());
 				}
 			}
-			if (IsValid(SkillEffect3))
+			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
 				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect3, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
 				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
@@ -740,8 +879,11 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier)
 	}
 }
 
-void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
+void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
+
 	TWeakObjectPtr<UWorld> World = GetWorld();
 	if (!World.IsValid())
 	{
@@ -756,19 +898,26 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-
-			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("HealUp"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("성역의 축복"));	// 버프 UI표시명
-			const float BuffTime = 30.f;	// 버프 지속시간(초)
-			const float BuffInterval = 1.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 2000.f; // 버프가 적용되는 스킬 반경
-			const float RealAmount = 5.f;	  // 회복량
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float HealAmount = SkillAsset[SkillTier - 1].FindValue(TEXT("HealAmount")); // 회복량
 			//-------------------
 
-			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, SkillRadius);
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 액터에 한함)
+				Targets = GetSkillActors(World, AActor::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -789,14 +938,14 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 				{
 					// 버프 부여
 					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, RealAmount]()	// BuffInterval 주기로 반복 실행(Tick)
+						[TG, HealAmount]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							// TODO: 틱 단위 함수 작성
 							//GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White, FString::Printf(TEXT("[%s] HealUp Buff Tick..."), *TG.ActorPtr->GetName()));
 							TWeakObjectPtr<UHealthComponent> HPComp = TG.ActorPtr->GetComponentByClass<UHealthComponent>();
 							if (HPComp.IsValid())
 							{
-								HPComp->IncreaseCurrentHealth(RealAmount);
+								HPComp->IncreaseCurrentHealth(HealAmount);
 							}
 						},
 						[TG]()	// 버프 시작 시 실행(Begin)
@@ -813,14 +962,14 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 						},
 						BuffTime,
 						BuffInterval,
-						SkillHitEffect1);
+						CurrentSkillHitEffectWPtr.Get());
 				}
 			}
-			if (IsValid(SkillEffect1))
+			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
 				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect1, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
 				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
@@ -830,13 +979,13 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-
-			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("ProdSpeedUp");
-			const FText BuffText = FText::FromString(TEXT("빨리빨리"));
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float BuffDuration = 10.f;
-			const float ProductionSpeedMultiplier = 2.f;
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float ProductionSpeedMultiplier = SkillAsset[SkillTier - 1].FindValue(TEXT("ProdSpeedMul"));
 			//--------------------------------------------
 
 			const ASFInGamePlayerController* SFPC =
@@ -844,9 +993,18 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 			if (!IsValid(SFPC)) return;
 			
 			const int32 CasterTeamIndex = SFPC->GetMyTeamIndex();
-			
-			// 월드 내 모든 액터 가져오기 ()
-			TArray<FBuffTarget> Targets = GetSkillActors(World, ASFProductionBuilding::StaticClass());
+
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 건물에 한함)
+				Targets = GetSkillActors(World, ASFProductionBuilding::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -881,15 +1039,15 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 							// TODO: 버프 종료 시 함수 작성
 							TargetBuilding->ResetSpeedMultiplier();
 						},
-						BuffDuration,
+						BuffTime,
 						1.f,
-						SkillHitEffect2);
+						CurrentSkillHitEffectWPtr.Get());
 				}
 			}
-			if (IsValid(SkillEffect2))
+			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { GetActorScale().X, GetActorScale().X, 1.f };
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(SkillEffect2, RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
 				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
@@ -899,19 +1057,26 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 		do
 		{
 			/** 버프 정보 */
-
-			// TODO : 현재 수치를 임의로 기재한 상태. 필요에 맞게 변경해주세요.
 			const FString BuffKey = TEXT("ReceiveDmgDown"); // 버프 키 (중복방지)
-			const FText BuffText = FText::FromString(TEXT("천상의 수호"));	// 버프 UI표시명
-			const float BuffTime = 5.f;	// 버프 지속시간(초)
-			const float BuffInterval = 0.f;	// 효과 발동 주기 (0이면 매 프레임 발동)
+			const FText BuffText = FText::FromString(SkillAsset[SkillTier - 1].Name);	// 버프 UI표시명
+			const float BuffTime = SkillAsset[SkillTier - 1].Time;	// 버프 지속시간(초)
+			const float BuffInterval = SkillAsset[SkillTier - 1].Interval;	// 효과 발동 주기 (0이면 매 프레임 발동)
 
-			const float SkillRadius = 600.f; // 버프가 적용되는 스킬 반경
-			const float DmgMul = 0.1f;	// 받는 피해 증가 배율
+			const float SkillRadius = SkillAsset[SkillTier - 1].Radius; // 버프가 적용되는 스킬 반경
+			const float DmgMul = SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul"));	// 받는 피해 증가 배율
 			//-------------------
 
-			// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
-			TArray<FBuffTarget> Targets = GetSkillActors(World, SkillRadius);
+			TArray<FBuffTarget> Targets;
+			if (SkillRadius >= 0.f)
+			{
+				// 스킬 영향권에 들어온 액터 가져오기 (USFBuffComponent를 가지고 있는 Pawn 콜리전인 액터에 한함)
+				Targets = GetSkillActors(World, SkillRadius);
+			}
+			else
+			{
+				// 모든 액터 가져오기 (USFBuffComponent를 가지고 있는 액터에 한함)
+				Targets = GetSkillActors(World, AActor::StaticClass());
+			}
 
 			for (FBuffTarget TG : Targets)
 			{
@@ -945,8 +1110,15 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier)
 						},
 						BuffTime,
 						BuffInterval,
-						SkillHitEffect3);
+						CurrentSkillHitEffectWPtr.Get());
 				}
+			}
+			if (CurrentSkillEffectWPtr.IsValid())
+			{
+				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
+				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
+				Particle->SetUsingAbsoluteRotation(true);
 			}
 		} while (false);
 		break;

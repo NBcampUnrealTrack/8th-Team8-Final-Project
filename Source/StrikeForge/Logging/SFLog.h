@@ -15,32 +15,7 @@
         ##__VA_ARGS__                  \
     )
 
-#define SF_SCREEN_LOG(Verbosity, Time, Color, Format, ...)       \
-do                                                               \
-{                                                                \
-    const FString SFDebugMessage = FString::Printf(              \
-        TEXT(Format),                                            \
-        ##__VA_ARGS__                                            \
-    );                                                           \
-                                                                 \
-    UE_LOG(                                                      \
-        LogTemp,                                                 \
-        Verbosity,                                               \
-        TEXT("%s"),                                              \
-        *SFDebugMessage                                          \
-    );                                                           \
-                                                                 \
-    if (IsValid(GEngine))                                        \
-    {                                                            \
-        GEngine->AddOnScreenDebugMessage(                        \
-            -1,                                                  \
-            Time,                                                \
-            Color,                                               \
-            SFDebugMessage                                       \
-        );                                                       \
-    }                                                            \
-}                                                                \
-while (false)
+#define SF_SCREEN_LOG(Verbosity, Time, Color, Format, ...) SF_LOG(Verbosity, Format, ##__VA_ARGS__)
 
 #else
 

@@ -19,6 +19,7 @@ class STRIKEFORGE_API AUnitAIController : public AAIController
 
 public:
 	AUnitAIController(const FObjectInitializer& ObjectInitializer);
+	friend struct FSFPlaytestMovementAccess;
 
 	/**
 	 * 액터 추적 이동. 목표가 같고 이미 이동 중이면 재요청하지 않는다.

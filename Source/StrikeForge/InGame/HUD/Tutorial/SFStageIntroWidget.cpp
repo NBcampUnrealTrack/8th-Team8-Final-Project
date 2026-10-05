@@ -479,7 +479,7 @@ void USFStageIntroWidget::ShowChoiceNode(const FSFStageIntroNode& Node)
     {
         NoButtonText->SetText(
             Node.NoText.IsEmpty()
-            ? NSLOCTEXT("SFStageIntro", "DefaultNoText", "아니오")
+            ? NSLOCTEXT("SFStageIntro", "DefaultNoText", "아니요")
             : Node.NoText
         );
     }

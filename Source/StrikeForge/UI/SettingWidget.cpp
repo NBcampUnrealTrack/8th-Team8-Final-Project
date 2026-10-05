@@ -3,6 +3,9 @@
 #include "Components/ComboBoxString.h"
 #include "Components/BackgroundBlur.h"
 #include "Components/Slider.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Sound/SoundMix.h"
 #include "Sound/SoundClass.h"
@@ -11,7 +14,7 @@
 #include "Sound/SoundBase.h"
 #include "UI/MouseSensitivitySubsystem.h"
 
-static const TCHAR* ClickSoundPath = TEXT("/Game/Audio/T_SFClick.T_SFClick");
+static const TCHAR* ClickSoundPath = TEXT("/Game/Sound/INUI_soundEffect/Button/T_SFClick.T_SFClick");
 
 void USettingWidget::NativeConstruct()
 {
@@ -20,7 +23,29 @@ void USettingWidget::NativeConstruct()
 
 	if (IsValid(BackUi_Btn))
 	{
-		BackUi_Btn->OnClicked.AddDynamic(this, &USettingWidget::OnBackUiButtonClicked);
+		BackUi_Btn->OnClicked.AddUniqueDynamic(this, &USettingWidget::OnBackUiButtonClicked);
+		// The caption is baked into the panel art, outside the icon button.
+		// Cover the caption with a transparent button using the same close action.
+		if (auto* Canvas = Cast<UCanvasPanel>(BackUi_Btn->GetParent()))
+		{
+			if (auto* IconSlot = Cast<UCanvasPanelSlot>(BackUi_Btn->Slot))
+			{
+				auto* CaptionButton = Cast<UButton>(GetWidgetFromName(TEXT("BackCaptionHitArea")));
+				if (!CaptionButton)
+				{
+					CaptionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("BackCaptionHitArea"));
+					FButtonStyle Style = BackUi_Btn->GetStyle();
+					Style.Normal.DrawAs = Style.Hovered.DrawAs = Style.Pressed.DrawAs = ESlateBrushDrawType::NoDrawType;
+					CaptionButton->SetStyle(Style);
+					UCanvasPanelSlot* CaptionSlot = Canvas->AddChildToCanvas(CaptionButton);
+					CaptionSlot->SetLayout(IconSlot->GetLayout());
+					CaptionSlot->SetPosition(IconSlot->GetPosition() + FVector2D(IconSlot->GetSize().X * .75f, 30.f));
+					CaptionSlot->SetSize(FVector2D(200.f, 95.f));
+					CaptionSlot->SetZOrder(IconSlot->GetZOrder() + 1);
+				}
+				CaptionButton->OnClicked.AddUniqueDynamic(this, &USettingWidget::OnBackUiButtonClicked);
+			}
+		}
 	}
 
 	GConfig->GetFloat(TEXT("Audio"), TEXT("MasterVolume"), CurrentMasterVolume, GGameUserSettingsIni);
@@ -31,30 +56,34 @@ void USettingWidget::NativeConstruct()
 
 	if (IsValid(FullScreenComboBox))
 	{
-		FullScreenComboBox->OnSelectionChanged.AddDynamic(this, &USettingWidget::OnFullscreenModeChanged);
+		FullScreenComboBox->OnSelectionChanged.AddUniqueDynamic(this, &USettingWidget::OnFullscreenModeChanged);
 	}
 	if (IsValid(ResolutionComboBox))
 	{
-		ResolutionComboBox->OnSelectionChanged.AddDynamic(this, &USettingWidget::OnResolutionChanged);
+		ResolutionComboBox->OnSelectionChanged.AddUniqueDynamic(this, &USettingWidget::OnResolutionChanged);
 	}
 	if (IsValid(MasterVolumeSlider))
 	{
-		MasterVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnMasterVolumeChanged);
+		MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &USettingWidget::OnMasterVolumeChanged);
 		MasterVolumeSlider->SetValue(CurrentMasterVolume);
 	}
 	if (IsValid(BGMVolumeSlider))
 	{
-		BGMVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnBGMVolumeChanged);
+		BGMVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &USettingWidget::OnBGMVolumeChanged);
 		BGMVolumeSlider->SetValue(CurrentBGMVolume);
 	}
 	if (IsValid(SXVolumeSlider))
 	{
-		SXVolumeSlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnSXVolumeChanged);
+		SXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &USettingWidget::OnSXVolumeChanged);
 		SXVolumeSlider->SetValue(CurrentSXVolume);
 	}
 	if (IsValid(MouseSensitivitySlider))
 	{
-		MouseSensitivitySlider->OnValueChanged.AddDynamic(this, &USettingWidget::OnMouseSensitivityChanged);
+		MouseSensitivitySlider->SetMinValue(0.1f);
+		MouseSensitivitySlider->SetMaxValue(3.f);
+		if (auto* Sensitivity = GetGameInstance()->GetSubsystem<UMouseSensitivitySubsystem>())
+			MouseSensitivitySlider->SetValue(Sensitivity->GetMouseSensitivity());
+		MouseSensitivitySlider->OnValueChanged.AddUniqueDynamic(this, &USettingWidget::OnMouseSensitivityChanged);
 	}
 
 	if (MasterSoundMix)
@@ -66,7 +95,7 @@ void USettingWidget::NativeConstruct()
 	{
 		if (MasterSoundClass)
 		{
-			UGameplayStatics::SetSoundMixClassOverride(GetWorld(), MasterSoundMix, MasterSoundClass, CurrentMasterVolume, 1.0f, 0.0f, true);
+			UGameplayStatics::SetSoundMixClassOverride(GetWorld(), MasterSoundMix, MasterSoundClass, 1.0f, 1.0f, 0.0f, true);
 		}
 		if (BGMSoundClass)
 		{
@@ -243,10 +272,8 @@ void USettingWidget::OnMasterVolumeChanged(float Value)
 {
 	CurrentMasterVolume = Value;
 
-	if (MasterSoundMix && MasterSoundClass)
-	{
-		UGameplayStatics::SetSoundMixClassOverride(GetWorld(), MasterSoundMix, MasterSoundClass, Value, 1.0f, 0.0f, true);
-	}
+	if (auto* Settings = GetGameInstance()->GetSubsystem<UMouseSensitivitySubsystem>())
+		Settings->SetMasterVolume(Value);
 
 	GConfig->SetFloat(TEXT("Audio"), TEXT("MasterVolume"), Value, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);

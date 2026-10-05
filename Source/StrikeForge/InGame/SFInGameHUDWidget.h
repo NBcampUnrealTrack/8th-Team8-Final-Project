@@ -65,6 +65,8 @@ public:
     UWidget* GetTutorialBuildModeButton() const;
     UWidget* FindTutorialBuildCatalogEntry(FName BuildingRowName) const;
     UWidget* FindTutorialProductionButton(FName UnitRowName) const;
+    UWidget* GetTutorialCommanderSkillWidget(int32 SkillTier) const;
+    void RefreshCommanderSkillIcons();
     UFUNCTION(
         BlueprintCallable,
         Category = "SF|HUD|Building"

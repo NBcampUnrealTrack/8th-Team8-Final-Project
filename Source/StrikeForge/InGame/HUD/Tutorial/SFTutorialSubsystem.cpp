@@ -27,6 +27,9 @@
 #include "Sound/SoundBase.h"
 #include "Logging/SFLog.h"
 #include "Blueprint/UserWidget.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/SFInGameHUDWidget.h"
+#include "Units/Commander/SFCommander.h"
 #include "Slate/SObjectWidget.h"
 #include "Layout/WidgetPath.h"
 #include "Containers/Ticker.h"
@@ -347,6 +350,15 @@ void USFTutorialSubsystem::EnterGuideStep(int32 InStepIndex)
     FSFStageIntroGuideStep& MutableStep = GuideSteps[GuideStepIndex];
     SnapPlacementGuideToBuildingGrid(MutableStep);
     const FSFStageIntroGuideStep& Step = MutableStep;
+
+    if (Step.CommanderSkillTier > 0)
+    {
+        ASFInGamePlayerController* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>();
+        if (PC && PC->GetMyCommander() && PC->GetInGameHUDWidget())
+        {
+            PC->GetInGameHUDWidget()->SelectActor(PC->GetMyCommander());
+        }
+    }
 
     // 요구 건물은 칸을 넘어서, 안내가 끝난 뒤에도 유지된다.
     //

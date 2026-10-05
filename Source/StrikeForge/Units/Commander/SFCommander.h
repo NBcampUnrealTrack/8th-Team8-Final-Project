@@ -14,6 +14,7 @@ class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
+class UTexture2D;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -48,6 +49,7 @@ class STRIKEFORGE_API ASFCommander
 
 public:
 	ASFCommander();
+	friend struct FSFPlaytestMovementAccess;
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
@@ -65,6 +67,21 @@ public:
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
 
+	/** Player-facing tiers are 1..3; the Nexus stores zero-based upgrade tiers. */
+	UFUNCTION(BlueprintPure, Category = "SF|Skill")
+	int32 GetUnlockedSkillTier() const;
+
+	bool IsSkillTierUnlocked(int32 SkillTier) const;
+	static constexpr float SkillCooldownSeconds = 30.f;
+	UFUNCTION(BlueprintPure, Category = "SF|Skill")
+	float GetSkillCooldownRemaining(int32 SkillTier) const;
+	FText GetSkillName(int32 SkillTier) const;
+	FText GetSkillEffectDescription(int32 SkillTier) const;
+	ERace GetCommanderRace() const { return Race; }
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TArray<TSoftObjectPtr<UTexture2D>> SkillIcons;
+
 	UFUNCTION()
 	void ActiveCommanderSkill_Beast(int32 SkillTier);
 
@@ -75,6 +92,10 @@ public:
 	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, TSubclassOf<AActor> ActorClass);
 
 protected:
+	// Game time stops with pause; each skill keeps its own timer across HUD selection changes.
+	double SkillCooldownEnds[3] = {0.0, 0.0, 0.0};
+	friend struct FSFCommanderCooldownTestAccess;
+
 	virtual void BeginPlay() override;
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -63,7 +63,12 @@ void AUnitAIController::OnMoveCompleted(FAIRequestID RequestID, const FPathFollo
 	// 예전에는 !IsFailure() 를 넘겼는데, Aborted 는 실패가 아니라서 true 가 나갔다.
 	// ClearMoveRequest 의 StopMovement 나 새 요청으로 덮이는 것까지 "도착" 으로
 	// 보고돼, 구독자가 도착 처리를 잘못 실행할 수 있었다.
-	OnCompleteMoving.Broadcast(Result.IsSuccess());
+	// Replacing/stopping a request synchronously aborts the old path before the
+	// new one is installed. That is not a failure of the command taking over.
+	if (Result.Code != EPathFollowingResult::Aborted)
+	{
+		OnCompleteMoving.Broadcast(Result.IsSuccess());
+	}
 }
 
 bool AUnitAIController::IsMoving() const

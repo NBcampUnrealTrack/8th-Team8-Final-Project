@@ -10,6 +10,7 @@
 
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
+#include "Components/CapsuleComponent.h"
 
 int32 USFUnitSpawnLibrary::ResolveTeamIndex(const AActor* InActor)
 {
@@ -203,10 +204,33 @@ AUnitBase* USFUnitSpawnLibrary::SpawnUnitFromRow(
 		InSpawnerActor->GetActorLocation() + InSpawnerActor->GetActorForwardVector() * InSpawnDistance;
 
 	FVector SpawnLocation;
-	FindSpawnLocation(InSpawnerActor, Origin, InScatterRadius, SpawnLocation);
-
-	// 캡슐 절반 높이만큼 띄워야 바닥에 파묻히지 않는다
-	SpawnLocation.Z += 90.f;
+	const AUnitBase* Defaults = SpawnClass->GetDefaultObject<AUnitBase>();
+	const UCapsuleComponent* Capsule = Defaults->GetCapsuleComponent();
+	const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const float Radius = Capsule->GetScaledCapsuleRadius();
+	const FBox Bounds = InSpawnerActor->GetComponentsBoundingBox(false);
+	const float SearchRadius = FMath::Max(InSpawnDistance, Bounds.IsValid ? Bounds.GetExtent().Size2D() + Radius + 100.f : 400.f);
+	bool bFoundLocation = false;
+	for (int32 Attempt = 0; Attempt < 49; ++Attempt)
+	{
+		const float Angle = (Attempt % 16) * 2.f * PI / 16.f;
+		const FVector Candidate = Attempt == 0 ? Origin : InSpawnerActor->GetActorLocation() +
+			FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * (SearchRadius + ((Attempt - 1) / 16) * 150.f);
+		if (!FindSpawnLocation(InSpawnerActor, Candidate, Attempt == 0 ? InScatterRadius : 0.f, SpawnLocation)) continue;
+		SpawnLocation.Z += HalfHeight + 2.f;
+		// Check both buildings and units even when unit-to-unit collision is ignored.
+		FCollisionObjectQueryParams Objects;
+		Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+		Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+		Objects.AddObjectTypesToQuery(ECC_Pawn);
+		if (!World->OverlapAnyTestByObjectType(SpawnLocation, FQuat::Identity, Objects,
+			FCollisionShape::MakeCapsule(Radius, HalfHeight)))
+		{
+			bFoundLocation = true;
+			break;
+		}
+	}
+	if (!bFoundLocation) return nullptr;
 
 	const FTransform SpawnTM(InSpawnerActor->GetActorRotation(), SpawnLocation);
 
@@ -218,7 +242,7 @@ AUnitBase* USFUnitSpawnLibrary::SpawnUnitFromRow(
 		SpawnTM,
 		InSpawnerActor,
 		nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding);
 
 	if (!Unit)
 	{

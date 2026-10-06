@@ -6,6 +6,11 @@
 #include "Interfaces/Units/Targetable.h"
 #include "InGame/HUD/Tutorial/SFStageIntroWidget.h"
 #include "Units/Commander/SFCommander.h"
+#include "Components/Image.h"
+#include "InGame/HUD/SFSkillCooldownWidget.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Engine/Texture2D.h"
 #include "Units/Unit/UnitBase.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 #include "Interfaces/Building/Productable.h"
@@ -65,6 +70,7 @@
 
 #include "TimerManager.h"
 #include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Buildings/UI/Synergy/SFPlacementSynergyBonusWidget.h"
 #include "Components/CanvasPanel.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 
@@ -311,6 +317,9 @@ void USFInGameHUDWidget::NativeConstruct()
 
         RefreshSynergyBadges();
     }
+
+    // 건물 배치 모드 동안 커서 옆에 시너지 보너스를 표시할 위젯을 만듭니다.
+    CreatePlacementSynergyBonusWidget();
 }
 
 void USFInGameHUDWidget::NativeDestruct()
@@ -468,6 +477,7 @@ void USFInGameHUDWidget::NativeTick(
 
     RefreshSelectedResourceInfo();
 
+    RefreshCommanderSkillIcons();
     UpdateEnemyHoverIndicator();
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
@@ -890,6 +900,60 @@ UTexture2D* USFInGameHUDWidget::ResolvePortraitImage(
         : UIData.PortraitImage.LoadSynchronous();
 }
 
+UWidget* USFInGameHUDWidget::GetTutorialCommanderSkillWidget(int32 SkillTier) const
+{
+    return SelectionPanel && SkillTier >= 1 && SkillTier <= 3
+        ? SelectionPanel->GetWidgetFromName(FName(*FString::Printf(TEXT("SkillSlotSizeBox%02d"), SkillTier))) : nullptr;
+}
+
+void USFInGameHUDWidget::RefreshCommanderSkillIcons()
+{
+    ASFCommander* Commander = Cast<ASFCommander>(SelectedActor.Get());
+    if (!Commander || !SelectionPanel) return;
+
+    const TCHAR* Keys[] = {TEXT("Z"), TEXT("X"), TEXT("C")};
+    const int32 UnlockedTier = Commander->GetUnlockedSkillTier();
+    if (UWidget* Box = SelectionPanel->GetWidgetFromName(TEXT("CommanderSkillBox")))
+        Box->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        UImage* Icon = Cast<UImage>(SelectionPanel->GetWidgetFromName(
+            FName(*FString::Printf(TEXT("SkillIcon%02d"), Index + 1))));
+        if (!Icon) continue;
+        if (Commander->SkillIcons.IsValidIndex(Index))
+        {
+            UTexture2D* Texture = Commander->SkillIcons[Index].LoadSynchronous();
+            if (Texture && Icon->GetBrush().GetResourceObject() != Texture)
+                Icon->SetBrushFromTexture(Texture);
+        }
+        const bool bUnlocked = Index < UnlockedTier;
+        Icon->SetColorAndOpacity(bUnlocked ? FLinearColor::White : FLinearColor(0.28f, 0.28f, 0.28f, 1.f));
+        Icon->SetVisibility(ESlateVisibility::Visible);
+        const FText Tip = FText::FromString(FString::Printf(TEXT("%s 키: %s\n%s\n넥서스 %d티어부터 사용 가능%s\n재사용 대기시간 30초"),
+            Keys[Index], *Commander->GetSkillName(Index + 1).ToString(),
+            *Commander->ReadSkillEffectDescription(Index + 1).ToString(),
+            Index + 1, bUnlocked ? TEXT("") : TEXT(" (잠김)")));
+        if (!Icon->GetToolTipText().EqualTo(Tip)) Icon->SetToolTipText(Tip);
+        auto* Overlay = Cast<UOverlay>(SelectionPanel->GetWidgetFromName(
+            FName(*FString::Printf(TEXT("SkillSlotOverlay%02d"), Index + 1))));
+        if (!Overlay) continue;
+        USFSkillCooldownWidget* Cooldown = nullptr;
+        for (UWidget* Child : Overlay->GetAllChildren())
+            if (auto* Existing = Cast<USFSkillCooldownWidget>(Child)) { Cooldown = Existing; break; }
+        if (!Cooldown)
+        {
+            Cooldown = NewObject<USFSkillCooldownWidget>(SelectionPanel);
+            Cooldown->SetVisibility(ESlateVisibility::HitTestInvisible);
+            auto* CooldownSlot = Overlay->AddChildToOverlay(Cooldown);
+            CooldownSlot->SetPadding(FMargin(0.f));
+            CooldownSlot->SetHorizontalAlignment(HAlign_Fill);
+            CooldownSlot->SetVerticalAlignment(VAlign_Fill);
+        }
+        Cooldown->SetCooldown(Commander->GetSkillCooldownRemaining(Index + 1), ASFCommander::SkillCooldownSeconds);
+    }
+}
+
 void USFInGameHUDWidget::RefreshSelectionPanels()
 {
     const bool bHasValidSelection =
@@ -968,6 +1032,7 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
         );
     }
 
+    RefreshCommanderSkillIcons();
     RefreshSelectedResourceInfo();
 
     FResources UpgradeCost{};
@@ -1342,6 +1407,37 @@ void USFInGameHUDWidget::RefreshSynergyBadges()
             Badge->SetVisibility(ESlateVisibility::Collapsed);
         }
     }
+}
+
+// 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번만 만들어 넣습니다. 표시·숨김과 커서 추적은 위젯이 스스로 처리합니다.
+// NativeConstruct가 호출하며, 클래스는 WBP_SFInGameHUD의 PlacementSynergyBonusWidgetClass에서 지정합니다.
+void USFInGameHUDWidget::CreatePlacementSynergyBonusWidget()
+{
+    if (IsValid(PlacementSynergyBonusWidget) ||
+        !IsValid(RootCanvas) ||
+        !PlacementSynergyBonusWidgetClass)
+    {
+        return;
+    }
+
+    PlacementSynergyBonusWidget =
+        CreateWidget<USFPlacementSynergyBonusWidget>(
+            GetOwningPlayer(),
+            PlacementSynergyBonusWidgetClass);
+
+    if (!IsValid(PlacementSynergyBonusWidget))
+    {
+        return;
+    }
+
+    UCanvasPanelSlot* CanvasSlot =
+        RootCanvas->AddChildToCanvas(PlacementSynergyBonusWidget);
+
+    CanvasSlot->SetAutoSize(true);
+    CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+
+    // 시너지 배지와 HUD 패널 위에 그립니다.
+    CanvasSlot->SetZOrder(100);
 }
 
 void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()

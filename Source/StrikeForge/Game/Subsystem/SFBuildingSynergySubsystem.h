@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Datas/Building/SFBuildingType.h"
 #include "Datas/Building/Synergy/SFBuildingSynergyTypes.h"
 #include "Game/Subsystem/BuildingGridInfo.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -82,12 +83,17 @@ public:
 	/** WorldContext가 속한 월드의 시너지 Subsystem을 안전하게 반환합니다. */
 	static USFBuildingSynergySubsystem* Get(const UObject* WorldContext);
 
-	/** 건물을 시너지 계산 대상 목록에 추가하고 현재 구역을 즉시 다시 계산합니다. */
+	/** 건물을 시너지 계산 대상 목록에 추가하고, 완성 건물이면 재계산합니다(Batch 구간에서는 표시만). */
 	void RegisterBuilding(ASFBaseBuilding* Building);
-	/** 제거되는 건물과 적용 기록을 정리하고 남은 건물 기준으로 다시 계산합니다. */
+	/** 제거되는 건물과 적용 기록을 정리하고, 활성 건물이었다면 재계산합니다(Batch 구간에서는 표시만). */
 	void UnregisterBuilding(ASFBaseBuilding* Building);
-	/** 건설 완료·비활성화처럼 건물 상태가 바뀌었을 때 전체 시너지를 갱신합니다. */
+	/** 건설 완료·비활성화처럼 건물 상태가 바뀌었을 때 재계산합니다(Batch 구간에서는 표시만). */
 	void NotifyBuildingChanged(ASFBaseBuilding* Building);
+
+	/** 여러 건물을 한꺼번에 등록·변경하는 구간을 시작합니다. 구간 안에서는 재계산하지 않고 표시만 남깁니다. */
+	void BeginUpdateBatch();
+	/** 가장 바깥 구간이 끝나면 쌓인 변경을 한 번에 재계산합니다. BeginUpdateBatch와 반드시 짝을 이룹니다. */
+	void EndUpdateBatch();
 
 	/** 지정한 팀이 현재 보유한 계산 완료 시너지 구역만 반환합니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
@@ -106,7 +112,16 @@ public:
 		const USFBuildingSynergyDefinition* SynergyDefinition,
 		TArray<FBuildingGridInfo>& OutLinkGridInfos) const;
 
-	/** 해당 건물에 HighestOnly로 적용 중인 가장 높은 배치 시너지 증가율을 반환합니다. */
+	/**
+	 * 지정한 격자에 그 종류의 건물이 있다고 할 때 받을 생산 증가율(%)을 현재 구역으로 계산합니다.
+	 * 같은 시너지는 최고값, 다른 시너지끼리는 합산합니다. 실제 버프 적용과 배치 미리보기가 같은 함수를 씁니다.
+	 */
+	float CalculateProductionBonusPercentAt(
+		int32 TeamIndex,
+		ESFBuildingType BuildingType,
+		const FBuildingGridInfo& GridInfo) const;
+
+	/** 해당 건물에 적용 중인 배치 시너지 증가율을 반환합니다. 시너지별 최고값을 합산한 값입니다. */
 	UFUNCTION(BlueprintPure, Category = "SF|Building Synergy")
 	float GetProductionBonusPercent(const ASFBaseBuilding* Building) const;
 
@@ -121,6 +136,10 @@ public:
 	virtual void Deinitialize() override;
 
 private:
+	/** 시너지 결과가 바뀔 수 있음을 기록하고, Batch 구간이 아니면 즉시 FlushDirtySynergies를 실행합니다. */
+	void MarkSynergiesDirty();
+	/** 기록된 변경이 있을 때만 RecalculateSynergies를 한 번 실행합니다. */
+	void FlushDirtySynergies();
 	/** 활성 원천 건물을 클러스터링하고 구역 생성·대상 판정·배율 적용을 한 번에 갱신합니다. */
 	void RecalculateSynergies();
 	/** 생산속도 인터페이스를 통해 대상 건물에 BuildingSynergy 배율을 등록합니다. */
@@ -154,4 +173,9 @@ private:
 	int32 NextBadgeAnchorStamp = 0;
 
 	bool bIsRecalculating = false;
+
+	/** BeginUpdateBatch 중첩 깊이입니다. 0보다 크면 변경을 표시만 하고 재계산을 미룹니다. */
+	int32 UpdateBatchDepth = 0;
+	/** 마지막 재계산 이후 시너지 결과가 바뀔 수 있는 변경이 있었는지 나타냅니다. */
+	bool bSynergyDirty = false;
 };

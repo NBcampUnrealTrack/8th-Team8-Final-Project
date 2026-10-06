@@ -1,5 +1,6 @@
 #include "SFStoryWidget.h"
 #include "SFStoryIllustrationActor.h"
+#include "Game/GameInstance/SFGameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -25,7 +26,7 @@ namespace SFStory
 {
     constexpr float OpenDuration = 1.15f;
     constexpr float CloseDuration = .55f;
-    constexpr int32 ChapterCount = 5;
+    constexpr int32 BaseChapterCount = 5;
     const FLinearColor Ink(.115f, .20f, .18f);
     const FLinearColor Teal(.018f, .19f, .18f);
     const FLinearColor Gold(.65f, .43f, .17f);
@@ -47,8 +48,24 @@ namespace SFStory
           TEXT("수호자들은 자신들의 고향을 지키려 했다.") },
         { TEXT("전쟁의 서막"), TEXT("하나의 행성, 두 종족의 운명"),
           TEXT("부족한 에테르를 확보하기 위해 비스트는 에테리안이 점령한 풍요로운 땅으로 향했다. 에테르가 풍부한 지역을 차지하려는 전쟁이 곳곳에서 일어났다.\n\n에테리안 역시 고향과 에테르를 지키기 위해 비스트를 제거할 계획을 세우기 시작했다.\n\n같은 행성에서 살아가는 두 종족. 푸른빛을 둘러싼 싸움은 이제, 당신이 펼칠 전장의 이야기로 이어진다."),
-          TEXT("이제, 다음 이야기는 전장에서 쓰인다.") }
+          TEXT("이제, 다음 이야기는 전장에서 쓰인다.") },
+        { TEXT("인간이 남긴 이름"), TEXT("에테리안의 시작, 감춰진 내전"),
+          TEXT("에테리안은 처음부터 에테리안이 아니었다. 그들은 본래 인간이라 불리던 종족이었다.\n\n인간은 에테르의 힘에 깊이 심취했다. 더 많은 힘을 차지하려는 욕망은 결국 같은 종족 사이의 내전으로 이어졌다.\n\n그 전쟁에서 살아남은 이들은 스스로를 에테리안이라 칭했다. 인간이라는 옛 이름을 뒤로한 채, 그들은 지금까지 에테르를 다스리며 살아왔다."),
+          TEXT("푸른 빛은 인간의 이름마저 바꾸었다.") },
+        { TEXT("실험의 희생자들"), TEXT("비스트의 탄생에 숨겨진 진실"),
+          TEXT("비스트의 탄생은 우연한 변화가 아니었다. 그들은 인간이 에테르를 이용해 벌인 실험에 희생된 동물들이었다.\n\n실험은 성공했다. 에테르는 인간보다 동물에게 더 강력한 효과를 보였고, 동물들은 지성을 지닌 비스트로 다시 태어났다.\n\n에테리안은 그 사실을 감추기 위해 비스트를 학살했다. 그러나 비스트의 폭발적인 번식으로 말살에 실패했고, 결국 같은 행성에서 공존하게 되었다."),
+          TEXT("깨어난 지성 뒤에는 실험이 있었다.") },
+        { TEXT("진실이 부른 전쟁"), TEXT("상처를 깨달은 비스트의 결집"),
+          TEXT("비스트는 마침내 자신들의 기원을 알게 되었다. 에테리안의 손에 농락당하고, 실험의 도구로 희생되었다는 사실이었다.\n\n에테르를 둘러싼 싸움은 이제 감춰진 과거를 향한 분노로 번졌다. 비스트는 각지의 세력을 모으며 대규모 전투를 준비하기 시작했다.\n\n하나의 행성에서 이어져 온 위태로운 공존. 드러난 진실은 두 종족을 더 거대한 전쟁으로 이끌고 있었다."),
+          TEXT("흩어진 분노가 하나의 전열이 된다.") }
     };
+    constexpr int32 ChapterCount = UE_ARRAY_COUNT(Chapters);
+
+    // Reuse the living faction scenes for the newly revealed historical chapters.
+    int32 IllustrationChapter(int32 Chapter)
+    {
+        return Chapter == 5 ? 3 : Chapter == 6 ? 2 : Chapter == 7 ? 4 : Chapter;
+    }
 
     float Ease(float Value)
     {
@@ -138,20 +155,24 @@ public:
 
     void Present(int32 Index, float InAmount, float InAlpha, float InPageAlpha, float InAge, float InPageAge, UMaterialInterface* InCapture)
     {
+        const int32 InCount = Owner.IsValid() ? Owner->GetAvailableChapterCount() : SFStory::BaseChapterCount;
         Amount = InAmount; Alpha = InAlpha; PageAlpha = InPageAlpha;
         Age=InAge; PageAge=InPageAge;
         CaptureBrush.SetResourceObject(InCapture);
         CaptureBrush.DrawAs=ESlateBrushDrawType::Image;
-        if (Chapter != Index)
+        if (Chapter != Index || AvailableCount != InCount)
         {
             Chapter = Index;
+            AvailableCount = InCount;
             const auto& Data = SFStory::Chapters[Chapter];
             Title->SetText(FText::FromString(Data.Title));
             Subtitle->SetText(FText::FromString(Data.Subtitle));
             Body->SetText(FText::FromString(Data.Body));
-            ChapterLabel->SetText(FText::FromString(FString::Printf(TEXT("CHAPTER  %02d"), Chapter + 1)));
-            PageLabel->SetText(FText::FromString(FString::Printf(TEXT("%02d  /  05       방향키: 넘기기     ESC: 닫기"), Chapter + 1)));
-            NextLabel->SetText(FText::FromString(Chapter == 4 ? TEXT("이야기 접기") : TEXT("다음")));
+            const FString Heading=FString::Printf(TEXT("CHAPTER  %02d"),Chapter+1)
+                + (Chapter >= SFStory::BaseChapterCount ? TEXT("   스테이지 3 클리어 기록") : TEXT(""));
+            ChapterLabel->SetText(FText::FromString(Heading));
+            PageLabel->SetText(FText::FromString(FString::Printf(TEXT("%02d  /  %02d       방향키: 넘기기     ESC: 닫기"), Chapter + 1, AvailableCount)));
+            NextLabel->SetText(FText::FromString(Chapter == AvailableCount-1 ? TEXT("이야기 접기") : TEXT("다음")));
         }
         Previous->SetEnabled(Chapter > 0 && Amount >= .99f);
         Next->SetEnabled(Amount >= .99f);
@@ -243,13 +264,14 @@ public:
             Line({{154,705},{1286,705}},FaintGold,1.f,12);
             Line({{568,243},{568,661}},FaintGold,1.f,12);
             const FVector2D Center(347,424);
+            const int32 ArtChapter = SFStory::IllustrationChapter(Chapter);
             const float BackgroundReveal=SFStory::Ease(PageAge/.48f);
             const float MidReveal=SFStory::Ease((PageAge-.14f)/.55f);
             const float ForegroundReveal=SFStory::Ease((PageAge-.30f)/.62f);
             const FVector2D Far(FMath::Sin(Age*.23f)*2.f,FMath::Cos(Age*.19f)*1.5f);
             const FVector2D Mid(FMath::Sin(Age*.39f)*4.f,(1-MidReveal)*14+FMath::Cos(Age*.32f)*2.f);
             const FVector2D Near(FMath::Sin(Age*.55f)*6.f,(1-ForegroundReveal)*20+FMath::Sin(Age*.8f)*3.f);
-            const bool bWarm=Chapter==2;
+            const bool bWarm=ArtChapter==2;
             const FLinearColor Sky=bWarm ? FLinearColor(.15f,.095f,.055f,A*BackgroundReveal) : FLinearColor(.025f,.12f,.145f,A*BackgroundReveal);
             TArray<FVector2D> Backdrop;
             for(int32 I=0;I<64;++I) { float R=2*PI*I/64; Backdrop.Add(Center+FVector2D(FMath::Cos(R),FMath::Sin(R))*160); }
@@ -269,7 +291,7 @@ public:
                 FSlateDrawElement::MakeBox(Out,Layer+Z,G.ToPaintGeometry(Size,FSlateLayoutTransform(P)),&Brush,ESlateDrawEffect::None,FLinearColor(1,1,1,Opacity*Alpha)*Tint);
             };
             // Layer 1: distant stars/landscape. It moves least and arrives first.
-            if(Chapter==0)
+            if(ArtChapter==0)
             {
                 for(int32 I=0;I<24;++I)
                 {
@@ -290,7 +312,7 @@ public:
                 }
             }
             // Layer 2: planet, ether deposits, and the game's original faction buildings.
-            if(Chapter==0)
+            if(ArtChapter==0)
             {
                 const FVector2D PlanetCenter=Center+Mid;
                 TArray<FVector2D> Planet;
@@ -301,16 +323,16 @@ public:
                 Ring(PlanetCenter,{126,40+FMath::Sin(Age*.45f)*9},FLinearColor(.63f,.84f,.68f,.7f*A*MidReveal),2,20);
                 Image(2,Center+Near-FVector2D(45,40),{90,90},A*ForegroundReveal,21);
             }
-            else if(Chapter==1)
+            else if(ArtChapter==1)
             {
                 Image(2,FVector2D(204,374)+Mid,{132,132},A*MidReveal*.7f,18);
                 Image(2,FVector2D(370,371)-Mid*.6f,{118,118},A*MidReveal*.75f,18);
                 Ring(Center+FVector2D(0,92),{124,24},FLinearColor(.1f,.78f,.8f,A*MidReveal*(.4f+.15f*FMath::Sin(Age*1.4f))),2,19);
                 Image(2,FVector2D(236,308)+Near,{230,230},A*ForegroundReveal,20);
             }
-            else if(Chapter==2 || Chapter==3)
+            else if(ArtChapter==2 || ArtChapter==3)
             {
-                Image(Chapter==2?0:1,FVector2D(198,345)+Mid,{215,215},A*MidReveal,18);
+                Image(ArtChapter==2?0:1,FVector2D(198,345)+Mid,{215,215},A*MidReveal,18);
                 Image(2,FVector2D(387,479)-Mid*.6f,{84,84},A*MidReveal*.8f,19);
             }
             else
@@ -325,7 +347,12 @@ public:
             const FString Quote = SFStory::Chapters[Chapter].Quote;
             const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Quote, QuoteFont);
             FSlateDrawElement::MakeText(Out,Layer+23,G.ToPaintGeometry(FVector2D(400,40),FSlateLayoutTransform(FVector2D(347-TextSize.X/2,622))),Quote,QuoteFont,ESlateDrawEffect::None,FLinearColor(.43f,.33f,.18f,A*Alpha)*Tint);
-            for(int32 I=0;I<5;++I) Diamond({299+I*24.f,678},I==Chapter?6:3,FLinearColor(.05f,.40f,.37f,(I==Chapter?1.f:.30f)*A),23);
+            for(int32 I=0;I<AvailableCount;++I) Diamond({347-(AvailableCount-1)*12.f+I*24.f,678},I==Chapter?6:3,FLinearColor(.05f,.40f,.37f,(I==Chapter?1.f:.30f)*A),23);
+            if(AvailableCount == SFStory::BaseChapterCount && Chapter == AvailableCount-1)
+            {
+                FSlateFontInfo HintFont=QuoteFont; HintFont.Size=16;
+                FSlateDrawElement::MakeText(Out,Layer+23,G.ToPaintGeometry(FVector2D(390,24),FSlateLayoutTransform(FVector2D(154,651))),TEXT("스테이지 3 클리어 후 다음 기록이 열립니다."),HintFont,ESlateDrawEffect::None,FLinearColor(.43f,.33f,.18f,A*Alpha)*Tint);
+            }
         }
         return SCompoundWidget::OnPaint(Args,G,Cull,Out,Layer+24,Style,bEnabled);
     }
@@ -336,6 +363,7 @@ private:
     TSharedPtr<SButton> Previous, Next;
     FSlateFontInfo QuoteFont;
     int32 Chapter = INDEX_NONE;
+    int32 AvailableCount = SFStory::BaseChapterCount;
     float Amount=0, Alpha=0, PageAlpha=0;
     float Age=0, PageAge=0;
     FSlateBrush CaptureBrush;
@@ -379,6 +407,8 @@ void USFStoryWidget::ReleaseSlateResources(bool bReleaseChildren)
 
 void USFStoryWidget::OpenStory()
 {
+    const USFGameInstance* Progress = GetGameInstance<USFGameInstance>();
+    AvailableChapterCount = Progress && Progress->GetHighestClearedStageOrder() >= 3 ? SFStory::ChapterCount : SFStory::BaseChapterCount;
     ChapterIndex=0; OpeningElapsed=0; PageElapsed=0; ClosingElapsed=0;
     bClosing=false; bPreview=false;
     IllustrationElapsed=0.f;
@@ -407,11 +437,11 @@ void USFStoryWidget::CloseStory()
 void USFStoryWidget::TurnPage(int32 Direction)
 {
     if (bClosing || OpeningElapsed < SFStory::OpenDuration+.12f) return;
-    if (Direction > 0 && ChapterIndex == SFStory::ChapterCount-1) { CloseStory(); return; }
-    const int32 NewIndex=FMath::Clamp(ChapterIndex+Direction,0,SFStory::ChapterCount-1);
+    if (Direction > 0 && ChapterIndex == AvailableChapterCount-1) { CloseStory(); return; }
+    const int32 NewIndex=FMath::Clamp(ChapterIndex+Direction,0,AvailableChapterCount-1);
     if (NewIndex == ChapterIndex) return;
     ChapterIndex=NewIndex; PageElapsed=0; bPreview=false;
-    if (IllustrationStage) IllustrationStage->SetChapter(NewIndex);
+    if (IllustrationStage) IllustrationStage->SetChapter(SFStory::IllustrationChapter(NewIndex));
     RefreshPresentation();
 }
 
@@ -479,9 +509,9 @@ FReply USFStoryWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry,const FK
 #if WITH_DEV_AUTOMATION_TESTS
 void USFStoryWidget::PreviewChapter(int32 Index,float OpeningTime)
 {
-    ChapterIndex=FMath::Clamp(Index,0,SFStory::ChapterCount-1);
+    ChapterIndex=FMath::Clamp(Index,0,AvailableChapterCount-1);
     OpeningElapsed=OpeningTime; PageElapsed=2.f; bPreview=true; bClosing=false;
-    if (IllustrationStage) IllustrationStage->SetChapter(ChapterIndex);
+    if (IllustrationStage) IllustrationStage->SetChapter(SFStory::IllustrationChapter(ChapterIndex));
     RefreshPresentation();
 }
 #endif

@@ -149,9 +149,17 @@ void USFBuildingSynergySubsystem::RegisterBuilding(ASFBaseBuilding* Building)
 		return;
 	}
 
-	const TWeakObjectPtr<ASFBaseBuilding> WeakBuilding(Building);
-	RegisteredBuildings.Add(WeakBuilding);
-	RecalculateSynergies();
+	bool bAlreadyRegistered = false;
+	RegisteredBuildings.Add(
+		TWeakObjectPtr<ASFBaseBuilding>(Building),
+		&bAlreadyRegistered);
+
+	// 미완성 건물(배치 고스트·건설 중)은 계산에 들어가지 않으므로 결과가 바뀌지 않습니다.
+	// 완성되면 FinalizeTierActivation → NotifyBuildingChanged에서 다시 계산됩니다.
+	if (!bAlreadyRegistered && Building->IsTierActivated())
+	{
+		MarkSynergiesDirty();
+	}
 }
 // 건물이 Endplay할때(파괴되었을때) 호출
 void USFBuildingSynergySubsystem::UnregisterBuilding(ASFBaseBuilding* Building)
@@ -170,7 +178,11 @@ void USFBuildingSynergySubsystem::UnregisterBuilding(ASFBaseBuilding* Building)
 	// 배지가 이 건물 위에 있었다면 재계산에서 클러스터의 남은 건물로 옮겨지고, 남은 건물이 없으면 배지가 사라집니다.
 	BadgeAnchorStamps.Remove(WeakBuilding);
 
-	RecalculateSynergies();
+	// 이미 비활성화된 건물(고스트 취소, 파괴 시 DeactivateActiveTier에서 계산 완료)은 다시 계산할 필요가 없습니다.
+	if (Building->IsTierActivated())
+	{
+		MarkSynergiesDirty();
+	}
 }
 
 // 선택한 시너지 원천 건물을 배지 기준으로 기록하고, 전체 재계산 없이 소속 클러스터 배지의 X·Y만 그 건물 위로 옮깁니다.
@@ -234,6 +246,55 @@ void USFBuildingSynergySubsystem::NotifyBuildingChanged(ASFBaseBuilding* Buildin
 		return;
 	}
 
+	MarkSynergiesDirty();
+}
+
+// 여러 건물을 한꺼번에 등록·변경하는 구간을 시작합니다. 구간 안의 변경은 재계산 필요 표시만 남깁니다.
+// ASFGameMode::SpawnStageBuildingsFromAnchors 시작 시 호출하며, 같은 함수의 ON_SCOPE_EXIT가 EndUpdateBatch와 짝을 맞춥니다.
+void USFBuildingSynergySubsystem::BeginUpdateBatch()
+{
+	++UpdateBatchDepth;
+}
+
+// 가장 바깥 구간이 끝나면 구간 동안 쌓인 변경을 FlushDirtySynergies로 한 번에 계산합니다.
+// ASFGameMode::SpawnStageBuildingsFromAnchors가 끝날 때 ON_SCOPE_EXIT로 호출됩니다(중간 return 포함).
+void USFBuildingSynergySubsystem::EndUpdateBatch()
+{
+	if (!ensureMsgf(UpdateBatchDepth > 0, TEXT("EndUpdateBatch가 BeginUpdateBatch보다 많이 호출됐습니다.")))
+	{
+		return;
+	}
+
+	--UpdateBatchDepth;
+
+	if (UpdateBatchDepth == 0)
+	{
+		FlushDirtySynergies();
+	}
+}
+
+// 시너지 결과가 바뀔 수 있음을 기록하고, Batch 구간이 아니면 즉시 계산합니다.
+// RegisterBuilding·UnregisterBuilding·NotifyBuildingChanged가 호출합니다.
+void USFBuildingSynergySubsystem::MarkSynergiesDirty()
+{
+	bSynergyDirty = true;
+
+	if (UpdateBatchDepth == 0)
+	{
+		FlushDirtySynergies();
+	}
+}
+
+// 기록된 변경이 있을 때만 RecalculateSynergies를 한 번 실행합니다.
+// 계산 도중 들어온 변경은 표시를 남겨 두어 다음 Flush에서 반영합니다.
+void USFBuildingSynergySubsystem::FlushDirtySynergies()
+{
+	if (!bSynergyDirty || bIsRecalculating)
+	{
+		return;
+	}
+
+	bSynergyDirty = false;
 	RecalculateSynergies();
 }
 
@@ -313,6 +374,58 @@ void USFBuildingSynergySubsystem::CollectClusterLinkGridInfos(
 	}
 }
 
+// 지정한 격자에 그 종류의 건물이 있다고 할 때 받을 생산 증가율(%)을 현재 구역으로 계산합니다.
+// 같은 시너지는 최고값, 다른 시너지끼리는 합산하며 RecalculateSynergies와 UBuildingPlacement(배치 미리보기)가 함께 씁니다.
+float USFBuildingSynergySubsystem::CalculateProductionBonusPercentAt(
+	int32 TeamIndex,
+	ESFBuildingType BuildingType,
+	const FBuildingGridInfo& GridInfo) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return 0.f;
+	}
+
+	TMap<const USFBuildingSynergyDefinition*, float> HighestBonusBySynergy;
+
+	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
+	{
+		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
+
+		if (Zone.TeamIndex != TeamIndex ||
+			!IsValid(SynergyDefinition) ||
+			!SynergyDefinition->CanAffectBuildingType(BuildingType) ||
+			!Zone.EffectGridInfo.Overlaps(GridInfo))
+		{
+			continue;
+		}
+
+		const FSFBuildingSynergyLevel* ActiveLevel =
+			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
+		if (!ActiveLevel)
+		{
+			continue;
+		}
+
+		// 같은 시너지의 구역끼리는 가장 높은 증가율 하나만 남깁니다.
+		float& HighestBonus = HighestBonusBySynergy.FindOrAdd(SynergyDefinition, 0.f);
+		HighestBonus = FMath::Max(
+			HighestBonus,
+			FMath::Max(0.f, ActiveLevel->ProductionBonusPercent));
+	}
+
+	// 시너지 종류별 최고값을 더합니다(예: 군사 +20% + 사격 +20% = +40%).
+	float TotalBonusPercent = 0.f;
+
+	for (const TPair<const USFBuildingSynergyDefinition*, float>& SynergyBonus :
+		HighestBonusBySynergy)
+	{
+		TotalBonusPercent += SynergyBonus.Value;
+	}
+
+	return TotalBonusPercent;
+}
+
 float USFBuildingSynergySubsystem::GetProductionBonusPercent(
 	const ASFBaseBuilding* Building) const
 {
@@ -345,6 +458,8 @@ void USFBuildingSynergySubsystem::Deinitialize()
 	BuildingClusterIndices.Reset();
 	BadgeAnchorStamps.Reset();
 	NextBadgeAnchorStamp = 0;
+	UpdateBatchDepth = 0;
+	bSynergyDirty = false;
 	Super::Deinitialize();
 }
 
@@ -610,57 +725,36 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		}
 	}
 
+	// 시너지 부여: 대상 건물마다 방금 만든 구역으로 최종 증가율을 구합니다.
+	// 배치 미리보기도 같은 CalculateProductionBonusPercentAt을 쓰므로 미리보기 값과 실제 버프가 항상 같습니다.
 	TMap<TWeakObjectPtr<ASFBaseBuilding>, float> DesiredMultipliers;
 
-	// 시너지 부여
-	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
+	for (ASFBaseBuilding* Target : ActiveBuildings)
 	{
-		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
-		if (!IsValid(SynergyDefinition))
+		if (!Target->GetClass()->ImplementsInterface(
+				USFProductionRateModifiable::StaticClass()))
 		{
 			continue;
 		}
 
-		const FSFBuildingSynergyLevel* ActiveLevel =
-			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
-		if (!ActiveLevel)
+		const USFBuildingDefinition* TargetDefinition =
+			Target->GetBuildingDefinition();
+
+		FBuildingGridInfo TargetGridInfo;
+		if (!IsValid(TargetDefinition) ||
+			!Target->TryGetRegisteredGridInfo(TargetGridInfo))
 		{
 			continue;
 		}
 
-		const float Multiplier =
-			1.f + FMath::Max(0.f, ActiveLevel->ProductionBonusPercent) / 100.f;
+		const float BonusPercent = CalculateProductionBonusPercentAt(
+			Target->GetTeamIndex(),
+			TargetDefinition->BuildingType,
+			TargetGridInfo);
 
-		for (ASFBaseBuilding* Target : ActiveBuildings)
+		if (BonusPercent > 0.f)
 		{
-			if (Target->GetTeamIndex() != Zone.TeamIndex ||
-				!Target->GetClass()->ImplementsInterface(
-					USFProductionRateModifiable::StaticClass()))
-			{
-				continue;
-			}
-
-			const USFBuildingDefinition* TargetDefinition =
-				Target->GetBuildingDefinition();
-
-			if (!IsValid(TargetDefinition) ||
-				!SynergyDefinition->CanAffectBuildingType(
-					TargetDefinition->BuildingType))
-			{
-				continue;
-			}
-
-			FBuildingGridInfo TargetGridInfo;
-			if (!Target->TryGetRegisteredGridInfo(TargetGridInfo) ||
-				!Zone.EffectGridInfo.Overlaps(TargetGridInfo))
-			{
-				continue;
-			}
-
-			// 여러 원천의 효과 격자가 겹쳐도 대상별 최댓값 하나만 최종 배율로 등록합니다.
-			float& DesiredMultiplier = DesiredMultipliers.FindOrAdd(
-				Target, 1.f);
-			DesiredMultiplier = FMath::Max(DesiredMultiplier, Multiplier);
+			DesiredMultipliers.Add(Target, 1.f + BonusPercent / 100.f);
 		}
 	}
 

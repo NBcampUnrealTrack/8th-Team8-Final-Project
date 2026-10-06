@@ -46,10 +46,8 @@ void USFLobbyStagePresentation::InitializeControls(UUserWidget* Lobby, USFMenuAt
         if (!State.Button) continue;
         State.OriginalClick = State.Button->OnClicked;
         State.OriginalStyle = State.Button->GetStyle();
-        State.bEnabled = State.Button->GetIsEnabled();
-        // The existing Blueprint's seventh button is Stage6_1, outside its six-entry row array.
-        // Read that stage's progress too, while retaining its original Blueprint click handler.
-        const FName ProgressRow = Rows.IsValidIndex(I) ? Rows[I] : I==6 ? FName(TEXT("Stage07")) : NAME_None;
+        const FName ProgressRow = Rows.IsValidIndex(I) ? Rows[I] : NAME_None;
+        State.bEnabled = GI && !ProgressRow.IsNone() && GI->GetStageProgressState(ProgressRow) != ESFStageProgressState::Locked;
         State.bCleared = GI && !ProgressRow.IsNone() && GI->GetStageProgressState(ProgressRow) == ESFStageProgressState::Cleared;
         if (UCanvasPanelSlot* ButtonSlot = Cast<UCanvasPanelSlot>(State.Button->Slot)) State.OriginalLayout = ButtonSlot->GetLayout();
         if (UWidget* Content = State.Button->GetContent())

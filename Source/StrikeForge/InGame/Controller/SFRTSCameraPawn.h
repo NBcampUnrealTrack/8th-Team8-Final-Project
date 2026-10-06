@@ -32,6 +32,9 @@ public:
 
     void FocusOnWorldLocation(const FVector& WorldLocation);
 
+    void SetStageCameraBounds(const FBox& NavigationBounds, float BoundaryThickness);
+    void SetMinimapInteractionActive(bool bActive);
+
 protected:
     virtual void BeginPlay() override;
 
@@ -179,6 +182,9 @@ protected:
         FVector2D(5000.0f, 5000.0f);
 
 private:
+    friend class FSFCameraMinimapTest;
+    bool bMinimapInteractionActive = false;
+
     void MoveCamera(const FInputActionValue& InputValue);
 
     void ZoomCamera(const FInputActionValue& InputValue);

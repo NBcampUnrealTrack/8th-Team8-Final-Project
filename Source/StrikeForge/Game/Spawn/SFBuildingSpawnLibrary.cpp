@@ -49,9 +49,11 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
     }
 
     FTransform SpawnTransform = InSpawnTransform;
-    // Starting buildings must face the same way as player construction.
+    // Normalize authored non-Nexus starting buildings to the common facing.
+    // Player placement already carries its stage-specific rotation from the controller.
     // Nexus facing is authored separately for each base.
-    if (InDefinition->BuildingType != ESFBuildingType::Nexus)
+    if (InSpawnMode != ESFBuildingSpawnMode::PlayerPlacedMode &&
+        InDefinition->BuildingType != ESFBuildingType::Nexus)
     {
         SpawnTransform.SetRotation(GetConstructionRotation().Quaternion());
     }

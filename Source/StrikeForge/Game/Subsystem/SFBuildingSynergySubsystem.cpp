@@ -46,8 +46,7 @@ namespace
 			FMath::Max(1, DesiredGridSize.Y));
 
 		return Grid->WorldCenterToGridInfo(
-			Grid->GridInfoToWorldCenter(CenterGridInfo),
-			SafeGridSize);
+			Grid->GridInfoToWorldCenter(CenterGridInfo), SafeGridSize);
 	}
 
 	// 두 건물 중 어느 한쪽의 링크 영역에 상대 건물 중심이 포함되면 무방향 연결로 처리합니다.
@@ -67,21 +66,23 @@ namespace
 			MakeCenteredGridInfo(Grid, Right, RightLinkSize).ContainsCenterOf(Left);
 	}
 
-	// 클러스터의 전체 점유 격자 중앙과 가장 높은 건물 상단을 조합해 UI 배지 기준점을 계산합니다.
+	// 배지 기준 건물의 격자 중심 X·Y와 클러스터에서 가장 높은 건물 상단 + 높이 오프셋으로 UI 배지 기준점을 계산합니다.
+	// RecalculateSynergies가 클러스터 진행 정보(BadgeWorldLocation)를 만들 때 기준 건물을 정한 뒤 호출합니다.
 	FVector CalculateClusterBadgeWorldLocation(
 		const USFBuildingGridSubsystem* Grid,
 		const TArray<FSFSynergySourceEntry>& SourceEntries,
 		const TArray<int32>& ClusterIndices,
+		int32 AnchorSourceIndex,
 		float HeightOffset)
 	{
-		if (!IsValid(Grid))
+		if (!IsValid(Grid) ||
+			!SourceEntries.IsValidIndex(AnchorSourceIndex) ||
+			!SourceEntries[AnchorSourceIndex].GridInfo.IsValid())
 		{
 			return FVector::ZeroVector;
 		}
 
-		bool bHasBounds = false;
-		FIntPoint MinCell = FIntPoint::ZeroValue;
-		FIntPoint MaxExclusive = FIntPoint::ZeroValue;
+		bool bHasBuildingTop = false;
 		float HighestBuildingTop = 0.f;
 
 		for (const int32 SourceIndex : ClusterIndices)
@@ -91,14 +92,12 @@ namespace
 				continue;
 			}
 
-			const FSFSynergySourceEntry& Source = SourceEntries[SourceIndex];
-			const ASFBaseBuilding* SourceBuilding = Source.Building.Get();
-			if (!IsValid(SourceBuilding) || !Source.GridInfo.IsValid())
+			const ASFBaseBuilding* SourceBuilding = SourceEntries[SourceIndex].Building.Get();
+			if (!IsValid(SourceBuilding))
 			{
 				continue;
 			}
 
-			const FIntPoint SourceMaxExclusive = Source.GridInfo.GetMaxExclusive();
 			const FBoxSphereBounds BuildBounds = SourceBuilding->GetBuildBounds();
 			const FVector LocalBuildingTop(
 				BuildBounds.Origin.X,
@@ -107,32 +106,19 @@ namespace
 			const float BuildingTop = SourceBuilding->GetActorTransform()
 				.TransformPosition(LocalBuildingTop).Z;
 
-			if (!bHasBounds)
-			{
-				MinCell = Source.GridInfo.OriginCell;
-				MaxExclusive = SourceMaxExclusive;
-				HighestBuildingTop = BuildingTop;
-				bHasBounds = true;
-				continue;
-			}
-
-			MinCell.X = FMath::Min(MinCell.X, Source.GridInfo.OriginCell.X);
-			MinCell.Y = FMath::Min(MinCell.Y, Source.GridInfo.OriginCell.Y);
-			MaxExclusive.X = FMath::Max(MaxExclusive.X, SourceMaxExclusive.X);
-			MaxExclusive.Y = FMath::Max(MaxExclusive.Y, SourceMaxExclusive.Y);
-			HighestBuildingTop = FMath::Max(HighestBuildingTop, BuildingTop);
+			HighestBuildingTop = bHasBuildingTop
+				? FMath::Max(HighestBuildingTop, BuildingTop)
+				: BuildingTop;
+			bHasBuildingTop = true;
 		}
 
-		if (!bHasBounds)
+		if (!bHasBuildingTop)
 		{
 			return FVector::ZeroVector;
 		}
 
-		FBuildingGridInfo ClusterGridInfo;
-		ClusterGridInfo.OriginCell = MinCell;
-		ClusterGridInfo.GridSize = MaxExclusive - MinCell;
-
-		FVector BadgeWorldLocation = Grid->GridInfoToWorldCenter(ClusterGridInfo);
+		FVector BadgeWorldLocation =
+			Grid->GridInfoToWorldCenter(SourceEntries[AnchorSourceIndex].GridInfo);
 		BadgeWorldLocation.Z = HighestBuildingTop + HeightOffset;
 		return BadgeWorldLocation;
 	}
@@ -155,6 +141,7 @@ USFBuildingSynergySubsystem* USFBuildingSynergySubsystem::Get(
 		: nullptr;
 }
 
+// 건물 beginplay시 호출
 void USFBuildingSynergySubsystem::RegisterBuilding(ASFBaseBuilding* Building)
 {
 	if (!IsValid(Building))
@@ -162,11 +149,19 @@ void USFBuildingSynergySubsystem::RegisterBuilding(ASFBaseBuilding* Building)
 		return;
 	}
 
-	const TWeakObjectPtr<ASFBaseBuilding> WeakBuilding(Building);
-	RegisteredBuildings.Add(WeakBuilding);
-	RecalculateSynergies();
-}
+	bool bAlreadyRegistered = false;
+	RegisteredBuildings.Add(
+		TWeakObjectPtr<ASFBaseBuilding>(Building),
+		&bAlreadyRegistered);
 
+	// 미완성 건물(배치 고스트·건설 중)은 계산에 들어가지 않으므로 결과가 바뀌지 않습니다.
+	// 완성되면 FinalizeTierActivation → NotifyBuildingChanged에서 다시 계산됩니다.
+	if (!bAlreadyRegistered && Building->IsTierActivated())
+	{
+		MarkSynergiesDirty();
+	}
+}
+// 건물이 Endplay할때(파괴되었을때) 호출
 void USFBuildingSynergySubsystem::UnregisterBuilding(ASFBaseBuilding* Building)
 {
 	if (!Building)
@@ -180,9 +175,69 @@ void USFBuildingSynergySubsystem::UnregisterBuilding(ASFBaseBuilding* Building)
 	// EndPlay 중인 대상에는 제거 콜백을 보내지 않고 기록만 정리합니다.
 	AppliedMultipliers.Remove(WeakBuilding);
 
-	RecalculateSynergies();
+	// 배지가 이 건물 위에 있었다면 재계산에서 클러스터의 남은 건물로 옮겨지고, 남은 건물이 없으면 배지가 사라집니다.
+	BadgeAnchorStamps.Remove(WeakBuilding);
+
+	// 이미 비활성화된 건물(고스트 취소, 파괴 시 DeactivateActiveTier에서 계산 완료)은 다시 계산할 필요가 없습니다.
+	if (Building->IsTierActivated())
+	{
+		MarkSynergiesDirty();
+	}
 }
 
+// 선택한 시너지 원천 건물을 배지 기준으로 기록하고, 전체 재계산 없이 소속 클러스터 배지의 X·Y만 그 건물 위로 옮깁니다.
+// ASFInGamePlayerController::SetSelectedActor가 내 팀 건물을 선택했을 때 호출합니다.
+void USFBuildingSynergySubsystem::SelectBadgeAnchorBuilding(ASFBaseBuilding* Building)
+{
+	const TWeakObjectPtr<ASFBaseBuilding> WeakBuilding(Building);
+
+	// 마지막 재계산에서 클러스터에 들어간 원천 건물만 배지 기준이 될 수 있습니다(미완성·일반 건물 제외).
+	const TArray<int32>* ClusterIndices = BuildingClusterIndices.Find(WeakBuilding);
+	const USFBuildingGridSubsystem* Grid =
+		GetWorld() ? GetWorld()->GetSubsystem<USFBuildingGridSubsystem>() : nullptr;
+
+	FBuildingGridInfo RegisteredGridInfo;
+	if (!IsValid(Building) ||
+		!ClusterIndices ||
+		!IsValid(Grid) ||
+		!Building->TryGetRegisteredGridInfo(RegisteredGridInfo))
+	{
+		return;
+	}
+
+	// 이후 건설·파괴로 재계산돼도 이 건물이 배지 기준으로 유지되도록 순번을 기록합니다.
+	BadgeAnchorStamps.Add(WeakBuilding, NextBadgeAnchorStamp++);
+
+	// Z(클러스터에서 가장 높은 건물 상단)는 기준 건물과 무관하므로 X·Y만 바꿉니다.
+	const FVector AnchorCenter = Grid->GridInfoToWorldCenter(RegisteredGridInfo);
+	bool bBadgeMoved = false;
+
+	for (const int32 ProgressInfoIndex : *ClusterIndices)
+	{
+		if (!ClusterProgressInfos.IsValidIndex(ProgressInfoIndex))
+		{
+			continue;
+		}
+
+		FVector& BadgeWorldLocation =
+			ClusterProgressInfos[ProgressInfoIndex].BadgeWorldLocation;
+
+		if (!FMath::IsNearlyEqual(BadgeWorldLocation.X, AnchorCenter.X) ||
+			!FMath::IsNearlyEqual(BadgeWorldLocation.Y, AnchorCenter.Y))
+		{
+			BadgeWorldLocation.X = AnchorCenter.X;
+			BadgeWorldLocation.Y = AnchorCenter.Y;
+			bBadgeMoved = true;
+		}
+	}
+
+	// 이미 배지가 위에 있는 건물을 다시 클릭한 경우에는 알리지 않습니다.
+	if (bBadgeMoved)
+	{
+		OnSynergyStateChanged.Broadcast();
+	}
+}
+// 건물이 완공/업그레이드시 호출
 void USFBuildingSynergySubsystem::NotifyBuildingChanged(ASFBaseBuilding* Building)
 {
 	if (!IsValid(Building) ||
@@ -191,6 +246,55 @@ void USFBuildingSynergySubsystem::NotifyBuildingChanged(ASFBaseBuilding* Buildin
 		return;
 	}
 
+	MarkSynergiesDirty();
+}
+
+// 여러 건물을 한꺼번에 등록·변경하는 구간을 시작합니다. 구간 안의 변경은 재계산 필요 표시만 남깁니다.
+// ASFGameMode::SpawnStageBuildingsFromAnchors 시작 시 호출하며, 같은 함수의 ON_SCOPE_EXIT가 EndUpdateBatch와 짝을 맞춥니다.
+void USFBuildingSynergySubsystem::BeginUpdateBatch()
+{
+	++UpdateBatchDepth;
+}
+
+// 가장 바깥 구간이 끝나면 구간 동안 쌓인 변경을 FlushDirtySynergies로 한 번에 계산합니다.
+// ASFGameMode::SpawnStageBuildingsFromAnchors가 끝날 때 ON_SCOPE_EXIT로 호출됩니다(중간 return 포함).
+void USFBuildingSynergySubsystem::EndUpdateBatch()
+{
+	if (!ensureMsgf(UpdateBatchDepth > 0, TEXT("EndUpdateBatch가 BeginUpdateBatch보다 많이 호출됐습니다.")))
+	{
+		return;
+	}
+
+	--UpdateBatchDepth;
+
+	if (UpdateBatchDepth == 0)
+	{
+		FlushDirtySynergies();
+	}
+}
+
+// 시너지 결과가 바뀔 수 있음을 기록하고, Batch 구간이 아니면 즉시 계산합니다.
+// RegisterBuilding·UnregisterBuilding·NotifyBuildingChanged가 호출합니다.
+void USFBuildingSynergySubsystem::MarkSynergiesDirty()
+{
+	bSynergyDirty = true;
+
+	if (UpdateBatchDepth == 0)
+	{
+		FlushDirtySynergies();
+	}
+}
+
+// 기록된 변경이 있을 때만 RecalculateSynergies를 한 번 실행합니다.
+// 계산 도중 들어온 변경은 표시를 남겨 두어 다음 Flush에서 반영합니다.
+void USFBuildingSynergySubsystem::FlushDirtySynergies()
+{
+	if (!bSynergyDirty || bIsRecalculating)
+	{
+		return;
+	}
+
+	bSynergyDirty = false;
 	RecalculateSynergies();
 }
 
@@ -270,6 +374,58 @@ void USFBuildingSynergySubsystem::CollectClusterLinkGridInfos(
 	}
 }
 
+// 지정한 격자에 그 종류의 건물이 있다고 할 때 받을 생산 증가율(%)을 현재 구역으로 계산합니다.
+// 같은 시너지는 최고값, 다른 시너지끼리는 합산하며 RecalculateSynergies와 UBuildingPlacement(배치 미리보기)가 함께 씁니다.
+float USFBuildingSynergySubsystem::CalculateProductionBonusPercentAt(
+	int32 TeamIndex,
+	ESFBuildingType BuildingType,
+	const FBuildingGridInfo& GridInfo) const
+{
+	if (!GridInfo.IsValid())
+	{
+		return 0.f;
+	}
+
+	TMap<const USFBuildingSynergyDefinition*, float> HighestBonusBySynergy;
+
+	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
+	{
+		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
+
+		if (Zone.TeamIndex != TeamIndex ||
+			!IsValid(SynergyDefinition) ||
+			!SynergyDefinition->CanAffectBuildingType(BuildingType) ||
+			!Zone.EffectGridInfo.Overlaps(GridInfo))
+		{
+			continue;
+		}
+
+		const FSFBuildingSynergyLevel* ActiveLevel =
+			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
+		if (!ActiveLevel)
+		{
+			continue;
+		}
+
+		// 같은 시너지의 구역끼리는 가장 높은 증가율 하나만 남깁니다.
+		float& HighestBonus = HighestBonusBySynergy.FindOrAdd(SynergyDefinition, 0.f);
+		HighestBonus = FMath::Max(
+			HighestBonus,
+			FMath::Max(0.f, ActiveLevel->ProductionBonusPercent));
+	}
+
+	// 시너지 종류별 최고값을 더합니다(예: 군사 +20% + 사격 +20% = +40%).
+	float TotalBonusPercent = 0.f;
+
+	for (const TPair<const USFBuildingSynergyDefinition*, float>& SynergyBonus :
+		HighestBonusBySynergy)
+	{
+		TotalBonusPercent += SynergyBonus.Value;
+	}
+
+	return TotalBonusPercent;
+}
+
 float USFBuildingSynergySubsystem::GetProductionBonusPercent(
 	const ASFBaseBuilding* Building) const
 {
@@ -299,6 +455,11 @@ void USFBuildingSynergySubsystem::Deinitialize()
 	RegisteredBuildings.Reset();
 	SynergyZones.Reset();
 	ClusterProgressInfos.Reset();
+	BuildingClusterIndices.Reset();
+	BadgeAnchorStamps.Reset();
+	NextBadgeAnchorStamp = 0;
+	UpdateBatchDepth = 0;
+	bSynergyDirty = false;
 	Super::Deinitialize();
 }
 
@@ -314,18 +475,31 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 	USFBuildingGridSubsystem* Grid =
 		GetWorld() ? GetWorld()->GetSubsystem<USFBuildingGridSubsystem>() : nullptr;
 	if (!IsValid(Grid)) return;
-
+	// 현재 Beginplay에서 건물을 전부등록
+	// 다시 함수가 호출될때 살아있는지 계속 검증 = 죽은건물참조정리
 	for (auto It = RegisteredBuildings.CreateIterator(); It; ++It)
 	{
 		if (!It->IsValid())
+		{
+			It.RemoveCurrent(); // 현재 이터레이터 정리 API
+		}
+	}
+
+	// 사라진 건물의 배지 기준 기록도 정리합니다.
+	for (auto It = BadgeAnchorStamps.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
 		{
 			It.RemoveCurrent();
 		}
 	}
 
+	// 살아있는건물 수집(타겟)
 	TArray<ASFBaseBuilding*> ActiveBuildings;
+	// 현재클래스의 사용자정의구조체 ( 건물Ref + Definition + Grid정보 + ClusterGrid정보 )
 	TArray<FSFSynergySourceEntry> SourceEntries;
 
+	// 죽은건물제외 건물순회
 	for (const TWeakObjectPtr<ASFBaseBuilding>& WeakBuilding : RegisteredBuildings)
 	{
 		ASFBaseBuilding* Building = WeakBuilding.Get();
@@ -336,6 +510,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			continue;
 		}
 
+		// 건물 정의안에 시너지정의있음
 		const USFBuildingDefinition* BuildingDefinition =
 			Building->GetBuildingDefinition();
 
@@ -344,39 +519,52 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			continue;
 		}
 
+		// 격자 등록된게 없으면 return
+		// 건물 Beginplay에서 격자등록을 마친후 SynergySubsystem이 호출되야함
 		FBuildingGridInfo RegisteredGridInfo;
 		if (!Building->TryGetRegisteredGridInfo(RegisteredGridInfo))
 		{
 			continue;
 		}
 
+		// 중립건물 아니고 + 건물정의존재하고 + 격자등록 완료했으면 추가 
 		ActiveBuildings.Add(Building);
+		// 중복된 시너지 거름
 		TSet<const USFBuildingSynergyDefinition*> SeenSynergyDefinitions;
 
+		// 건물의 Definition을 가져와서 시너지DA정보 추출
 		for (const FSFGrantedBuildingSynergy& GrantedSynergy :
-			BuildingDefinition->GrantedSynergies)
+			BuildingDefinition->GrantedSynergies) // 시너지DA를 담은 배열
 		{
-			if (!IsValid(GrantedSynergy.Definition) ||
+			if (!IsValid(GrantedSynergy.Definition) || // 시너지 DA
 				SeenSynergyDefinitions.Contains(GrantedSynergy.Definition))
 			{
 				continue;
 			}
+			// 새롭게 추가된 시너지만 추가
 			SeenSynergyDefinitions.Add(GrantedSynergy.Definition);
-
+			
+			// Source시너지에 하나씩 추가
 			FSFSynergySourceEntry& Source = SourceEntries.AddDefaulted_GetRef();
 			Source.Building = Building;
 			Source.Definition = GrantedSynergy.Definition;
 			Source.GridInfo = RegisteredGridInfo;
 			Source.ClusterLinkGridSize = GetRotatedGridSizeForBuilding(
-				GrantedSynergy.Definition->ClusterLinkSizeCells,
-				Building);
+				GrantedSynergy.Definition->ClusterLinkSizeCells, Building);
 		}
 	}
 
+	// 이전 재계산에서 만든 효과 격자를 지웁니다.
+	// 이번 월드 상태를 기준으로 다시 생성합니다.
 	SynergyZones.Reset();
+	// 아직 활성화되지 않은 1개짜리 구역까지 포함하는 클러스터 [*UI 진행 정보*]
+	// 이전 HUD 배지 정보를 지웁니다.
+	// 이번 클러스터 상태를 기준으로 다시 생성합니다.
 	ClusterProgressInfos.Reset();
-	TSet<int32> VisitedSourceIndices;
+	BuildingClusterIndices.Reset();
 
+	TSet<int32> VisitedSourceIndices;	
+	
 	for (int32 SeedIndex = 0; SeedIndex < SourceEntries.Num(); ++SeedIndex)
 	{
 		if (VisitedSourceIndices.Contains(SeedIndex))
@@ -425,7 +613,8 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 				{
 					continue;
 				}
-
+				// Current의 링크 영역 안에 Candidate의 중심이 있음
+				// 또는 Candidate의 링크 영역 안에 Current의 중심이 있음 > true
 				if (AreBuildingsLinked(
 					Grid,
 					Current.GridInfo,
@@ -461,8 +650,42 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		ProgressInfo.Definition = SynergyDefinition;
 		ProgressInfo.TeamIndex = TeamIndex;
 		ProgressInfo.SourceBuildingCount = SourceCount;
+
+		// 건물 클릭 시 전체 재계산 없이 이 클러스터 배지만 옮길 수 있도록 구성 건물마다 진행 정보 번호를 기록합니다.
+		const int32 ProgressInfoIndex = ClusterProgressInfos.Num() - 1;
+		for (const int32 SourceIndex : ClusterIndices)
+		{
+			BuildingClusterIndices.FindOrAdd(SourceEntries[SourceIndex].Building)
+				.Add(ProgressInfoIndex);
+		}
+
+		// 배지 기준 건물은 기록 순번이 가장 큰 건물입니다(처음 생긴 클러스터의 첫 건물, 이후 클릭한 건물).
+		// 기록된 건물이 없으면(새 클러스터, 기준 건물 파괴) 격자 순서 첫 건물을 새로 기록합니다.
+		int32 AnchorSourceIndex = INDEX_NONE;
+		int32 LatestAnchorStamp = INDEX_NONE;
+
+		for (const int32 SourceIndex : ClusterIndices)
+		{
+			const int32* AnchorStamp =
+				BadgeAnchorStamps.Find(SourceEntries[SourceIndex].Building);
+
+			if (AnchorStamp && *AnchorStamp > LatestAnchorStamp)
+			{
+				LatestAnchorStamp = *AnchorStamp;
+				AnchorSourceIndex = SourceIndex;
+			}
+		}
+
+		if (AnchorSourceIndex == INDEX_NONE && !ClusterIndices.IsEmpty())
+		{
+			AnchorSourceIndex = ClusterIndices[0];
+			BadgeAnchorStamps.Add(
+				SourceEntries[AnchorSourceIndex].Building,
+				NextBadgeAnchorStamp++);
+		}
+
 		ProgressInfo.BadgeWorldLocation = CalculateClusterBadgeWorldLocation(
-			Grid, SourceEntries, ClusterIndices,
+			Grid, SourceEntries, ClusterIndices, AnchorSourceIndex,
 			SynergyDefinition->BadgeHeightOffset);
 
 		const FSFBuildingSynergyLevel* ActiveLevel =
@@ -493,7 +716,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			Zone.TeamIndex = TeamIndex;
 			Zone.SourceBuildingCount = SourceCount;
 			// 방금 추가한 이 클러스터의 진행 정보 번호로 같은 클러스터 구역을 묶습니다.
-			Zone.ClusterIndex = ClusterProgressInfos.Num() - 1;
+			Zone.ClusterIndex = ProgressInfoIndex;
 			Zone.SourceBuilding = Source.Building;
 			Zone.EffectGridInfo = MakeCenteredGridInfo(
 				Grid, Source.GridInfo, EffectSize);
@@ -502,56 +725,36 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 		}
 	}
 
+	// 시너지 부여: 대상 건물마다 방금 만든 구역으로 최종 증가율을 구합니다.
+	// 배치 미리보기도 같은 CalculateProductionBonusPercentAt을 쓰므로 미리보기 값과 실제 버프가 항상 같습니다.
 	TMap<TWeakObjectPtr<ASFBaseBuilding>, float> DesiredMultipliers;
 
-	for (const FSFBuildingSynergyZoneInfo& Zone : SynergyZones)
+	for (ASFBaseBuilding* Target : ActiveBuildings)
 	{
-		const USFBuildingSynergyDefinition* SynergyDefinition = Zone.Definition;
-		if (!IsValid(SynergyDefinition))
+		if (!Target->GetClass()->ImplementsInterface(
+				USFProductionRateModifiable::StaticClass()))
 		{
 			continue;
 		}
 
-		const FSFBuildingSynergyLevel* ActiveLevel =
-			SynergyDefinition->FindLevel(Zone.SourceBuildingCount);
-		if (!ActiveLevel)
+		const USFBuildingDefinition* TargetDefinition =
+			Target->GetBuildingDefinition();
+
+		FBuildingGridInfo TargetGridInfo;
+		if (!IsValid(TargetDefinition) ||
+			!Target->TryGetRegisteredGridInfo(TargetGridInfo))
 		{
 			continue;
 		}
 
-		const float Multiplier =
-			1.f + FMath::Max(0.f, ActiveLevel->ProductionBonusPercent) / 100.f;
+		const float BonusPercent = CalculateProductionBonusPercentAt(
+			Target->GetTeamIndex(),
+			TargetDefinition->BuildingType,
+			TargetGridInfo);
 
-		for (ASFBaseBuilding* Target : ActiveBuildings)
+		if (BonusPercent > 0.f)
 		{
-			if (Target->GetTeamIndex() != Zone.TeamIndex ||
-				!Target->GetClass()->ImplementsInterface(
-					USFProductionRateModifiable::StaticClass()))
-			{
-				continue;
-			}
-
-			const USFBuildingDefinition* TargetDefinition =
-				Target->GetBuildingDefinition();
-
-			if (!IsValid(TargetDefinition) ||
-				!SynergyDefinition->CanAffectBuildingType(
-					TargetDefinition->BuildingType))
-			{
-				continue;
-			}
-
-			FBuildingGridInfo TargetGridInfo;
-			if (!Target->TryGetRegisteredGridInfo(TargetGridInfo) ||
-				!Zone.EffectGridInfo.Overlaps(TargetGridInfo))
-			{
-				continue;
-			}
-
-			// 여러 원천의 효과 격자가 겹쳐도 대상별 최댓값 하나만 최종 배율로 등록합니다.
-			float& DesiredMultiplier = DesiredMultipliers.FindOrAdd(
-				Target, 1.f);
-			DesiredMultiplier = FMath::Max(DesiredMultiplier, Multiplier);
+			DesiredMultipliers.Add(Target, 1.f + BonusPercent / 100.f);
 		}
 	}
 
@@ -579,8 +782,7 @@ void USFBuildingSynergySubsystem::RecalculateSynergies()
 			(!PreviousMultiplier ||
 			 !FMath::IsNearlyEqual(*PreviousMultiplier, Desired.Value)))
 		{
-			ApplyProductionModifier(
-				Building, Desired.Value);
+			ApplyProductionModifier(Building, Desired.Value);
 		}
 	}
 

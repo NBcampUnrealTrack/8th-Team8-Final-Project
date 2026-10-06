@@ -62,6 +62,14 @@ public:
 		const FFloatInterval& HeightRange);
 
 	/**
+	 * 배치 중인 건물이 버프를 받을 수 있는 시너지 효과 구역을 시너지마다 한 층씩 EffectZoneColor로 표시합니다.
+	 * 서로 다른 시너지 구역이 겹친 칸은 색이 섞여 진하게 보이며, 두 버프를 모두 받는 자리입니다.
+	 */
+	void ShowReceivableEffectCells(
+		const TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& CellsBySynergy,
+		const FFloatInterval& HeightRange);
+
+	/**
 	 * 배치 중인 건물 영역 전체를 배치 가능 여부에 따라 초록색 또는 빨간색으로 표시합니다.
 	 * WorldCenter는 격자 Subsystem이 GridInfo로 스냅한 월드 중심입니다.
 	 */
@@ -69,7 +77,7 @@ public:
 
 	void HidePlacementPreview();
 
-	/** 배치 모드 표시(점유·링크·미리보기)를 숨깁니다. 시너지 완성 표시는 스스로 사라집니다. */
+	/** 배치 모드 표시(점유·링크·효과 구역·미리보기)를 숨깁니다. 시너지 완성 표시는 스스로 사라집니다. */
 	void HidePlacementDisplays();
 
 	/** 건물이 속한 활성 시너지 클러스터의 구역 전체를 시너지 완성 표시로 한 번 보여 줍니다. */
@@ -84,7 +92,7 @@ public:
 	void EndWarmUp();
 
 private:
-	/** 시너지 구역이 새로 생긴 클러스터의 구역 전체를 노란색으로 표시한 뒤 서서히 지웁니다. */
+	/** 시너지 구역이 새로 생긴 클러스터의 구역 전체를 시너지 색으로 표시한 뒤 서서히 지웁니다. */
 	UFUNCTION()
 	void HandleSynergyStateChanged();
 
@@ -103,12 +111,15 @@ private:
 		const TArray<FIntPoint>& PrimaryCells,
 		const TArray<FIntPoint>& SecondaryCells);
 
-	/** 지정한 클러스터들의 구역을 EffectSizeCells 칸으로 펼쳐 노란색으로 표시한 뒤 서서히 지웁니다. */
+	/** 지정한 클러스터들의 구역을 EffectSizeCells 칸으로 펼쳐 시너지 색(EffectZoneColor)으로 표시한 뒤 서서히 지웁니다. */
 	void FlashSynergyClusters(
 		const TArray<FSFBuildingSynergyZoneInfo>& Zones,
 		const TSet<int32>& ClusterIndices);
 
-	void StartSynergyFlash(const TArray<FIntPoint>& Cells, const FFloatInterval& HeightRange);
+	void StartSynergyFlash(
+		const TArray<FIntPoint>& Cells,
+		const FFloatInterval& HeightRange,
+		const FLinearColor& FlashColor);
 	void StopSynergyFlash();
 
 	UPROPERTY(VisibleAnywhere, Category = "Grid|Decal")
@@ -122,6 +133,13 @@ private:
 
 	UPROPERTY()
 	FSFGridMaskDecalLayer SynergyFlashLayer;
+
+	/**
+	 * 배치 중 받을 수 있는 효과 구역을 시너지마다 한 층씩 그리는 층들입니다(색이 시너지마다 다름).
+	 * 한 건물이 동시에 받을 수 있는 시너지는 현재 최대 2개(특수 병영)라 여유를 두고 3개를 만듭니다.
+	 */
+	UPROPERTY()
+	TArray<FSFGridMaskDecalLayer> EffectZoneLayers;
 
 	UPROPERTY(VisibleAnywhere, Category = "Grid|Decal")
 	TObjectPtr<UDecalComponent> PlacementPreviewDecal;
@@ -139,9 +157,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal")
 	FLinearColor LinkRangeColor = FLinearColor(0.2f, 0.75f, 1.f, 1.f);
-
-	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal")
-	FLinearColor SynergyFlashColor = FLinearColor(1.f, 0.85f, 0.1f, 1.f);
 
 	/** 시너지 완성 표시가 완전히 사라질 때까지 걸리는 시간(초)입니다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Grid|Decal", meta = (ClampMin = "0.1"))

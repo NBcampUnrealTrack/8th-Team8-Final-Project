@@ -17,6 +17,9 @@ namespace
 	// 셀 상태 텍스처 한 변의 최대 셀 수입니다. 100u 기준 102400u까지 표시합니다.
 	constexpr int32 MaxCellStateTextureSize = 1024;
 
+	// 배치 중 동시에 표시할 수 있는 효과 구역 시너지 수입니다. 현재 최대 2개(특수 병영)에 여유 1개를 둡니다.
+	constexpr int32 EffectZoneLayerCount = 3;
+
 	// Pitch -90 데칼은 로컬 X가 투영 깊이, 로컬 Y가 월드 Y, 로컬 Z가 월드 X라 그 순서로 반 크기를 만듭니다.
 	// ShowMaskLayer와 ShowPlacementPreview가 데칼 크기를 정할 때 사용합니다.
 	FVector MakeDownwardDecalSize(const FVector2D& WorldSize, float HalfDepth)
@@ -25,7 +28,7 @@ namespace
 	}
 }
 
-// 점유·링크·시너지 마스크 데칼 3개와 배치 미리보기 데칼 1개를 아래로 투영하도록 만듭니다.
+// 점유·링크·효과 구역·시너지 완성 마스크 데칼과 배치 미리보기 데칼 1개를 아래로 투영하도록 만듭니다.
 // 머티리얼은 UBuildingPlacement::GetOrCreateGridVisualizer가 부르는 InitializeVisualizer에서 지정합니다.
 ASFGridDecalVisualizer::ASFGridDecalVisualizer()
 {
@@ -49,6 +52,14 @@ ASFGridDecalVisualizer::ASFGridDecalVisualizer()
 
 	OccupiedLayer.Decal = CreateGridDecal(TEXT("OccupiedCellsDecal"), 0);
 	LinkRangeLayer.Decal = CreateGridDecal(TEXT("LinkRangeDecal"), 0);
+
+	for (int32 Index = 0; Index < EffectZoneLayerCount; ++Index)
+	{
+		FSFGridMaskDecalLayer& EffectLayer = EffectZoneLayers.AddDefaulted_GetRef();
+		EffectLayer.Decal = CreateGridDecal(
+			*FString::Printf(TEXT("EffectZoneDecal%d"), Index), 0);
+	}
+
 	SynergyFlashLayer.Decal = CreateGridDecal(TEXT("SynergyFlashDecal"), 1);
 	// 점유·링크 표시 위에 그립니다.
 	PlacementPreviewDecal = CreateGridDecal(TEXT("PlacementPreviewDecal"), 1);
@@ -124,15 +135,16 @@ void ASFGridDecalVisualizer::InitializeVisualizer(
 	SynergyFlashLayer.MID = CreateGridMID(SynergyFlashLayer.Decal, 1.f);
 	PlacementPreviewMID = CreateGridMID(PlacementPreviewDecal, 0.f);
 
-	// 링크 범위와 시너지 완성 표시는 R 채널 칸을 각자의 색으로 칠합니다.
+	for (FSFGridMaskDecalLayer& EffectLayer : EffectZoneLayers)
+	{
+		EffectLayer.MID = CreateGridMID(EffectLayer.Decal, 1.f);
+	}
+
+	// 링크 범위는 R 채널 칸을 하늘색으로 칠합니다.
+	// 시너지 완성 표시와 효과 구역 색은 시너지마다 달라 StartSynergyFlash·ShowReceivableEffectCells에서 정합니다.
 	if (IsValid(LinkRangeLayer.MID))
 	{
 		LinkRangeLayer.MID->SetVectorParameterValue(TEXT("BlockedColor"), LinkRangeColor);
-	}
-
-	if (IsValid(SynergyFlashLayer.MID))
-	{
-		SynergyFlashLayer.MID->SetVectorParameterValue(TEXT("BlockedColor"), SynergyFlashColor);
 	}
 
 	if (IsValid(OccupiedLayer.MID))
@@ -163,6 +175,49 @@ void ASFGridDecalVisualizer::ShowLinkRangeCells(
 	EndWarmUp();
 
 	ShowMaskLayer(LinkRangeLayer, LinkCells, TArray<FIntPoint>(), HeightRange);
+}
+
+// 받을 수 있는 시너지 효과 구역을 시너지마다 EffectZoneLayers 한 층에 그 시너지 색(EffectZoneColor)으로 그립니다.
+// UBuildingPlacement::ShowPlacementSynergyHints가 CollectReceivableEffectCells 결과로 호출합니다.
+void ASFGridDecalVisualizer::ShowReceivableEffectCells(
+	const TMap<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& CellsBySynergy,
+	const FFloatInterval& HeightRange)
+{
+	EndWarmUp();
+
+	int32 LayerIndex = 0;
+
+	for (const TPair<const USFBuildingSynergyDefinition*, TArray<FIntPoint>>& Entry : CellsBySynergy)
+	{
+		if (!EffectZoneLayers.IsValidIndex(LayerIndex))
+		{
+			SF_LOG(Warning, "[GridDecal] 효과 구역 층이 %d개뿐이라 나머지 시너지 표시를 생략합니다.",
+				EffectZoneLayers.Num());
+			break;
+		}
+
+		FSFGridMaskDecalLayer& Layer = EffectZoneLayers[LayerIndex];
+
+		if (IsValid(Layer.MID) && IsValid(Entry.Key))
+		{
+			Layer.MID->SetVectorParameterValue(TEXT("BlockedColor"), Entry.Key->EffectZoneColor);
+		}
+
+		// 표시에 실패한 층(칸 없음·범위 초과)은 다음 시너지가 다시 사용합니다.
+		if (ShowMaskLayer(Layer, Entry.Value, TArray<FIntPoint>(), HeightRange))
+		{
+			++LayerIndex;
+		}
+	}
+
+	// 이번에 쓰지 않은 층은 숨깁니다.
+	for (; LayerIndex < EffectZoneLayers.Num(); ++LayerIndex)
+	{
+		if (IsValid(EffectZoneLayers[LayerIndex].Decal))
+		{
+			EffectZoneLayers[LayerIndex].Decal->SetVisibility(false);
+		}
+	}
 }
 
 // 배치 중인 건물 영역 전체를 배치 가능 여부(CanPlace)에 따라 초록/빨강으로 그립니다.
@@ -200,13 +255,21 @@ void ASFGridDecalVisualizer::HidePlacementPreview()
 	PlacementPreviewDecal->SetVisibility(false);
 }
 
-// 점유·링크·미리보기 데칼을 숨기고, 스스로 사라지는 시너지 표시는 그대로 둡니다.
+// 점유·링크·효과 구역·미리보기 데칼을 숨기고, 스스로 사라지는 시너지 표시는 그대로 둡니다.
 // UBuildingPlacement::EndPlacementSession과 EndWarmUp이 호출합니다.
 void ASFGridDecalVisualizer::HidePlacementDisplays()
 {
 	OccupiedLayer.Decal->SetVisibility(false);
 	LinkRangeLayer.Decal->SetVisibility(false);
 	PlacementPreviewDecal->SetVisibility(false);
+
+	for (const FSFGridMaskDecalLayer& EffectLayer : EffectZoneLayers)
+	{
+		if (IsValid(EffectLayer.Decal))
+		{
+			EffectLayer.Decal->SetVisibility(false);
+		}
+	}
 }
 
 // 셀 목록을 감싸는 범위에 맞춰 마스크 텍스처와 데칼 위치·크기를 정하고 한 층을 표시합니다.
@@ -346,7 +409,7 @@ void ASFGridDecalVisualizer::UploadCellStates(
 		});
 }
 
-// 내 팀 시너지 구역을 직전 결과와 비교해 새 구역이 생긴 클러스터를 노란색으로 표시합니다.
+// 내 팀 시너지 구역을 직전 결과와 비교해 새 구역이 생긴 클러스터를 시너지 색으로 표시합니다.
 // USFBuildingSynergySubsystem::OnSynergyStateChanged에 연결되며 FlashSynergyClusters를 호출합니다.
 void ASFGridDecalVisualizer::HandleSynergyStateChanged()
 {
@@ -401,7 +464,7 @@ void ASFGridDecalVisualizer::HandleSynergyStateChanged()
 	FlashSynergyClusters(Zones, FlashClusterIndices);
 }
 
-// 선택한 내 건물이 원천인 구역으로 활성 클러스터를 찾아 노란색으로 한 번 표시합니다.
+// 선택한 내 건물이 원천인 구역으로 활성 클러스터를 찾아 시너지 색으로 한 번 표시합니다.
 // ASFInGamePlayerController::SetSelectedActor → UBuildingPlacement::FlashSynergyClustersOfBuilding에서 호출됩니다.
 void ASFGridDecalVisualizer::FlashSynergyClustersOfBuilding(const ASFBaseBuilding* Building)
 {
@@ -450,11 +513,20 @@ void ASFGridDecalVisualizer::FlashSynergyClusters(
 	TSet<FIntPoint> FlashCells;
 	FFloatInterval HeightRange;
 
+	// 색은 시너지 Definition의 EffectZoneColor를 씁니다(주거 = 노랑, 군사 = 초록).
+	// 한 번에 여러 시너지가 표시되면 처음 찾은 시너지의 색을 사용합니다.
+	const USFBuildingSynergyDefinition* ColorDefinition = nullptr;
+
 	for (const FSFBuildingSynergyZoneInfo& Zone : Zones)
 	{
 		if (!ClusterIndices.Contains(Zone.ClusterIndex))
 		{
 			continue;
+		}
+
+		if (ColorDefinition == nullptr && IsValid(Zone.Definition))
+		{
+			ColorDefinition = Zone.Definition;
 		}
 
 		const FBuildingGridInfo& EffectGridInfo = Zone.EffectGridInfo;
@@ -470,15 +542,25 @@ void ASFGridDecalVisualizer::FlashSynergyClusters(
 		HeightRange.Include(Zone.WorldCenter.Z);
 	}
 
-	StartSynergyFlash(FlashCells.Array(), HeightRange);
+	const FLinearColor FlashColor = IsValid(ColorDefinition)
+		? ColorDefinition->EffectZoneColor
+		: GetDefault<USFBuildingSynergyDefinition>()->EffectZoneColor;
+
+	StartSynergyFlash(FlashCells.Array(), HeightRange, FlashColor);
 }
 
-// 시너지 층을 ShowMaskLayer로 기본 투명도로 표시하고 Tick을 켜 사라지는 효과를 시작합니다.
-// FlashSynergyClusters가 호출합니다.
+// 시너지 층을 지정한 색과 기본 투명도로 ShowMaskLayer에 표시하고 Tick을 켜 사라지는 효과를 시작합니다.
+// FlashSynergyClusters가 시너지 Definition의 EffectZoneColor로 호출합니다.
 void ASFGridDecalVisualizer::StartSynergyFlash(
 	const TArray<FIntPoint>& Cells,
-	const FFloatInterval& HeightRange)
+	const FFloatInterval& HeightRange,
+	const FLinearColor& FlashColor)
 {
+	if (IsValid(SynergyFlashLayer.MID))
+	{
+		SynergyFlashLayer.MID->SetVectorParameterValue(TEXT("BlockedColor"), FlashColor);
+	}
+
 	if (!ShowMaskLayer(SynergyFlashLayer, Cells, TArray<FIntPoint>(), HeightRange))
 	{
 		StopSynergyFlash();

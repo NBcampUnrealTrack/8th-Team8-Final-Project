@@ -54,6 +54,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	ESFStageProgressState GetStageProgressState(FName StageRowName) const;
 
+	UFUNCTION(BlueprintPure, Category = "SF|Stage")
+	int32 GetHighestClearedStageOrder() const { return HighestClearedStageOrder; }
+
 	// 스테이지 클리어 기록
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
 	bool MarkStageCleared(FName StageRowName);

@@ -132,6 +132,7 @@ public:
         OnProductionResourceWarningRequested;
 
     bool IsPointerOverProductionPanel() const;
+    UWidget* FindTutorialProductionButton(FName UnitRowName) const;
 
 protected:
     virtual void NativeConstruct() override;

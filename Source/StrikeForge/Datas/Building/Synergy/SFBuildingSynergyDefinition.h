@@ -32,6 +32,8 @@ public:
 
 	/** 현재 원천 건물 수에 적용할 가장 높은 단계를 반환합니다. */
 	const FSFBuildingSynergyLevel* FindLevel(int32 SourceBuildingCount) const;
+	/** 현재 원천 건물 수에 적용할 가장 높은 단계의 Levels 인덱스를 반환하며, 없으면 INDEX_NONE입니다. */
+	int32 FindLevelIndex(int32 SourceBuildingCount) const;
 	/** 현재 건물 수보다 큰 요구 수 중 가장 가까운 다음 단계를 반환합니다. */
 	const FSFBuildingSynergyLevel* FindNextLevel(int32 SourceBuildingCount) const;
 	/** 마지막 단계가 요구하는 원천 건물 수를 반환하며, 단계가 없으면 0을 반환합니다. */
@@ -59,6 +61,13 @@ public:
 	/** 생산력 보너스를 받을 수 있는 건물 분류입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rules")
 	TArray<ESFBuildingType> TargetBuildingTypes;
+
+	/**
+	 * 시너지 완성·건물 선택 때 효과 구역 격자를 칠할 색입니다. 주거 구역은 노랑, 군사 구역은 초록을 사용합니다.
+	 * ASFGridDecalVisualizer::FlashSynergyClusters가 읽습니다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	FLinearColor EffectZoneColor = FLinearColor(1.f, 0.85f, 0.1f, 1.f);
 
 	/** 클러스터 진행 배지에 표시할 종족별 아이콘입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")

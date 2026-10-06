@@ -7,6 +7,7 @@
 
 class UTextBlock;
 class UWidget;
+class UBorder;
 
 /**
  * 화면 한 곳만 밝게 남기고 나머지를 덮는 안내 오버레이.
@@ -103,6 +104,18 @@ protected:
     float PulseAmount = 0.35f;
 
 private:
+    void UpdateSkillGuideCard();
+    UPROPERTY(Transient)
+    TObjectPtr<UBorder> SkillGuideCard = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<UTextBlock> SkillGuideText = nullptr;
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UBorder>> SkillHighlightEdges;
+#if WITH_DEV_AUTOMATION_TESTS
+    friend class FSFStage03ProductionTest;
+    friend struct FSFCommanderContentPreviewAccess;
+#endif
+    TMap<TWeakObjectPtr<UWidget>, ESlateVisibility> OriginalGuideVisibility;
     /** 건설 메뉴/건물 카드 단계는 고정 좌표 대신 실제 위젯을 찾는다. */
     UWidget* ResolveScreenTargetWidget() const;
     bool UpdateFromScreenTargetWidget(const FGeometry& OverlayGeometry);

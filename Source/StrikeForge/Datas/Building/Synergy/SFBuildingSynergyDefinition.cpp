@@ -26,23 +26,32 @@ void USFBuildingSynergyDefinition::PostEditChangeProperty(
 const FSFBuildingSynergyLevel*
 USFBuildingSynergyDefinition::FindLevel(int32 SourceBuildingCount) const
 {
-	const FSFBuildingSynergyLevel* BestLevel = nullptr;
+	const int32 LevelIndex = FindLevelIndex(SourceBuildingCount);
+	return Levels.IsValidIndex(LevelIndex) ? &Levels[LevelIndex] : nullptr;
+}
 
-	for (const FSFBuildingSynergyLevel& Candidate : Levels)
+// 요구 건물 수를 넘지 않는 단계 중 요구 수가 가장 큰 단계의 인덱스를 찾습니다.
+// FindLevel과 USFBuildingSynergyBadgeWidget::SetProgressInfo(레벨 번호 표시)가 사용합니다.
+int32 USFBuildingSynergyDefinition::FindLevelIndex(int32 SourceBuildingCount) const
+{
+	int32 BestIndex = INDEX_NONE;
+
+	for (int32 Index = 0; Index < Levels.Num(); ++Index)
 	{
+		const FSFBuildingSynergyLevel& Candidate = Levels[Index];
 		if (Candidate.MinSourceBuildingCount > SourceBuildingCount)
 		{
 			continue;
 		}
 
-		if (!BestLevel ||
-			Candidate.MinSourceBuildingCount > BestLevel->MinSourceBuildingCount)
+		if (BestIndex == INDEX_NONE ||
+			Candidate.MinSourceBuildingCount > Levels[BestIndex].MinSourceBuildingCount)
 		{
-			BestLevel = &Candidate;
+			BestIndex = Index;
 		}
 	}
 
-	return BestLevel;
+	return BestIndex;
 }
 
 const FSFBuildingSynergyLevel*

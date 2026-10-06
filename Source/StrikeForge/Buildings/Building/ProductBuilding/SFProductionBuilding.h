@@ -28,6 +28,9 @@ class STRIKEFORGE_API ASFProductionBuilding
 	, public ISFProductionRateModifiable
 {
 	GENERATED_BODY()
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FSFStage03ProductionTest;
+#endif
 
 public:
 	ASFProductionBuilding(const FObjectInitializer& ObjectInitializer);

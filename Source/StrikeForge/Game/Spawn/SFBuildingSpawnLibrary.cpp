@@ -3,6 +3,11 @@
 #include "Engine/Engine.h"
 #include "Logging/SFLog.h"
 
+FRotator USFBuildingSpawnLibrary::GetConstructionRotation()
+{
+    return FRotator(0.f, 90.f, 0.f);
+}
+
 ASFBaseBuilding*
 USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
     UObject* WorldContextObject,
@@ -43,10 +48,20 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
         return nullptr;
     }
 
+    FTransform SpawnTransform = InSpawnTransform;
+    // Normalize authored non-Nexus starting buildings to the common facing.
+    // Player placement already carries its stage-specific rotation from the controller.
+    // Nexus facing is authored separately for each base.
+    if (InSpawnMode != ESFBuildingSpawnMode::PlayerPlacedMode &&
+        InDefinition->BuildingType != ESFBuildingType::Nexus)
+    {
+        SpawnTransform.SetRotation(GetConstructionRotation().Quaternion());
+    }
+
     ASFBaseBuilding* SpawnedBuilding =
         World->SpawnActorDeferred<ASFBaseBuilding>(
             SpawnClass,
-            InSpawnTransform,
+            SpawnTransform,
             nullptr,
             nullptr,
             ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
@@ -120,7 +135,7 @@ USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
 
     SpawnedBuilding->SetRowName(SelectionRowName);
 
-    SpawnedBuilding->FinishSpawning(InSpawnTransform);
+    SpawnedBuilding->FinishSpawning(SpawnTransform);
 
     // 그리드등록에 실패하면 destroy됨
     if (!IsValid(SpawnedBuilding) || SpawnedBuilding->IsActorBeingDestroyed())

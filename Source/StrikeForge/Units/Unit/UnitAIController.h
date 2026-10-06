@@ -4,7 +4,7 @@
 #include "AIController.h"
 #include "UnitAIController.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnCompleteMoving, bool, IsSuccessed);
+DECLARE_MULTICAST_DELEGATE_OneParam(FSFOnCompleteMoving, const FPathFollowingResult&);
 
 /**
  * 전투 유닛 전용 AIController.
@@ -19,6 +19,7 @@ class STRIKEFORGE_API AUnitAIController : public AAIController
 
 public:
 	AUnitAIController(const FObjectInitializer& ObjectInitializer);
+	friend struct FSFPlaytestMovementAccess;
 
 	/**
 	 * 액터 추적 이동. 목표가 같고 이미 이동 중이면 재요청하지 않는다.

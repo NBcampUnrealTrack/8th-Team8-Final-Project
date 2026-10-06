@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "SettingWidget.h"
+#include "Components/Button.h"
 #include "LobbyWidget.generated.h"
 
 class UButton;
@@ -9,6 +10,7 @@ class UWidget;
 class UTexture2D;
 class USFMenuAtmosphereWidget;
 class USFLobbyStagePresentation;
+class USFStoryWidget;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
@@ -21,6 +23,8 @@ protected:
 	void OnBackButtonClicked();
 	UFUNCTION()
 	void OnSettingButtonClicked();
+	UFUNCTION()
+	void OnStoryButtonClicked();
 	UFUNCTION()
 	void OnStage1Clicked();
 	UFUNCTION()
@@ -46,6 +50,13 @@ protected:
 	void ApplyStageButtonTexture(UButton* StageButton, UTexture2D* StageTexture);
 
 protected:
+	UPROPERTY(Transient)
+	TObjectPtr<USFStoryWidget> StoryWidget;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Story_Btn;
+	FOnButtonClickedEvent OriginalStoryClick;
+	bool bStoryBound = false;
+
 	UPROPERTY(Transient)
 	TObjectPtr<USFLobbyStagePresentation> StagePresentation;
 	UPROPERTY(Transient)

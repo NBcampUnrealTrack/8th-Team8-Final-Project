@@ -8,6 +8,7 @@
 #include "Styling/SlateTypes.h"
 #include "SFMenuAtmosphereWidget.h"
 #include "SFLobbyStagePresentation.h"
+#include "SFStoryWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -15,6 +16,14 @@
 void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (IsValid(Story_Btn) && !bStoryBound)
+	{
+		// Replace the Blueprint's old story placeholder with the modal chronicle.
+		OriginalStoryClick = Story_Btn->OnClicked;
+		Story_Btn->OnClicked.Clear();
+		Story_Btn->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStoryButtonClicked);
+		bStoryBound = true;
+	}
 
 	if (IsValid(Back_Btn))
 	{
@@ -89,6 +98,14 @@ void ULobbyWidget::NativeConstruct()
 
 void ULobbyWidget::NativeDestruct()
 {
+	if (StoryWidget)
+	{
+		StoryWidget->OnClosed.Clear();
+		StoryWidget->RemoveFromParent();
+		StoryWidget = nullptr;
+	}
+	if (Story_Btn && bStoryBound) Story_Btn->OnClicked = OriginalStoryClick;
+	bStoryBound = false;
 	if (StagePresentation)
 	{
 		StagePresentation->RestoreControls();
@@ -104,6 +121,7 @@ void ULobbyWidget::NativeDestruct()
 
 void ULobbyWidget::OnBackButtonClicked()
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	USFGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<USFGameInstance>() : nullptr;
 	if (!IsValid(GameInstance))
 	{
@@ -115,10 +133,29 @@ void ULobbyWidget::OnBackButtonClicked()
 
 void ULobbyWidget::OnSettingButtonClicked()
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (IsValid(SettingWidget))
 	{
 		SettingWidget->OpenSetting();
 	}
+}
+
+void ULobbyWidget::OnStoryButtonClicked()
+{
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
+	if (SettingWidget && SettingWidget->IsVisible()) return;
+	if (!StoryWidget)
+	{
+		StoryWidget = CreateWidget<USFStoryWidget>(GetOwningPlayer());
+		if (!StoryWidget) return;
+		StoryWidget->OnClosed.AddWeakLambda(this, [this]()
+		{
+			if (StoryWidget) StoryWidget->RemoveFromParent();
+			if (Story_Btn) Story_Btn->SetFocus();
+		});
+	}
+	StoryWidget->AddToViewport(500);
+	StoryWidget->OpenStory();
 }
 
 void ULobbyWidget::OnStage1Clicked() { OpenStageLevel(0); }
@@ -131,6 +168,7 @@ void ULobbyWidget::OnStage7Clicked() { OpenStageLevel(6); }
 
 void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 {
+	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (!StageRowNames.IsValidIndex(StageIndex))
 	{
 		return;

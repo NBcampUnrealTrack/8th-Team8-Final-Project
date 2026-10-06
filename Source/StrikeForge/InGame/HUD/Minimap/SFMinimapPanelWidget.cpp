@@ -1853,6 +1853,10 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
+        if (PlayerController->ExecutePendingUnitCommandAtLocation(WorldLocation))
+        {
+            return FReply::Handled();
+        }
         bIsMinimapCameraDragging = true;
         UpdateCameraInteraction();
         MoveCameraToPointerPosition(InMouseEvent);

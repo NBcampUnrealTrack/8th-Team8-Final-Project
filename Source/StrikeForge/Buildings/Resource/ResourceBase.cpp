@@ -26,7 +26,6 @@ AResourceBase::AResourceBase()
 	BoxComponent->SetHiddenInGame(true);
 	
 	BoxComponent->SetCollisionProfileName("SpawnedBuilding");
-	
 #if WITH_EDITORONLY_DATA
 
 	GridPreviewComponent =
@@ -280,6 +279,7 @@ void AResourceBase::BeginPlay()
 	}
 
 	SetBoxExtent();
+
 }
 
 void AResourceBase::EndPlay(const EEndPlayReason::Type EndPlayReason)

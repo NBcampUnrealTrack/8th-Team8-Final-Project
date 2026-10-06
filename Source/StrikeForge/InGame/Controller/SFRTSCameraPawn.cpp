@@ -148,6 +148,8 @@ void ASFRTSCameraPawn::Tick(float DeltaTime)
 
     HandleEdgeScroll();
     ClampCameraLocation();
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        PC->SetAudioListenerAttenuationOverride(GetRootComponent(), FVector(0.f, 0.f, 100.f));
 }
 
 void ASFRTSCameraPawn::SetupPlayerInputComponent(

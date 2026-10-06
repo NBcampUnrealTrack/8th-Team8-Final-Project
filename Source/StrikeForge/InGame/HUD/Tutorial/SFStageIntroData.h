@@ -133,6 +133,10 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     FVector2D ScreenExtent = FVector2D::ZeroVector;
 
+    /** Select the local commander and track its actual HUD skill slot. Zero disables this. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen", meta = (ClampMin = "0", ClampMax = "3"))
+    int32 CommanderSkillTier = 0;
+
     /** TargetKind 가 WorldLocation 일 때 가리킬 월드 좌표 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World")
     FVector WorldLocation = FVector::ZeroVector;

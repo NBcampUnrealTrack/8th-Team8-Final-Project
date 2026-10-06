@@ -14,6 +14,8 @@ class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
+class UTexture2D;
+struct FPathFollowingResult;
 
 UENUM(BlueprintType)
 enum class ERace : uint8
@@ -38,6 +40,61 @@ struct FBuffTarget
 	TWeakObjectPtr<USFBuffComponent> BuffCompPtr;
 };
 
+USTRUCT(BlueprintType)
+struct FSkillSpecificValue
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleDefaultsOnly)
+	FName Key;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float Value;
+};
+
+USTRUCT(BlueprintType)
+struct FSkillAsset
+{
+	GENERATED_BODY()
+
+	// 스킬명
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	FString Name;
+
+	// 버프 지속시간 (초 단위, 음수라면 무제한)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	float Time;
+
+	// 효과 발동 주기 (0이면 매 프레임 발동)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	float Interval;
+
+	// 스킬 반경 (100 = 1m, 음수라면 맵 전역)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	float Radius;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "SF|Skill|Asset")
+	TArray<FSkillSpecificValue> SkillValue;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Montage")
+	TObjectPtr<UAnimMontage> SkillMontage;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<USoundBase> SkillSound;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillEffect;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UNiagaraSystem> SkillHitEffect;
+public:
+	const float FindValue(FName TargetKey)
+	{
+		return SkillValue.FindByPredicate(
+			[TargetKey](const FSkillSpecificValue& CurrentStruct)
+			{
+				return CurrentStruct.Key == TargetKey;
+			})->Value;
+	}
+};
+
 UCLASS()
 class STRIKEFORGE_API ASFCommander 
 	: public ACharacter
@@ -48,6 +105,7 @@ class STRIKEFORGE_API ASFCommander
 
 public:
 	ASFCommander();
+	friend struct FSFPlaytestMovementAccess;
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
@@ -65,16 +123,35 @@ public:
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
 
-	UFUNCTION()
-	void ActiveCommanderSkill_Beast(int32 SkillTier);
+	/** Player-facing tiers are 1..3; the Nexus stores zero-based upgrade tiers. */
+	UFUNCTION(BlueprintPure, Category = "SF|Skill")
+	int32 GetUnlockedSkillTier() const;
+
+	bool IsSkillTierUnlocked(int32 SkillTier) const;
+	static constexpr float SkillCooldownSeconds = 30.f;
+	UFUNCTION(BlueprintPure, Category = "SF|Skill")
+	float GetSkillCooldownRemaining(int32 SkillTier) const;
+	FText GetSkillName(int32 SkillTier) const;
+	FText ReadSkillEffectDescription(int32 SkillTier);
+	ERace GetCommanderRace() const { return Race; }
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TArray<TSoftObjectPtr<UTexture2D>> SkillIcons;
 
 	UFUNCTION()
-	void ActiveCommanderSkill_Ether(int32 SkillTier);
+	void ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect);
+
+	UFUNCTION()
+	void ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect);
 
 	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, float Radius);
 	TArray<FBuffTarget> GetSkillActors(TWeakObjectPtr<UWorld> World, TSubclassOf<AActor> ActorClass);
 
 protected:
+	// Game time stops with pause; each skill keeps its own timer across HUD selection changes.
+	double SkillCooldownEnds[3] = {0.0, 0.0, 0.0};
+	friend struct FSFCommanderCooldownTestAccess;
+
 	virtual void BeginPlay() override;
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -83,10 +160,15 @@ protected:
 
 	virtual void PossessedBy(AController* NewController) override;
 
+#if WITH_EDITOR
+	// PostEditChangeProperty 오버라이드 선언
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	void InitSkillAsset();
+#endif
+
 	void LoadPlayerController();
 
-	UFUNCTION()
-	void CheckFailMoving(bool IsSuccessed);
+	void CheckFailMoving(const FPathFollowingResult& Result);
 
 	void MoveToAction(FVector Dest, ECommandAction Action);
 
@@ -105,30 +187,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<UCombatTargetComponent> CombatTargetComponent;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Montage")
-	TObjectPtr<UAnimMontage> SkillMontage;
-
-	// TODO : 이후 구조체로 통합해 수정할 예정입니다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<USoundBase> SkillSound1;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillEffect1;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillHitEffect1;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<USoundBase> SkillSound2;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillEffect2;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillHitEffect2;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<USoundBase> SkillSound3;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillEffect3;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<UNiagaraSystem> SkillHitEffect3;
+	UPROPERTY(EditDefaultsOnly, EditFixedSize, Category = "SF|Skill|Asset")
+	TArray<FSkillAsset> SkillAsset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SF|SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.

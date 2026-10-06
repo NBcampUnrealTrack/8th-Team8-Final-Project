@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -8,6 +8,7 @@
 #include "SFMinimapPanelWidget.generated.h"
 
 class AActor;
+class ASFRTSCameraPawn;
 class ASceneCapture2D;
 class UBorder;
 class UImage;
@@ -55,8 +56,14 @@ protected:
     virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
     virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
+    virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 
 private:
+    friend class FSFCameraMinimapTest;
+    void UpdateCameraInteraction();
+    TWeakObjectPtr<ASFRTSCameraPawn> InteractionCamera;
     int32 MapClockwiseQuarterTurns = 0;
     friend class FSFMinimapRegistryTest;
     void BindMarkerRegistry();

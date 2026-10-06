@@ -181,10 +181,11 @@ if not unreal.EditorLoadingAndSavingUtils.save_current_level():
 
 table = unreal.load_asset('/Game/Core/DataTable/DT_SFStage')
 rows = json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(table))
-if any(row['Name'] == 'Stage_Hero' for row in rows):
-    rows = [row for row in rows if row['Name'] != 'Stage_Hero']
-hero = next(row.copy() for row in rows if row['Name'] == 'Stage02')
-hero.update(Name='Stage_Hero', StageOrder=8, DisplayName='Stage_Hero',
+hero = next((row.copy() for row in rows if row['Name'] in ('StageHero', 'Stage05')), None)
+if hero is None:
+    hero = next(row.copy() for row in rows if row['Name'] == 'Stage02')
+rows = [row for row in rows if row['Name'] not in ('StageHero', 'Stage05', 'Stage_Hero')]
+hero.update(Name='StageHero', StageOrder=5, DisplayName='StageHero',
             StageLevel=MAP + '.PT_Stage_Hero', PlayerRace='Human',
             TeamSetups=['(TeamIndex=1,Race=Beast)'],
             Minimap='(bAutoDetectBounds=False,WorldMin=(X=-19000,Y=-13500),WorldMax=(X=19000,Y=13500),CaptureHeight=18000,BoundsPadding=200)')

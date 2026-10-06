@@ -54,9 +54,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Team")
 	FORCEINLINE int32 GetPlayerTeamIndex() const { return PlayerTeamIndex; }
 
+	/** Initial orientation of newly placed buildings; authored spawn anchors keep their own rotation. */
+	FRotator GetPlayerBuildingPlacementRotation() const
+	{
+		return FRotator(0.f, PlayerBuildingPlacementYaw, 0.f);
+	}
+
+	bool AllowsStageWithoutInitialBuildings() const { return bAllowStageWithoutInitialBuildings; }
+
 	// 26.08.18
 
 protected:
+	/** Match this stage's viewing direction. Existing stages retain the original 90-degree orientation. */
+	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Buildings")
+	float PlayerBuildingPlacementYaw = 90.f;
+
+	/** Survival stages may intentionally start with units only. Other stages still require anchors. */
+	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Buildings")
+	bool bAllowStageWithoutInitialBuildings = false;
+
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
 	virtual void BeginPlay() override;

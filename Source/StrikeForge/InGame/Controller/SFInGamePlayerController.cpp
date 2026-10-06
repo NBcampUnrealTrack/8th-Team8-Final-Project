@@ -143,7 +143,11 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
 
     FTransform SpawnTransform;
     SpawnTransform.SetLocation(ControlledPawn->GetActorLocation());
-    SpawnTransform.SetRotation(USFBuildingSpawnLibrary::GetConstructionRotation().Quaternion());
+    const ASFGameMode* StageGameMode = GetWorld()->GetAuthGameMode<ASFGameMode>();
+    const FRotator PlacementRotation = StageGameMode
+        ? StageGameMode->GetPlayerBuildingPlacementRotation()
+        : USFBuildingSpawnLibrary::GetConstructionRotation();
+    SpawnTransform.SetRotation(PlacementRotation.Quaternion());
 
     ASFBaseBuilding* NewBuilding =
         USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(

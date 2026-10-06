@@ -113,7 +113,7 @@ struct STRIKEFORGE_API FSFStageBuildingRule
         EditAnywhere,
         BlueprintReadOnly,
         Category = "SF|Stage|Building",
-        meta = (ClampMin = "1")
+        meta = (ClampMin = "1", ClampMax = "3", UIMin = "1", UIMax = "3")
     )
     int32 MaxAllowedTier = 3;
 

@@ -619,6 +619,15 @@ int32 ASFGameState::GetMaxAllowedTierInCurrentStage(
 	return 3;
 }
 
+int32 ASFGameState::GetMaxAllowedTierIndexInCurrentStage(
+	FName InBuildingId
+) const
+{
+	return FMath::Max(
+		0,
+		GetMaxAllowedTierInCurrentStage(InBuildingId) - 1);
+}
+
 bool ASFGameState::HasCompletedBuilding(
 	int32 TeamIndex,
 	FName InBuildingId

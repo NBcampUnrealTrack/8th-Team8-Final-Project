@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "Units/Unit/UnitBase.h"
@@ -27,7 +27,7 @@
 struct FSFPlaytestMovementAccess
 {
 	static void Bind(AUnitAIController* AI, ASFCommander* Commander)
-	{ AI->OnCompleteMoving.AddUniqueDynamic(Commander, &ASFCommander::CheckFailMoving); }
+	{ AI->OnCompleteMoving.AddUObject(Commander, &ASFCommander::CheckFailMoving); }
 	static void Arm(ASFCommander* Commander) { Commander->CommandAction = ECommandAction::BUILD; }
 	static bool IsBuilding(ASFCommander* Commander) { return Commander->CommandAction == ECommandAction::BUILD; }
 	static void Complete(AUnitAIController* AI, EPathFollowingResult::Type Result)

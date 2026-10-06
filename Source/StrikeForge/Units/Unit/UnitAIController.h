@@ -4,7 +4,7 @@
 #include "AIController.h"
 #include "UnitAIController.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSFOnCompleteMoving, bool, IsSuccessed);
+DECLARE_MULTICAST_DELEGATE_OneParam(FSFOnCompleteMoving, const FPathFollowingResult&);
 
 /**
  * 전투 유닛 전용 AIController.

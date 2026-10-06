@@ -6,10 +6,11 @@
 #include "Animation/AnimInstance.h"
 #include "SFCommanderAnim.generated.h"
 
-DECLARE_DYNAMIC_DELEGATE_OneParam(FSkillActiveDelegate, int32, SkillTier);
-
 class ASFCommander;
 class AUnitAIController;
+class UNiagaraSystem;
+
+DECLARE_DYNAMIC_DELEGATE_ThreeParams(FSkillActiveDelegate, int32, SkillTier, UNiagaraSystem*, CurrentSkillEffect, UNiagaraSystem*, CurrentSkillHitEffect);
 
 UCLASS()
 class STRIKEFORGE_API USFCommanderAnim : public UAnimInstance
@@ -33,6 +34,8 @@ public:
 	FSkillActiveDelegate OnSkillActiveDelegate;
 	float SkillDelegateTier;
 	TWeakObjectPtr<USoundBase> CurrentSkillSound;
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffect;
+	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffect;
 
 protected:
 	TWeakObjectPtr<ASFCommander> Commander;

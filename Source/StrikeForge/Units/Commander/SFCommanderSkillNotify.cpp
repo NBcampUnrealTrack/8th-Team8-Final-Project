@@ -19,7 +19,7 @@ void USFCommanderSkillNotify::NotifyBegin(USkeletalMeshComponent* MeshComp, UAni
 		return;
 	}
 
-	Anim->OnSkillActiveDelegate.ExecuteIfBound(Anim->SkillDelegateTier);
+	Anim->OnSkillActiveDelegate.ExecuteIfBound(Anim->SkillDelegateTier, Anim->CurrentSkillEffect.Get(), Anim->CurrentSkillHitEffect.Get());
 	Anim->OnSkillActiveDelegate.Unbind();
 
 	if (Floating)

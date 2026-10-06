@@ -932,7 +932,7 @@ void USFInGameHUDWidget::RefreshCommanderSkillIcons()
         Icon->SetVisibility(ESlateVisibility::Visible);
         const FText Tip = FText::FromString(FString::Printf(TEXT("%s 키: %s\n%s\n넥서스 %d티어부터 사용 가능%s\n재사용 대기시간 30초"),
             Keys[Index], *Commander->GetSkillName(Index + 1).ToString(),
-            *Commander->GetSkillEffectDescription(Index + 1).ToString(),
+            *Commander->ReadSkillEffectDescription(Index + 1).ToString(),
             Index + 1, bUnlocked ? TEXT("") : TEXT(" (잠김)")));
         if (!Icon->GetToolTipText().EqualTo(Tip)) Icon->SetToolTipText(Tip);
         auto* Overlay = Cast<UOverlay>(SelectionPanel->GetWidgetFromName(

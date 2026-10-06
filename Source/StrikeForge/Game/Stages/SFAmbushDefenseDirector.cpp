@@ -6,6 +6,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Units/Spawner/UnitSpawner.h"
 #include "UI/LoadingWidget.h"
+#include "Game/Defence/SFDefenceWaveController.h"
+#include "EngineUtils.h"
 
 ASFAmbushDefenseDirector::ASFAmbushDefenseDirector()
 {
@@ -82,6 +84,17 @@ void ASFAmbushDefenseDirector::Tick(float DeltaSeconds)
     if (!State->IsStagePlaying())
     {
         EnsureLoadingScreen();
+        return;
+    }
+    // A configured wave controller owns Stage06 timing and victory. Keep this
+    // map's loading screen and bridge presentation without its old 4-minute win.
+    for (TActorIterator<ASFDefenceWaveController> It(GetWorld()); It; ++It)
+    {
+        const bool bDefending = It->GetPhase() == ESFDefencePhase::Wave;
+        const ESFAmbushPhase Next = bDefending ? ESFAmbushPhase::Defending : ESFAmbushPhase::Secured;
+        if (Phase != Next) SetBridgeBroken(bDefending);
+        Phase = Next;
+        RemainingSeconds = It->GetRemainingSeconds();
         return;
     }
     if (Phase == ESFAmbushPhase::Waiting)

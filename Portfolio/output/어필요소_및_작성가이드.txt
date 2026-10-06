@@ -1,0 +1,179 @@
+정창희 포트폴리오 — 어필 요소 및 작성 가이드
+검토 기준: 2026-10-06 현재 작업 폴더의 소스 코드
+프로젝트: StrikeForge (Unreal Engine 5.5)
+확인된 담당 영역: 유닛 AI 관련 기능, 튜토리얼 기능(UI·스토리 포함)
+
+이 자료의 용도
+PPT는 최종 제출본이 아니라 12장짜리 편집용 뼈대입니다.
+이미지 교체 영역과 [대괄호] 문구는 직접 채울 자리입니다.
+세부 기능은 현재 코드에서 찾은 어필 후보입니다. 각 기능의 신규 구현 / 수정 / 연동 범위는 본인 작업 이력으로 확인해 주세요.
+개발 기간, 팀 인원, 기여율, FPS 개선률, 테스트 통과 결과는 임의로 넣지 않았습니다.
+아래 테스트는 소스가 존재한다는 의미이며, 이번 문서 작업에서 게임을 실행해 통과를 확인한 것은 아닙니다.
+
+1. 추천 대표 콘텐츠 3개
+
+① 유닛 AI 전투 판단 (PPT 3쪽)
+어필 포인트: 전투 상태 전환과 이동 책임을 분리한 설계.
+확인된 구조: UnitBase의 Advancing / Chasing / Attacking / Dead 상태, UnitAIController의 이동 요청, CombatSubsystem의 타깃 조회.
+설명할 내용: 적을 언제 찾고, 어떤 조건에서 추격·공격하며, 타깃이 사라지면 어떻게 복귀하는가.
+추천 삽화: 실제 전투 장면에 현재 상태와 전환 조건을 표시한 그림 1개.
+준비할 증거: 사거리 진입·이탈, 타깃 사망, 시야 차단 상황의 짧은 영상.
+면접 질문: 전투 판단을 AIController에 모두 넣지 않은 이유는 무엇인가?
+주의: 코드에 확인되지 않은 Behavior Tree / EQS 사용 경험으로 설명하지 않기.
+근거: Units/Unit/UnitBase.h, Units/Unit/UnitBase.cpp, Units/Unit/UnitAIController.h, Game/Subsystem/SFCombatSubsystem.h
+
+② 튜토리얼 진행 제어 (PPT 4쪽)
+어필 포인트: UI가 닫혀도 유지되는 목표 대기와 이벤트 기반 재개.
+확인된 구조: WorldSubsystem에 진행 상태 보관, GameplayTag로 목표 완료 알림, WaitForObjective와 InteractiveGuide.
+설명할 내용: 대화창을 닫고 실제 게임을 조작한 뒤, 목표 달성 시 정확한 노드로 복귀하는 과정.
+추천 삽화: 안내 화면 / 플레이 화면 / 다음 안내 화면의 흐름.
+준비할 증거: 이미 완료된 목표, 중복 신호, 중간 취소·스테이지 종료 상황.
+면접 질문: 위젯이 파괴될 때 진행 상태를 잃지 않으려면 무엇을 분리해야 하는가?
+근거: InGame/HUD/Tutorial/SFTutorialSubsystem.h 및 .cpp, SFStageIntroData.h
+
+③ 스토리 분기·연출 (PPT 5쪽)
+어필 포인트: 대화·선택지·연출 데이터를 코드와 분리한 구성.
+확인된 구조: DataTable 기반 노드, 선택지, NextNodeIndex, 좌우 초상화, 가이드 이미지와 단계.
+설명할 내용: 하나의 위젯이 스테이지별 대화 데이터를 읽고 선택 결과에 따라 다음 노드로 이동하는 방법.
+추천 삽화: 실제 선택지 화면 1장과 선택 후 화면 1장.
+준비할 증거: 대화 데이터 일부와 실제 실행 화면의 대응 관계.
+면접 질문: 새 대화나 스테이지를 추가할 때 어떤 데이터만 바꾸면 되는가?
+주의: 대화 분기를 멀티 엔딩, 영구 저장 등의 기능으로 확대하지 않기.
+근거: InGame/HUD/Tutorial/SFStageIntroData.h, SFStageIntroWidget.cpp
+
+2. 세부 구현 후보와 필요한 증거
+
+PPT 6쪽 — 군집 이동과 경로 재요청
+확인: UCrowdFollowingComponent, NavMesh 경로 이동, 동일 목표 요청 억제, 슬롯 추적용 요청 간격.
+어필: 반복 MoveTo 요청이 조향에 미치는 영향을 이해하고 입력 반응성과 요청 빈도를 구분한 점.
+증거: 같은 구간을 여러 유닛이 통과하는 장면과 sf.LogMoveRequests 로그.
+보충: MinRequestInterval 0.5초 / SlotRequestInterval 0.2초는 기본 설정값. 성능 개선 수치가 아님.
+근거: Units/Unit/UnitAIController.h 및 .cpp
+
+PPT 7쪽 — 근접 공격 위치 분산
+확인: ClaimAttackSlot, ReleaseAttackSlot, GetAttackSlotLocation, 슬롯 링 관리.
+어필: 타깃 중심 한 점에 몰리는 접근 대신 점유 가능한 공격 위치를 관리한 점.
+증거: 여러 근접 유닛의 접근, 슬롯 점유, 사망·타깃 변경 시 반환.
+주의: 모든 군집 정체를 해결했다고 주장하지 않고 재현 조건을 명시.
+근거: Game/Subsystem/SFCombatSubsystem.h 및 .cpp, Units/Unit/UnitBase.cpp
+
+PPT 8쪽 — 플레이어 명령과 자동 전투
+확인: Move, AttackMove, Attack, Stop, HoldGround와 명령 큐.
+어필: 공통 명령 진입점과 명령별 교전 규칙.
+증거: 같은 적 배치에서 일반 이동과 공격 이동의 차이, 명령 덮어쓰기, 사라진 타깃 처리.
+테스트 후보: Tests/SFForcedAttackTests.cpp
+근거: Units/Unit/UnitBase.h 및 .cpp
+
+PPT 9쪽 — 튜토리얼 UI와 스포트라이트
+확인: 화면 영역 및 월드 위치 대상, 클릭 및 목표 태그 완료 조건, 고스트 안내.
+어필: 안내 문구뿐 아니라 실제 조작 위치와 성공 조건을 연결한 점.
+증거: 건설 위치 안내, 지정 UI 강조, 입력 가능한 영역, 해상도별 캡처.
+근거: InGame/HUD/Tutorial/SFTutorialSpotlightWidget.h 및 .cpp, SFTutorialGhostActor.cpp, SFStageIntroData.h
+
+PPT 10쪽 — 튜토리얼과 적 스폰 연동
+확인: 스포너 활성화 게이트와 런타임 스폰 토글을 분리. OnObjectiveRecorded로 목표 완료 신호 수신.
+어필: 플레이어가 목표를 먼저 완료하거나 튜토리얼 UI가 닫혀도 진행을 놓치지 않도록 한 점.
+증거: 목표 완료 전·후, 스폰 토글 재활성화, 선행 목표 달성.
+테스트 후보: Tests/SFTutorialSpawnGateTests.cpp
+근거: Units/Spawner/UnitSpawner.h 및 .cpp, InGame/HUD/Tutorial/SFTutorialSubsystem.h
+
+PPT 11쪽 — 스토리 다시 보기
+확인: OpenStory / CloseStory / TurnPage, 사용 가능한 챕터 수, 로비 스토리 일러스트 액터.
+어필: 게임 진행과 열람 가능한 이야기 범위를 연결하고 UI·연출 객체 수명을 관리한 점.
+증거: 챕터 잠금·해금, 페이지 이동, 닫기·재열기.
+참고 이미지: Saved/StoryPreview/Stage3UnlockFinal, Saved/StoryPreview/LivingArtFinal
+주의: 게임 재실행 후 영구 저장 여부는 별도 확인.
+근거: UI/SFStoryWidget.h 및 .cpp, UI/SFStoryIllustrationActor.cpp, Game/GameInstance/SFGameInstance.h
+
+3. 담당 영역에서 추가로 고를 수 있는 후보
+
+A. 타깃 탐색의 공간 분할
+   SFCombatSubsystem의 공간 그리드와 반경 내 조회 구조.
+   어필: 전체 타깃 순회 범위를 줄이는 탐색 설계.
+   증거: 동일 유닛 수에서 탐색 횟수 및 실행 시간 비교. 수치는 직접 측정 후 사용.
+
+B. 아군·적군 공통 유닛과 행동 모드
+   UnitBase의 TeamIndex, HoldPosition / PushToCore, SetAdvanceMode.
+   어필: 진영과 자동 진격 행동을 구분해 스폰 시 정책을 주입하는 구조.
+
+C. 라인 진행과 핵심 건물 목표
+   Units/Lane/LanePath, UnitBase의 AssignedLane 및 전진 처리.
+   어필: 스테이지 경로 데이터와 공통 유닛 행동의 연결.
+
+D. 스폰 소유 건물의 수명 관리
+   UnitSpawner의 AssignOwnerBuilding, IsShutDownByOwnerBuilding.
+   어필: 소유 건물 파괴와 생산 중단의 일관성.
+   테스트 후보: Tests/SFSpawnerOwnerTests.cpp.
+
+E. 튜토리얼 기능 잠금과 건설 조건
+   SFStageIntroData의 LockedFeatures, SFTutorialSubsystem의 건설 허용 위치 및 단계 조건.
+   어필: 순서에 맞는 입력만 허용하는 진행 제약.
+
+F. 건설·생산 완료 시점 구분
+   튜토리얼 완료 신호가 요청 시점인지 실제 생성·건설 완료 시점인지 구분.
+   어필: 비동기 게임 행동에서 정확한 완료 의미를 정의한 점.
+   테스트 후보: Tests/SFTutorialSpawnGateTests.cpp, Tests/SFStage03ProductionTests.cpp.
+
+G. 대화 초상화와 UI 연출
+   SFStageIntroPortraitFrame, SFStageIntroWidget, SFStageIntroData의 좌우 초상화 위치·확대값.
+   어필: 화자별 표현을 데이터로 조정하는 구성.
+
+H. 스테이지별 스토리 데이터 관리
+   ContentSource/Stage45Story_KO.json, Stage67Story_KO.json, CommanderSkillTutorial_KO.json.
+   어필: 스테이지별 대사·안내 데이터를 일관된 구조로 관리하는 작업 흐름.
+   테스트 후보: Tests/SFStage67StoryTests.cpp.
+
+I. 재현 도구와 자동화 테스트
+   SFForcedAttackTests, SFTutorialSpawnGateTests, SFSpawnerOwnerTests, SFStoryPreview.
+   어필: 수정 내용을 반복 확인할 수 있는 작은 재현 시나리오.
+   증거: 재현 조건, 기대 결과, 실제 테스트 실행 로그. 테스트 코드 존재만으로 통과를 주장하지 않기.
+
+4. 현재 프로젝트 전체 기능 목록 (본인 단독 기여로 표기하지 않기)
+
+AI·전투: 전투 FSM, 타깃 탐색, 공간 분할, 공격 슬롯, 이동·군집 회피, 명령 큐, 라인 전진, 스포너, 투사체, 체력·버프, 지휘관 스킬.
+튜토리얼·스토리: 목표 태그, 목표 대기, 단계별 안내, 스포트라이트, 고스트, 기능 잠금, 스폰 연동, 대화·선택지, 초상화, 로비 스토리 열람·챕터 해금.
+건설·경제: 격자 배치, 건설 가능 판정, 시너지 클러스터, 생산 속도 보너스, 생산 큐, 집결지, 인구 제약, 자원 채굴, 자원 UI, 건물 파괴 표현.
+게임 진행: 종족 선택, 로비·스테이지 이동, 클리어 진행도, 디펜스 웨이브, 매복 연출, 승패 결과, 스테이지별 음악.
+시야·조작·HUD: 전장의 안개, 미니맵, 카메라 이동, 다중 선택, 부대 지정 UI, 초상화, 오버헤드 상태, 쿨다운, 설정·마우스 감도, 명령 피드백.
+
+이 목록은 C++ 소스와 ContentSource 문서에서 확인한 시스템 단위 목록입니다.
+모든 Blueprint 에셋 내부를 직접 열어 조사한 완전한 에셋 목록은 아닙니다.
+건설·경제·전장의 안개 등은 사용자 확인 담당 범위 밖이므로 메인 PPT에 넣지 않았습니다.
+
+5. 슬라이드 구성과 채우는 순서
+
+01 표지: 이름 / 전화 / 이메일 / 사용자 제공 증명사진
+02 목차: 현재 프로젝트 1개와 대표 콘텐츠 3개
+03 유닛 AI 전투 판단
+04 튜토리얼 진행 제어
+05 스토리 분기·연출
+06 군집 이동과 경로 재요청
+07 근접 공격 위치 분산
+08 플레이어 명령과 자동 전투
+09 튜토리얼 UI와 스포트라이트
+10 튜토리얼과 적 스폰 연동
+11 스토리 다시 보기
+12 연락처와 GitHub / 시연 영상 링크
+
+처음에는 3·4·5쪽부터 채우세요. 튜터와 검토한 뒤 중복되는 세부 후보를 덜어냅니다.
+6~11쪽 중 두 장을 빼면 10장 구성이 됩니다. 각 장은 한 가지 기능만 설명합니다.
+게임 프로젝트의 CH 번호는 확인되지 않아 CH06으로 단정하지 않았습니다.
+프로젝트의 최종 대외 명칭을 사용할 경우 표지·목차·푸터의 StrikeForge를 함께 변경하세요.
+
+각 콘텐츠 슬라이드에 필요한 최소 자료
+  이미지: 기능이 한눈에 보이는 캡처 또는 구조 삽화 1개.
+  문제: 실제로 겪은 현상을 한 문장.
+  해결: 본인이 변경한 설계나 로직을 한 문장.
+  증거: 재현 영상, 테스트 결과 또는 직접 측정한 수치.
+  담당: 신규 구현 / 개선 / 연동 중 정확한 작업 범위.
+
+이미지 영역 사용법
+  파란 테두리 안의 안내 텍스트를 지우고 16:9 캡처를 넣습니다.
+  검정 배경, 파란 강조, 흰 글씨를 유지하고 추가 테마 색상은 넣지 않습니다.
+  전체 코드 스크린샷보다 실제 동작 화면과 간단한 구조 삽화를 우선합니다.
+  수정 전 자료가 없으면 임의의 전후 비교를 만들지 말고 현재 동작을 보여 줍니다.
+  발표자 노트에는 해당 기능의 코드 근거를 넣어 두었습니다.
+
+소스 경로 안내
+위 기능별 코드 경로의 기준은 C:/FinalPro/Finalproject/Source/StrikeForge/ 입니다.
+ContentSource와 Saved 경로는 C:/FinalPro/Finalproject/ 기준입니다.

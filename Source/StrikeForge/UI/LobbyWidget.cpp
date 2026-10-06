@@ -9,6 +9,7 @@
 #include "SFMenuAtmosphereWidget.h"
 #include "SFLobbyStagePresentation.h"
 #include "SFStoryWidget.h"
+#include "SFRaceSelectionWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -16,6 +17,9 @@
 void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Migrate the serialized prototype binding as well as the native default.
+	for (FName& Row : StageRowNames)
+		if (Row == TEXT("StageHero") || Row == TEXT("Stage_Hero")) Row = TEXT("Stage05");
 	if (IsValid(Story_Btn) && !bStoryBound)
 	{
 		// Replace the Blueprint's old story placeholder with the modal chronicle.
@@ -98,6 +102,8 @@ void ULobbyWidget::NativeConstruct()
 
 void ULobbyWidget::NativeDestruct()
 {
+	if (RaceSelectionWidget) RaceSelectionWidget->RemoveFromParent();
+	RaceSelectionWidget = nullptr;
 	if (StoryWidget)
 	{
 		StoryWidget->OnClosed.Clear();
@@ -168,6 +174,7 @@ void ULobbyWidget::OnStage7Clicked() { OpenStageLevel(6); }
 
 void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 {
+	if (RaceSelectionWidget && RaceSelectionWidget->IsInViewport()) return;
 	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (!StageRowNames.IsValidIndex(StageIndex))
 	{
@@ -187,7 +194,8 @@ void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 
 	if (GameInstance->GetSelectedRace() == ESFRace::None)
 	{
-		// 종족 선택 UI를 여는 함수 작성자리
+		if (!RaceSelectionWidget) RaceSelectionWidget = CreateWidget<USFRaceSelectionWidget>(GetOwningPlayer());
+		if (RaceSelectionWidget) RaceSelectionWidget->AddToViewport(600);
 		return;
 	}
 

@@ -3596,8 +3596,14 @@ void USFInGameHUDWidget::ShowMoveDestinationIndicator(
         Color, true);
 }
 
-FName USFInGameHUDWidget::ResolveStageIntroRowName() const
+FName USFInGameHUDWidget::ResolveStageIntroRowName(bool bVictory) const
 {
+    const USFGameInstance* Instance = Cast<USFGameInstance>(GetGameInstance());
+    const ESFRace Race = Instance ? Instance->GetSelectedRace() : ESFRace::None;
+    const auto Resolve = [this, Race, bVictory](FName Stage)
+    {
+        return SFStageStory::ResolveRowName(StageIntroDataTable, Stage, Race, bVictory);
+    };
     if (UWorld* World = GetWorld())
     {
         if (ASFGameState* GameState = World->GetGameState<ASFGameState>())
@@ -3606,7 +3612,7 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
             if (!StageRowName.IsNone())
             {
-                return StageRowName;
+                return Resolve(StageRowName);
             }
         }
     }
@@ -3617,11 +3623,11 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
         if (!StageRowName.IsNone())
         {
-            return StageRowName;
+            return Resolve(StageRowName);
         }
     }
 
-    return StageIntroFallbackRowName;
+    return Resolve(StageIntroFallbackRowName);
 }
 
 bool USFInGameHUDWidget::TryStartVictoryEpilogue()
@@ -3637,7 +3643,7 @@ bool USFInGameHUDWidget::TryStartVictoryEpilogue()
         return false;
     }
 
-    const FName EpilogueRowName(*(StageRowName.ToString() + TEXT("Clear")));
+    const FName EpilogueRowName = ResolveStageIntroRowName(true);
     if (!StageIntroDataTable->GetRowNames().Contains(EpilogueRowName))
     {
         return false;

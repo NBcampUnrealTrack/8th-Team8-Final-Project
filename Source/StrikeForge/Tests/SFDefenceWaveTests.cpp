@@ -133,6 +133,30 @@ bool FSFDefenceWaveFlowTest::RunTest(const FString& Parameters)
     Controller->StopWaves();
     Controller->Tick(300.f);
     TestTrue(TEXT("Stopped waves never restart"), Controller->GetPhase() == ESFDefencePhase::Stopped);
+    // Stage06 retains the full 300 seconds even if every scheduled unit is gone.
+    StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+        StateProperty->ContainerPtrToValuePtr<void>(State), static_cast<int64>(ESFStageState::Playing));
+    ResultProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+        ResultProperty->ContainerPtrToValuePtr<void>(State), static_cast<int64>(ESFStageResult::Undetermined));
+    Controller->bRequireFullWaveDuration = true;
+    Controller->PreparationDuration = 60.f;
+    Controller->WaveNumber = 0;
+    Controller->BeginPreparation();
+    for (int32 Wave = 1; Wave <= 5; ++Wave)
+    {
+        TestEqual(TEXT("Stage06 always prepares for one minute"), Controller->GetRemainingSeconds(), 60.f);
+        Controller->Tick(60.f);
+        for (int32 Spawn = 0; Spawn < 15; ++Spawn) Controller->Tick(4.f);
+        for (TActorIterator<AUnitBase> It(World); It; ++It)
+            CombatStateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                CombatStateProperty->ContainerPtrToValuePtr<void>(*It), static_cast<int64>(EUnitCombatState::Dead));
+        Controller->Tick(1.f);
+        TestEqual(TEXT("Stage06 cannot complete early"), Controller->GetPhase(), ESFDefencePhase::Wave);
+        TestTrue(TEXT("Stage06 still playing before deadline"), State->IsStagePlaying());
+        Controller->Tick(Controller->GetRemainingSeconds());
+    }
+    TestEqual(TEXT("Stage06 wins after all five full waves"), State->GetStageResult(), ESFStageResult::Victory);
+    TestEqual(TEXT("Stage06 stops at wave five"), Controller->GetWaveNumber(), 5);
     World->DestroyWorld(false);
     return true;
 }

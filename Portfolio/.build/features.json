@@ -1,0 +1,130 @@
+[
+  {
+    "title": "유닛 AI 전투 판단",
+    "sub": "전진 · 추격 · 교전 · 사망 상태와 타깃 선정",
+    "visual": "전투 장면 + 상태 전환도",
+    "detail": "현재 상태와 전환 조건이 보이는 삽화",
+    "focus": "전투 판단과 이동 책임 분리",
+    "proof": "상태 전환이 보이는 짧은 시연",
+    "files": [
+      "Units/Unit/UnitBase.h",
+      "Units/Unit/UnitBase.cpp",
+      "Units/Unit/UnitAIController.h",
+      "Game/Subsystem/SFCombatSubsystem.h"
+    ],
+    "extra": "전투 FSM은 UnitBase가, 이동 요청은 UnitAIController가 담당. 타깃 탐색과 사거리 판정의 구체적 우선순위는 본인 설명을 추가. Behavior Tree 또는 EQS 사용으로 표기하지 않는다."
+  },
+  {
+    "title": "튜토리얼 진행 제어",
+    "sub": "목표 달성을 기다리고 다음 안내를 이어가는 구조",
+    "visual": "안내 / 플레이 / 목표 달성",
+    "detail": "위젯이 닫힌 동안에도 이어지는 진행 흐름",
+    "focus": "진행 상태와 UI 수명 분리",
+    "proof": "안내 종료 후 재개되는 장면",
+    "files": [
+      "InGame/HUD/Tutorial/SFTutorialSubsystem.h",
+      "InGame/HUD/Tutorial/SFTutorialSubsystem.cpp",
+      "InGame/HUD/Tutorial/SFStageIntroData.h"
+    ],
+    "extra": "WorldSubsystem이 대기 상태를 보관하며 GameplayTag 목표 신호를 받는다. 이미 완료한 목표를 대기하지 않는 처리와 재진입 방지를 설명 후보로 활용."
+  },
+  {
+    "title": "스토리 분기·연출",
+    "sub": "대화 노드와 선택지로 구성한 스테이지 스토리",
+    "visual": "대화 화면 + 선택지 분기",
+    "detail": "선택 전후의 흐름이 보이는 화면 두 장",
+    "focus": "대화 내용과 진행 규칙 분리",
+    "proof": "선택지와 다음 노드 연결 장면",
+    "files": [
+      "InGame/HUD/Tutorial/SFStageIntroData.h",
+      "InGame/HUD/Tutorial/SFStageIntroWidget.cpp"
+    ],
+    "extra": "DataTable 행에 대화, 선택지, NextNodeIndex, 초상화, 가이드 데이터를 보관. 분기는 대화 노드 분기를 의미하며 멀티 엔딩이나 저장 기능으로 확대해서 말하지 않는다."
+  },
+  {
+    "title": "군집 이동과 경로 재요청",
+    "sub": "NavMesh와 DetourCrowd를 사용하는 이동 제어",
+    "visual": "같은 구간의 이동 비교",
+    "detail": "다수 유닛이 목표에 접근하는 장면",
+    "focus": "이동 요청 빈도와 반응성 조절",
+    "proof": "재요청 로그와 이동 시연",
+    "files": [
+      "Units/Unit/UnitAIController.h",
+      "Units/Unit/UnitAIController.cpp"
+    ],
+    "extra": "같은 목표에 대한 중복 요청 억제와 슬롯 추적 전용 재요청 간격이 있다. 기본 값 0.5초와 0.2초는 설정값이며 성능 개선 측정치가 아니다. 수정 전 영상이 없다면 전후 비교 대신 현재 동작 시연을 사용."
+  },
+  {
+    "title": "근접 공격 위치 분산",
+    "sub": "대상 주변의 공격 슬롯을 배정하고 반환하는 구조",
+    "visual": "타깃 주변 공격 위치",
+    "detail": "여러 유닛의 접근 위치를 표시한 삽화",
+    "focus": "공격 슬롯의 점유와 반환",
+    "proof": "진입·사망·타깃 변경 시연",
+    "files": [
+      "Game/Subsystem/SFCombatSubsystem.h",
+      "Game/Subsystem/SFCombatSubsystem.cpp",
+      "Units/Unit/UnitBase.cpp"
+    ],
+    "extra": "ClaimAttackSlot / ReleaseAttackSlot / GetAttackSlotLocation 근거. 공격 슬롯 주변 분산이 모든 군집 정체를 해결한다는 표현은 피하고 재현한 조건을 제시."
+  },
+  {
+    "title": "플레이어 명령과 자동 전투",
+    "sub": "이동 · 공격 이동 · 대상 공격 · 정지 · 제자리 고수",
+    "visual": "같은 상황, 다른 명령",
+    "detail": "이동과 공격 이동의 행동 차이를 보여 주는 장면",
+    "focus": "명령에 따른 전투 규칙 구분",
+    "proof": "명령 교체와 예외 상황 시연",
+    "files": [
+      "Units/Unit/UnitBase.h",
+      "Units/Unit/UnitBase.cpp",
+      "Tests/SFForcedAttackTests.cpp"
+    ],
+    "extra": "ExecuteCommand와 명령 큐 정의가 존재. 일반 이동은 반격하지 않고, 공격 이동은 도중 교전하며, HoldGround는 사거리 내 공격만 한다. 예외 처리는 실제 구현과 시험 결과를 확인해 적는다."
+  },
+  {
+    "title": "튜토리얼 UI와 스포트라이트",
+    "sub": "현재 조작할 화면 영역과 월드 위치를 강조하는 안내",
+    "visual": "가이드 UI 대표 화면",
+    "detail": "스포트라이트와 설명 영역을 크게 보여 주는 캡처",
+    "focus": "조작 대상과 완료 조건 연결",
+    "proof": "해상도별 안내 위치와 입력 시연",
+    "files": [
+      "InGame/HUD/Tutorial/SFTutorialSpotlightWidget.h",
+      "InGame/HUD/Tutorial/SFTutorialSpotlightWidget.cpp",
+      "InGame/HUD/Tutorial/SFTutorialGhostActor.cpp",
+      "InGame/HUD/Tutorial/SFStageIntroData.h"
+    ],
+    "extra": "화면 영역 / 월드 대상, 클릭 / 목표 태그 완료 조건, 고스트 가이드 정의가 있다. 실제 지원 해상도나 사용성 개선률은 별도 확인."
+  },
+  {
+    "title": "튜토리얼과 적 스폰 연동",
+    "sub": "목표 달성 시점에 맞춰 적의 등장을 제어하는 구조",
+    "visual": "목표 완료 전 / 완료 후",
+    "detail": "같은 맵에서 적 등장 시점이 달라지는 장면",
+    "focus": "시나리오 게이트와 스폰 토글 분리",
+    "proof": "선행 완료·재활성화 상황 검증",
+    "files": [
+      "Units/Spawner/UnitSpawner.h",
+      "Units/Spawner/UnitSpawner.cpp",
+      "InGame/HUD/Tutorial/SFTutorialSubsystem.h",
+      "Tests/SFTutorialSpawnGateTests.cpp"
+    ],
+    "extra": "OnObjectiveRecorded 신호와 별도 활성화 상태를 사용. 튜토리얼이 대기하지 않을 때도 완료 기록을 알리는 이유, bActivated와 bSpawningEnabled를 분리한 이유가 설명 후보."
+  },
+  {
+    "title": "스토리 다시 보기",
+    "sub": "챕터 해금과 페이지 전환을 갖춘 로비 스토리 UI",
+    "visual": "스토리 UI 대표 화면",
+    "detail": "챕터 전환 또는 해금 전후를 보여 주는 캡처",
+    "focus": "진행도와 열람 가능한 챕터 연결",
+    "proof": "닫기·재열기·챕터 전환 시연",
+    "files": [
+      "UI/SFStoryWidget.h",
+      "UI/SFStoryWidget.cpp",
+      "UI/SFStoryIllustrationActor.cpp",
+      "Game/GameInstance/SFGameInstance.h"
+    ],
+    "extra": "OpenStory / CloseStory / TurnPage, AvailableChapterCount, 일러스트 액터 수명 관리가 있다. 재실행 간 영구 저장 여부는 별도 확인."
+  }
+]

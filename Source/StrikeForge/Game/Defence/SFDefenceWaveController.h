@@ -46,6 +46,9 @@ public:
     float PreparationDuration = 180.f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Defence", meta = (ClampMin = "1"))
     float WaveDuration = 300.f;
+    /** Stage06 requires the full defence time even after its spawn budget is exhausted. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Defence")
+    bool bRequireFullWaveDuration = false;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Defence", meta = (ClampMin = "0.1"))
     float SpawnInterval = 4.f;
     /** Baseline copies per type before the total budget is scaled and weighted. */

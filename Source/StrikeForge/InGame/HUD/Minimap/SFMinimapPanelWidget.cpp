@@ -1,4 +1,4 @@
-#include "SFMinimapPanelWidget.h"
+﻿#include "SFMinimapPanelWidget.h"
 #include "SFMinimapViewIndicatorWidget.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
@@ -154,6 +154,9 @@ void USFMinimapPanelWidget::NativeConstruct()
 
 void USFMinimapPanelWidget::NativeDestruct()
 {
+    bIsMinimapCameraDragging = false;
+    if (InteractionCamera.IsValid()) InteractionCamera->SetMinimapInteractionActive(false);
+    InteractionCamera.Reset();
     UnbindMarkerRegistry();
     if (FogOverlay) FogOverlay->RemoveFromParent();
     FogOverlay = nullptr;
@@ -1851,6 +1854,7 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
     {
         bIsMinimapCameraDragging = true;
+        UpdateCameraInteraction();
         MoveCameraToPointerPosition(InMouseEvent);
 
         SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag started.");
@@ -1920,6 +1924,7 @@ FReply USFMinimapPanelWidget::NativeOnMouseMove(const FGeometry& InGeometry, con
     if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
     {
         bIsMinimapCameraDragging = false;
+        UpdateCameraInteraction();
         return FReply::Handled().ReleaseMouseCapture();
     }
 
@@ -1933,12 +1938,46 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
     {
         bIsMinimapCameraDragging = false;
 
+        UpdateCameraInteraction();
+
         SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag ended.");
 
         return FReply::Handled().ReleaseMouseCapture();
     }
 
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void USFMinimapPanelWidget::UpdateCameraInteraction()
+{
+    ASFRTSCameraPawn* CameraPawn = Cast<ASFRTSCameraPawn>(GetOwningPlayerPawn());
+    if (InteractionCamera.Get() != CameraPawn && InteractionCamera.IsValid())
+        InteractionCamera->SetMinimapInteractionActive(false);
+    InteractionCamera = CameraPawn;
+    if (CameraPawn)
+        // Hovering over the minimap must still allow screen-edge scrolling.
+        // Only an active minimap drag owns camera movement.
+        CameraPawn->SetMinimapInteractionActive(bIsMinimapCameraDragging);
+}
+
+void USFMinimapPanelWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+    UpdateCameraInteraction();
+}
+
+void USFMinimapPanelWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+    Super::NativeOnMouseLeave(InMouseEvent);
+    UpdateCameraInteraction();
+}
+
+void USFMinimapPanelWidget::NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+    Super::NativeOnMouseCaptureLost(CaptureLostEvent);
+    bIsMinimapCameraDragging = false;
+    // Capture can disappear without MouseUp (window focus change, widget removal).
+    UpdateCameraInteraction();
 }
 
 void USFMinimapPanelWidget::HandleCombatTargetDamaged(

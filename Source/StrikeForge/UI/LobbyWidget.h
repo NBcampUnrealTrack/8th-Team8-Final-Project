@@ -33,6 +33,8 @@ protected:
 	void OnStage5Clicked();
 	UFUNCTION()
 	void OnStage6Clicked();
+	UFUNCTION()
+	void OnStage7Clicked();
 
 	void OpenStageLevel(int32 StageIndex);
 	// 26.08.11 추가
@@ -64,6 +66,8 @@ protected:
 	UButton* Stage5;
 	UPROPERTY(meta = (BindWidget))
 	UButton* Stage6;
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* Stage6_1;
 	UPROPERTY(meta = (BindWidget))
 	UButton* Setting_Btn;
 	UPROPERTY(meta = (BindWidget))
@@ -73,5 +77,5 @@ protected:
 	USettingWidget* SettingWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Stage")
-	TArray<FName> StageRowNames = { TEXT("Stage1"), TEXT("Stage2"), TEXT("Stage3"), TEXT("Stage4"), TEXT("Stage5"), TEXT("Stage6") };
+	TArray<FName> StageRowNames = { TEXT("Stage01"), TEXT("Stage02"), TEXT("Stage03"), TEXT("Stage04"), TEXT("StageHero"), TEXT("Stage06"), TEXT("Stage07") };
 };

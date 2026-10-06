@@ -5,6 +5,7 @@
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/Controller/SFRTSCameraPawn.h"
 #include "EngineUtils.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
@@ -203,6 +204,11 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 	if (Anchors.IsEmpty())
 	{
+		if (bAllowStageWithoutInitialBuildings)
+		{
+			SF_LOG(Log, "[SFGameMode] Unit-only stage: no initial buildings requested.");
+			return true;
+		}
 		SF_LOG(
 			Error,
 			"[SFGameMode] 레벨에 BuildingSpawnAnchor가 없습니다.");
@@ -780,7 +786,7 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		}
 	}
 
-	if (AnchorCount == 0 ||
+	if ((AnchorCount == 0 && !bAllowStageWithoutInitialBuildings) ||
 		RequiredTiersByDefinition.IsEmpty())
 	{
 		FailStageBootstrap();
@@ -1380,6 +1386,14 @@ bool ASFGameMode::CreateStageCameraBoundaries()
 		bMaxXCreated &&
 		bMinYCreated &&
 		bMaxYCreated;
+
+	if (bSuccess)
+	{
+		for (TActorIterator<ASFRTSCameraPawn> It(World); It; ++It)
+		{
+			It->SetStageCameraBounds(NavigationBounds, SafeThickness);
+		}
+	}
 
 	SF_LOG(
 		Log,

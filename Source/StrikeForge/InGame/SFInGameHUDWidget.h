@@ -20,6 +20,8 @@ class USFProductionBuildingPanelWidget;
 class USFSelectionPanelWidget;
 class UHealthComponent;
 class UDecalComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USFMultiSelectionPanelWidget;
@@ -176,7 +178,7 @@ public:
         meta = (ClampMin = "0.0")
     )
     float SynergyBadgeScreenMargin = 8.f;
-    
+
     UPROPERTY(Transient)
     TArray<TObjectPtr<USFBuildingSynergyBadgeWidget>> SynergyBadgeWidgets;
 #pragma endregion 
@@ -562,6 +564,21 @@ protected:
     FVector MoveDestinationIndicatorSize = FVector(24.f, 70.f, 70.f);
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TSoftObjectPtr<UNiagaraSystem> DestinationNiagaraSystem =
+        TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/Game/IN_UI/WorldFeedback/Niagara/NS_SFClickMovement.NS_SFClickMovement")));
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Hover")
+    TSoftObjectPtr<UNiagaraSystem> HoverNiagaraSystem =
+        TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/Game/IN_UI/WorldFeedback/Niagara/NS_SFHoverRound.NS_SFHoverRound")));
+
+    // Authored Niagara radius at unit scale, in centimetres.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback", meta = (ClampMin = "1"))
+    float DestinationNiagaraRadius = 100.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Hover", meta = (ClampMin = "1"))
+    float HoverNiagaraRadius = 140.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
     float MoveDestinationIndicatorLifeTime = 0.65f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
@@ -627,7 +644,7 @@ protected:
     float EnemyHoverFeedbackElapsed =
         0.f;
 
-    FVector EnemyHoverBaseDecalSize =
+    FVector EnemyHoverBaseScale =
         FVector::ZeroVector;
 
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
@@ -699,7 +716,7 @@ private:
     TWeakObjectPtr<AActor> HoveredEnemyActor;
 
     UPROPERTY(Transient)
-    TObjectPtr<UDecalComponent> EnemyHoverIndicator = nullptr;
+    TObjectPtr<UNiagaraComponent> EnemyHoverIndicator = nullptr;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AActor> HoverSuppressedSelectionActor;
@@ -707,7 +724,7 @@ private:
     bool bHoverSuppressedSelectionIndicator = false;
 
     UPROPERTY(Transient)
-    TObjectPtr<UMaterialInstanceDynamic>EnemyHoverDynamicMaterial = nullptr;
+    TArray<TObjectPtr<UMaterialInstanceDynamic>> EnemyHoverDynamicMaterials;
 
     FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
     bool bIsSelectionDragging = false;

@@ -48,6 +48,13 @@ void ULobbyWidget::NativeConstruct()
 	{
 		Stage6->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
+	if (IsValid(Stage6_1))
+	{
+		// Replace the legacy final-stage Blueprint shortcut with the same
+		// progress-gated selection path used by the other six stages.
+		Stage6_1->OnClicked.Clear();
+		Stage6_1->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage7Clicked);
+	}
 
 	// 로비 진입 시 스테이지 버튼들 잠금/클리어 상태 갱신
 	RefreshStageButtons();
@@ -120,6 +127,7 @@ void ULobbyWidget::OnStage3Clicked() { OpenStageLevel(2); }
 void ULobbyWidget::OnStage4Clicked() { OpenStageLevel(3); }
 void ULobbyWidget::OnStage5Clicked() { OpenStageLevel(4); }
 void ULobbyWidget::OnStage6Clicked() { OpenStageLevel(5); }
+void ULobbyWidget::OnStage7Clicked() { OpenStageLevel(6); }
 
 void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 {
@@ -158,7 +166,8 @@ void ULobbyWidget::RefreshStageButtons()
 		Stage3,
 		Stage4,
 		Stage5,
-		Stage6
+		Stage6,
+		Stage6_1
 	};
 
 	const int32 StageCount =

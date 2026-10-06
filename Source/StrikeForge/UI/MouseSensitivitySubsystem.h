@@ -2,27 +2,41 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Tickable.h"
+#include "UI/SFCursorMotion.h"
 #include "MouseSensitivitySubsystem.generated.h"
 
 UCLASS()
-class STRIKEFORGE_API UMouseSensitivitySubsystem : public UGameInstanceSubsystem
+class STRIKEFORGE_API UMouseSensitivitySubsystem : public UGameInstanceSubsystem, public FTickableGameObject
 {
 	GENERATED_BODY()
 
 public:
-	// °¨µµ °ªÀ» ¼³Á¤ (½½¶óÀÌ´õ OnValueChanged¿¡¼­ È£Ãâ)
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Tick(float DeltaTime) override;
+	virtual bool IsTickable() const override { return !IsTemplate(); }
+	virtual bool IsTickableWhenPaused() const override { return true; }
+	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UMouseSensitivitySubsystem, STATGROUP_Tickables); }
+	virtual UWorld* GetTickableGameObjectWorld() const override { return GetWorld(); }
+	void SetMasterVolume(float Volume);
+	// ê°ë„ ê°’ì„ ì„¤ì • (ìŠ¬ë¼ì´ë” OnValueChangedì—ì„œ í˜¸ì¶œ)
 	UFUNCTION(BlueprintCallable, Category = "Mouse Settings")
 	void SetMouseSensitivity(float NewSensitivity);
 
-	// ÇöÀç °¨µµ °ªÀ» °¡Á®¿È (°¡»ó Ä¿¼­ Tick¿¡¼­ È£Ãâ)
+	// í˜„ì¬ ê°ë„ ê°’ì„ ê°€ì ¸ì˜´ (ê°€ìƒ ì»¤ì„œ Tickì—ì„œ í˜¸ì¶œ)
 	UFUNCTION(BlueprintPure, Category = "Mouse Settings")
 	float GetMouseSensitivity() const { return MouseSensitivity; }
 
 protected:
-	// ±âº»°ª 1.0, Å¬·¥ÇÁ ¹üÀ§´Â ÇÁ·ÎÁ§Æ® ±âÈ¹¿¡ ¸Â°Ô Á¶Á¤
+	// ê¸°ë³¸ê°’ 1.0, í´ë¨í”„ ë²”ìœ„ëŠ” í”„ë¡œì íŠ¸ ê¸°íšì— ë§ê²Œ ì¡°ì •
 	UPROPERTY(BlueprintReadOnly, Category = "Mouse Settings")
 	float MouseSensitivity = 1.0f;
 
 	static constexpr float MinSensitivity = 0.1f;
 	static constexpr float MaxSensitivity = 3.0f;
+	float MasterVolume = 1.f;
+	TWeakObjectPtr<UWorld> AudioWorld;
+	FSFCursorMotion CursorMotion;
+	FVector2D LastViewportOrigin = FVector2D::ZeroVector;
+	FVector2D LastViewportSize = FVector2D::ZeroVector;
 };

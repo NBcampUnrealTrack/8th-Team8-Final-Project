@@ -26,6 +26,9 @@ class STRIKEFORGE_API AUnitSpawner : public AActor
 
 public:
 	AUnitSpawner();
+	int32 GetTeamIndex() const { return TeamIndex; }
+	/** Called before BeginPlay for fixed-faction maps. Player production is manual. */
+	void ConfigureFactionOwnership(int32 InTeamIndex, bool bPlayerOwned);
 
 	UFUNCTION(BlueprintCallable, Category = "SF|Spawn")
 	AUnitBase* SpawnOne();
@@ -269,6 +272,7 @@ private:
 
 	FTimerHandle SpawnTimerHandle;
 	bool bExecutingWaveSpawn = false;
+	bool bPlayerOwnedFactionSpawner = false;
 
 	FTimerHandle OwnerBuildingResolveTimerHandle;
 

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
+#include "Datas/Race/SFRaceType.h"
 #include "SFStageIntroData.generated.h"
 
 class ASFTutorialGhostActor;
@@ -10,6 +11,13 @@ class USFBuildingDefinition;
 class USoundBase;
 class UStaticMesh;
 class UTexture2D;
+
+namespace SFStageStory
+{
+    /** Prefer faction-specific stories; existing campaign rows remain valid fallbacks. */
+    STRIKEFORGE_API FName ResolveRowName(const UDataTable* Table, FName Stage,
+        ESFRace Race, bool bVictory = false);
+}
 
 UENUM(BlueprintType)
 enum class ESFStageIntroNodeType : uint8
@@ -132,6 +140,10 @@ struct STRIKEFORGE_API FSFStageIntroGuideStep
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     FVector2D ScreenExtent = FVector2D::ZeroVector;
+
+    /** Select the local commander and track its actual HUD skill slot. Zero disables this. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|Screen", meta = (ClampMin = "0", ClampMax = "3"))
+    int32 CommanderSkillTier = 0;
 
     /** TargetKind 가 WorldLocation 일 때 가리킬 월드 좌표 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Guide|World")

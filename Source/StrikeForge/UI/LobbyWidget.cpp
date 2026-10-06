@@ -9,6 +9,7 @@
 #include "SFMenuAtmosphereWidget.h"
 #include "SFLobbyStagePresentation.h"
 #include "SFStoryWidget.h"
+#include "SFRaceSelectionWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -16,6 +17,9 @@
 void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Migrate the serialized prototype binding as well as the native default.
+	for (FName& Row : StageRowNames)
+		if (Row == TEXT("StageHero") || Row == TEXT("Stage_Hero")) Row = TEXT("Stage05");
 	if (IsValid(Story_Btn) && !bStoryBound)
 	{
 		// Replace the Blueprint's old story placeholder with the modal chronicle.
@@ -57,6 +61,13 @@ void ULobbyWidget::NativeConstruct()
 	{
 		Stage6->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage6Clicked);
 	}
+	if (IsValid(Stage6_1))
+	{
+		// Replace the legacy final-stage Blueprint shortcut with the same
+		// progress-gated selection path used by the other six stages.
+		Stage6_1->OnClicked.Clear();
+		Stage6_1->OnClicked.AddUniqueDynamic(this, &ULobbyWidget::OnStage7Clicked);
+	}
 
 	// 로비 진입 시 스테이지 버튼들 잠금/클리어 상태 갱신
 	RefreshStageButtons();
@@ -91,6 +102,8 @@ void ULobbyWidget::NativeConstruct()
 
 void ULobbyWidget::NativeDestruct()
 {
+	if (RaceSelectionWidget) RaceSelectionWidget->RemoveFromParent();
+	RaceSelectionWidget = nullptr;
 	if (StoryWidget)
 	{
 		StoryWidget->OnClosed.Clear();
@@ -157,9 +170,11 @@ void ULobbyWidget::OnStage3Clicked() { OpenStageLevel(2); }
 void ULobbyWidget::OnStage4Clicked() { OpenStageLevel(3); }
 void ULobbyWidget::OnStage5Clicked() { OpenStageLevel(4); }
 void ULobbyWidget::OnStage6Clicked() { OpenStageLevel(5); }
+void ULobbyWidget::OnStage7Clicked() { OpenStageLevel(6); }
 
 void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 {
+	if (RaceSelectionWidget && RaceSelectionWidget->IsInViewport()) return;
 	if (StoryWidget && StoryWidget->IsInViewport()) return;
 	if (!StageRowNames.IsValidIndex(StageIndex))
 	{
@@ -179,7 +194,8 @@ void ULobbyWidget::OpenStageLevel(int32 StageIndex)
 
 	if (GameInstance->GetSelectedRace() == ESFRace::None)
 	{
-		// 종족 선택 UI를 여는 함수 작성자리
+		if (!RaceSelectionWidget) RaceSelectionWidget = CreateWidget<USFRaceSelectionWidget>(GetOwningPlayer());
+		if (RaceSelectionWidget) RaceSelectionWidget->AddToViewport(600);
 		return;
 	}
 
@@ -196,7 +212,8 @@ void ULobbyWidget::RefreshStageButtons()
 		Stage3,
 		Stage4,
 		Stage5,
-		Stage6
+		Stage6,
+		Stage6_1
 	};
 
 	const int32 StageCount =

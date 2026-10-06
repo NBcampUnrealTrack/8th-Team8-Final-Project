@@ -148,6 +148,8 @@ void ASFRTSCameraPawn::Tick(float DeltaTime)
 
     HandleEdgeScroll();
     ClampCameraLocation();
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        PC->SetAudioListenerAttenuationOverride(GetRootComponent(), FVector(0.f, 0.f, 100.f));
 }
 
 void ASFRTSCameraPawn::SetupPlayerInputComponent(
@@ -280,7 +282,7 @@ void ASFRTSCameraPawn::PushOverheadUIScale() const
 
 void ASFRTSCameraPawn::HandleEdgeScroll()
 {
-    if (!bEnableEdgeScroll)
+    if (!bEnableEdgeScroll || bMinimapInteractionActive)
     {
         return;
     }
@@ -453,7 +455,8 @@ void ASFRTSCameraPawn::ClampCameraLocation()
 
     if (!CurrentLocation.Equals(ClampedLocation))
     {
-        SetActorLocation(ClampedLocation, true);
+        // Bounds correction must also recover a pawn already outside the wall.
+        SetActorLocation(ClampedLocation, false, nullptr, ETeleportType::TeleportPhysics);
     }
 }
 
@@ -477,10 +480,45 @@ void ASFRTSCameraPawn::FocusOnWorldLocation(
     NewLocation.Y =
         WorldLocation.Y;
 
-    SetActorLocation(
-        NewLocation,
-        true
-    );
+    ConsumeMovementInputVector();
+    if (IsValid(FloatingPawnMovement))
+    {
+        FloatingPawnMovement->StopMovementImmediately();
+    }
+
+    if (bConstrainCameraToBounds)
+    {
+        NewLocation.X = FMath::Clamp(NewLocation.X, MinimumCameraBounds.X, MaximumCameraBounds.X);
+        NewLocation.Y = FMath::Clamp(NewLocation.Y, MinimumCameraBounds.Y, MaximumCameraBounds.Y);
+    }
+
+    // A focus request is a jump, not a sweep through everything between the points.
+    // Maps without configured bounds retain their authored collision restrictions.
+    SetActorLocation(NewLocation, !bConstrainCameraToBounds, nullptr, ETeleportType::TeleportPhysics);
 
     ClampCameraLocation();
+}
+
+void ASFRTSCameraPawn::SetStageCameraBounds(const FBox& NavigationBounds, float BoundaryThickness)
+{
+    if (!NavigationBounds.IsValid) return;
+    const float Margin = FMath::Max(0.0f, BoundaryThickness)
+        + (IsValid(CameraCollision) ? CameraCollision->GetScaledSphereRadius() : 0.0f) + 2.0f;
+    const FVector2D Min(NavigationBounds.Min.X + Margin, NavigationBounds.Min.Y + Margin);
+    const FVector2D Max(NavigationBounds.Max.X - Margin, NavigationBounds.Max.Y - Margin);
+    if (Min.X >= Max.X || Min.Y >= Max.Y) return;
+    MinimumCameraBounds = Min;
+    MaximumCameraBounds = Max;
+    bConstrainCameraToBounds = true;
+    ClampCameraLocation();
+}
+
+void ASFRTSCameraPawn::SetMinimapInteractionActive(bool bActive)
+{
+    if (bActive && !bMinimapInteractionActive)
+    {
+        ConsumeMovementInputVector();
+        if (IsValid(FloatingPawnMovement)) FloatingPawnMovement->StopMovementImmediately();
+    }
+    bMinimapInteractionActive = bActive;
 }

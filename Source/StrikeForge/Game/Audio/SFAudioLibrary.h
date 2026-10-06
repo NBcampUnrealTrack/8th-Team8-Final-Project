@@ -23,6 +23,9 @@ class STRIKEFORGE_API USFAudioLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
+    /** Positional battle sound, attenuated around the RTS camera's ground focus. */
+    UFUNCTION(BlueprintCallable, Category = "SF|Audio", meta = (WorldContext = "WorldContext"))
+    static void PlayBattleSound(const UObject* WorldContext, USoundBase* Sound, FVector Location);
     /**
      * 이미 재생 중인 오디오 컴포넌트를 일시정지 영향에서 빼낸다.
      *

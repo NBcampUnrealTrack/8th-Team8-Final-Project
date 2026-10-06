@@ -1,5 +1,9 @@
 ﻿#include "SFBaseBuilding.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
+#include "Game/Audio/SFAudioLibrary.h"
+#include "Units/Unit/UnitBase.h"
+#include "Components/CapsuleComponent.h"
+#include "EngineUtils.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Logging/SFLog.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
@@ -343,8 +347,27 @@ void ASFBaseBuilding::ApplySpawnMode()
 	}
 }
 
+bool ASFBaseBuilding::HasLivingUnitInFootprint() const
+{
+	const auto* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>();
+	if (!Grid) return false;
+	const FIntPoint Size = USFBuildingGridSubsystem::GetRotatedGridSize(GetGridSize(), GetActorRotation());
+	const FVector Extent(Size.X * Grid->GetCellSize() * .5f, Size.Y * Grid->GetCellSize() * .5f, 250.f);
+	const FBox Footprint(GetActorLocation() - Extent, GetActorLocation() + Extent);
+	for (TActorIterator<AUnitBase> It(GetWorld()); It; ++It)
+	{
+		if (It->GetCombatState() == EUnitCombatState::Dead) continue;
+		const FVector Position = It->GetActorLocation();
+		if (FMath::Abs(Position.Z - GetActorLocation().Z) > 500.f) continue;
+		if (FVector::DistSquared2D(Position, Footprint.GetClosestPointTo(Position)) <
+			FMath::Square(It->GetCapsuleComponent()->GetScaledCapsuleRadius())) return true;
+	}
+	return false;
+}
+
 bool ASFBaseBuilding::TryStartConstruction()
 {
+	if (HasLivingUnitInFootprint()) return false;
 	if (CurrentBuildingState != EBuildingState::Preview || !CanStartPreparedConstruction())
 	{
 		UE_LOG(LogTemp, Warning,
@@ -1345,7 +1368,7 @@ void ASFBaseBuilding::PlayDestroyEffect()
 	}
 	
 	if (DestroyedSound)
-		UGameplayStatics::PlaySoundAtLocation(
+		USFAudioLibrary::PlayBattleSound(
 			this,
 			DestroyedSound,
 			EffectLocation.GetLocation());

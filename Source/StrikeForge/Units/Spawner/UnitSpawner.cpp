@@ -54,6 +54,17 @@ void AUnitSpawner::BeginPlay()
 	}
 }
 
+void AUnitSpawner::ConfigureFactionOwnership(int32 InTeamIndex, bool bPlayerOwned)
+{
+	TeamIndex = InTeamIndex;
+	bPlayerOwnedFactionSpawner = bPlayerOwned;
+	if (bPlayerOwned)
+	{
+		bStartActive = false;
+		bSpawningEnabled = false;
+	}
+}
+
 // ─────────────────────────────────────────────────────────
 // 활성화 게이트
 //
@@ -582,6 +593,7 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 
 AUnitBase* AUnitSpawner::SpawnOne()
 {
+	if (bPlayerOwnedFactionSpawner) return nullptr;
 	if (bWaveControlled && !bExecutingWaveSpawn) return nullptr;
     // BP의 직접 호출도 타이머와 같은 게이트를 통과해야 한다.
     if (!bActivated || !bSpawningEnabled || bOwnerBuildingDestroyed) return nullptr;

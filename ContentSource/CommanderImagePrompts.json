@@ -1,0 +1,101 @@
+{
+  "base_portrait_prompt": "Use case: stylized-concept. Asset: transparent waist-up game dialogue portrait. Reference 1 is the exact identity and costume of the Etherian Archbishop: pale skin, silver-white short bob, large black oval eyes, teal hood with gold trim and prominent cyan diamond gem above forehead, teal shoulder collar, white wide sleeves, gold edges, brown belt with cyan diamond buckle. Reference 2 defines polished faceted low-poly chibi 3D portrait style and waist-up framing only; do not copy wolf traits. Create the Archbishop in a calm neutral basic dialogue pose, hands gently together at waist, wise composed face. Preserve costume and chibi proportions. Centered square canvas, full head and hood with margin, waist at bottom, soft studio lighting, readable eyes, genuine transparent background. No backdrop, frame, words, watermark or extra characters.",
+  "assets": [
+    {
+      "name": "T_EtherCommander_Normal",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-01df736d-affd-4b08-8f6e-cd1b91398fd2.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Normal.png",
+      "prompt": "Use case: precise-object-edit. Correct ONLY the lower face of this exact Archbishop portrait. The current mouth is missing and the polygonal cheek area looks like a mask. Remove ALL mask-like treatment from the lower face. Show a bare natural softly faceted human face with a small visible nose, natural cheeks and chin, and a clearly visible mouth with warm rose lips, dark mouth opening: calm relaxed lips, slightly parted. Mouth must be unambiguously visible at thumbnail size. NO mask, NO face covering, NO fabric over mouth, NO featureless face plate or muzzle. Preserve exact eyes, eyebrows, white haircut, hood, gems, costume, body gesture, hands, lighting, chibi proportions, square framing and transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_EtherCommander_Thoughtful",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-e1be99bb-8681-4050-a045-bc6a5688f9b7.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Thoughtful.png",
+      "prompt": "Use case: precise-object-edit. Correct ONLY the lower face of this exact Archbishop portrait. The current mouth is missing and the polygonal cheek area looks like a mask. Remove ALL mask-like treatment from the lower face. Show a bare natural softly faceted human face with a small visible nose, natural cheeks and chin, and a clearly visible mouth with warm rose lips, dark mouth opening: thoughtful slightly downturned lips, hand remains below chin. Mouth must be unambiguously visible at thumbnail size. NO mask, NO face covering, NO fabric over mouth, NO featureless face plate or muzzle. Preserve exact eyes, eyebrows, white haircut, hood, gems, costume, body gesture, hands, lighting, chibi proportions, square framing and transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_EtherCommander_Resolute",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-de0a1006-ce33-4b66-8947-9532d3e82c61.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Resolute.png",
+      "prompt": "Use case: precise-object-edit. Correct ONLY the lower face of this exact Archbishop portrait. The current mouth is missing and the polygonal cheek area looks like a mask. Remove ALL mask-like treatment from the lower face. Show a bare natural softly faceted human face with a small visible nose, natural cheeks and chin, and a clearly visible mouth with warm rose lips, dark mouth opening: firm determined mouth, slightly parted lips. Mouth must be unambiguously visible at thumbnail size. NO mask, NO face covering, NO fabric over mouth, NO featureless face plate or muzzle. Preserve exact eyes, eyebrows, white haircut, hood, gems, costume, body gesture, hands, lighting, chibi proportions, square framing and transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_EtherCommander_Command",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-27dbd9cf-002c-4a67-9c4b-cfac14358827.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Command.png",
+      "prompt": "Use case: precise-object-edit. Remove all mask-like treatment from the lower face of this exact portrait. Keep the existing open mouth expression and gesture, but make the entire lower face an uncovered natural human face: subtly modeled small nose, natural cheeks and chin, visible rose-colored lips around the mouth. Match a softly faceted chibi 3D human face. No mask, no face covering, no featureless face plate or fabric over mouth. Preserve eyes, eyebrows, hair, hood, gems, costume, body pose, hands, lighting, framing, and genuine transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_EtherCommander_Angry",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-0e5c60f0-a20f-4550-b54d-5d7f87964ace.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Angry.png",
+      "prompt": "Use case: precise-object-edit. Remove all mask-like treatment from the lower face of this exact portrait. Keep the existing open mouth expression and gesture, but make the entire lower face an uncovered natural human face: subtly modeled small nose, natural cheeks and chin, visible rose-colored lips around the mouth. Match a softly faceted chibi 3D human face. No mask, no face covering, no featureless face plate or fabric over mouth. Preserve eyes, eyebrows, hair, hood, gems, costume, body pose, hands, lighting, framing, and genuine transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_EtherCommander_Alarm",
+      "kind": "portrait",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-d34c3cbe-0286-4891-819e-e5a233937334.png",
+      "destination": "Content/Game/IN_UI/Image/Intro/StoryUse/Etherial/Commander/T_EtherCommander_Alarm.png",
+      "prompt": "Use case: precise-object-edit. Remove all mask-like treatment from the lower face of this exact portrait. Keep the existing open mouth expression and gesture, but make the entire lower face an uncovered natural human face: subtly modeled small nose, natural cheeks and chin, visible rose-colored lips around the mouth. Match a softly faceted chibi 3D human face. No mask, no face covering, no featureless face plate or fabric over mouth. Preserve eyes, eyebrows, hair, hood, gems, costume, body pose, hands, lighting, framing, and genuine transparent background. No text.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Beast_1",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-71327933-8168-443c-9172-659437b2d4f2.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Beast_1.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Beast commander charge order: three silver wolf-paw claw marks sweeping diagonally forward with bright amber speed trails. Emphasize rapid movement, bronze and gold palette.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Beast_2",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-8602b3b4-2eca-4ad9-9ad0-fea6bf6d4c99.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Beast_2.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Beast commander battlefield roar: a silver wolf head howling with three powerful golden concentric sound arcs, small shield shape under chin. Emphasize empowering allied warriors, gold and orange energy.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Beast_3",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-a5c9aebf-f76d-4619-8a78-0899441f05cf.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Beast_3.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Beast commander intimidation: two fierce glowing red wolf eyes above a cracked silver enemy shield with three crimson claw slashes. Emphasize vulnerability, red and deep violet energy.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Ether_1",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-85f178c7-7cf1-4e4e-a6cf-8ad793ecdcfa.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Ether_1.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Etherian Archbishop sanctuary blessing: an open ivory hand cradles a luminous cyan diamond crystal, soft radiant green-cyan healing halo surrounds crystal. Teal, ivory and gold palette.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Ether_2",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-a6849328-e3af-40e5-b48d-58075a615129.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Ether_2.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Etherian Archbishop accelerated production: a stylized ivory and teal barracks tower wrapped by a large golden clockwise arrow and small clock face WITHOUT numbers. Cyan magical energy. Teal, ivory and gold palette.",
+      "mode": "built-in"
+    },
+    {
+      "name": "T_Skill_Ether_3",
+      "kind": "skill",
+      "source": "C:\\Users\\cch77\\.codex\\generated_images\\01a10aa4-349a-7353-9e99-8e8886251603\\exec-de85902b-e4d8-450e-97b1-9f5036edddb6.png",
+      "destination": "Content/Game/IN_UI/Image/Skills/T_Skill_Ether_3.png",
+      "prompt": "Use case: stylized-concept. Single square fantasy RTS ability icon, polished faceted low-poly 3D emblem, simple bold readable silhouette at 64px, dramatic directional light, thin beveled antique-gold square border, dark charcoal background, centered composition with 10% margin, no text, no letters, no numbers, no watermark. Etherian Archbishop celestial protection: broad ivory wings surround a radiant cyan shield with central faceted diamond gemstone and a golden halo. Teal, ivory and gold palette.",
+      "mode": "built-in"
+    }
+  ]
+}

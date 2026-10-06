@@ -98,7 +98,7 @@ public:
 
 	/**
 	 * NavMesh 위의 생성 가능한 지점을 찾는다.
-	 * 실패해도 OutLocation 에는 원점이 들어가므로 호출부는 그대로 진행해도 된다.
+	 * 실패하면 생성하지 않고, 다른 후보를 찾거나 완료된 생산을 대기시킨다.
 	 */
 	static bool FindSpawnLocation(
 		const UObject* InWorldContext,

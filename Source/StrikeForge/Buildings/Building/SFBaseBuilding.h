@@ -116,6 +116,7 @@ public:
 	// 커맨더 건설 시작 시작함수
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
+	bool HasLivingUnitInFootprint() const;
 	
 	// 업그레이드 함수
 	/**

@@ -382,7 +382,7 @@ void UBuildingPlacement::UpdatePlacementMode()
 
 	TargetBuildingGridInfo = NewGridInfo;
 
-	if (bGridChanged)
+	if (bGridChanged || !bCanPlaceCurrentLocation)
 	{
 		Building->SetActorLocation(NewBuildingLocation);
 
@@ -482,6 +482,7 @@ bool UBuildingPlacement::CanPlaceAtCurrentLocation(
 	return
 		bCanPlaceOnGrid &&
 		bCanPlaceOnNavigation &&
+		!Building->HasLivingUnitInFootprint() &&
 		USFTutorialSubsystem::IsBuildLocationAllowed(
 			this,
 			Building->GetActorLocation());

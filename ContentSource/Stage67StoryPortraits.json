@@ -1,0 +1,31 @@
+{
+  "Stage06": [
+    {"etherian": "Alarm", "beast": "Angry", "focus": "Left"},
+    {"etherian": "Alarm", "beast": "Angry", "focus": "Right"},
+    {"etherian": "Command", "beast": "Nomal", "focus": "Left"}
+  ],
+  "Stage06Clear": [
+    {"etherian": "Resolute", "focus": "Left"},
+    {"etherian": "Alarm", "focus": "Left"}
+  ],
+  "Stage07_Beast": [
+    {"beast": "Nomal", "focus": "Right"},
+    {"etherian": "Angry", "beast": "Angry", "focus": "Right"},
+    {"beast": "Smile", "focus": "Right"}
+  ],
+  "Stage07_Human": [
+    {"etherian": "Angry", "focus": "Left"},
+    {"etherian": "Thoughtful", "beast": "Angry", "focus": "Left"},
+    {"etherian": "Command", "focus": "Left"}
+  ],
+  "Stage07_BeastClear": [
+    {"beast": "Smile", "focus": "Right"},
+    {"beast": "Nomal", "focus": "Right"},
+    {"beast": "Smile", "focus": "Right"}
+  ],
+  "Stage07_HumanClear": [
+    {"etherian": "Resolute", "focus": "Left"},
+    {"etherian": "Thoughtful", "focus": "Left"},
+    {"etherian": "Command", "focus": "Left"}
+  ]
+}

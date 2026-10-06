@@ -11,11 +11,14 @@ class UTexture2D;
 class USFMenuAtmosphereWidget;
 class USFLobbyStagePresentation;
 class USFStoryWidget;
+class USFRaceSelectionWidget;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
 	GENERATED_BODY()
 protected:
+	UPROPERTY(Transient)
+	TObjectPtr<USFRaceSelectionWidget> RaceSelectionWidget;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -88,5 +91,5 @@ protected:
 	USettingWidget* SettingWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Stage")
-	TArray<FName> StageRowNames = { TEXT("Stage01"), TEXT("Stage02"), TEXT("Stage03"), TEXT("Stage04"), TEXT("StageHero"), TEXT("Stage06"), TEXT("Stage07") };
+	TArray<FName> StageRowNames = { TEXT("Stage01"), TEXT("Stage02"), TEXT("Stage03"), TEXT("Stage04"), TEXT("Stage05"), TEXT("Stage06"), TEXT("Stage07") };
 };

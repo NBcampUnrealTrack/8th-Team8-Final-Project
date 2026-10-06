@@ -13,6 +13,9 @@
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 #include "Units/Spawner/UnitSpawner.h"
+#include "Units/Lane/LanePath.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "UI/LoadingWidget.h"
 
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
@@ -94,6 +97,28 @@ void ASFGameMode::InitGameState()
 	PrepareStageMusic();
 
 	SFGameState = GetGameState<ASFGameState>();
+	// Resolve and remap authored faction bases before any spawner BeginPlay.
+	if (USFGameInstance* GI = GetGameInstance<USFGameInstance>())
+	{
+#if WITH_EDITOR
+		GI->ResolveEditorStageSelection(GetWorld());
+#endif
+		const UDataTable* Table = GI->GetDataTableType(EDataTableType::Stage);
+		const FSFStageData* Stage = Table ? Table->FindRow<FSFStageData>(GI->GetSelectedStageRowName(), TEXT("FactionBases")) : nullptr;
+		bFactionBases = Stage && Stage->bUseFactionBases;
+		if (bFactionBases)
+		{
+			const bool bSwap = GI->GetSelectedRace() == ESFRace::Beast;
+			const auto Team = [bSwap](int32 Authored) { return bSwap && (Authored == 0 || Authored == 1) ? 1 - Authored : Authored; };
+			for (TActorIterator<ASFBuildingSpawnAnchor> It(GetWorld()); It; ++It) It->SetTeamIndex(Team(It->GetTeamIndex()));
+			for (TActorIterator<ALanePath> It(GetWorld()); It; ++It) It->SetTeamIndex(Team(It->GetTeamIndex()));
+			for (TActorIterator<AUnitSpawner> It(GetWorld()); It; ++It)
+			{
+				const int32 ResolvedTeam = Team(It->GetTeamIndex());
+				It->ConfigureFactionOwnership(ResolvedTeam, ResolvedTeam == PlayerTeamIndex);
+			}
+		}
+	}
 
 	if (!IsValid(SFGameState))
 	{
@@ -112,6 +137,25 @@ void ASFGameMode::BeginPlay()
 
 	// initgamestate에서 플레이어팀등록을 마친뒤 호출
 	BeginStageBootstrap();
+	if (bFactionBases)
+	{
+		// Final maps can have an empty level Blueprint. Use the same loading-screen
+		// lifecycle as the campaign maps, after their BeginPlay UI has been created.
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			TArray<UUserWidget*> Existing;
+			UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Existing, ULoadingWidget::StaticClass(), true);
+			if (!Existing.IsEmpty()) return;
+			APlayerController* PC = GetWorld()->GetFirstPlayerController();
+			UClass* WidgetClass = LoadClass<ULoadingWidget>(nullptr, TEXT("/Game/Core/UI/WBP_Loading.WBP_Loading_C"));
+			if (PC && PC->IsLocalController() && WidgetClass)
+				if (ULoadingWidget* Loading = CreateWidget<ULoadingWidget>(PC, WidgetClass))
+				{
+					Loading->AddToViewport(1000);
+					Loading->SetStageTitle(NSLOCTEXT("Campaign", "FinalBattle", "최후의 전투"));
+				}
+		}));
+	}
 }
 
 void ASFGameMode::PrepareStageMusic()
@@ -513,7 +557,16 @@ void ASFGameMode::BeginStageBootstrap()
 	BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
 
 	// 테이블의 Enemy Setup 불러와서 등록
-	for (const FSFStageTeamSetup& TeamSetup : StageData->TeamSetups)
+	TArray<FSFStageTeamSetup> EnemySetups = StageData->TeamSetups;
+	if (StageData->bUseFactionBases)
+	{
+		EnemySetups.Reset();
+		FSFStageTeamSetup Enemy;
+		Enemy.TeamIndex = 1;
+		Enemy.Race = PlayerRace == ESFRace::Human ? ESFRace::Beast : ESFRace::Human;
+		EnemySetups.Add(Enemy);
+	}
+	for (const FSFStageTeamSetup& TeamSetup : EnemySetups)
 	{
 		if (TeamSetup.TeamIndex == PlayerTeamIndex ||
 			TeamSetup.Race == ESFRace::None ||
@@ -994,6 +1047,18 @@ void ASFGameMode::CompleteStageBootstrap()
 	bStageRenderPreparationStarted = false;
 
 	// 에셋 로딩, Anchor 생성, 0.5초 준비가 모두 완료됐다.
+	if (bFactionBases)
+	{
+		const ASFNexusBuilding* Nexus = SFGameState->GetNexus(PlayerTeamIndex);
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		if (Nexus && PC && PC->GetPawn())
+		{
+			FVector Position = PC->GetPawn()->GetActorLocation();
+			Position.X = Nexus->GetActorLocation().X;
+			Position.Y = Nexus->GetActorLocation().Y;
+			PC->GetPawn()->SetActorLocation(Position);
+		}
+	}
 	SFGameState->SetStageLoadingProgress(1.f);
 
 	if (!SFGameState->MarkStageReadyToStart())

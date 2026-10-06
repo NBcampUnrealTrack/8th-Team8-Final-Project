@@ -92,6 +92,7 @@ private:
 	TObjectPtr<UAudioComponent> StageMusicComponent;
 
 	bool bStageMusicStarted = false;
+	bool bFactionBases = false;
 
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
 	bool SpawnStageBuildingsFromAnchors();

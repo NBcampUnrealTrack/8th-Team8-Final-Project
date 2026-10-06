@@ -28,6 +28,7 @@ class STRIKEFORGE_API ALanePath : public AActor
 
 public:
 	ALanePath();
+	void SetTeamIndex(int32 InTeamIndex) { TeamIndex = InTeamIndex; }
 
 	/**
 	 * 진행도 0~1 지점의 월드 좌표.

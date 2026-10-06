@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
+#include "Datas/Race/SFRaceType.h"
 #include "SFStageIntroData.generated.h"
 
 class ASFTutorialGhostActor;
@@ -10,6 +11,13 @@ class USFBuildingDefinition;
 class USoundBase;
 class UStaticMesh;
 class UTexture2D;
+
+namespace SFStageStory
+{
+    /** Prefer faction-specific stories; existing campaign rows remain valid fallbacks. */
+    STRIKEFORGE_API FName ResolveRowName(const UDataTable* Table, FName Stage,
+        ESFRace Race, bool bVictory = false);
+}
 
 UENUM(BlueprintType)
 enum class ESFStageIntroNodeType : uint8

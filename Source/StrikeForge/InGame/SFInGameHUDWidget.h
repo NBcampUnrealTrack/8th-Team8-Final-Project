@@ -402,7 +402,7 @@ private:
 
     void HandleStageIntroDeactivated();
 
-    FName ResolveStageIntroRowName() const;
+    FName ResolveStageIntroRowName(bool bVictory = false) const;
 
     /**
      * 현재 스테이지와 같은 이름에 Clear 접미사를 붙인 후일담 행을 연다.

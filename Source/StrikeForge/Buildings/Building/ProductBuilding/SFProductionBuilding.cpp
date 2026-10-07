@@ -1,6 +1,5 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
-#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -50,12 +49,18 @@ void ASFProductionBuilding::OnTierActivated()
 	OnSpawnableUnitsChanged.Broadcast(StoredSpawnableUnitDatas);
 
 	ProductComponent->ResumeProductLine();
+
+	// 완성 직후 대기열이 비어 있으면 생산 대기 아이콘을 띄운다.
+	RefreshWorkStatus();
 }
 
 void ASFProductionBuilding::OnUpgradeStarted()
 {
 	Super::OnUpgradeStarted();
 	ProductComponent->PauseProductLine();
+
+	// 업그레이드 중에는 쉬는 게 아니므로 대기 아이콘을 내린다.
+	RefreshWorkStatus();
 }
 
 void ASFProductionBuilding::OnBuildingDestroyed()
@@ -205,7 +210,21 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
-	// 내 건물만 진행도를 보여준다. 적 생산 상황은 노출하지 않는다.
-	OverheadUI->SetElementVisible(ESFOverheadElement::Progress,
-		!InProductLine.IsEmpty() && IsOwnedByLocalPlayer());
+	RefreshWorkStatus();
+}
+
+void ASFProductionBuilding::RefreshWorkStatus()
+{
+	// 내 건물만 보여준다. 적 생산 상황은 노출하지 않는다.
+	const bool bOwned = IsOwnedByLocalPlayer();
+	const bool bHasProducts = IsValid(ProductComponent) && ProductComponent->bIsHasProducts();
+
+	StatusComponent->SetElementVisible(ESFOverheadElement::Progress, bOwned && bHasProducts);
+
+	// 완성돼 기능이 켜진 상태에서 대기열이 비었을 때만 쉬는 중이다. 건설·업그레이드 중은 제외한다.
+	const bool bIdle = bOwned && IsTierActivated() && !bHasProducts;
+
+	StatusComponent->SetStatusIcon(bIdle
+		? ESFOverheadStatusIcon::ProductionIdle
+		: ESFOverheadStatusIcon::None);
 }

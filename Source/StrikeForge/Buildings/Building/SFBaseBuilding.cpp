@@ -14,7 +14,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
-#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Components/BoxComponent.h"
@@ -41,16 +40,12 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	CombatTargetComponent->SightRadius = 1600.f;
 	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
-	// OverHead UI	
-	OverheadUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("OverheadUI"));
-	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
-	OverheadUI->SetupAttachment(GetRootComponent());
-		
+
 	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 	// effects	
 	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
-	// 머리 위 UI가 볼 상태를 모으는 곳. 값의 출처를 여기서 정규화한다.
+	// 머리 위 UI의 액터 쪽 창구. 값의 출처를 여기서 정규화하고, 위젯은 매니저가 띄운다.
 	StatusComponent = CreateDefaultSubobject<USFOverheadStatusComponent>(TEXT("OverheadStatus"));
 }
 
@@ -694,7 +689,7 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 	
 	const bool bShouldSuppressOverhead =
 		InState == EBuildingState::Preview || InState == EBuildingState::Destroyed;
-	OverheadUI->SetSuppressed(bShouldSuppressOverhead);
+	StatusComponent->SetSuppressed(bShouldSuppressOverhead);
 		
 	ApplyBuildingState(InState);
 }
@@ -909,8 +904,8 @@ bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
-		
-	OverheadUI->Initialize(StaticMeshComponent);
+
+	StatusComponent->SetAnchorMesh(StaticMeshComponent);
 
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
@@ -1021,7 +1016,7 @@ void ASFBaseBuilding::OnBuildingDefinitionLoaded()
 {
 	if (IsValid(BuildingDefinition))
 	{
-		OverheadUI->ApplySettings(BuildingDefinition->OverheadUISettings);
+		StatusComponent->ApplySettings(BuildingDefinition->OverheadUISettings);
 	}
 
 	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
@@ -1395,8 +1390,8 @@ void ASFBaseBuilding::SetBoxExtent()
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
 	
-	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
-	OverheadUI->RefreshTransform();
+	// 메시가 바뀌면 바운즈도 바뀌므로 머리 위 판의 크기와 앵커도 같이 맞춘다.
+	StatusComponent->RefreshLayout();
 }
 
 #pragma region Getter
@@ -1414,12 +1409,12 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
 
-	OverheadUI->SetElementVisible(ESFOverheadElement::Health, true);
+	StatusComponent->SetElementVisible(ESFOverheadElement::Health, true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	OverheadUI->SetElementVisible(ESFOverheadElement::Health, false);
+	StatusComponent->SetElementVisible(ESFOverheadElement::Health, false);
 	
 	Super::NotifyActorEndCursorOver();
 }

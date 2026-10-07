@@ -714,11 +714,15 @@ void ASFGameMode::RequestInitialBuildingAssets()
 	}
 
 	/*
-	* 하나의 Definition에서 여러 Tier가 필요할 수 있다.
+	* 스테이지 시작 전에 이 스테이지에서 쓸 수 있는 모든 Tier를 전부 로딩한다.
 	*
-	* 예:
-	* Nexus -> Tier 1, Tier 2
-	* House -> Tier 0
+	* 로딩 범위: Tier 0(또는 Anchor 시작 Tier)부터
+	*           스테이지 테이블(DT_SFStage)의 BuildingRules.MaxAllowedTier까지.
+	*
+	* 로딩 화면에서 비동기 로딩을 모두 끝내므로
+	* 게임 도중(건설 시작, 업그레이드)에는 비동기 요청을 하지 않는다.
+	* 이전에는 건설이 시작될 때 다음 Tier를 선로딩했지만,
+	* 그 선로딩이 게임 도중 게임 스레드를 막는 것이 트레이스로 확인되어 이 방식으로 바꿨다.
 	*/
 	TMap<USFBuildingDefinition*, TSet<int32>>RequiredTiersByDefinition;
 
@@ -742,7 +746,36 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		};
 
 	/*
-	 * 1. 모든 팀의 건설 UI용 건물은 Tier 0을 준비한다.
+	 * FirstTier 다음 Tier부터 스테이지 최대 Tier까지 존재하는 Tier를 모두 추가한다.
+	 * 마지막 Tier를 넘어가면 오류가 아니라 거기서 멈춘다.
+	 */
+	auto AddUpgradeTiersUpToStageMax =
+		[this, &AddRequiredTier](
+			USFBuildingDefinition* Definition,
+			int32 FirstTier)
+		{
+			if (!IsValid(Definition))
+			{
+				return;
+			}
+
+			const int32 StageMaxTierIndex =
+				SFGameState->GetMaxAllowedTierIndexInCurrentStage(
+					Definition->BuildingId);
+
+			for (int32 TierIndex = FirstTier + 1;
+				TierIndex <= StageMaxTierIndex;
+				++TierIndex)
+			{
+				if (!AddRequiredTier(Definition, TierIndex))
+				{
+					break;
+				}
+			}
+		};
+
+	/*
+	 * 1. 모든 팀의 건설 UI용 건물은 Tier 0부터 스테이지 최대 Tier까지 준비한다.
 	 */
 	for (const TPair<int32, ESFRace>& Team
 		: BootstrapTeamRaces)
@@ -777,11 +810,14 @@ void ASFGameMode::RequestInitialBuildingAssets()
 				FailStageBootstrap();
 				return;
 			}
+
+			AddUpgradeTiersUpToStageMax(Definition, 0);
 		}
 	}
 
 	/*
-	 * 2. Anchor 건물은 시작 Tier와 다음 Tier를 준비한다.
+	 * 2. Anchor 건물은 시작 Tier부터 스테이지 최대 Tier까지 준비한다.
+	 * 넥서스는 BuildableDefinitions에 없고 Anchor로만 들어오므로 여기서 처리된다.
 	 */
 	int32 AnchorCount = 0;
 
@@ -843,18 +879,20 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		}
 
 		/*
-		 * 다음 Tier는 존재할 때만 추가한다.
-		 * 마지막 Tier라면 오류가 아니다.
+		 * [이전 방식] 다음 Tier 하나만 준비하고, 그 이후 Tier는 건설 시작 때 비동기로 선로딩했다.
+		 * 스테이지 시작 전 전부 로딩하는 방식으로 바뀌어 아래 AddUpgradeTiersUpToStageMax로 대체한다.
+		 *
+		 * const int32 NextTier =
+		 * 	InitialTier + 1;
+		 *
+		 * if (Definition->FindTier(NextTier))
+		 * {
+		 * 	AddRequiredTier(
+		 * 		Definition,
+		 * 		NextTier);
+		 * }
 		 */
-		const int32 NextTier =
-			InitialTier + 1;
-
-		if (Definition->FindTier(NextTier))
-		{
-			AddRequiredTier(
-				Definition,
-				NextTier);
-		}
+		AddUpgradeTiersUpToStageMax(Definition, InitialTier);
 	}
 
 	if ((AnchorCount == 0 && !bAllowStageWithoutInitialBuildings) ||

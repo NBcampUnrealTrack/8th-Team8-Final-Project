@@ -53,19 +53,6 @@ void UMiningComponent::TickMining()
 		return;
 	}
 
-	const FSFMiningCellTarget* CurrentTarget =
-		GetCurrentMiningTarget();
-
-	AResourceBase* Resource = GetCurrentResource();
-	if (!CurrentTarget || !Resource)
-	{
-		FinishMiningTargets();
-		return;
-	}
-
-	const int32 ResourceCellIndex =
-		CurrentTarget->ResourceCellIndex;
-
 	const float Now =
 		GetWorld()->GetTimeSeconds();
 
@@ -78,9 +65,28 @@ void UMiningComponent::TickMining()
 	{
 		Tracker.CurrentWork -= Tracker.RequiredWork;
 
-		const int32 Extracted =
-			Resource->ExtractFromCell(
-				ResourceCellIndex, ExtractAmount);
+		int32 Extracted = 0;
+
+		/*
+		 * 채굴량을 채울 때까지 앞쪽 셀부터 순회합니다.
+		 * 고갈된 셀은 PrepareFrontTarget()이 배열에서 제거하고,
+		 * 배열이 비면 순회를 멈추고 지금까지 누적된 양만 지급합니다.
+		 */
+		while (Extracted < ExtractAmount && PrepareFrontTarget())
+		{
+			const FSFMiningCellTarget& Target = MiningTargets[0];
+
+			const int32 ExtractedFromCell =
+				Target.ResourceActor->ExtractFromCell(
+					Target.ResourceCellIndex, ExtractAmount - Extracted);
+
+			if (ExtractedFromCell <= 0)
+			{
+				break;
+			}
+
+			Extracted += ExtractedFromCell;
+		}
 
 		if (Extracted > 0)
 		{
@@ -91,24 +97,11 @@ void UMiningComponent::TickMining()
 				MineResourceType, GetRemainingDeposit());
 		}
 
-		const bool bCurrentCellStillUsable =
-			IsValid(Resource) &&
-			Resource->GetCellDeposit(ResourceCellIndex) > 0;
-
-		if (!bCurrentCellStillUsable)
+		// 누적량을 지급한 뒤 배열이 비었다면 고갈을 알립니다.
+		if (!PrepareFrontTarget())
 		{
-			/*
-			 * 정렬된 순서를 유지해야 하므로
-			 * RemoveAtSwap(0)은 사용하지 않습니다.
-			 */
-			MiningTargets.RemoveAt(0);
-			Tracker.CurrentWork = 0.f;
-
-			if (!PrepareFrontTarget())
-			{
-				FinishMiningTargets();
-				return;
-			}
+			FinishMiningTargets();
+			return;
 		}
 	}
 

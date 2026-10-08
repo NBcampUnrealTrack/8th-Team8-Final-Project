@@ -1,4 +1,7 @@
-﻿#include "SFInGameHUDWidget.h"
+#include "SFInGameHUDWidget.h"
+#include "HUD/SFCommandFeedbackNiagara.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
@@ -324,6 +327,9 @@ void USFInGameHUDWidget::NativeConstruct()
 
 void USFInGameHUDWidget::NativeDestruct()
 {
+    bEnemyHoverFeedbackActive = false;
+    HideEnemyHoverIndicator();
+
     bEnemyHoverFeedbackActive =
         false;
 
@@ -2551,6 +2557,7 @@ void USFInGameHUDWidget::UpdateEnemyHoverIndicator()
     if (HoveredEnemyActor.Get() == CandidateActor &&
         IsValid(EnemyHoverIndicator))
     {
+        EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(CandidateActor));
         return;
     }
 
@@ -2585,23 +2592,11 @@ bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
         USFCombatSubsystem::IsHostileTeam(Combat->GetLocalPlayerTeam(), Target->GetTeamIndex());
 }
 
-void USFInGameHUDWidget::ShowEnemyHoverIndicator(
-    AActor* Actor
-)
+void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor)
 {
-    if (!IsValid(Actor) ||
-        !IsValid(EnemyHoverIndicatorMaterial))
-    {
-        return;
-    }
-
-    USceneComponent* RootComponent =
-        Actor->GetRootComponent();
-
-    if (!IsValid(RootComponent))
-    {
-        return;
-    }
+    if (!IsValid(Actor) || !IsValid(Actor->GetRootComponent())) return;
+    UNiagaraSystem* System = HoverNiagaraSystem.LoadSynchronous();
+    if (!System) return;
 
     FVector BoundsOrigin, BoundsExtent;
     const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
@@ -2609,95 +2604,20 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(
     const float RingRadius = bIsBuilding
         ? FMath::Clamp(FVector2D(BoundsExtent.X, BoundsExtent.Y).Size() * 1.05f, 100.f, 1500.f)
         : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
-    const FVector Center = bIsBuilding ? Actor->GetActorLocation() : BoundsOrigin;
-    const FVector IndicatorLocation(Center.X, Center.Y, BoundsOrigin.Z - BoundsExtent.Z + 8.f);
-
-    UDecalComponent* Indicator =
-        NewObject<UDecalComponent>(Actor);
-
-    if (!IsValid(Indicator))
-    {
-        return;
-    }
-
-    Actor->AddInstanceComponent(
-        Indicator
-    );
-
-    Indicator->SetupAttachment(
-        RootComponent
-    );
-
-    Indicator->SetAbsolute(
-        false,
-        true,
-        true
-    );
-
-    Indicator->SetMobility(
-        EComponentMobility::Movable
-    );
-
-    EnemyHoverDynamicMaterial =
-        UMaterialInstanceDynamic::Create(
-            EnemyHoverIndicatorMaterial,
-            this
-        );
-
-    if (!IsValid(EnemyHoverDynamicMaterial))
-    {
-        Indicator->DestroyComponent();
-        return;
-    }
-
-    EnemyHoverDynamicMaterial->
-        SetScalarParameterValue(
-            TEXT("AttackFlash"),
-            0.f
-        );
-
-    Indicator->SetDecalMaterial(
-        EnemyHoverDynamicMaterial
-    );
-
-    Indicator->DecalSize =
-        FVector(
-            32.f,
-            RingRadius,
-            RingRadius
-        );
-
-    EnemyHoverBaseDecalSize = Indicator->DecalSize;
-
-    Indicator->SetSortOrder(
-        30
-    );
-
-    Indicator->RegisterComponent();
-
-    Indicator->SetWorldLocation(
-        IndicatorLocation
-    );
-
-    Indicator->SetWorldRotation(
-        FRotator(
-            -90.f,
-            0.f,
-            0.f
-        )
-    );
-
-    EnemyHoverIndicator =
-        Indicator;
-
-    HoveredEnemyActor =
-        Actor;
-
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] Enemy hover indicator created | Actor=%s",
-        *Actor->GetName()
-    );
+    const FVector Location = SFCommandFeedback::GroundLocation(Actor);
+    FLinearColor Color = FLinearColor::Red;
+    if (EnemyHoverIndicatorMaterial)
+        EnemyHoverIndicatorMaterial->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+    EnemyHoverBaseScale = FVector(RingRadius / FMath::Max(HoverNiagaraRadius, 1.f));
+    EnemyHoverDynamicMaterials.Reset();
+    EnemyHoverIndicator = SFCommandFeedback::Spawn(this, System, Location,
+        EnemyHoverBaseScale, Color, false, &EnemyHoverDynamicMaterials);
+    if (!EnemyHoverIndicator) return;
+    // Follow the target without inheriting its model scale or turning with it.
+    EnemyHoverIndicator->SetAbsolute(false, true, true);
+    EnemyHoverIndicator->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+    EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
+    HoveredEnemyActor = Actor;
 }
 
 void USFInGameHUDWidget::HideEnemyHoverIndicator()
@@ -2715,10 +2635,9 @@ void USFInGameHUDWidget::HideEnemyHoverIndicator()
     EnemyHoverIndicator =
         nullptr;
 
-    EnemyHoverDynamicMaterial =
-        nullptr;
+    EnemyHoverDynamicMaterials.Reset();
 
-    EnemyHoverBaseDecalSize =
+    EnemyHoverBaseScale =
         FVector::ZeroVector;
 
     bEnemyHoverFeedbackActive =
@@ -2803,14 +2722,8 @@ void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
     bEnemyHoverFeedbackActive =
         true;
 
-    if (IsValid(EnemyHoverDynamicMaterial))
-    {
-        EnemyHoverDynamicMaterial->
-            SetScalarParameterValue(
-                TEXT("AttackFlash"),
-                0.f
-            );
-    }
+    for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+        if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), 0.f);
 }
 
 void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
@@ -2829,6 +2742,7 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     }
 
     constexpr float PulseCount = 2.f;
+    EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(HoveredEnemyActor.Get()));
 
     EnemyHoverFeedbackElapsed +=
         InDeltaTime;
@@ -2862,32 +2776,16 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
             PulseAlpha
         );
 
-    EnemyHoverIndicator->DecalSize =
-        EnemyHoverBaseDecalSize *
-        CurrentScale;
+    EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale * CurrentScale);
 
-    if (IsValid(EnemyHoverDynamicMaterial))
-    {
-        EnemyHoverDynamicMaterial->
-            SetScalarParameterValue(
-                TEXT("AttackFlash"),
-                PulseAlpha
-            );
-    }
+    for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+        if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), PulseAlpha);
 
     if (Alpha >= 1.f)
     {
-        EnemyHoverIndicator->DecalSize =
-            EnemyHoverBaseDecalSize;
-
-        if (IsValid(EnemyHoverDynamicMaterial))
-        {
-            EnemyHoverDynamicMaterial->
-                SetScalarParameterValue(
-                    TEXT("AttackFlash"),
-                    0.f
-                );
-        }
+        EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
+        for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+            if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), 0.f);
 
         EnemyHoverFeedbackElapsed =
             0.f;
@@ -3684,90 +3582,28 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
 }
 
 void USFInGameHUDWidget::ShowMoveDestinationIndicator(
-    const FVector& WorldLocation,
-    bool bIsAttack
-)
+    const FVector& WorldLocation, bool bIsAttack)
 {
-    UMaterialInterface* IndicatorMaterial =
-        bIsAttack && IsValid(AttackDestinationIndicatorMaterial)
-        ? AttackDestinationIndicatorMaterial
-        : MoveDestinationIndicatorMaterial;
-
-    if (!IsValid(IndicatorMaterial))
-    {
-        SF_LOG(
-            Warning,
-            "[SFInGameHUDWidget] Destination indicator material is invalid."
-        );
-        return;
-    }
-
-    UWorld* World = GetWorld();
-    if (!IsValid(World))
-    {
-        return;
-    }
-
-    UMaterialInstanceDynamic* DynamicMaterial =
-        UMaterialInstanceDynamic::Create(
-            IndicatorMaterial,
-            this
-        );
-
-    if (!IsValid(DynamicMaterial))
-    {
-        return;
-    }
-
-    DynamicMaterial->SetScalarParameterValue(
-        TEXT("StartTime"),
-        World->GetTimeSeconds()
-    );
-
-    DynamicMaterial->SetScalarParameterValue(
-        TEXT("AnimDuration"),
-        MoveDestinationIndicatorLifeTime
-    );
-
-    UDecalComponent* Indicator =
-        UGameplayStatics::SpawnDecalAtLocation(
-            this,
-            DynamicMaterial,
-            MoveDestinationIndicatorSize,
-            WorldLocation + FVector(0.f, 0.f, 8.f),
-            FRotator(-90.f, 0.f, 0.f),
-            MoveDestinationIndicatorLifeTime
-        );
-
-    if (!IsValid(Indicator))
-    {
-        return;
-    }
-
-    Indicator->SetSortOrder(20);
-
-    const float FadeStartDelay = FMath::Max(
-        0.f,
-        MoveDestinationIndicatorLifeTime -
-        MoveDestinationIndicatorFadeDuration
-    );
-
-    Indicator->SetFadeOut(
-        FadeStartDelay,
-        MoveDestinationIndicatorFadeDuration,
-        false
-    );
-
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Move destination indicator shown | Location: %s",
-        *WorldLocation.ToString()
-    );
+    UMaterialInterface* Palette = bIsAttack && AttackDestinationIndicatorMaterial
+        ? AttackDestinationIndicatorMaterial.Get() : MoveDestinationIndicatorMaterial.Get();
+    FLinearColor Color = bIsAttack ? FLinearColor::Red : FLinearColor(0.f, .5f, .5f);
+    if (Palette) Palette->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+    SFCommandFeedback::Spawn(this, DestinationNiagaraSystem.LoadSynchronous(),
+        WorldLocation + FVector(0.f, 0.f, 8.f),
+        FVector(MoveDestinationIndicatorSize.Y * .95f / FMath::Max(DestinationNiagaraRadius, 1.f),
+            MoveDestinationIndicatorSize.Z * .95f / FMath::Max(DestinationNiagaraRadius, 1.f),
+            MoveDestinationIndicatorSize.Y / FMath::Max(DestinationNiagaraRadius, 1.f)),
+        Color, true);
 }
 
-FName USFInGameHUDWidget::ResolveStageIntroRowName() const
+FName USFInGameHUDWidget::ResolveStageIntroRowName(bool bVictory) const
 {
+    const USFGameInstance* Instance = Cast<USFGameInstance>(GetGameInstance());
+    const ESFRace Race = Instance ? Instance->GetSelectedRace() : ESFRace::None;
+    const auto Resolve = [this, Race, bVictory](FName Stage)
+    {
+        return SFStageStory::ResolveRowName(StageIntroDataTable, Stage, Race, bVictory);
+    };
     if (UWorld* World = GetWorld())
     {
         if (ASFGameState* GameState = World->GetGameState<ASFGameState>())
@@ -3776,7 +3612,7 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
             if (!StageRowName.IsNone())
             {
-                return StageRowName;
+                return Resolve(StageRowName);
             }
         }
     }
@@ -3787,11 +3623,11 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
         if (!StageRowName.IsNone())
         {
-            return StageRowName;
+            return Resolve(StageRowName);
         }
     }
 
-    return StageIntroFallbackRowName;
+    return Resolve(StageIntroFallbackRowName);
 }
 
 bool USFInGameHUDWidget::TryStartVictoryEpilogue()
@@ -3807,7 +3643,7 @@ bool USFInGameHUDWidget::TryStartVictoryEpilogue()
         return false;
     }
 
-    const FName EpilogueRowName(*(StageRowName.ToString() + TEXT("Clear")));
+    const FName EpilogueRowName = ResolveStageIntroRowName(true);
     if (!StageIntroDataTable->GetRowNames().Contains(EpilogueRowName))
     {
         return false;

@@ -197,6 +197,14 @@ public:
         FName InBuildingId
     ) const;
 
+    /**
+     * 스테이지 테이블의 MaxAllowedTier(1부터)를 내부 Tier 인덱스(0부터)로 바꿔 돌려준다.
+     * 스테이지 시작 전 로딩 범위와 업그레이드 제한이 같은 값을 쓰도록 한 곳에서만 변환한다.
+     */
+    int32 GetMaxAllowedTierIndexInCurrentStage(
+        FName InBuildingId
+    ) const;
+
     bool AreBuildingRequirementsMet(
         int32 TeamIndex,
         FName InBuildingId

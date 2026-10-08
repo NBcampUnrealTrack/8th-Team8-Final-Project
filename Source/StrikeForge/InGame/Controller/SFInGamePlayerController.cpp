@@ -10,6 +10,7 @@
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameMode/SFGameMode.h"
+#include "Game/Defence/SFDefenceWaveController.h"
 #include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 #include "InGame/SFInGameHUDWidget.h"
@@ -143,7 +144,11 @@ bool ASFInGamePlayerController::TryStartBuildingPlacement(FName InBuildingId)
 
     FTransform SpawnTransform;
     SpawnTransform.SetLocation(ControlledPawn->GetActorLocation());
-    SpawnTransform.SetRotation(USFBuildingSpawnLibrary::GetConstructionRotation().Quaternion());
+    const ASFGameMode* StageGameMode = GetWorld()->GetAuthGameMode<ASFGameMode>();
+    const FRotator PlacementRotation = StageGameMode
+        ? StageGameMode->GetPlayerBuildingPlacementRotation()
+        : USFBuildingSpawnLibrary::GetConstructionRotation();
+    SpawnTransform.SetRotation(PlacementRotation.Quaternion());
 
     ASFBaseBuilding* NewBuilding =
         USFBuildingSpawnLibrary::SpawnBuildingFromDefinition(
@@ -315,7 +320,7 @@ void ASFInGamePlayerController::SetupInputComponent()
 #if WITH_EDITOR
     if (IsValid(InputComponent))
     {
-        // Stage03/05 use the normal victory flow, including the clear epilogue.
+        // Campaign debug victories use the normal flow, including the clear epilogue.
         FInputKeyBinding& DebugVictoryBinding = InputComponent->BindKey(
             EKeys::K,
             IE_Pressed,
@@ -940,7 +945,9 @@ void ASFInGamePlayerController::HandleStageDebugVictoryInput()
 
     if (!IsValid(GameState) ||
         (GameState->GetCurrentStageRowName() != TEXT("Stage03") &&
-         GameState->GetCurrentStageRowName() != TEXT("Stage05")) ||
+         GameState->GetCurrentStageRowName() != TEXT("Stage05") &&
+         GameState->GetCurrentStageRowName() != TEXT("Stage06") &&
+         GameState->GetCurrentStageRowName() != TEXT("Stage07")) ||
         !GameState->IsStagePlaying())
     {
         return;
@@ -962,6 +969,13 @@ void ASFInGamePlayerController::HandleStageDebugVictoryInput()
     ASFGameMode* GameMode = World->GetAuthGameMode<ASFGameMode>();
     if (IsValid(GameMode))
     {
+        // The epilogue pauses the world immediately, so a later wave Tick cannot clean up.
+        TArray<AActor*> WaveControllers;
+        UGameplayStatics::GetAllActorsOfClass(World, ASFDefenceWaveController::StaticClass(), WaveControllers);
+        for (AActor* Actor : WaveControllers)
+        {
+            CastChecked<ASFDefenceWaveController>(Actor)->StopWaves();
+        }
         SF_LOG(Log, "[SFInGamePlayerController] %s editor debug victory (K).", *GameState->GetCurrentStageRowName().ToString());
         GameMode->ProcessVictory();
     }

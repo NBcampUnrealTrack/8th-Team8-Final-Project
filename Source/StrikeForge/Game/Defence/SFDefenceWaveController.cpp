@@ -76,7 +76,7 @@ void ASFDefenceWaveController::Tick(float DeltaSeconds)
             SpawnBatch();
             SpawnCountdown = FMath::Max(0.1f, SpawnInterval);
         }
-        if (GetRemainingSpawnCount() == 0 &&
+        if (!bRequireFullWaveDuration && GetRemainingSpawnCount() == 0 &&
             (WaveNumber < FMath::Max(1, TotalWaves) || !HasLivingEnemies())) CompleteWave();
     }
 }

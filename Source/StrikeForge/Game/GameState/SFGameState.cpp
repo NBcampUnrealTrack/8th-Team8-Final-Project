@@ -1,5 +1,6 @@
 ﻿// SFGameState.cpp
 #include "SFGameState.h"
+#include "Game/GameMode/SFGameMode.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
@@ -240,6 +241,14 @@ int32 ASFGameState::GetNexusTier(int32 TeamIndex) const
 	const ASFNexusBuilding* Nexus = GetNexus(TeamIndex);
 	if (!Nexus)
 	{
+		const ASFGameMode* StageMode = GetWorld()->GetAuthGameMode<ASFGameMode>();
+		if (StageMode && StageMode->AllowsStageWithoutInitialBuildings() &&
+			TeamIndex == StageMode->GetPlayerTeamIndex())
+		{
+			// Unit-only survival stages retain basic construction (display tier 1).
+			return 0;
+		}
+
 		SF_LOG(Error, "[SFGameState] Team %d 에 넥서스가 등록되어 있지 않습니다. "
 			"GameMode 의 PlayerTeamIndex 와 레벨 넥서스의 팀이 일치하는지 확인하세요.", TeamIndex);
 		return INDEX_NONE;
@@ -617,6 +626,15 @@ int32 ASFGameState::GetMaxAllowedTierInCurrentStage(
 
 	// 규칙에 없는 건물은 최대 티어 3
 	return 3;
+}
+
+int32 ASFGameState::GetMaxAllowedTierIndexInCurrentStage(
+	FName InBuildingId
+) const
+{
+	return FMath::Max(
+		0,
+		GetMaxAllowedTierInCurrentStage(InBuildingId) - 1);
 }
 
 bool ASFGameState::HasCompletedBuilding(

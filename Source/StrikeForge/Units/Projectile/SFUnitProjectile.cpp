@@ -8,6 +8,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 ASFUnitProjectile::ASFUnitProjectile()
 {
@@ -60,21 +61,66 @@ void ASFUnitProjectile::InitializeProjectile(AUnitBase* InSourceUnit, AActor* In
     TargetActor = InTargetActor;
     DamageRatio = FMath::Max(0.f, InDamageRatio);
 
-    const float SafeSpeed = FMath::Max(1.f, InProjectileSpeed);
+	const float SafeSpeed = FMath::Max(1.f, InProjectileSpeed);
 
-    ProjectileMovement->InitialSpeed = SafeSpeed;
-    ProjectileMovement->MaxSpeed = SafeSpeed;
+	const FVector StartLocation = GetActorLocation();
+	const FVector TargetLocation = InTargetActor->GetActorLocation();
 
-    // 움직이는 적도 따라가도록 유도 발사체로 설정한다.
-    ProjectileMovement->bIsHomingProjectile = true;
-    ProjectileMovement->HomingTargetComponent = InTargetActor->GetRootComponent();
+	if (MovementType == ESFProjectileMovementType::Ballistic)
+	{
+		// 돌처럼 포물선으로 이동하는 발사체는 목표를 추적하지 않는다.
+		ProjectileMovement->bIsHomingProjectile = false;
+		ProjectileMovement->HomingTargetComponent = nullptr;
+		ProjectileMovement->HomingAccelerationMagnitude = 0.f;
+		ProjectileMovement->ProjectileGravityScale = BallisticGravityScale;
 
-    // 이 값이 너무 낮으면 빠른 발사체가 목표 방향으로 회전하지 못한다.
-    ProjectileMovement->HomingAccelerationMagnitude = SafeSpeed * 10.f;
+		FVector LaunchVelocity = FVector::ZeroVector;
 
-    const FVector Direction = (InTargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+		const float GravityZ = GetWorld()->GetGravityZ() * BallisticGravityScale;
 
-    ProjectileMovement->Velocity = Direction * SafeSpeed;
+		const bool bFoundArc = UGameplayStatics::SuggestProjectileVelocity_CustomArc(
+				this,
+				LaunchVelocity,
+				StartLocation,
+				TargetLocation,
+				GravityZ,
+				BallisticArcParam
+			);
+
+		if (!bFoundArc || LaunchVelocity.IsNearlyZero())
+		{
+			// 포물선 계산에 실패하면 발사체가 멈춰 있지 않도록 직선으로 발사한다.
+			const FVector Direction = (TargetLocation - StartLocation).GetSafeNormal();
+
+			ProjectileMovement->ProjectileGravityScale = 0.f;
+			ProjectileMovement->InitialSpeed = SafeSpeed;
+			ProjectileMovement->MaxSpeed = SafeSpeed;
+			ProjectileMovement->Velocity = Direction * SafeSpeed;
+			return;
+		}
+
+		const float CalculatedSpeed = LaunchVelocity.Size();
+
+		ProjectileMovement->InitialSpeed = CalculatedSpeed;
+		ProjectileMovement->MaxSpeed = CalculatedSpeed;
+		ProjectileMovement->Velocity = LaunchVelocity;
+	}
+	else
+	{
+		// 기존 바람총, 석궁, 마법탄의 유도 발사 방식.
+		ProjectileMovement->ProjectileGravityScale = 0.f;
+		ProjectileMovement->InitialSpeed = SafeSpeed;
+		ProjectileMovement->MaxSpeed = SafeSpeed;
+
+		ProjectileMovement->bIsHomingProjectile = true;
+		ProjectileMovement->HomingTargetComponent = InTargetActor->GetRootComponent();
+
+		ProjectileMovement->HomingAccelerationMagnitude = SafeSpeed * 10.f;
+
+		const FVector Direction = (TargetLocation - StartLocation).GetSafeNormal();
+
+		ProjectileMovement->Velocity = Direction * SafeSpeed;
+	}
 }
 
 void ASFUnitProjectile::HandleProjectileOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

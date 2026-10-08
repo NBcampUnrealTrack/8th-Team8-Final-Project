@@ -5,6 +5,7 @@
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
+#include "InGame/Controller/SFRTSCameraPawn.h"
 #include "EngineUtils.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
@@ -12,6 +13,9 @@
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 #include "Units/Spawner/UnitSpawner.h"
+#include "Units/Lane/LanePath.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "UI/LoadingWidget.h"
 
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
@@ -93,6 +97,28 @@ void ASFGameMode::InitGameState()
 	PrepareStageMusic();
 
 	SFGameState = GetGameState<ASFGameState>();
+	// Resolve and remap authored faction bases before any spawner BeginPlay.
+	if (USFGameInstance* GI = GetGameInstance<USFGameInstance>())
+	{
+#if WITH_EDITOR
+		GI->ResolveEditorStageSelection(GetWorld());
+#endif
+		const UDataTable* Table = GI->GetDataTableType(EDataTableType::Stage);
+		const FSFStageData* Stage = Table ? Table->FindRow<FSFStageData>(GI->GetSelectedStageRowName(), TEXT("FactionBases")) : nullptr;
+		bFactionBases = Stage && Stage->bUseFactionBases;
+		if (bFactionBases)
+		{
+			const bool bSwap = GI->GetSelectedRace() == ESFRace::Beast;
+			const auto Team = [bSwap](int32 Authored) { return bSwap && (Authored == 0 || Authored == 1) ? 1 - Authored : Authored; };
+			for (TActorIterator<ASFBuildingSpawnAnchor> It(GetWorld()); It; ++It) It->SetTeamIndex(Team(It->GetTeamIndex()));
+			for (TActorIterator<ALanePath> It(GetWorld()); It; ++It) It->SetTeamIndex(Team(It->GetTeamIndex()));
+			for (TActorIterator<AUnitSpawner> It(GetWorld()); It; ++It)
+			{
+				const int32 ResolvedTeam = Team(It->GetTeamIndex());
+				It->ConfigureFactionOwnership(ResolvedTeam, ResolvedTeam == PlayerTeamIndex);
+			}
+		}
+	}
 
 	if (!IsValid(SFGameState))
 	{
@@ -111,6 +137,25 @@ void ASFGameMode::BeginPlay()
 
 	// initgamestate에서 플레이어팀등록을 마친뒤 호출
 	BeginStageBootstrap();
+	if (bFactionBases)
+	{
+		// Final maps can have an empty level Blueprint. Use the same loading-screen
+		// lifecycle as the campaign maps, after their BeginPlay UI has been created.
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			TArray<UUserWidget*> Existing;
+			UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Existing, ULoadingWidget::StaticClass(), true);
+			if (!Existing.IsEmpty()) return;
+			APlayerController* PC = GetWorld()->GetFirstPlayerController();
+			UClass* WidgetClass = LoadClass<ULoadingWidget>(nullptr, TEXT("/Game/Core/UI/WBP_Loading.WBP_Loading_C"));
+			if (PC && PC->IsLocalController() && WidgetClass)
+				if (ULoadingWidget* Loading = CreateWidget<ULoadingWidget>(PC, WidgetClass))
+				{
+					Loading->AddToViewport(1000);
+					Loading->SetStageTitle(NSLOCTEXT("Campaign", "FinalBattle", "최후의 전투"));
+				}
+		}));
+	}
 }
 
 void ASFGameMode::PrepareStageMusic()
@@ -221,6 +266,11 @@ bool ASFGameMode::SpawnStageBuildingsFromAnchors()
 
 	if (Anchors.IsEmpty())
 	{
+		if (bAllowStageWithoutInitialBuildings)
+		{
+			SF_LOG(Log, "[SFGameMode] Unit-only stage: no initial buildings requested.");
+			return true;
+		}
 		SF_LOG(
 			Error,
 			"[SFGameMode] 레벨에 BuildingSpawnAnchor가 없습니다.");
@@ -507,7 +557,16 @@ void ASFGameMode::BeginStageBootstrap()
 	BootstrapTeamRaces.Add(PlayerTeamIndex, PlayerRace);
 
 	// 테이블의 Enemy Setup 불러와서 등록
-	for (const FSFStageTeamSetup& TeamSetup : StageData->TeamSetups)
+	TArray<FSFStageTeamSetup> EnemySetups = StageData->TeamSetups;
+	if (StageData->bUseFactionBases)
+	{
+		EnemySetups.Reset();
+		FSFStageTeamSetup Enemy;
+		Enemy.TeamIndex = 1;
+		Enemy.Race = PlayerRace == ESFRace::Human ? ESFRace::Beast : ESFRace::Human;
+		EnemySetups.Add(Enemy);
+	}
+	for (const FSFStageTeamSetup& TeamSetup : EnemySetups)
 	{
 		if (TeamSetup.TeamIndex == PlayerTeamIndex ||
 			TeamSetup.Race == ESFRace::None ||
@@ -655,11 +714,15 @@ void ASFGameMode::RequestInitialBuildingAssets()
 	}
 
 	/*
-	* 하나의 Definition에서 여러 Tier가 필요할 수 있다.
+	* 스테이지 시작 전에 이 스테이지에서 쓸 수 있는 모든 Tier를 전부 로딩한다.
 	*
-	* 예:
-	* Nexus -> Tier 1, Tier 2
-	* House -> Tier 0
+	* 로딩 범위: Tier 0(또는 Anchor 시작 Tier)부터
+	*           스테이지 테이블(DT_SFStage)의 BuildingRules.MaxAllowedTier까지.
+	*
+	* 로딩 화면에서 비동기 로딩을 모두 끝내므로
+	* 게임 도중(건설 시작, 업그레이드)에는 비동기 요청을 하지 않는다.
+	* 이전에는 건설이 시작될 때 다음 Tier를 선로딩했지만,
+	* 그 선로딩이 게임 도중 게임 스레드를 막는 것이 트레이스로 확인되어 이 방식으로 바꿨다.
 	*/
 	TMap<USFBuildingDefinition*, TSet<int32>>RequiredTiersByDefinition;
 
@@ -683,7 +746,36 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		};
 
 	/*
-	 * 1. 모든 팀의 건설 UI용 건물은 Tier 0을 준비한다.
+	 * FirstTier 다음 Tier부터 스테이지 최대 Tier까지 존재하는 Tier를 모두 추가한다.
+	 * 마지막 Tier를 넘어가면 오류가 아니라 거기서 멈춘다.
+	 */
+	auto AddUpgradeTiersUpToStageMax =
+		[this, &AddRequiredTier](
+			USFBuildingDefinition* Definition,
+			int32 FirstTier)
+		{
+			if (!IsValid(Definition))
+			{
+				return;
+			}
+
+			const int32 StageMaxTierIndex =
+				SFGameState->GetMaxAllowedTierIndexInCurrentStage(
+					Definition->BuildingId);
+
+			for (int32 TierIndex = FirstTier + 1;
+				TierIndex <= StageMaxTierIndex;
+				++TierIndex)
+			{
+				if (!AddRequiredTier(Definition, TierIndex))
+				{
+					break;
+				}
+			}
+		};
+
+	/*
+	 * 1. 모든 팀의 건설 UI용 건물은 Tier 0부터 스테이지 최대 Tier까지 준비한다.
 	 */
 	for (const TPair<int32, ESFRace>& Team
 		: BootstrapTeamRaces)
@@ -718,11 +810,14 @@ void ASFGameMode::RequestInitialBuildingAssets()
 				FailStageBootstrap();
 				return;
 			}
+
+			AddUpgradeTiersUpToStageMax(Definition, 0);
 		}
 	}
 
 	/*
-	 * 2. Anchor 건물은 시작 Tier와 다음 Tier를 준비한다.
+	 * 2. Anchor 건물은 시작 Tier부터 스테이지 최대 Tier까지 준비한다.
+	 * 넥서스는 BuildableDefinitions에 없고 Anchor로만 들어오므로 여기서 처리된다.
 	 */
 	int32 AnchorCount = 0;
 
@@ -784,21 +879,23 @@ void ASFGameMode::RequestInitialBuildingAssets()
 		}
 
 		/*
-		 * 다음 Tier는 존재할 때만 추가한다.
-		 * 마지막 Tier라면 오류가 아니다.
+		 * [이전 방식] 다음 Tier 하나만 준비하고, 그 이후 Tier는 건설 시작 때 비동기로 선로딩했다.
+		 * 스테이지 시작 전 전부 로딩하는 방식으로 바뀌어 아래 AddUpgradeTiersUpToStageMax로 대체한다.
+		 *
+		 * const int32 NextTier =
+		 * 	InitialTier + 1;
+		 *
+		 * if (Definition->FindTier(NextTier))
+		 * {
+		 * 	AddRequiredTier(
+		 * 		Definition,
+		 * 		NextTier);
+		 * }
 		 */
-		const int32 NextTier =
-			InitialTier + 1;
-
-		if (Definition->FindTier(NextTier))
-		{
-			AddRequiredTier(
-				Definition,
-				NextTier);
-		}
+		AddUpgradeTiersUpToStageMax(Definition, InitialTier);
 	}
 
-	if (AnchorCount == 0 ||
+	if ((AnchorCount == 0 && !bAllowStageWithoutInitialBuildings) ||
 		RequiredTiersByDefinition.IsEmpty())
 	{
 		FailStageBootstrap();
@@ -988,6 +1085,18 @@ void ASFGameMode::CompleteStageBootstrap()
 	bStageRenderPreparationStarted = false;
 
 	// 에셋 로딩, Anchor 생성, 0.5초 준비가 모두 완료됐다.
+	if (bFactionBases)
+	{
+		const ASFNexusBuilding* Nexus = SFGameState->GetNexus(PlayerTeamIndex);
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		if (Nexus && PC && PC->GetPawn())
+		{
+			FVector Position = PC->GetPawn()->GetActorLocation();
+			Position.X = Nexus->GetActorLocation().X;
+			Position.Y = Nexus->GetActorLocation().Y;
+			PC->GetPawn()->SetActorLocation(Position);
+		}
+	}
 	SFGameState->SetStageLoadingProgress(1.f);
 
 	if (!SFGameState->MarkStageReadyToStart())
@@ -1398,6 +1507,14 @@ bool ASFGameMode::CreateStageCameraBoundaries()
 		bMaxXCreated &&
 		bMinYCreated &&
 		bMaxYCreated;
+
+	if (bSuccess)
+	{
+		for (TActorIterator<ASFRTSCameraPawn> It(World); It; ++It)
+		{
+			It->SetStageCameraBounds(NavigationBounds, SafeThickness);
+		}
+	}
 
 	SF_LOG(
 		Log,

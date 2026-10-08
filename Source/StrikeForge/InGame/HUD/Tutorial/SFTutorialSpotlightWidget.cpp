@@ -96,6 +96,8 @@ void USFTutorialSpotlightWidget::UpdateSkillGuideCard()
     {
         if (SkillGuideCard) SkillGuideCard->SetVisibility(ESlateVisibility::Collapsed);
         for (UBorder* Edge : SkillHighlightEdges) Edge->SetVisibility(ESlateVisibility::Collapsed);
+        for (UBorder* Glow : SkillHighlightGlows) Glow->SetVisibility(ESlateVisibility::Collapsed);
+        for (UBorder* Sparkle : SkillSparkles) Sparkle->SetVisibility(ESlateVisibility::Collapsed);
         for (const auto& Entry : OriginalGuideVisibility)
             if (Entry.Key.IsValid()) Entry.Key->SetVisibility(Entry.Value);
         OriginalGuideVisibility.Reset();
@@ -130,7 +132,8 @@ void USFTutorialSpotlightWidget::UpdateSkillGuideCard()
     }
     for (UWidget* Child : Root->GetAllChildren())
     {
-        if (Child == SkillGuideCard || SkillHighlightEdges.Contains(Cast<UBorder>(Child))) continue;
+        if (Child == SkillGuideCard || SkillHighlightEdges.Contains(Cast<UBorder>(Child)) ||
+            SkillHighlightGlows.Contains(Cast<UBorder>(Child)) || SkillSparkles.Contains(Cast<UBorder>(Child))) continue;
         if (!OriginalGuideVisibility.Contains(Child)) OriginalGuideVisibility.Add(Child, Child->GetVisibility());
         Child->SetVisibility(ESlateVisibility::Collapsed);
     }
@@ -146,6 +149,21 @@ void USFTutorialSpotlightWidget::UpdateSkillGuideCard()
             Edge->SetVisibility(ESlateVisibility::HitTestInvisible);
             Root->AddChildToCanvas(Edge)->SetZOrder(100);
             SkillHighlightEdges.Add(Edge);
+            UBorder* Glow = WidgetTree->ConstructWidget<UBorder>();
+            Glow->SetPadding(FMargin(0.f));
+            Glow->SetVisibility(ESlateVisibility::HitTestInvisible);
+            Root->AddChildToCanvas(Glow)->SetZOrder(99);
+            SkillHighlightGlows.Add(Glow);
+            for (int32 Ray = 0; Ray < 2; ++Ray)
+            {
+                UBorder* Sparkle = WidgetTree->ConstructWidget<UBorder>();
+                Sparkle->SetPadding(FMargin(0.f));
+                Sparkle->SetVisibility(ESlateVisibility::HitTestInvisible);
+                Sparkle->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+                Sparkle->SetRenderTransformAngle(Ray == 0 ? 45.f : -45.f);
+                Root->AddChildToCanvas(Sparkle)->SetZOrder(101);
+                SkillSparkles.Add(Sparkle);
+            }
         }
     }
 }
@@ -184,16 +202,43 @@ void USFTutorialSpotlightWidget::NativeTick(const FGeometry& MyGeometry, float I
             const FVector2D Extent = HoleExtentNorm * MyGeometry.GetLocalSize();
             const FVector2D TopLeft = Center - Extent;
             const FVector2D Size = Extent * 2.f;
-            const float Thickness = 2.f / FMath::Max(0.1f, MyGeometry.GetAccumulatedLayoutTransform().GetScale());
+            const float Pulse = 0.5f + 0.5f * FMath::Sin(PulseTime * 2.f * PI * 1.2f);
+            const float Scale = FMath::Max(0.1f, MyGeometry.GetAccumulatedLayoutTransform().GetScale());
+            const float Thickness = (3.f + 1.5f * Pulse) / Scale;
+            const bool bShow = bResolved && CurrentStep.bShowHighlight;
             const FVector2D Positions[] = {TopLeft, TopLeft + FVector2D(0, Size.Y-Thickness), TopLeft, TopLeft + FVector2D(Size.X-Thickness, 0)};
             const FVector2D Sizes[] = {FVector2D(Size.X, Thickness), FVector2D(Size.X, Thickness), FVector2D(Thickness, Size.Y), FVector2D(Thickness, Size.Y)};
             for (int32 Index = 0; Index < 4; ++Index)
             {
-                SkillHighlightEdges[Index]->SetVisibility(bResolved ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+                SkillHighlightEdges[Index]->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+                SkillHighlightEdges[Index]->SetBrushColor(FLinearColor(1.f, 0.72f + 0.25f * Pulse, 0.12f + 0.65f * Pulse, 0.7f + 0.3f * Pulse));
                 if (auto* EdgeSlot = Cast<UCanvasPanelSlot>(SkillHighlightEdges[Index]->Slot))
                 {
                     EdgeSlot->SetPosition(Positions[Index]);
                     EdgeSlot->SetSize(Sizes[Index]);
+                }
+                UBorder* Glow = SkillHighlightGlows[Index];
+                Glow->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+                Glow->SetBrushColor(FLinearColor(1.f, 0.74f, 0.12f, 0.08f + 0.18f * Pulse));
+                if (auto* GlowSlot = Cast<UCanvasPanelSlot>(Glow->Slot))
+                {
+                    const FVector2D GlowPadding(5.f / Scale, 5.f / Scale);
+                    GlowSlot->SetPosition(Positions[Index] - GlowPadding);
+                    GlowSlot->SetSize(Sizes[Index] + GlowPadding * 2.f);
+                }
+                const FVector2D Corner = TopLeft + FVector2D((Index % 2) * Size.X, (Index / 2) * Size.Y);
+                const float Twinkle = FMath::Pow(0.5f + 0.5f * FMath::Sin(PulseTime * 2.f * PI * 1.2f - Index * 1.5f), 3.f);
+                for (int32 Ray = 0; Ray < 2; ++Ray)
+                {
+                    UBorder* Sparkle = SkillSparkles[Index * 2 + Ray];
+                    Sparkle->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+                    Sparkle->SetBrushColor(FLinearColor(1.f, 0.96f, 0.65f, Twinkle));
+                    if (auto* SparkleSlot = Cast<UCanvasPanelSlot>(Sparkle->Slot))
+                    {
+                        const FVector2D SparkleSize((6.f + 12.f * Twinkle) / Scale, 2.f / Scale);
+                        SparkleSlot->SetPosition(Corner - SparkleSize * 0.5f);
+                        SparkleSlot->SetSize(SparkleSize);
+                    }
                 }
             }
         }

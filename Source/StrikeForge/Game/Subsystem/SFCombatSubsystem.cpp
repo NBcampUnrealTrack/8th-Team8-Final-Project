@@ -1,4 +1,5 @@
-﻿#include "SFCombatSubsystem.h"
+#include "SFCombatSubsystem.h"
+#include "Units/Unit/SFNeutralSlime.h"
 
 // GFrameCounter — 격자를 프레임당 한 번만 다시 채우기 위해 쓴다
 #include "CoreGlobals.h"
@@ -149,11 +150,13 @@ void USFCombatSubsystem::RegisterTarget(UCombatTargetComponent* InTarget)
 
 	FSFTargetBucket& Bucket = TeamBuckets.FindOrAdd(InTarget->GetTeamIndex());
 	Bucket.Targets.AddUnique(InTarget);
+	GridBuiltFrame = TNumericLimits<uint64>::Max();
 }
 
 void USFCombatSubsystem::UnregisterTarget(UCombatTargetComponent* InTarget)
 {
 	if (!InTarget) return;
+	GridBuiltFrame = TNumericLimits<uint64>::Max();
 
 	// 팀이 바뀐 뒤 해제될 가능성까지 고려해 전 버킷을 훑는다.
 	// 무효화된 약참조도 이 기회에 같이 정리한다.
@@ -742,6 +745,8 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 
 				AActor* Candidate = Entry.Actor.Get();
 				if (!IsValid(Candidate)) return;
+				if (const auto* Slime = Cast<ASFNeutralSlime>(Candidate))
+					if (!Slime->IsProvokedByTeam(InSeekerTeam)) return;
 
 				BestDistSq = DistSq;
 				Best = Candidate;
@@ -761,6 +766,8 @@ AActor* USFCombatSubsystem::FindNearestHostile(const FVector& InOrigin, int32 In
 
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
+			if (const auto* Slime = Cast<ASFNeutralSlime>(Candidate))
+				if (!Slime->IsProvokedByTeam(InSeekerTeam)) continue;
 
 			// 수평 거리로 판정한다. 언덕 높이 차로 사거리가 어긋나지 않게.
 			const float DistSq = FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation());
@@ -789,6 +796,8 @@ AActor* USFCombatSubsystem::FindNearestHostileAny(const FVector& InOrigin, int32
 		{
 			AActor* Candidate = nullptr;
 			if (!ResolveTarget(Weak, Candidate)) continue;
+			if (const auto* Slime = Cast<ASFNeutralSlime>(Candidate))
+				if (!Slime->IsProvokedByTeam(InSeekerTeam)) continue;
 
 			const float DistSq = FVector::DistSquared2D(InOrigin, Candidate->GetActorLocation());
 
@@ -822,6 +831,8 @@ void USFCombatSubsystem::GetHostilesInRadius(const FVector& InOrigin, int32 InSe
 			// 격자를 채운 뒤 이 프레임 안에서 파괴됐을 수 있다.
 			AActor* Candidate = Entry.Actor.Get();
 			if (!IsValid(Candidate)) return;
+			if (const auto* Slime = Cast<ASFNeutralSlime>(Candidate))
+				if (!Slime->IsProvokedByTeam(InSeekerTeam)) return;
 
 			OutActors.Add(Candidate);
 		});

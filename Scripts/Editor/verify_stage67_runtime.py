@@ -77,7 +77,7 @@ def tick(delta):
             for order in range(1,6 if case=='6' else 7): assert gi.mark_stage_cleared('Stage%02d'%order)
             assert str(gs.get_current_stage_row_name())==stage
             buildings=actors(w,unreal.SFBaseBuilding)
-            expected=7 if case=='6' else 14
+            expected=7 if case=='6' else 16
             assert len(buildings)==expected, ('buildings', len(buildings), expected)
             assert gs.get_nexus(0)
             assert gs.get_mineral_income_rate(0)>0 and gs.get_ether_income_rate(0)>0
@@ -99,7 +99,7 @@ def tick(delta):
                     path=nav.find_path_to_location_synchronously(w,s.get_actor_location(),unreal.Vector(-2100,0,90))
                     assert path and path.is_valid() and not path.is_partial(), 'Disconnected Stage06 entrance'
             else:
-                assert len(spawners)==4
+                assert len(spawners)==6
                 for s in spawners:
                     assert s.get_owner_building(), 'Unbound AI factory'
                     if s.get_editor_property('team_index')==0:
@@ -109,6 +109,29 @@ def tick(delta):
                 assert (n.x>0)==(case=='Beast'), ('wrong base',str(n))
                 p=unreal.GameplayStatics.get_player_pawn(w,0).get_actor_location()
                 assert abs(p.x-n.x)<100 and abs(p.y-n.y)<100, ('camera',str(p),str(n))
+                commanders=actors(w,unreal.SFCommander)
+                assert len(commanders)==1, ('commander count',len(commanders))
+                commander=commanders[0]
+                expected_class='BP_Beast_Commander_C' if case=='Beast' else 'BP_Ether_Commander_C'
+                assert commander.get_class().get_name()==expected_class, commander.get_class().get_name()
+                assert commander.get_editor_property('race')==(unreal.Race.BEAST if case=='Beast' else unreal.Race.ETHERIAN)
+                assert commander.get_editor_property('my_commander') and team(commander)==0
+                pc=unreal.GameplayStatics.get_player_controller(w,0)
+                assert pc.get_my_commander()==commander, 'Commander not registered for player control'
+                c=commander.get_actor_location()
+                direction=gs.get_nexus(1).get_actor_location()-n
+                distance=(direction.x**2+direction.y**2)**0.5
+                forward=unreal.Vector(direction.x/distance,direction.y/distance,0)
+                offset=c-n
+                assert 300<(offset.x**2+offset.y**2)**0.5<1800, ('commander too far from Nexus',str(c),str(n))
+                assert offset.x*forward.x+offset.y*forward.y>300, 'Commander behind Nexus'
+                assert commander.get_controller(), 'Commander has no movement controller'
+                assert commander.get_component_by_class(unreal.HealthComponent).get_current_health()>0
+                nav=unreal.NavigationSystemV1.get_navigation_system(w)
+                destination=c+forward*400
+                path=nav.find_path_to_location_synchronously(w,c,destination)
+                assert path and path.is_valid() and not path.is_partial(), 'Commander cannot leave base'
+                state['checks'].append(dict(commander_class=expected_class,commander_position=str(c),nexus_position=str(n),player_control=True,walkable_front=True))
             state['checks'].append(dict(buildings=len(buildings),income=True,correct_races=True))
             unreal.GameplayStatics.set_global_time_dilation(w,20.0)
             state.update(phase='spawning',playing_start=sec)
@@ -132,7 +155,7 @@ def tick(delta):
                 assert all(s.get_editor_property('total_spawned')==0 for s in refs['spawners'] if s.get_editor_property('team_index')==0)
                 units=[u for u in actors(w,unreal.UnitBase) if not isinstance(u,unreal.SFCommander)]
                 assert units and all(team(u)==1 for u in units), [(u.get_name(),team(u)) for u in units]
-                expected_rows=['Fighter','Warrior','Shooter','Sharpshooter'] if case=='Beast' else ['Brawler','Berserker','Hunter','Stalker']
+                expected_rows=['Fighter','Warrior','Guardian','Shooter','Sharpshooter','Judicator','Assassin','Colossus'] if case=='Beast' else ['Brawler','Berserker','Predator','Hunter','Stalker','ApexHunter','SpiritShaman','WarBeast']
                 assert all(str(u.get_unit_row_name()) in expected_rows for u in units)
                 for s in enemy:
                     target=s.get_owner_building().get_component_by_class(unreal.CombatTargetComponent)

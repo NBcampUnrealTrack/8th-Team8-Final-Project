@@ -1,11 +1,15 @@
 ﻿#include "UnitBase.h"
 
 #include "UnitAIController.h"
+#include "Units/Unit/SFNeutralSlime.h"
+#include "Game/Subsystem/SFStageBuffSubsystem.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "ActorComponent/UI/SFUnitHealthBarComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/SFSelectINfo/SFSelectionUIDataRow.h"
 #include "Units/Lane/LanePath.h"
@@ -127,6 +131,7 @@ AUnitBase::AUnitBase()
 	StatusWidget->SetupAttachment(RootComponent);
 	StatusWidget->SetWidgetSpace(EWidgetSpace::Screen);
 	StatusWidget->SetRelativeLocation(FVector(0.f, 0.f, 130.f));
+	CreateDefaultSubobject<USFUnitHealthBarComponent>(TEXT("DamageHealthBar"))->SetupAttachment(RootComponent);
 
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
 
@@ -215,6 +220,7 @@ void AUnitBase::BeginPlay()
 	SetHoldLocationToCurrent();
 
 	RetargetTimer = 0.f;	// 첫 틱에 바로 탐색이 돌게 한다
+	GetWorld()->GetSubsystem<USFStageBuffSubsystem>()->ApplyToUnit(this);
 }
 
 void AUnitBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -281,6 +287,7 @@ void AUnitBase::InitStat(const FUnitStatData& InRow)
 	CachedMoveCommandSound = InRow.MoveCommandSound.LoadSynchronous();
 
 	bStatInitialized = true;
+	if (HasActorBegunPlay()) GetWorld()->GetSubsystem<USFStageBuffSubsystem>()->ApplyToUnit(this);
 
 	NotifyUnitStatsChanged();
 }
@@ -1037,8 +1044,10 @@ void AUnitBase::CommandAttackMove(const FVector& InDestination)
 	// 다른 점은 Tick 에서 교전 판정을 건너뛰지 않는다는 것뿐이다.
 	MoveToLocation_Implementation(InDestination);
 
-	// 공격을 취소하고 잠시 목적지 이동을 우선
-	CommandAttackMoveGraceRemaining = 0.3f;
+	// 공격 이동은 가까운 적에게 즉시 반응하고, 후퇴 대기를 이어받지 않는다.
+	CommandAttackMoveGraceRemaining = 0.f;
+	bWaitingForGroupMoveRelease = false;
+	RetargetTimer = 0.f;
 
 	// 위 호출이 꺼놓은 플래그를 다시 켠다. 순서를 뒤집으면 꺼진다.
 	bCommandIsAttackMove = true;
@@ -1069,6 +1078,16 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 	}
 
 	// 강제 공격은 이동 명령과 제자리 고수를 덮어쓴다. 대상에게 붙는 것이 목적이다.
+	bWaitingForGroupMoveRelease = false;
+	bReturningToHold = false;
+	DirectApproachRemaining = 0.f;
+	if (CurrentTarget != InTarget)
+	{
+		ReleaseAttackSlot();
+		AttackAnimHoldRemaining = 0.f;
+		StopAttackMontage();
+		PendingAttackTarget.Reset();
+	}
 	bHasCommandedDestination = false;
 	bCommandIsAttackMove = false;
 	bHoldGround = false;
@@ -1090,6 +1109,17 @@ void AUnitBase::CommandAttackTarget(AActor* InTarget)
 	OnCommandPathChanged.Broadcast();
 
 	SF_LOG(Log, "[Unit] %s : 강제 공격 명령 — 대상 %s", *GetName(), *InTarget->GetName());
+}
+
+void AUnitBase::SetRetaliationTarget(AActor* Target)
+{
+	if (Target && !CanForceAttackTarget(Target)) return;
+	if (ForcedTarget == Target) return;
+	ReleaseAttackSlot();
+	ForcedTarget = Target;
+	CurrentTarget = Target;
+	RetargetTimer = RetargetInterval;
+	if (AUnitAIController* AI = GetUnitAI()) AI->ForceRepath();
 }
 
 void AUnitBase::CommandStop()
@@ -1194,14 +1224,19 @@ bool AUnitBase::IsTargetUsable(const AActor* InTarget) const
 {
 	if (!CanForceAttackTarget(InTarget)) return false;
 	const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(InTarget);
-	return InTarget == ForcedTarget || USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex());
+	return InTarget == ForcedTarget || (CombatTarget->IsWithinSight(InTarget) &&
+		USFCombatSubsystem::IsHostileTeam(GetTeamIndex(), Comp->GetTeamIndex()));
 }
 
 bool AUnitBase::CanForceAttackTarget(const AActor* InTarget) const
 {
-	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsWithinSight(InTarget)) return false;
+	if (!IsValid(InTarget) || InTarget == this || !CombatTarget || !CombatTarget->IsAlive()) return false;
 	const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(InTarget);
 	if (!Target || !Target->IsAlive() || Target->GetTeamIndex() == INDEX_NONE) return false;
+	// Explicit orders use the team's shared vision, so distant selected units can join the fight.
+	const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
+	if (!CombatTarget->IsWithinSight(InTarget) &&
+		!(Fog && Fog->IsLocationVisible(GetTeamIndex(), InTarget->GetActorLocation()))) return false;
 	const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(InTarget);
 	return !Building || Building->ProvidesVision();
 }
@@ -1248,9 +1283,9 @@ float AUnitBase::GetBaseRange(const AActor* InTarget) const
 	//
 	// 그래서 건물 대상에는 접근 비율 대신 여유를 더한다.
 	// AttackRange 자체를 늘리면 유닛 간 교전 사거리까지 함께 늘어난다.
-	return IsBuildingTarget(InTarget)
-		? AttackRange + BuildingRangeBonus
-		: AttackRange * AttackApproachRatio;
+	// The stat table is the actual weapon range. Requiring 70% of it made crowd
+	// avoidance stop melee units just outside the attack threshold indefinitely.
+	return IsBuildingTarget(InTarget) ? AttackRange + BuildingRangeBonus : AttackRange;
 }
 
 float AUnitBase::GetApproachDistance(const AActor* InTarget) const
@@ -1641,6 +1676,7 @@ bool AUnitBase::HasLineOfSight(const AActor* InTarget) const
 // ─────────────────────────────────────────────────────────
 AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 {
+	if (IsA<ASFNeutralSlime>()) return nullptr;
 	USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
 	if (!Combat) return nullptr;
 
@@ -1675,6 +1711,8 @@ AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 
 		const UCombatTargetComponent* Comp = USFCombatSubsystem::FindTargetComponent(Candidate);
 		if (!IsValid(Comp)) continue;
+		// Hold position must not prefer an unreachable enemy over one already in weapon range.
+		if (bHoldGround && (GetDistanceToTargetEdge(Candidate) > GetBaseRange(Candidate) || !HasLineOfSight(Candidate))) continue;
 
 		float Score = FVector::Dist2D(Origin, Candidate->GetActorLocation());
 
@@ -1752,7 +1790,8 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 
 		if (MontageDuration > 0.f)
 		{
-			AttackAnimHoldRemaining = MontageDuration;
+			// Allow the final animation notify to run before the missing-notify fallback.
+			AttackAnimHoldRemaining = MontageDuration + 0.05f;
 
 			OnAttackPerformed(InTarget);
 			return;
@@ -2142,9 +2181,19 @@ void AUnitBase::Advance(float DeltaSeconds)
 		}
 		else
 		{
-			CommandStallTimer = 0.f;
-
 			AI->RequestMoveToLocation(CommandedDestination, MoveAcceptanceRadius);
+			CommandStallTimer = GetVelocity().SizeSquared2D() < FMath::Square(CloseQuartersStuckSpeed)
+				? CommandStallTimer + DeltaSeconds : 0.f;
+			if (CommandStallTimer >= FMath::Max(2.f, CommandStallDuration))
+			{
+				bHasCommandedDestination = false;
+				bCommandIsAttackMove = false;
+				CommandStallTimer = 0.f;
+				SetHoldLocationToCurrent();
+				AI->ClearMoveRequest();
+				RetargetTimer = 0.f;
+				ExecuteNextQueuedCommand();
+			}
 			bNoTargetReported = false;
 			return;
 		}
@@ -2455,6 +2504,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	{
 		AttackCooldownRemaining -= DeltaSeconds;
 	}
+	DirectApproachRemaining = FMath::Max(0.f, DirectApproachRemaining - DeltaSeconds);
 
 	if (CommandAttackMoveGraceRemaining > 0.f)
 	{
@@ -2474,6 +2524,21 @@ void AUnitBase::Tick(float DeltaSeconds)
 	if (AttackAnimHoldRemaining > 0.f)
 	{
 		AttackAnimHoldRemaining -= DeltaSeconds;
+		if (AttackAnimHoldRemaining <= 0.f)
+		{
+			// Some imported attacks have an animation but no gameplay hit notify.
+			// Only a completed, still-in-range attack with zero hits gets one fallback hit.
+			AActor* Pending = PendingAttackTarget.Get();
+			if (AppliedAttackHitCount == 0 && CombatState == EUnitCombatState::Attacking &&
+				Pending == CurrentTarget && IsTargetUsable(Pending) &&
+				GetDistanceToTargetEdge(Pending) <= GetBaseRange(Pending) + RangeHysteresis && HasLineOfSight(Pending))
+			{
+				if (ProjectileClass) HandleProjectileLaunch(1.f);
+				else HandleAttackHit(1.f);
+				AppliedAttackHitCount = FMath::Max(1, AttackHitCount);
+			}
+			PendingAttackTarget.Reset();
+		}
 
 		if (AttackAnimHoldRemaining <= 0.f && CombatState != EUnitCombatState::Attacking)
 		{
@@ -2595,6 +2660,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	if (bReturnToHoldLocation
 		&& AdvanceMode == EUnitAdvanceMode::HoldPosition
 		&& bHoldLocationSet
+		&& !ForcedTarget
 		&& !bHasCommandedDestination)
 	{
 		if (FVector::Dist2D(GetActorLocation(), HoldLocation) > LeashRadius)
@@ -2633,7 +2699,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 	const float Distance = GetDistanceToTargetEdge(CurrentTarget);
 
 	// 교전 시작 문턱과 유지 문턱을 분리한다.
-	//   시작: AttackRange * AttackApproachRatio  — 제대로 붙어야 때린다
+	//   시작: 스탯에 표시된 실제 무기 사거리
 	//   유지: AttackRange + RangeHysteresis      — 한번 붙으면 조금 벌어져도 계속
 	const bool bWasAttacking = (CombatState == EUnitCombatState::Attacking);
 
@@ -2730,7 +2796,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 		{
 			FVector SlotLocation;
 
-			const bool bHasValidSlot = Combat && AttackSlotIndex != INDEX_NONE && Combat->GetAttackSlotLocation(
+			const bool bHasValidSlot = DirectApproachRemaining <= 0.f && Combat && AttackSlotIndex != INDEX_NONE && Combat->GetAttackSlotLocation(
 					CurrentTarget,
 					AttackSlotIndex,
 					GetApproachDistance(CurrentTarget),
@@ -2749,8 +2815,7 @@ void AUnitBase::Tick(float DeltaSeconds)
 				// 아직 슬롯에서 멀리 떨어져 있는데 실제 이동 속도가 낮다면
 				// 앞 유닛이나 장애물 때문에 접근하지 못하는 것으로 본다.
 				const bool bSlotApproachBlocked =
-					DistanceToSlot > SlotAcceptanceRadius + 50.f
-					&& GetVelocity().SizeSquared2D()
+					GetVelocity().SizeSquared2D()
 					< FMath::Square(CloseQuartersStuckSpeed);
 
 				if (bSlotApproachBlocked)
@@ -2760,6 +2825,12 @@ void AUnitBase::Tick(float DeltaSeconds)
 					if (CloseQuartersStuckTimer
 						>= CloseQuartersStuckDuration)
 					{
+						// A projected slot can be reached while still out of range, or sit behind an obstacle.
+						// Try the near side even for explicit targets instead of holding a blocked slot forever.
+						ReleaseAttackSlot();
+						DirectApproachRemaining = 1.5f;
+						CloseQuartersStuckTimer = 0.f;
+						AI->ForceRepath();
 						if (!bRangeUnreachableReported)
 						{
 							bRangeUnreachableReported = true;
@@ -2829,7 +2900,13 @@ void AUnitBase::Tick(float DeltaSeconds)
 				//
 				// UpdateAttackSlot()이 다음 틱에도 호출되기 때문에
 				// 빈 슬롯이 생기면 다시 슬롯을 받을 수 있다.
-				AI->ClearMoveRequest();
+				const FVector Here = GetActorLocation();
+				const FBox TargetBounds = CurrentTarget->GetComponentsBoundingBox(false);
+				FVector Surface = TargetBounds.IsValid ? TargetBounds.GetClosestPointTo(Here) : CurrentTarget->GetActorLocation();
+				FVector Away = (Here - CurrentTarget->GetActorLocation()).GetSafeNormal2D();
+				if (Away.IsNearlyZero()) Away = GetActorForwardVector();
+				const FVector Approach = Surface + Away * GetApproachDistance(CurrentTarget);
+				AI->RequestMoveToLocation(Approach, SlotAcceptanceRadius, true);
 			}
 		}
 
@@ -2873,6 +2950,7 @@ void AUnitBase::AlertNearbyAllies(AActor* InTarget)
 
 void AUnitBase::ReceiveAssistTarget(AActor* InTarget)
 {
+	if (IsA<ASFNeutralSlime>()) return;
 	// 죽은 유닛은 지원 요청을 받지 않는다.
 	if (CombatState == EUnitCombatState::Dead)
 	{

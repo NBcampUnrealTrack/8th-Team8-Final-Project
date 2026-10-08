@@ -211,6 +211,23 @@ void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InIn
 	}
 }
 
+void UCombatTargetComponent::RestoreAfterRespawn()
+{
+	if (!IsValid(HealthComponent) || HealthComponent->GetIsDead() ||
+		!IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed()) return;
+	bDead = false;
+	if (!bRegistered)
+	{
+		if (USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this))
+		{
+			Combat->RegisterTarget(this);
+			bRegistered = true;
+		}
+	}
+	if (USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
+		Fog->OnSourceChanged.Broadcast(this);
+}
+
 void UCombatTargetComponent::HandleOwnerDeath()
 {
 	// 두 번 들어오는 경로가 있다.

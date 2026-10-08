@@ -105,6 +105,14 @@ class STRIKEFORGE_API ASFCommander
 
 public:
 	ASFCommander();
+	/** Set ownership before FinishSpawning so BeginPlay enables player selection. */
+	void InitializePlayerCommander(int32 TeamIndex);
+	bool IsPlayerCommander() const { return bMyCommander; }
+	UFUNCTION(BlueprintPure, Category = "SF|Respawn")
+	bool IsAwaitingRespawn() const { return bAwaitingRespawn; }
+	UFUNCTION(BlueprintPure, Category = "SF|Respawn")
+	float GetRespawnTimeRemaining() const;
+	static constexpr float RespawnDelaySeconds = 30.f;
 	friend struct FSFPlaytestMovementAccess;
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
@@ -179,6 +187,13 @@ protected:
 	void PrintMessage(FString Msg);
 
 	void StopMoving();
+	UFUNCTION()
+	void HandleCommanderDeath();
+	void RespawnAtNexus();
+	bool FindRespawnTransform(FTransform& OutTransform) const;
+	bool bAwaitingRespawn = false;
+	double RespawnEndTime = 0.0;
+	FTimerHandle RespawnTimer;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;

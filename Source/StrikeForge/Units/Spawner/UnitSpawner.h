@@ -10,6 +10,29 @@ class AUnitBase;
 class ALanePath;
 class UCombatTargetComponent;
 
+USTRUCT(BlueprintType)
+struct FSFSpawnPoolEntry
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName RowName;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSubclassOf<AUnitBase> UnitClass;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="1", ClampMax="100"))
+	int32 Weight = 1;
+};
+
+USTRUCT(BlueprintType)
+struct FSFSpawnPhase
+{
+	GENERATED_BODY()
+	/** Seconds of active stage play, excluding loading, pause and results. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0"))
+	float StartSeconds = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FSFSpawnPoolEntry> UnitPool;
+};
+
 /**
  * 유닛 자동 생성기 (프로토타입 검증용).
  *
@@ -26,6 +49,13 @@ class STRIKEFORGE_API AUnitSpawner : public AActor
 
 public:
 	AUnitSpawner();
+	/** Optional timed pools. Empty preserves legacy single-unit spawners. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="SF|Progression")
+	TArray<FSFSpawnPhase> SpawnPhases;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SF|Progression")
+	float ProgressionElapsedSeconds = 0.f;
+	UFUNCTION(BlueprintPure, Category="SF|Progression")
+	int32 GetProgressionPhaseIndex() const;
 	int32 GetTeamIndex() const { return TeamIndex; }
 	/** Called before BeginPlay for fixed-faction maps. Player production is manual. */
 	void ConfigureFactionOwnership(int32 InTeamIndex, bool bPlayerOwned);
@@ -87,6 +117,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	void HandleSpawnCycle();
 
@@ -273,6 +304,11 @@ private:
 	FTimerHandle SpawnTimerHandle;
 	bool bExecutingWaveSpawn = false;
 	bool bPlayerOwnedFactionSpawner = false;
+	float NextProgressionSpawnSeconds = 0.f;
+	int32 CachedProgressionPhase = INDEX_NONE;
+	TArray<int32> ProgressionSpawnBag;
+	const FSFSpawnPoolEntry* GetProgressionEntry();
+	friend struct FSFSpawnerProgressionTestAccess;
 
 	FTimerHandle OwnerBuildingResolveTimerHandle;
 

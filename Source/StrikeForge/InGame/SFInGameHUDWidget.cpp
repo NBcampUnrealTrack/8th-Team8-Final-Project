@@ -1,4 +1,7 @@
 #include "SFInGameHUDWidget.h"
+#include "Game/Subsystem/SFStageBuffSubsystem.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
 #include "HUD/SFCommandFeedbackNiagara.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
@@ -79,6 +82,79 @@
 
 #include "Logging/SFLog.h"
 
+
+void USFInGameHUDWidget::RefreshStageBuffDisplay()
+{
+    const auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!PC || !WidgetTree) return;
+    const FText Summary = GetWorld()->GetSubsystem<USFStageBuffSubsystem>()->GetSummary(PC->GetMyTeamIndex());
+    if (Summary.IsEmpty() && !StageBuffPanel) return;
+    if (!StageBuffPanel)
+    {
+        UCanvasPanel* Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+        if (!Canvas) return;
+        StageBuffPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("StageBuffPanel"));
+        StageBuffText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StageBuffText"));
+        StageBuffPanel->SetBrushColor(FLinearColor(.025f, .065f, .055f, .9f));
+        StageBuffPanel->SetPadding(FMargin(14.f, 10.f));
+        StageBuffText->SetColorAndOpacity(FSlateColor(FLinearColor(.72f, 1.f, .72f)));
+        FSlateFontInfo Font = StageBuffText->GetFont(); Font.Size = 15;
+        StageBuffText->SetFont(Font);
+        StageBuffPanel->SetContent(StageBuffText);
+        auto* BuffSlot = Canvas->AddChildToCanvas(StageBuffPanel);
+        BuffSlot->SetAnchors(FAnchors(1.f, 0.f));
+        BuffSlot->SetAlignment(FVector2D(1.f, 0.f));
+        BuffSlot->SetPosition(FVector2D(-24.f, 150.f));
+        BuffSlot->SetAutoSize(true);
+        BuffSlot->SetZOrder(20);
+    }
+    StageBuffPanel->SetVisibility(Summary.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    if (!Summary.EqualTo(LastStageBuffText))
+    {
+        StageBuffText->SetText(Summary);
+        LastStageBuffText = Summary;
+    }
+}
+
+void USFInGameHUDWidget::RefreshCommanderRespawnDisplay()
+{
+    const auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!PC || !WidgetTree) return;
+    TArray<FString> Lines;
+    for (TActorIterator<ASFCommander> It(GetWorld()); It; ++It)
+    {
+        const auto* Combat = It->FindComponentByClass<UCombatTargetComponent>();
+        if (!Combat || Combat->GetTeamIndex() != PC->GetMyTeamIndex() || !It->IsAwaitingRespawn()) continue;
+        const int32 Seconds = FMath::CeilToInt(It->GetRespawnTimeRemaining());
+        const FString Time = Seconds > 0 ? FString::Printf(TEXT("부활까지 %d초"), Seconds) : TEXT("부활 위치 확보 중");
+        Lines.Add(FString::Printf(TEXT("아군 커맨더 · %s"), *Time));
+    }
+    if (Lines.IsEmpty() && !CommanderRespawnPanel) return;
+    if (!CommanderRespawnPanel)
+    {
+        auto* Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+        if (!Canvas) return;
+        CommanderRespawnPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CommanderRespawnPanel"));
+        CommanderRespawnText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CommanderRespawnText"));
+        CommanderRespawnPanel->SetBrushColor(FLinearColor(.035f, .045f, .07f, .92f));
+        CommanderRespawnPanel->SetPadding(FMargin(20.f, 12.f));
+        CommanderRespawnText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, .82f, .45f)));
+        FSlateFontInfo Font = CommanderRespawnText->GetFont();
+        Font.Size = 20;
+        CommanderRespawnText->SetFont(Font);
+        CommanderRespawnText->SetJustification(ETextJustify::Center);
+        CommanderRespawnPanel->SetContent(CommanderRespawnText);
+        auto* PanelSlot = Canvas->AddChildToCanvas(CommanderRespawnPanel);
+        PanelSlot->SetAnchors(FAnchors(.5f, 0.f));
+        PanelSlot->SetAlignment(FVector2D(.5f, 0.f));
+        PanelSlot->SetPosition(FVector2D(0.f, 110.f));
+        PanelSlot->SetAutoSize(true);
+        PanelSlot->SetZOrder(25);
+    }
+    CommanderRespawnPanel->SetVisibility(Lines.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    const FText Text = FText::FromString(FString::Join(Lines, TEXT("\n")));
+    if (!CommanderRespawnText->GetText().EqualTo(Text)) CommanderRespawnText->SetText(Text);
+}
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -471,6 +547,8 @@ void USFInGameHUDWidget::NativeTick(
     RefreshSelectedResourceInfo();
 
     RefreshCommanderSkillIcons();
+    RefreshStageBuffDisplay();
+    RefreshCommanderRespawnDisplay();
     UpdateEnemyHoverIndicator();
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
@@ -1030,6 +1108,7 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     }
 
     RefreshCommanderSkillIcons();
+    RefreshStageBuffDisplay();
     RefreshSelectedResourceInfo();
 
     FResources UpgradeCost{};

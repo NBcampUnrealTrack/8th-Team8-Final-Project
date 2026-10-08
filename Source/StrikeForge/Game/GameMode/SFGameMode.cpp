@@ -30,12 +30,16 @@
 #include "Sound/SoundNodeWavePlayer.h"
 #include "Sound/SoundWave.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Units/Commander/SFCommander.h"
+#include "Components/CapsuleComponent.h"
 
 ASFGameMode::ASFGameMode()
 {
 	// GameMode가 사용할 GameState 클래스 지정
 	// World Setting에서 별도로 잘못 설정하는 상황 방지
 	GameStateClass = ASFGameState::StaticClass();
+	EtherianCommanderClass = FSoftObjectPath(TEXT("/Game/Game/Race_Etherial/Character/Unit_Commander/BP_Ether_Commander.BP_Ether_Commander_C"));
+	BeastCommanderClass = FSoftObjectPath(TEXT("/Game/Game/Race_Beast/Character/Unit_Commander/BP_Beast_Commander.BP_Beast_Commander_C"));
 
 	StageMusicComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("StageMusic"));
 	SetRootComponent(StageMusicComponent);
@@ -1085,8 +1089,13 @@ void ASFGameMode::CompleteStageBootstrap()
 	bStageRenderPreparationStarted = false;
 
 	// 에셋 로딩, Anchor 생성, 0.5초 준비가 모두 완료됐다.
-	if (bFactionBases)
+	if (bFactionBases || BootstrapStageRowName == TEXT("Stage04"))
 	{
+		if (!SpawnFactionCommander())
+		{
+			FailStageBootstrap();
+			return;
+		}
 		const ASFNexusBuilding* Nexus = SFGameState->GetNexus(PlayerTeamIndex);
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
 		if (Nexus && PC && PC->GetPawn())
@@ -1107,6 +1116,60 @@ void ASFGameMode::CompleteStageBootstrap()
 
 	SF_LOG(Log,
 		"[SFGameMode] Anchor 렌더 준비 완료. ReadyToStart.");
+}
+
+bool ASFGameMode::SpawnFactionCommander()
+{
+	USFGameInstance* GI = GetGameInstance<USFGameInstance>();
+	ASFInGamePlayerController* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>();
+	const ASFNexusBuilding* Nexus = SFGameState->GetNexus(PlayerTeamIndex);
+	UNavigationSystemV1* Nav = UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!GI || !PC || !Nexus || !Nav) return false;
+
+	UClass* CommanderClass = (GI->GetSelectedRace() == ESFRace::Beast
+		? BeastCommanderClass : EtherianCommanderClass).LoadSynchronous();
+	if (!CommanderClass) return false;
+	const ASFCommander* Defaults = CommanderClass->GetDefaultObject<ASFCommander>();
+	const float HalfHeight = Defaults->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const float Radius = Defaults->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const FVector Base = Nexus->GetActorLocation();
+	const ASFNexusBuilding* EnemyNexus = SFGameState->GetNexus(1);
+	// Both bases face into the battlefield; do not use the imported mesh's local forward axis.
+	const FVector Forward = ((EnemyNexus ? EnemyNexus->GetActorLocation() : FVector::ZeroVector) - Base).GetSafeNormal2D();
+	const FVector Side(-Forward.Y, Forward.X, 0.f);
+	const FBox Bounds = Nexus->GetBuildBounds().TransformBy(Nexus->GetActorTransform()).GetBox();
+	const FVector Extent = Bounds.GetExtent();
+	const float Clearance = FMath::Abs(Forward.X) * Extent.X + FMath::Abs(Forward.Y) * Extent.Y + Radius + 200.f;
+
+	for (float ExtraDistance : {0.f, 200.f, 400.f})
+	{
+		for (float LateralOffset : {0.f, -250.f, 250.f})
+		{
+			FNavLocation Ground;
+			const FVector Candidate = Base + Forward * (Clearance + ExtraDistance) + Side * LateralOffset;
+			if (!Nav->ProjectPointToNavigation(Candidate, Ground, FVector(150.f, 150.f, 1000.f))) continue;
+			const FTransform Transform(Forward.Rotation(), Ground.Location + FVector(0.f, 0.f, HalfHeight + 5.f));
+			ASFCommander* Commander = GetWorld()->SpawnActorDeferred<ASFCommander>(CommanderClass, Transform,
+				PC, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding);
+			if (!Commander) continue;
+			Commander->InitializePlayerCommander(PlayerTeamIndex);
+			Commander->FinishSpawning(Transform);
+			if (!IsValid(Commander)) continue;
+
+			// Faction stages own this spawn, including any old player commander placed in the map.
+			for (TActorIterator<ASFCommander> It(GetWorld()); It; ++It)
+			{
+				if (*It != Commander && It->IsPlayerCommander()) It->Destroy();
+			}
+			PC->RegisterCommander(Commander);
+			SF_LOG(Log, "[SFGameMode] Faction commander %s spawned at %s, Nexus=%s",
+				*Commander->GetName(), *Commander->GetActorLocation().ToString(), *Base.ToString());
+			return true;
+		}
+	}
+	SF_LOG(Error, "[SFGameMode] No walkable commander spawn. Base=%s Extent=%s Clearance=%.1f NavBuilding=%d",
+		*Base.ToString(), *Extent.ToString(), Clearance, Nav->IsNavigationBuildInProgress());
+	return false;
 }
 
 void ASFGameMode::FailStageBootstrap()

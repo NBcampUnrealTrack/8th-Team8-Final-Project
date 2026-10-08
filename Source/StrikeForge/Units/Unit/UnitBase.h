@@ -405,6 +405,8 @@ public:
 #pragma endregion
 
 protected:
+	/** AI retaliation bypasses player command ownership, but not combat validation. */
+	void SetRetaliationTarget(AActor* Target);
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -1182,6 +1184,7 @@ private:
 	 * 대상이 바뀌거나 교전(Attacking) 상태에 들어가면 0으로 되돌린다.
 	 */
 	float CloseQuartersStuckTimer = 0.f;
+	float DirectApproachRemaining = 0.f;
 
 	/** 명령 목적지 마지막 구간에서 제자리인 시간(초). 도착 안전장치용 */
 	float CommandStallTimer = 0.f;

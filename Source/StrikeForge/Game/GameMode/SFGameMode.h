@@ -15,6 +15,7 @@ class AActor;
 class USFBuildingDefinition;
 class USFBuildingAssetSubsystem;
 class UAudioComponent;
+class ASFCommander;
 
 UCLASS()
 class STRIKEFORGE_API ASFGameMode : public AGameModeBase
@@ -73,6 +74,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Buildings")
 	bool bAllowStageWithoutInitialBuildings = false;
 
+	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Commander")
+	TSoftClassPtr<ASFCommander> EtherianCommanderClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Commander")
+	TSoftClassPtr<ASFCommander> BeastCommanderClass;
+
 	// 시작시 게임인스턴스의 설정된 종족값을 가지고옴 - beginplay보다 먼저호출됨.
 	virtual void InitGameState() override;
 	virtual void BeginPlay() override;
@@ -93,6 +100,7 @@ private:
 
 	bool bStageMusicStarted = false;
 	bool bFactionBases = false;
+	bool SpawnFactionCommander();
 
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */
 	bool SpawnStageBuildingsFromAnchors();

@@ -53,6 +53,14 @@ def tick(delta):
             state['checks'].append(dict(step=step+1,probe=True))
             state.update(phase='advance',at=time.time())
         elif state['phase']=='advance' and time.time()-state['at']>1:
+            if state['step']==0:
+                # The guide is paused in gameplay, but its UI shimmer must continue animating.
+                unreal.SystemLibrary.execute_console_command(world,'SF.Commander.CheckContent skill_pulse1')
+                report=(out/'skill_pulse1.txt').read_text(encoding='utf-8-sig')
+                first=(out/'skill_tier_1.txt').read_text(encoding='utf-8-sig')
+                assert report.startswith('PASSED')
+                assert next(line for line in report.splitlines() if line.startswith('edge_alpha')) != next(line for line in first.splitlines() if line.startswith('edge_alpha'))
+                state['checks'].append(dict(skill_highlight_animates_while_guiding=True))
             unreal.SystemLibrary.execute_console_command(world,'SF.Commander.AdvanceGuide')
             state['step']+=1
             state.update(phase='returned' if state['step']==3 else 'guide',at=time.time())

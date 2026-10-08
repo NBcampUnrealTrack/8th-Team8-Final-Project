@@ -111,6 +111,10 @@ private:
     TObjectPtr<UTextBlock> SkillGuideText = nullptr;
     UPROPERTY(Transient)
     TArray<TObjectPtr<UBorder>> SkillHighlightEdges;
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UBorder>> SkillHighlightGlows;
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UBorder>> SkillSparkles;
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FSFStage03ProductionTest;
     friend struct FSFCommanderContentPreviewAccess;

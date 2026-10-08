@@ -9,6 +9,7 @@
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Buildings/Resource/ResourceBase.h"
 #include "Components/Image.h"
+#include "Components/Border.h"
 #include "Components/WidgetComponent.h"
 #include "EngineUtils.h"
 #include "InputMappingContext.h"
@@ -25,7 +26,12 @@ struct FSFCommanderContentPreviewAccess
         Report += FString::Printf(TEXT("spotlight target=%s visible=%d center=%s extent=%s geometry=%s\n"),
             *GetNameSafe(Widget->ResolveScreenTargetWidget()), Widget->bTargetVisible,
             *Widget->HoleCenterNorm.ToString(), *Widget->HoleExtentNorm.ToString(), *Widget->GetCachedGeometry().GetLocalSize().ToString());
-        return Widget->bHasStep && Widget->bTargetVisible && Widget->ResolveScreenTargetWidget() && Widget->CurrentStep.bShowHighlight;
+        const bool bSparkles = Widget->SkillHighlightEdges.Num() == 4 && Widget->SkillHighlightGlows.Num() == 4 && Widget->SkillSparkles.Num() == 8;
+        Report += FString::Printf(TEXT("skill_sparkles=%d pulse_phase=%.3f\n"), bSparkles, Widget->PulseTime);
+        if (bSparkles)
+            Report += FString::Printf(TEXT("edge_alpha=%.3f glow_alpha=%.3f spark_alpha=%.3f\n"),
+                Widget->SkillHighlightEdges[0]->GetBrushColor().A, Widget->SkillHighlightGlows[0]->GetBrushColor().A, Widget->SkillSparkles[0]->GetBrushColor().A);
+        return bSparkles && Widget->bHasStep && Widget->bTargetVisible && Widget->ResolveScreenTargetWidget() && Widget->CurrentStep.bShowHighlight;
     }
 };
 

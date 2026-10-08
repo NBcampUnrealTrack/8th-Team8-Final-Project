@@ -58,6 +58,18 @@ class STRIKEFORGE_API USFInGameHUDWidget
 {
     GENERATED_BODY()
     friend struct FSFForcedAttackTestAccess;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UBorder> StageBuffPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> StageBuffText;
+    FText LastStageBuffText;
+    void RefreshStageBuffDisplay();
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<UBorder> CommanderRespawnPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> CommanderRespawnText;
+    void RefreshCommanderRespawnDisplay();
 
     // ==================== Functions ====================
 

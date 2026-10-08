@@ -11,6 +11,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class UPrimitiveComponent;
+class UNiagaraSystem;
 
 UENUM(BlueprintType)
 enum class ESFProjectileMovementType : uint8
@@ -33,6 +34,8 @@ public:
 	 * 실제 이동 및 충돌 처리는 SFUnitProjectile이 담당한다.
 	 */
 	void InitializeProjectile(AUnitBase* InSourceUnit, AActor* InTargetActor, float InDamageRatio, float InProjectileSpeed);
+
+    virtual void Tick(float DeltaSeconds) override;
 
 private:
     UFUNCTION()
@@ -57,6 +60,16 @@ private:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement",
         meta = (AllowPrivateAccess = "true", EditCondition = "MovementType == ESFProjectileMovementType::Ballistic", ClampMin = "0.1"))
     float BallisticGravityScale = 1.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Effects",
+        meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UNiagaraSystem> ImpactEffect;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Effects",
+        meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
+    float ImpactEffectScale = 1.f;
+
+    bool bHasImpacted = false;
 
     UPROPERTY()
     TWeakObjectPtr<AUnitBase> SourceUnit;

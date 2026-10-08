@@ -44,9 +44,12 @@ public:
 	void SetIcon(ESFOverheadStatusIcon InIcon);
 
 protected:
+	
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> IconBackground;
+	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> IconImage;
-
 	/**
 	 * IconImage 위에 겹치는 X. 텍스처와 크기·위치는 WBP에서 정한다.
 	 * 없으면 X 없이 그림만 보인다.

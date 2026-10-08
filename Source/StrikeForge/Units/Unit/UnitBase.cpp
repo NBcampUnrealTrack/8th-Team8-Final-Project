@@ -15,6 +15,7 @@
 #include "Units/Projectile/SFUnitProjectile.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Components/SceneComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Game/GameState/SFGameState.h"
@@ -1856,14 +1857,48 @@ void AUnitBase::HandleProjectileLaunch(float DamageRatio)
 	}
 
 	FVector SpawnLocation = UnitMesh->GetComponentLocation();
+	bool bFoundProjectileSocket = false;
 
-	if (ProjectileSocketName != NAME_None && UnitMesh->DoesSocketExist(ProjectileSocketName))
+	// ProjectileSource 태그가 붙은 무기 컴포넌트에서 소켓을 먼저 찾는다.
+	static const FName ProjectileSourceTag(TEXT("ProjectileSource"));
+
+	if (ProjectileSocketName != NAME_None)
+	{
+		const TArray<UActorComponent*> ProjectileSourceComponents = GetComponentsByTag(USceneComponent::StaticClass(), ProjectileSourceTag);
+
+		for (UActorComponent* Component : ProjectileSourceComponents)
+		{
+			USceneComponent* ProjectileSourceComponent = Cast<USceneComponent>(Component);
+
+			if (!IsValid(ProjectileSourceComponent))
+			{
+				continue;
+			}
+
+			if (!ProjectileSourceComponent->DoesSocketExist(ProjectileSocketName))
+			{
+				continue;
+			}
+
+			SpawnLocation = ProjectileSourceComponent->GetSocketLocation(ProjectileSocketName);
+
+			bFoundProjectileSocket = true;
+			break;
+		}
+	}
+
+	// 태그가 붙은 무기 소켓이 없으면 기존 캐릭터 Skeleton 소켓을 사용한다.
+	if (!bFoundProjectileSocket &&
+		ProjectileSocketName != NAME_None &&
+		UnitMesh->DoesSocketExist(ProjectileSocketName))
 	{
 		SpawnLocation = UnitMesh->GetSocketLocation(ProjectileSocketName);
+		bFoundProjectileSocket = true;
 	}
-	else
+
+	if (!bFoundProjectileSocket)
 	{
-		SF_LOG(Warning, "[Unit] %s : 발사 소켓 '%s'을 찾지 못해 Mesh 위치에서 발사합니다.", *GetName(), *ProjectileSocketName.ToString());
+		SF_LOG(Warning, "[Unit] % s : 무기와 캐릭터 Mesh에서 발사 소켓 '%s'을 찾지 못해 Mesh 위치에서 발사합니다.", *GetName(), *ProjectileSocketName.ToString());
 	}
 
 	const FVector TargetLocation = Target->GetActorLocation();

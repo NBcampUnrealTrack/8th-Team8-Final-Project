@@ -74,12 +74,6 @@ protected:
 	UFUNCTION()
 	void HandleProductLineChanged(TArray<FProductInfo> InProductLine);
 
-	/**
-	 * 대기열과 티어 상태로 머리 위 진행도 바와 생산 대기 아이콘을 맞춘다.
-	 * 대기열 변경, 티어 활성화, 업그레이드 시작에서 호출된다.
-	 */
-	void RefreshWorkStatus();
-
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
 

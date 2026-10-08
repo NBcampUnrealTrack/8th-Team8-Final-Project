@@ -37,9 +37,6 @@ enum class ESFOverheadStatusIcon : uint8
 {
 	None,
 
-	/** 완성된 생산 건물의 대기열이 비었다. */
-	ProductionIdle,
-
 	/** 미네랄 광산이 캘 수 있는 자원을 모두 소진했다. */
 	MineralDepleted,
 

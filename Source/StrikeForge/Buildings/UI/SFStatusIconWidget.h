@@ -29,7 +29,7 @@ struct STRIKEFORGE_API FSFStatusIconVisual
 };
 
 /**
- * 건물 머리 위 상태 아이콘(생산 대기·광산 고갈).
+ * 건물 머리 위 상태 아이콘(광산 고갈).
  *
  * 계속 떠 있는 상태를 그린다. 잠깐 떴다 사라지는 획득 배지(USFResourceGainWidget)와는 역할이 다르다.
  * 자기가 그릴 값(아이콘 종류)만 받는다. 값이 바뀌었는지는 판(USFOverheadPanelWidget)이 판단한다.
@@ -40,11 +40,14 @@ class STRIKEFORGE_API USFStatusIconWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/** 종류에 맞는 그림과 X 겹침을 적용한다. None이거나 그림이 지정되지 않았으면 둘 다 접는다. */
+	/** 종류에 맞는 그림·배경·X 겹침을 적용한다. None이거나 그림이 지정되지 않았으면 모두 접는다. */
 	void SetIcon(ESFOverheadStatusIcon InIcon);
 
 protected:
-	
+	/** 아이콘이 정해지기 전에는 배경도 보이지 않게 접어 둔다. */
+	virtual void NativeOnInitialized() override;
+
+	/** 아이콘 뒤 배경. 기본은 접혀 있고 아이콘이 뜰 때 같이 뜬다. */
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> IconBackground;
 	

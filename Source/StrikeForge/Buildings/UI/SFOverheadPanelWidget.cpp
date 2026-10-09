@@ -3,6 +3,7 @@
 #include "Buildings/UI/SFHealthBarWidget.h"
 #include "Buildings/UI/SFProgressBarWidget.h"
 #include "Buildings/UI/SFResourceGainWidget.h"
+#include "Buildings/UI/SFStatusIconWidget.h"
 #include "Components/Spacer.h"
 
 void USFOverheadPanelWidget::NativeOnInitialized()
@@ -59,10 +60,33 @@ void USFOverheadPanelWidget::ApplyStatus(const FSFOverheadStatus& InStatus)
 		}
 	}
 
+	if (IsValid(StatusIconWidget) && (bForce || LastStatus.StatusIcon != InStatus.StatusIcon))
+	{
+		StatusIconWidget->SetIcon(InStatus.StatusIcon);
+	}
+
 	// 획득 배지는 상태가 아니라 사건을 그리므로 여기서 제외한다.
 
 	LastStatus = InStatus;
 	bAppliedOnce = true;
+}
+
+void USFOverheadPanelWidget::ResetForReuse()
+{
+	// 재생 중이던 배지를 멈춘다. 끝 신호는 매니저가 구독을 끊은 뒤라 아무도 받지 않는다.
+	if (IsValid(ResourceGainWidget))
+	{
+		ResourceGainWidget->Stop();
+	}
+
+	for (int32 Index = 0; Index < static_cast<int32>(ESFOverheadElement::MAX); ++Index)
+	{
+		SetElementVisible(static_cast<ESFOverheadElement>(Index), false);
+	}
+
+	// 다음 건물의 첫 ApplyStatus가 비교 없이 전부 내려보내게 한다.
+	LastStatus = FSFOverheadStatus();
+	bAppliedOnce = false;
 }
 
 void USFOverheadPanelWidget::SetElementVisible(ESFOverheadElement InElement, bool bInVisible)
@@ -76,7 +100,7 @@ void USFOverheadPanelWidget::SetElementVisible(ESFOverheadElement InElement, boo
 	 * Collapsed는 레이아웃 자리까지 없애서, 체력바가 꺼지면 진행도 바가 그 자리로 올라온다.
 	 * 요소마다 화면 위치가 고정돼 있어야 눈이 따라가기 쉬우므로 자리는 남긴다.
 	 *
-	 * 판 전체를 접는 건 컴포넌트가 Collapsed로 따로 처리한다. 그쪽은 자리를 비워야 맞다.
+	 * 판 전체를 접는 건 매니저가 Collapsed로 따로 처리한다. 그쪽은 자리를 비워야 맞다.
 	 */
 	Element->SetVisibility(bInVisible
 		? ESlateVisibility::SelfHitTestInvisible
@@ -115,6 +139,7 @@ UUserWidget* USFOverheadPanelWidget::FindElement(ESFOverheadElement InElement) c
 	case ESFOverheadElement::Health:			return HealthBarWidget;
 	case ESFOverheadElement::Progress:			return ProgressBarWidget;
 	case ESFOverheadElement::ResourceGain:		return ResourceGainWidget;
+	case ESFOverheadElement::StatusIcon:		return StatusIconWidget;
 	default:									return nullptr;
 	}
 }

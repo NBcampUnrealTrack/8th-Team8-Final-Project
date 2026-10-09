@@ -278,6 +278,11 @@ bool USFFogOfWarSubsystem::IsActorVisibleToLocalPlayer(const AActor* Actor) cons
 	return IsLocationVisible(Team, Actor->GetActorLocation());
 }
 
+bool USFFogOfWarSubsystem::IsActorHiddenByFog(const AActor* Actor) const
+{
+	return Actor && FogNotVisibleActors.Contains(Actor);
+}
+
 void USFFogOfWarSubsystem::Tick(float DeltaTime)
 {
 	if (!bStarted) return;
@@ -439,10 +444,13 @@ void USFFogOfWarSubsystem::UpdatePresentation()
 
 	TSet<TWeakObjectPtr<AActor>> HiddenNow;
 	TSet<TWeakObjectPtr<UWidgetComponent>> WidgetsNow;
+	TSet<TWeakObjectPtr<const AActor>> NotVisibleNow;
 	for (const auto& WeakSource : Sources)
 	{
 		AActor* Actor = WeakSource.IsValid() ? WeakSource->GetOwner() : nullptr;
 		if (!IsValid(Actor) || IsActorVisibleToLocalPlayer(Actor)) continue;
+		// 다른 시스템이 숨긴 액터도 가시성 신호에는 포함한다.
+		NotVisibleNow.Add(Actor);
 		// Do not undo actors hidden by another system.
 		if (FogHiddenActors.Contains(Actor) || !PC->HiddenActors.Contains(Actor))
 		{
@@ -465,6 +473,27 @@ void USFFogOfWarSubsystem::UpdatePresentation()
 		if (Widget.IsValid() && !WidgetsNow.Contains(Widget)) Widget->SetHiddenInGame(false);
 	FogHiddenActors = MoveTemp(HiddenNow);
 	FogHiddenWidgets = MoveTemp(WidgetsNow);
+	ApplyFogVisibility(MoveTemp(NotVisibleNow));
+}
+
+void USFFogOfWarSubsystem::ApplyFogVisibility(TSet<TWeakObjectPtr<const AActor>>&& NotVisibleNow)
+{
+	// 듣는 쪽이 없으면 차이를 계산할 필요 없이 집합만 교체한다.
+	if (!OnActorFogVisibilityChanged.IsBound())
+	{
+		FogNotVisibleActors = MoveTemp(NotVisibleNow);
+		return;
+	}
+	TArray<const AActor*> NewlyHidden;
+	TArray<const AActor*> NewlyVisible;
+	for (const auto& Actor : NotVisibleNow)
+		if (!FogNotVisibleActors.Contains(Actor)) NewlyHidden.Add(Actor.Get());
+	for (const auto& Actor : FogNotVisibleActors)
+		if (Actor.IsValid() && !NotVisibleNow.Contains(Actor)) NewlyVisible.Add(Actor.Get());
+	// 집합을 먼저 바꾼다. 받는 쪽이 IsActorHiddenByFog로 다시 물어도 같은 답이 나와야 한다.
+	FogNotVisibleActors = MoveTemp(NotVisibleNow);
+	for (const AActor* Actor : NewlyHidden) OnActorFogVisibilityChanged.Broadcast(Actor, false);
+	for (const AActor* Actor : NewlyVisible) OnActorFogVisibilityChanged.Broadcast(Actor, true);
 }
 
 void USFFogOfWarSubsystem::RestorePresentation()
@@ -476,6 +505,8 @@ void USFFogOfWarSubsystem::RestorePresentation()
 	if (ViewingCamera.IsValid() && FogMaterial) ViewingCamera->RemoveBlendable(FogMaterial);
 	FogHiddenActors.Reset();
 	FogHiddenWidgets.Reset();
+	// 숨김을 한꺼번에 풀었으므로 가려져 있던 액터 모두에 '보임'을 알린다.
+	ApplyFogVisibility({});
 	ViewingController.Reset();
 	ViewingCamera.Reset();
 	bTexturesDirty = true;

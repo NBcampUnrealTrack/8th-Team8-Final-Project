@@ -75,10 +75,10 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "TimerManager.h"
-#include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Buildings/UI/Synergy/SFPlacementSynergyBonusWidget.h"
 #include "Components/CanvasPanel.h"
-#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
+#include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 #include "Logging/SFLog.h"
 
@@ -382,19 +382,12 @@ void USFInGameHUDWidget::NativeConstruct()
         }
     }
     
-    // BuildingSynergy
-    if (USFBuildingSynergySubsystem* SynergySubsystem =
-    USFBuildingSynergySubsystem::Get(this))
+    // 건물 머리 위 판과 시너지 배지는 매니저가 이 캔버스에 띄웁니다.
+    CreateOverheadOverlayCanvas();
+
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
     {
-        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
-
-        SynergySubsystem->OnSynergyStateChanged.AddUniqueDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
-
-        RefreshSynergyBadges();
+        OverheadUI->SetOverlayCanvas(OverheadOverlayCanvas);
     }
 
     // 건물 배치 모드 동안 커서 옆에 시너지 보너스를 표시할 위젯을 만듭니다.
@@ -519,18 +512,12 @@ void USFInGameHUDWidget::NativeDestruct()
     UnbindSelectedCommandPathDelegates();
     HideQueuedMovePathIndicators();
 #pragma region BuildingSynergy
-    // HUD가 제거된 뒤 시너지 재계산 이벤트가 이 객체를 호출하지 않도록 연결을 해제합니다.
-    if (USFBuildingSynergySubsystem* SynergySubsystem =
-        USFBuildingSynergySubsystem::Get(this))
+    // HUD가 사라지면 매니저가 이 캔버스에 띄운 판과 배지를 모두 거둡니다.
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
     {
-        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
+        OverheadUI->ClearOverlayCanvas(OverheadOverlayCanvas);
     }
-
-    // HUD가 소유하던 배지 참조를 정리합니다.
-    SynergyBadgeWidgets.Reset();
-#pragma endregion 
+#pragma endregion
     Super::NativeDestruct();
 }
 
@@ -566,8 +553,12 @@ void USFInGameHUDWidget::NativeTick(
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
 #pragma region BuildingSynergy
-    UpdateSynergyBadgeScreenPositions();
-#pragma endregion 
+    // UI Tick은 카메라 갱신 뒤에 돈다. 여기서 투영해야 판이 카메라를 늦게 따라가지 않는다.
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
+    {
+        OverheadUI->UpdateScreenPositions();
+    }
+#pragma endregion
     if (!bIsSelectionDragging ||
         !IsValid(SelectionDragBox))
     {
@@ -1425,73 +1416,38 @@ bool USFInGameHUDWidget::RequestBuildingBySlot(
     );
 }
 #pragma region BuildingSynergy
-void USFInGameHUDWidget::HandleSynergyStateChanged()
+// 월드에 붙는 UI를 그릴 캔버스를 RootCanvas 맨 뒤에 한 번만 만듭니다.
+// WBP에 두지 않고 코드로 만드는 이유는 그리는 순서와 클릭 판정을 실수로 바꿀 수 없게 하기 위해서입니다.
+void USFInGameHUDWidget::CreateOverheadOverlayCanvas()
 {
-    RefreshSynergyBadges();
-}
-
-void USFInGameHUDWidget::RefreshSynergyBadges()
-{
-    if (!IsValid(RootCanvas) || !SynergyBadgeWidgetClass)
+    // HUD가 다시 화면에 붙을 때도 NativeConstruct가 불린다. 캔버스는 위젯 트리에 남아 있다.
+    if (IsValid(OverheadOverlayCanvas) || !IsValid(RootCanvas) || !IsValid(WidgetTree))
     {
         return;
     }
 
-    const ASFInGamePlayerController* PlayerController =
-        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    OverheadOverlayCanvas =
+        WidgetTree->ConstructWidget<UCanvasPanel>(
+            UCanvasPanel::StaticClass(),
+            TEXT("OverheadOverlayCanvas"));
 
-    USFBuildingSynergySubsystem* SynergySubsystem =
-        USFBuildingSynergySubsystem::Get(this);
-
-    if (!IsValid(PlayerController) || !IsValid(SynergySubsystem))
+    if (!IsValid(OverheadOverlayCanvas))
     {
         return;
     }
 
-    const TArray<FSFBuildingSynergyClusterProgressInfo> ProgressInfos =
-        SynergySubsystem->GetClusterProgressInfosForTeam(
-            PlayerController->GetMyTeamIndex());
+    UCanvasPanelSlot* CanvasSlot =
+        RootCanvas->AddChildToCanvas(OverheadOverlayCanvas);
 
-    while (SynergyBadgeWidgets.Num() < ProgressInfos.Num())
-    {
-        USFBuildingSynergyBadgeWidget* NewBadge =
-            CreateWidget<USFBuildingSynergyBadgeWidget>(
-                GetOwningPlayer(),
-                SynergyBadgeWidgetClass);
+    // 화면 전체를 덮는다. 매니저가 투영한 뷰포트 좌표를 그대로 슬롯 위치로 쓴다.
+    CanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+    CanvasSlot->SetOffsets(FMargin(0.f));
 
-        if (!IsValid(NewBadge))
-        {
-            break;
-        }
+    // HUD 패널 뒤에 그린다. 머리 위 판이 하단 패널을 덮지 않는다.
+    CanvasSlot->SetZOrder(-1000);
 
-        UCanvasPanelSlot* CanvasSlot =
-            RootCanvas->AddChildToCanvas(NewBadge);
-
-        CanvasSlot->SetAutoSize(true);
-        CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
-
-        SynergyBadgeWidgets.Add(NewBadge);
-    }
-
-    for (int32 Index = 0; Index < SynergyBadgeWidgets.Num(); ++Index)
-    {
-        USFBuildingSynergyBadgeWidget* Badge =
-            SynergyBadgeWidgets[Index];
-
-        if (!IsValid(Badge))
-        {
-            continue;
-        }
-
-        if (ProgressInfos.IsValidIndex(Index))
-        {
-            Badge->SetProgressInfo(ProgressInfos[Index]);
-        }
-        else
-        {
-            Badge->SetVisibility(ESlateVisibility::Collapsed);
-        }
-    }
+    // 캔버스 자신은 클릭을 받지 않는다. 배지 아이콘처럼 자식이 원하는 경우에만 받는다.
+    OverheadOverlayCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 // 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번만 만들어 넣습니다. 표시·숨김과 커서 추적은 위젯이 스스로 처리합니다.
@@ -1524,86 +1480,7 @@ void USFInGameHUDWidget::CreatePlacementSynergyBonusWidget()
     // 시너지 배지와 HUD 패널 위에 그립니다.
     CanvasSlot->SetZOrder(100);
 }
-
-void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()
-{
-    APlayerController* PlayerController = GetOwningPlayer();
-
-    if (!IsValid(PlayerController) || !IsValid(RootCanvas))
-    {
-        return;
-    }
-
-    // 투영된 좌표와 같은 UI 좌표계를 사용하기 위해 실제 Canvas 크기를 사용합니다.
-    const FVector2D CanvasSize =
-        RootCanvas->GetCachedGeometry().GetLocalSize();
-
-    if (CanvasSize.X <= 0.f || CanvasSize.Y <= 0.f)
-    {
-        return;
-    }
-
-    const float SafeScreenMargin =
-        FMath::Max(0.f, SynergyBadgeScreenMargin);
-
-    for (USFBuildingSynergyBadgeWidget* Badge : SynergyBadgeWidgets)
-    {
-        // Collapsed는 현재 클러스터와 연결되지 않은 풀링용 뱃지입니다.
-        if (!IsValid(Badge) ||
-            Badge->GetVisibility() == ESlateVisibility::Collapsed)
-        {
-            continue;
-        }
-
-        FVector2D ScreenPosition;
-
-        const bool bProjected =
-            UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
-                PlayerController,
-                Badge->GetBadgeWorldLocation(),
-                ScreenPosition,
-                true);
-
-        UCanvasPanelSlot* CanvasSlot =
-            Cast<UCanvasPanelSlot>(Badge->Slot);
-
-        if (!bProjected || !IsValid(CanvasSlot))
-        {
-            // Hidden은 다음 Tick에도 다시 화면 투영을 검사할 수 있습니다.
-            Badge->SetVisibility(ESlateVisibility::Hidden);
-            continue;
-        }
-
-        const FVector2D BadgeSize = Badge->GetDesiredSize();
-        const FVector2D BadgeAlignment = CanvasSlot->GetAlignment();
-
-        // CanvasSlot의 Alignment를 반영해 뱃지의 실제 좌상단과 우하단을 계산합니다.
-        const FVector2D BadgeTopLeft =
-            ScreenPosition - BadgeSize * BadgeAlignment;
-
-        const FVector2D BadgeBottomRight =
-            BadgeTopLeft + BadgeSize;
-
-        const bool bIsFullyInsideScreen =
-            BadgeTopLeft.X >= SafeScreenMargin &&
-            BadgeTopLeft.Y >= SafeScreenMargin &&
-            BadgeBottomRight.X <=
-                CanvasSize.X - SafeScreenMargin &&
-            BadgeBottomRight.Y <=
-                CanvasSize.Y - SafeScreenMargin;
-
-        if (!bIsFullyInsideScreen)
-        {
-            Badge->SetVisibility(ESlateVisibility::Hidden);
-            continue;
-        }
-
-        CanvasSlot->SetPosition(ScreenPosition);
-        Badge->SetVisibility(
-            ESlateVisibility::SelfHitTestInvisible);
-    }
-}
-#pragma endregion 
+#pragma endregion
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (

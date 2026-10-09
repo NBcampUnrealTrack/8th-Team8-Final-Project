@@ -13,7 +13,6 @@ class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
 class USFOverheadStatusComponent;
-class USFOverheadUIComponent;
 class UCombatTargetComponent;
 class USFBuffComponent;
 class UNiagaraSystem;
@@ -340,15 +339,10 @@ protected:
 	// Stat
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
-	// 신규
 	/**
-	 * 머리 위 판. 액터당 하나면 된다.
-	 * 요소(체력·진행도 등)를 늘릴 때 컴포넌트를 더 달지 않고 ESFOverheadElement에 추가한다.
+	 * 머리 위 UI의 액터 쪽 창구. 액터당 하나.
+	 * 위젯은 USFOverheadUISubsystem이 띄운다. 요소를 늘릴 때는 ESFOverheadElement에 추가한다.
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> OverheadUI;
-
-	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
 	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
 	// Construct Progress

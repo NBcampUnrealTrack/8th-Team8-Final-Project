@@ -22,9 +22,12 @@ enum class ESFOverheadElement : uint8
 	 * 자원 획득 배지(+8). 잠깐 떴다 스스로 사라진다.
 	 *
 	 * 다른 요소와 달리 끄는 주체가 소유자가 아니라 애니메이션이다.
-	 * 판이 OnElementFinished로 알리면 컴포넌트가 비트를 내린다.
+	 * 판이 OnElementFinished로 알리면 매니저가 StatusComponent의 비트를 내린다.
 	 */
 	ResourceGain,
+
+	/** 건물 상태 아이콘(생산 대기·광산 고갈). 상태가 이어지는 동안 떠 있다. */
+	StatusIcon,
 
 	MAX UMETA(Hidden)
 };
@@ -55,6 +58,17 @@ struct STRIKEFORGE_API FSFOverheadUISettings
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
 	float VerticalRatio = 0.f;
+
+	/**
+	 * 건물 기준 앞뒤 오프셋 = 메시 앞뒤 반길이 × 이 값. 월드 거리.
+	 *
+	 * 1이면 정면 벽, -1이면 뒷벽, 0이면 지금처럼 건물 중앙이다.
+	 * 정면은 액터 기준 +Y 방향이다. 건물이 90도 회전해 놓이면서 메시 정면이 +Y 쪽이 됐다.
+	 * 정면이 -Y 쪽인 메시는 음수를 넣는다.
+	 * VerticalRatio와 달리 화면이 아니라 건물 기준이라 건물 회전을 그대로 따라간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead")
+	float ForwardRatio = 0.f;
 
 	/** 판 가로 길이 = 메시 반폭 × 이 값. 픽셀. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Overhead", meta = (ClampMin = "0.01"))

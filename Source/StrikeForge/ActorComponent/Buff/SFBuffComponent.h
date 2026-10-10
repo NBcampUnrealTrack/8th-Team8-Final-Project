@@ -28,7 +28,10 @@ public:
     
     const float GetTimeRate(); // 버프 남은시간 비율(0~1)로 가져오기.
 
+    UFUNCTION()
+    void OnNiagaraFinished(UNiagaraComponent* PSystem);
 protected:
+    
     virtual void BeginDestroy() override;
 
 public:

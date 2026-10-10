@@ -3,6 +3,7 @@
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -41,8 +42,10 @@ void UBuffData::FinishBuff(bool bCallEndEvent)
 	{
 		ParticleComp->Deactivate();
 	}
-
-	this->ConditionalBeginDestroy();
+	
+	OnBuffTickEvent.Clear();
+	OnBuffBeginEvent.Clear();
+	OnBuffEndEvent.Clear();
 }
 
 const float UBuffData::GetTimeRate()
@@ -54,11 +57,13 @@ const float UBuffData::GetTimeRate()
 	return RemainTime / InitialTime;
 }
 
+void UBuffData::OnNiagaraFinished(UNiagaraComponent* PSystem)
+{
+	this->ConditionalBeginDestroy();
+}
+
 void UBuffData::BeginDestroy()
 {
-	OnBuffTickEvent.Clear();
-	OnBuffBeginEvent.Clear();
-	OnBuffEndEvent.Clear();
 
 	Super::BeginDestroy();
 }
@@ -218,10 +223,30 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 	BuffList.Last()->OnBuffBeginEvent.AddLambda([_BeginEvent]() {_BeginEvent(); });
 	BuffList.Last()->OnBuffEndEvent.AddLambda([_EndEvent]() {_EndEvent(); });
 
+	// 파티클 크기 결정
+	FVector ParticlePosition = FVector::ZeroVector;
+	FVector ParticleScale = FVector::OneVector;
+	if (ACharacter* SFCharacter = GetOwner<ACharacter>())
+	{
+		// 캐릭터라면 캡슐크기로 결정
+		if (IsValid(SFCharacter->GetCapsuleComponent()))
+		{
+			ParticleScale.X = ParticleScale.Y = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius() / 25.f;
+			ParticleScale.Z = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() / 45.f;
+		}
+	}
+	else
+	{
+		// 아니라면 바운드 크기로 결정
+		FVector Origin;
+		GetOwner()->GetActorBounds(true, Origin, ParticleScale);
+		ParticleScale /= 23.f;	// ReceiveDmgUp 파티클 기준으로 크기 계산
+	}
 	if (IsValid(_Particle))
 	{
-		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(_Particle, GetOwner()->GetRootComponent(), NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, FVector::OneVector, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
+		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(_Particle, GetOwner()->GetRootComponent(), NAME_None, ParticlePosition, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
 		BuffList.Last()->ParticleComp->SetUsingAbsoluteRotation(true);
+		BuffList.Last()->ParticleComp->OnSystemFinished.AddDynamic(BuffList.Last(), &UBuffData::OnNiagaraFinished);
 	}
 
 	BuffList.Last()->ExecuteBuff();

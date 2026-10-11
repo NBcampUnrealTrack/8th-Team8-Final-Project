@@ -79,8 +79,6 @@ struct FSkillAsset
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Montage")
 	TObjectPtr<UAnimMontage> SkillMontage;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<USoundBase> SkillSound;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<UNiagaraSystem> SkillEffect;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<UNiagaraSystem> SkillHitEffect;

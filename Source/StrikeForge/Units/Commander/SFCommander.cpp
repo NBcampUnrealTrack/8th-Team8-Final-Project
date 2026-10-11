@@ -732,7 +732,6 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 	}
 	SkillCooldownEnds[SkillTier - 1] = GetWorld()->GetTimeSeconds() + SkillCooldownSeconds;
 
-	Anim->CurrentSkillSound = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillSound)) ? SkillAsset[SkillTier - 1].SkillSound : nullptr;
 	Anim->CurrentSkillEffect = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillEffect)) ? SkillAsset[SkillTier - 1].SkillEffect : nullptr;
 	Anim->CurrentSkillHitEffect = (SkillAsset.IsValidIndex(SkillTier - 1) && IsValid(SkillAsset[SkillTier - 1].SkillHitEffect)) ? SkillAsset[SkillTier - 1].SkillHitEffect : nullptr;
 
@@ -907,10 +906,8 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
-				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
-				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				FVector ParticleScale = { SkillRadius / 100.f,SkillRadius / 100.f, 1.f };
+				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
 			}
 		} while (false);
 		break;
@@ -1077,10 +1074,8 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
-				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
-				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				FVector ParticleScale = { SkillRadius / 100.f,SkillRadius / 100.f, 1.f };
+				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
 			}
 		} while (false);
 		break;
@@ -1220,15 +1215,15 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 						},
 						BuffTime,
 						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get());
+						CurrentSkillHitEffectWPtr.Get(),
+						{ 1.f / 25.f, 1.f / 45.f },
+						{ 1.f / 55.f, 1.f / 35.f });
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
-				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
-				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				FVector ParticleScale = FVector::OneVector * SkillRadius / 100.f;
+				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
 			}
 		} while (false);
 		break;

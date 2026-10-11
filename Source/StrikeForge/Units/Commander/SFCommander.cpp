@@ -701,9 +701,9 @@ FText ASFCommander::ReadSkillEffectDescription(int32 SkillTier)
 
 void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 {
-	//if (!IsSkillTierUnlocked(SkillTier) || GetSkillCooldownRemaining(SkillTier) > 0.f
-	//	|| (HealthComponent && HealthComponent->GetIsDead())
-	//	|| !SkillAsset.IsValidIndex(SkillTier - 1)) return;
+	if (!IsSkillTierUnlocked(SkillTier) || GetSkillCooldownRemaining(SkillTier) > 0.f
+		|| (HealthComponent && HealthComponent->GetIsDead())
+		|| !SkillAsset.IsValidIndex(SkillTier - 1)) return;
 	TWeakObjectPtr<USFCommanderAnim> Anim = Cast<USFCommanderAnim>(GetMesh()->GetAnimInstance());
 	if (!Anim.IsValid())
 	{

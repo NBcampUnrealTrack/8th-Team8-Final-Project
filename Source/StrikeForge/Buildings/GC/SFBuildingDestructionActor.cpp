@@ -162,6 +162,78 @@ static float GetBoxSurfaceGapRatio(const FBox& OuterBox, const FBox& InnerBox)
     return FMath::Clamp(MinGapRatio, 0.f, 1.f);
 }
 
+/**
+ * 현재 GC 클러스터에서 바깥과 가장 가까운 조각 면을 찾는다.
+ * 클러스터가 조각 하나뿐이라 모든 면의 간격이 같으면 건물 전체 바운드에
+ * 가까운 면을 선택한다. 아래쪽(-Z)은 지면에 묻히므로 후보에서 제외한다.
+ */
+static FVector GetSurfaceFirePoint(
+    const FBox& ClusterBounds,
+    const FBox& BuildingBounds,
+    const FBox& PieceBounds,
+    float SurfaceRatio)
+{
+    const FVector PieceCenter = PieceBounds.GetCenter();
+    FVector BestSurfacePoint = PieceCenter;
+    float BestClusterGap = TNumericLimits<float>::Max();
+    float BestBuildingGap = TNumericLimits<float>::Max();
+
+    const auto TestSurface =
+        [&BestSurfacePoint, &BestClusterGap, &BestBuildingGap](
+            float ClusterGap,
+            float BuildingGap,
+            const FVector& SurfacePoint)
+        {
+            ClusterGap = FMath::Max(ClusterGap, 0.f);
+            BuildingGap = FMath::Max(BuildingGap, 0.f);
+
+            const bool bCloserToClusterSurface =
+                ClusterGap < BestClusterGap - KINDA_SMALL_NUMBER;
+
+            const bool bSameClusterGapButCloserToBuildingSurface =
+                FMath::IsNearlyEqual(ClusterGap, BestClusterGap) &&
+                BuildingGap < BestBuildingGap;
+
+            if (bCloserToClusterSurface ||
+                bSameClusterGapButCloserToBuildingSurface)
+            {
+                BestClusterGap = ClusterGap;
+                BestBuildingGap = BuildingGap;
+                BestSurfacePoint = SurfacePoint;
+            }
+        };
+
+    TestSurface(
+        ClusterBounds.Max.X - PieceBounds.Max.X,
+        BuildingBounds.Max.X - PieceBounds.Max.X,
+        FVector(PieceBounds.Max.X, PieceCenter.Y, PieceCenter.Z));
+
+    TestSurface(
+        PieceBounds.Min.X - ClusterBounds.Min.X,
+        PieceBounds.Min.X - BuildingBounds.Min.X,
+        FVector(PieceBounds.Min.X, PieceCenter.Y, PieceCenter.Z));
+
+    TestSurface(
+        ClusterBounds.Max.Y - PieceBounds.Max.Y,
+        BuildingBounds.Max.Y - PieceBounds.Max.Y,
+        FVector(PieceCenter.X, PieceBounds.Max.Y, PieceCenter.Z));
+
+    TestSurface(
+        PieceBounds.Min.Y - ClusterBounds.Min.Y,
+        PieceBounds.Min.Y - BuildingBounds.Min.Y,
+        FVector(PieceCenter.X, PieceBounds.Min.Y, PieceCenter.Z));
+
+    TestSurface(
+        ClusterBounds.Max.Z - PieceBounds.Max.Z,
+        BuildingBounds.Max.Z - PieceBounds.Max.Z,
+        FVector(PieceCenter.X, PieceCenter.Y, PieceBounds.Max.Z));
+
+    return FMath::Lerp(
+        PieceCenter,
+        BestSurfacePoint,
+        FMath::Clamp(SurfaceRatio, 0.f, 1.f));
+}
+
 static void BuildPieceState(UGeometryCollectionComponent& Component, FSFPieceState& Out)
 {
     Out.Transforms = &Component.GetComponentSpaceTransforms3f();
@@ -1287,15 +1359,22 @@ void ASFBuildingDestructionActor::BuildPieceSpotTable()
             const FTransform PieceToComponent(
                 RestTransforms[TransformIndex]);
 
+            const FVector SurfaceFirePoint =
+                GetSurfaceFirePoint(
+                    *ClusterBounds,
+                    CachedRestBounds,
+                    PieceBox,
+                    SurfaceFireSurfaceRatio);
+
             FSFPieceSpot& NewSpot =
                 LevelSpots.AddDefaulted_GetRef();
 
             NewSpot.LocalLocation =
-                PieceLocation;
+                SurfaceFirePoint;
 
             NewSpot.BoneLocalLocation =
                 PieceToComponent.InverseTransformPosition(
-                    PieceLocation);
+                    SurfaceFirePoint);
             
             NewSpot.PieceIndex = TransformIndex;
 

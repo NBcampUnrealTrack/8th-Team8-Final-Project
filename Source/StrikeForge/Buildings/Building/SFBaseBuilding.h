@@ -116,6 +116,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
 	bool HasLivingUnitInFootprint() const;
+
+	/** 최초 건설은 비용의 75% 환불 후 파괴하며, 업그레이드는 50% 환불 후 기존 티어로 복구한다. */
+	UFUNCTION(BlueprintCallable, Category = "SF|Building")
+	bool CancelConstruction();
 	
 	// 업그레이드 함수
 	/**
@@ -244,6 +248,12 @@ protected:
 	bool TryRegisterInitialGrid();
 	bool bGridRegistered = false;
 private:
+	// 건설 또는 업그레이드 비용을 지불한 팀. 완료 또는 취소 시 비운다.
+	int32 ConstructionPayerTeam = INDEX_NONE;
+	// 업그레이드 취소 시 현재 체력은 유지하고 이 최대 체력으로 제한한다.
+	float PreviousMaxHealth = 0.f;
+	bool bIsCancellingConstruction = false;
+
 	/** 로드된 Definition의 공통 데이터를 건물에 캐시한다. BeginPlay에서 호출되며 PrepareLoadedTier로 이어진다. */
 	bool CacheLoadedDefinitionData();
 	/** 로드된 Tier 리소스를 Pending 캐시에 준비한다. BeginPlay와 업그레이드 완료에서 호출되며 건설 상태 적용으로 이어진다. */

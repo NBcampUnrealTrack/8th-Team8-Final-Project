@@ -210,8 +210,8 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
 
     const int32 TeamIndex = GetMyTeamIndex();
 
-    // 실제 비용 차감에 성공해야 건설을 시작한다.
-    if (!SFGS->TrySpendCost(TeamIndex, ConstructCost))
+    // 자원 부족 피드백만 여기서 처리하고, 실제 차감은 건설 시작 함수에서 한다.
+    if (!SFGS->CanAffordResource(TeamIndex, ConstructCost))
     {
         SF_LOG(Warning, "[SFPC] 자원이 부족해 건설을 취소합니다: %s",
             *Building->GetName());
@@ -224,12 +224,10 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
         return;
     }
 
-    // 비용 차감 후 건설 시작에 실패하면 비용을 복구한다.
+    // 건물이 검증 후 직접 비용을 차감하므로 실패한 요청은 환불할 필요가 없다.
     if (!Building->TryStartConstruction())
     {
-        SFGS->RefundCost(TeamIndex, ConstructCost);
-
-        SF_LOG(Error, "[SFPC] 건설 시작에 실패하여 비용을 환불했습니다: %s",
+        SF_LOG(Error, "[SFPC] 건설 시작에 실패했습니다: %s",
             *Building->GetName());
 
         ClearPendingBuildingRef();

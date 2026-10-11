@@ -20,9 +20,6 @@ protected:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-	UFUNCTION()
-	void AnimNotify_SkillSoundNotify();
-
 public:
 	UPROPERTY(BlueprintReadOnly)
 	float Speed;
@@ -33,7 +30,6 @@ public:
 
 	FSkillActiveDelegate OnSkillActiveDelegate;
 	float SkillDelegateTier;
-	TWeakObjectPtr<USoundBase> CurrentSkillSound;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffect;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffect;
 

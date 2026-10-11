@@ -195,7 +195,7 @@ void USFBuffComponent::RefreshBuffStats(float DeltaTime)
 	if (bStatsApplied) OnBuffStatsChanged.Broadcast();
 }
 
-void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval, UNiagaraSystem* _Particle)
+void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval, UNiagaraSystem* _Particle, FVector2D ParticleScaleForCharacter, FVector2D ParticleScaleForOther)
 {
 	ShrinkBuff();
 	if (BuffList.IsEmpty())
@@ -231,8 +231,8 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 		// 캐릭터라면 캡슐크기로 결정
 		if (IsValid(SFCharacter->GetCapsuleComponent()))
 		{
-			ParticleScale.X = ParticleScale.Y = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius() / 25.f;
-			ParticleScale.Z = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() / 45.f;
+			ParticleScale.X = ParticleScale.Y = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius() * ParticleScaleForCharacter.X;
+			ParticleScale.Z = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() * ParticleScaleForCharacter.Y;
 		}
 	}
 	else
@@ -240,7 +240,9 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 		// 아니라면 바운드 크기로 결정
 		FVector Origin;
 		GetOwner()->GetActorBounds(true, Origin, ParticleScale);
-		ParticleScale /= 23.f;	// ReceiveDmgUp 파티클 기준으로 크기 계산
+		ParticleScale.X *= ParticleScaleForOther.X;
+		ParticleScale.Y *= ParticleScaleForOther.X;
+		ParticleScale.Z *= ParticleScaleForOther.Y;
 	}
 	if (IsValid(_Particle))
 	{

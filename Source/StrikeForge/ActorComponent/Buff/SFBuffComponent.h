@@ -87,7 +87,7 @@ class STRIKEFORGE_API USFBuffComponent : public UActorComponent
 public:	
 
     // C++전용
-    void AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime = -1.f, float _TickInterval = 0.f, UNiagaraSystem* _Particle = nullptr);
+    void AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime = -1.f, float _TickInterval = 0.f, UNiagaraSystem* _Particle = nullptr, FVector2D ParticleScaleForCharacter = { 1.f / 25.f, 1.f / 45.f }, FVector2D ParticleScaleForOther = { 1.f / 23.f, 1.f / 23.f });
     void ShrinkBuff();  // 만료된 버프 정리
     void ClearBuff();   // 모든 버프 제거
 

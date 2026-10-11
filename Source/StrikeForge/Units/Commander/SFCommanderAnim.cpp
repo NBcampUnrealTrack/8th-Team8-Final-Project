@@ -44,11 +44,3 @@ void USFCommanderAnim::NativeUpdateAnimation(float DeltaSeconds)
 		Speed = Velocity.Length() / Scale;
 	}
 }
-
-void USFCommanderAnim::AnimNotify_SkillSoundNotify()
-{
-	if (CurrentSkillSound.IsValid())
-	{
-		UGameplayStatics::SpawnSoundAttached(CurrentSkillSound.Get(), Commander->GetRootComponent());
-	}
-}

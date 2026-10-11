@@ -14,7 +14,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraSystem.h"
 #include "ActorComponent/Niagara/PlayVFXComponent.h"
-#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Buildings/GC/SFBuildingDestructionActor.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Components/BoxComponent.h"
@@ -41,16 +40,12 @@ ASFBaseBuilding::ASFBaseBuilding(const FObjectInitializer& ObjectInitializer)
 	CombatTargetComponent->SightRadius = 1600.f;
 	// CombatTargetComponent->SetTargetingEnabled(false);
 	BuffComponent = CreateDefaultSubobject<USFBuffComponent>(TEXT("BuffComponent"));
-	// OverHead UI	
-	OverheadUI = CreateDefaultSubobject<USFOverheadUIComponent>(TEXT("OverheadUI"));
-	// UWidgetComponent를 상속하므로 씬 계층에 붙여야 한다.
-	OverheadUI->SetupAttachment(GetRootComponent());
-		
+
 	// Hit React
 	HitReactionTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("HitReactionTimeline"));
 	// effects	
 	PlayVFXComponent = CreateDefaultSubobject<UPlayVFXComponent>(TEXT("PlayVFXComponent"));
-	// 머리 위 UI가 볼 상태를 모으는 곳. 값의 출처를 여기서 정규화한다.
+	// 머리 위 UI의 액터 쪽 창구. 값의 출처를 여기서 정규화하고, 위젯은 매니저가 띄운다.
 	StatusComponent = CreateDefaultSubobject<USFOverheadStatusComponent>(TEXT("OverheadStatus"));
 }
 
@@ -451,8 +446,10 @@ void ASFBaseBuilding::BeginConstruction()
 	//CombatTargetComponent->SetTargetingEnabled(true);
 	
 	PlayVFXComponent->PlayConstructionEffect(ConstructionEffect, StaticMeshComponent);
+	// 스테이지 시작 전 로딩 화면에서 스테이지 최대 Tier까지 전부 로딩하므로
+	// 건설 시작 시 다음 Tier를 비동기로 선로딩하지 않는다. (ASFGameMode::RequestInitialBuildingAssets)
 	// 다음티어 비동기 Request
-	RequestNextTierAssetsAsync();
+	// RequestNextTierAssetsAsync();
 	ProgressComponent->StartProgress();
 }
 
@@ -692,7 +689,7 @@ void ASFBaseBuilding::SetBuildingState(const EBuildingState InState)
 	
 	const bool bShouldSuppressOverhead =
 		InState == EBuildingState::Preview || InState == EBuildingState::Destroyed;
-	OverheadUI->SetSuppressed(bShouldSuppressOverhead);
+	StatusComponent->SetSuppressed(bShouldSuppressOverhead);
 		
 	ApplyBuildingState(InState);
 }
@@ -723,7 +720,22 @@ void ASFBaseBuilding::ApplyBuildingState(const EBuildingState InState)
 
 bool ASFBaseBuilding::HasNextUpgradeTier() const
 {
-	return CurrentTier >= 0 && CurrentTier < 2 && GetTierInfo(CurrentTier + 1) != nullptr;
+	if (!(CurrentTier >= 0 && CurrentTier < 2 && GetTierInfo(CurrentTier + 1) != nullptr))
+	{
+		return false;
+	}
+
+	// 스테이지 최대 Tier를 넘는 Tier는 스테이지 시작 전에 로딩하지 않으므로 업그레이드 UI도 막는다.
+	const ASFGameState* SFGS =
+		GetWorld()
+		? GetWorld()->GetGameState<ASFGameState>()
+		: nullptr;
+
+	return !IsValid(SFGS) ||
+		!IsValid(BuildingDefinition) ||
+		CurrentTier + 1 <=
+			SFGS->GetMaxAllowedTierIndexInCurrentStage(
+				BuildingDefinition->BuildingId);
 }
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
@@ -738,7 +750,8 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 			EBuildingState::Completed ||
 		UpgradeValue <= 0 ||
 		PendingTier != INDEX_NONE ||
-		RequestedUpgradeTier != INDEX_NONE ||
+		// 비동기 업그레이드 요청이 없어져 대기 중인 요청도 없다.
+		// RequestedUpgradeTier != INDEX_NONE ||
 		!IsValid(BuildingDefinition))
 	{
 		return;
@@ -769,6 +782,15 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		return;
 	}
 
+	// 스테이지 최대 Tier를 넘는 Tier는 로딩되어 있지 않으므로 업그레이드할 수 없다.
+	if (NextTier >
+		SFGS->GetMaxAllowedTierIndexInCurrentStage(
+			BuildingDefinition->BuildingId))
+	{
+		SF_LOG(Log, "[%s] 스테이지 최대 Tier를 넘는 업그레이드입니다. NextTier=%d", *GetName(), NextTier);
+		return;
+	}
+
 	const FResources UpgradeCost =
 		GetUpgradeCost();
 
@@ -779,28 +801,54 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 		return;
 	}
 
-	UGameInstance* GameInstance =
-		GetGameInstance();
+	/*
+	 * [이전 방식] 업그레이드 Tier 에셋을 비동기로 요청하고 HandleUpgradeAssetsReady에서 비용을 차감했다.
+	 * 스테이지 시작 전 로딩 화면에서 스테이지 최대 Tier까지 전부 로딩하므로
+	 * 여기서는 비동기 요청 없이 바로 비용을 차감하고 Tier를 준비한다.
+	 *
+	 * UGameInstance* GameInstance =
+	 * 	GetGameInstance();
+	 *
+	 * USFBuildingAssetSubsystem* AssetSubsystem =
+	 * 	IsValid(GameInstance)
+	 * 		? GameInstance
+	 * 			->GetSubsystem<USFBuildingAssetSubsystem>()
+	 * 		: nullptr;
+	 *
+	 * if (!IsValid(AssetSubsystem))
+	 * {
+	 * 	return;
+	 * }
+	 *
+	 * RequestedUpgradeTier = NextTier;
+	 *
+	 * AssetSubsystem->RequestBuildingAssetsAsync(
+	 * 	BuildingDefinition,
+	 * 	NextTier,
+	 * 	FSFOnBuildingAssetsReady::CreateUObject(
+	 * 		this,
+	 * 		&ThisClass::HandleUpgradeAssetsReady));
+	 */
 
-	USFBuildingAssetSubsystem* AssetSubsystem =
-		IsValid(GameInstance)
-			? GameInstance
-				->GetSubsystem<USFBuildingAssetSubsystem>()
-			: nullptr;
-
-	if (!IsValid(AssetSubsystem))
+	if (!SFGS->TrySpendCost(
+		GetTeamIndex(),
+		UpgradeCost))
 	{
 		return;
 	}
 
-	RequestedUpgradeTier = NextTier;
+	// 미리 로딩된 에셋으로 Tier를 준비한다. 실패하면 차감한 비용을 돌려준다.
+	if (!PrepareLoadedTier(NextTier))
+	{
+		SFGS->RefundCost(
+			GetTeamIndex(),
+			UpgradeCost);
 
-	AssetSubsystem->RequestBuildingAssetsAsync(
-		BuildingDefinition,
-		NextTier,
-		FSFOnBuildingAssetsReady::CreateUObject(
-			this,
-			&ThisClass::HandleUpgradeAssetsReady));
+		return;
+	}
+
+	SetBuildingState(
+		EBuildingState::UnderConstruction);
 }
 
 void ASFBaseBuilding::HandleCompleteConstruction()
@@ -856,8 +904,8 @@ bool ASFBaseBuilding::SetInitialTier(int32 InTierIndex)
 void ASFBaseBuilding::BeginPlay()
 {
 	Super::BeginPlay();
-		
-	OverheadUI->Initialize(StaticMeshComponent);
+
+	StatusComponent->SetAnchorMesh(StaticMeshComponent);
 
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
@@ -968,7 +1016,7 @@ void ASFBaseBuilding::OnBuildingDefinitionLoaded()
 {
 	if (IsValid(BuildingDefinition))
 	{
-		OverheadUI->ApplySettings(BuildingDefinition->OverheadUISettings);
+		StatusComponent->ApplySettings(BuildingDefinition->OverheadUISettings);
 	}
 
 	const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
@@ -1342,8 +1390,8 @@ void ASFBaseBuilding::SetBoxExtent()
 	BoxComponent->SetBoxExtent(DownSizeBoxExtent);
 	BoxComponent->SetRelativeLocation(CustomOrigin);
 	
-	// 메시가 바뀌면 바운즈도 바뀌므로 위젯도 같이 맞춘다.
-	OverheadUI->RefreshTransform();
+	// 메시가 바뀌면 바운즈도 바뀌므로 머리 위 판의 크기와 앵커도 같이 맞춘다.
+	StatusComponent->RefreshLayout();
 }
 
 #pragma region Getter
@@ -1361,12 +1409,12 @@ void ASFBaseBuilding::NotifyActorBeginCursorOver()
 
 	if (CurrentBuildingState == EBuildingState::Preview) return;
 
-	OverheadUI->SetElementVisible(ESFOverheadElement::Health, true);
+	StatusComponent->SetElementVisible(ESFOverheadElement::Health, true);
 }
 
 void ASFBaseBuilding::NotifyActorEndCursorOver()
 {
-	OverheadUI->SetElementVisible(ESFOverheadElement::Health, false);
+	StatusComponent->SetElementVisible(ESFOverheadElement::Health, false);
 	
 	Super::NotifyActorEndCursorOver();
 }
@@ -1627,121 +1675,128 @@ const FSFBuildingTierData* ASFBaseBuilding::GetCostTierInfo() const
 // 		DamageStageIndex + 1);
 // }
 
-void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
-{
-	if (RequestedUpgradeTier != InTierIndex)
-	{
-		return;
-	}
-
-	RequestedUpgradeTier = INDEX_NONE;
-
-	if (!bSuccess ||
-		InDefinition != BuildingDefinition ||
-		CurrentBuildingState != EBuildingState::Completed ||
-		PendingTier != INDEX_NONE)
-	{
-		return;
-	}
-
-	ASFGameState* SFGS =
-		GetWorld()
-		? GetWorld()->GetGameState<ASFGameState>()
-		: nullptr;
-
-	if (!IsValid(SFGS))
-	{
-		return;
-	}
-
-	if (!IsA<ASFNexusBuilding>() &&
-		InTierIndex >
-			SFGS->GetNexusTier(GetTeamIndex()))
-	{
-		return;
-	}
-
-	const FResources UpgradeCost =
-		GetUpgradeCost();
-
-	if (!SFGS->TrySpendCost(
-		GetTeamIndex(),
-		UpgradeCost))
-	{
-		return;
-	}
-
-	if (!PrepareLoadedTier(InTierIndex))
-	{
-		SFGS->RefundCost(
-			GetTeamIndex(),
-			UpgradeCost);
-
-		return;
-	}
-
-	SetBuildingState(
-		EBuildingState::UnderConstruction);
-}
-
-void ASFBaseBuilding::RequestNextTierAssetsAsync()
-{
-	if (!IsValid(BuildingDefinition) ||
-		PendingTier == INDEX_NONE)
-	{
-		return;
-	}
-
-	/*
-	 * 최초 건설 중:
-	 * PendingTier 0 → Tier 1 준비
-	 *
-	 * Tier 1 업그레이드 중:
-	 * PendingTier 1 → Tier 2 준비
-	 */
-	const int32 NextTier = PendingTier + 1;
-
-	// 마지막 Tier라면 요청하지 않는다.
-	if (!BuildingDefinition->FindTier(NextTier))
-	{
-		return;
-	}
-
-	UGameInstance* GameInstance = GetGameInstance();
-
-	USFBuildingAssetSubsystem* AssetSubsystem =
-		IsValid(GameInstance)
-			? GameInstance
-				->GetSubsystem<USFBuildingAssetSubsystem>()
-			: nullptr;
-
-	if (!IsValid(AssetSubsystem))
-	{
-		return;
-	}
-
-	AssetSubsystem->RequestBuildingAssetsAsync(
-		BuildingDefinition,
-		NextTier,
-		FSFOnBuildingAssetsReady::CreateUObject(
-			this,
-			&ThisClass::HandleNextTierAssetsReady));
-}
-
-void ASFBaseBuilding::HandleNextTierAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
-{
-	if (!bSuccess ||
-		InDefinition != BuildingDefinition)
-	{
-		SF_LOG(
-			Warning,
-			"[%s] 다음 Tier 선로딩 실패. "
-			"Definition=%s, Tier=%d",
-			*GetName(),
-			*GetNameSafe(InDefinition),
-			InTierIndex);
-	}
-}
+/*
+ * [비동기 선로딩 제거] 스테이지 시작 전 로딩 화면에서 스테이지 최대 Tier까지 전부 로딩한다.
+ * (ASFGameMode::RequestInitialBuildingAssets)
+ * 그래서 게임 도중의 비동기 요청과 그 콜백인 아래 세 함수는 더 이상 쓰이지 않아 주석 처리했다.
+ * - HandleUpgradeAssetsReady : 업그레이드 에셋 비동기 로딩 완료 후 비용 차감 -> UpgradeBuilding에서 바로 처리
+ * - RequestNextTierAssetsAsync / HandleNextTierAssetsReady : 건설 시작 시 다음 Tier 선로딩
+ */
+// void ASFBaseBuilding::HandleUpgradeAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+// {
+// 	if (RequestedUpgradeTier != InTierIndex)
+// 	{
+// 		return;
+// 	}
+// 
+// 	RequestedUpgradeTier = INDEX_NONE;
+// 
+// 	if (!bSuccess ||
+// 		InDefinition != BuildingDefinition ||
+// 		CurrentBuildingState != EBuildingState::Completed ||
+// 		PendingTier != INDEX_NONE)
+// 	{
+// 		return;
+// 	}
+// 
+// 	ASFGameState* SFGS =
+// 		GetWorld()
+// 		? GetWorld()->GetGameState<ASFGameState>()
+// 		: nullptr;
+// 
+// 	if (!IsValid(SFGS))
+// 	{
+// 		return;
+// 	}
+// 
+// 	if (!IsA<ASFNexusBuilding>() &&
+// 		InTierIndex >
+// 			SFGS->GetNexusTier(GetTeamIndex()))
+// 	{
+// 		return;
+// 	}
+// 
+// 	const FResources UpgradeCost =
+// 		GetUpgradeCost();
+// 
+// 	if (!SFGS->TrySpendCost(
+// 		GetTeamIndex(),
+// 		UpgradeCost))
+// 	{
+// 		return;
+// 	}
+// 
+// 	if (!PrepareLoadedTier(InTierIndex))
+// 	{
+// 		SFGS->RefundCost(
+// 			GetTeamIndex(),
+// 			UpgradeCost);
+// 
+// 		return;
+// 	}
+// 
+// 	SetBuildingState(
+// 		EBuildingState::UnderConstruction);
+// }
+// 
+// void ASFBaseBuilding::RequestNextTierAssetsAsync()
+// {
+// 	if (!IsValid(BuildingDefinition) ||
+// 		PendingTier == INDEX_NONE)
+// 	{
+// 		return;
+// 	}
+// 
+// 	/*
+// 	 * 최초 건설 중:
+// 	 * PendingTier 0 → Tier 1 준비
+// 	 *
+// 	 * Tier 1 업그레이드 중:
+// 	 * PendingTier 1 → Tier 2 준비
+// 	 */
+// 	const int32 NextTier = PendingTier + 1;
+// 
+// 	// 마지막 Tier라면 요청하지 않는다.
+// 	if (!BuildingDefinition->FindTier(NextTier))
+// 	{
+// 		return;
+// 	}
+// 
+// 	UGameInstance* GameInstance = GetGameInstance();
+// 
+// 	USFBuildingAssetSubsystem* AssetSubsystem =
+// 		IsValid(GameInstance)
+// 			? GameInstance
+// 				->GetSubsystem<USFBuildingAssetSubsystem>()
+// 			: nullptr;
+// 
+// 	if (!IsValid(AssetSubsystem))
+// 	{
+// 		return;
+// 	}
+// 
+// 	AssetSubsystem->RequestBuildingAssetsAsync(
+// 		BuildingDefinition,
+// 		NextTier,
+// 		FSFOnBuildingAssetsReady::CreateUObject(
+// 			this,
+// 			&ThisClass::HandleNextTierAssetsReady));
+// }
+// 
+// void ASFBaseBuilding::HandleNextTierAssetsReady(USFBuildingDefinition* InDefinition, int32 InTierIndex, bool bSuccess)
+// {
+// 	if (!bSuccess ||
+// 		InDefinition != BuildingDefinition)
+// 	{
+// 		SF_LOG(
+// 			Warning,
+// 			"[%s] 다음 Tier 선로딩 실패. "
+// 			"Definition=%s, Tier=%d",
+// 			*GetName(),
+// 			*GetNameSafe(InDefinition),
+// 			InTierIndex);
+// 	}
+// }
 
 USceneComponent* ASFBaseBuilding::ResolveHitReactionTarget() const
 {

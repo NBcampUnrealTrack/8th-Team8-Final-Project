@@ -13,7 +13,6 @@ class UTimelineComponent;
 class UProgressComponent;
 class UHealthComponent;
 class USFOverheadStatusComponent;
-class USFOverheadUIComponent;
 class UCombatTargetComponent;
 class USFBuffComponent;
 class UNiagaraSystem;
@@ -119,7 +118,11 @@ public:
 	bool HasLivingUnitInFootprint() const;
 	
 	// 업그레이드 함수
-	/** 다음 Tier 리소스를 비동기로 요청한다. 업그레이드 UI나 Blueprint에서 호출되며 HandleUpgradeAssetsReady로 이어진다. */
+	/**
+	 * 다음 Tier로 업그레이드한다. 업그레이드 UI나 Blueprint에서 호출된다.
+	 * 스테이지 시작 전 로딩 화면에서 스테이지 최대 Tier까지 전부 로딩하므로
+	 * 비동기 요청 없이 바로 비용을 차감하고 PrepareLoadedTier로 Tier를 준비한다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	void UpgradeBuilding(int32 UpgradeValue = 1);
 	
@@ -311,35 +314,35 @@ private:
 	//void PlayBurningEffect(int32 DamageStageIndex);
 	
 	// async
-	/** 업그레이드 리소스 로드 결과를 검증하고 비용을 차감한다. Subsystem 콜백으로 호출되며 PrepareLoadedTier와 BeginConstruction으로 이어진다. */
-	void HandleUpgradeAssetsReady(
-	USFBuildingDefinition* InDefinition,
-	int32 InTierIndex,
-	bool bSuccess);
-
-	int32 RequestedUpgradeTier = INDEX_NONE;
-	
-	void RequestNextTierAssetsAsync();
-
-	void HandleNextTierAssetsReady(
-		USFBuildingDefinition* InDefinition,
-		int32 InTierIndex,
-		bool bSuccess);
+	/*
+	 * [비동기 선로딩 제거] 스테이지 시작 전 로딩 화면에서 스테이지 최대 Tier까지 전부 로딩하므로
+	 * 게임 도중의 비동기 요청과 콜백은 더 이상 쓰이지 않아 주석 처리했다.
+	 * (ASFGameMode::RequestInitialBuildingAssets)
+	 */
+	// /** 업그레이드 리소스 로드 결과를 검증하고 비용을 차감한다. Subsystem 콜백으로 호출되며 PrepareLoadedTier와 BeginConstruction으로 이어진다. */
+	// void HandleUpgradeAssetsReady(
+	// USFBuildingDefinition* InDefinition,
+	// int32 InTierIndex,
+	// bool bSuccess);
+	//
+	// int32 RequestedUpgradeTier = INDEX_NONE;
+	//
+	// void RequestNextTierAssetsAsync();
+	//
+	// void HandleNextTierAssetsReady(
+	// 	USFBuildingDefinition* InDefinition,
+	// 	int32 InTierIndex,
+	// 	bool bSuccess);
 	
 protected:
 	// components
 	// Stat
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Health")
 	TObjectPtr<UHealthComponent> HealthComponent;
-	// 신규
 	/**
-	 * 머리 위 판. 액터당 하나면 된다.
-	 * 요소(체력·진행도 등)를 늘릴 때 컴포넌트를 더 달지 않고 ESFOverheadElement에 추가한다.
+	 * 머리 위 UI의 액터 쪽 창구. 액터당 하나.
+	 * 위젯은 USFOverheadUISubsystem이 띄운다. 요소를 늘릴 때는 ESFOverheadElement에 추가한다.
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
-	TObjectPtr<USFOverheadUIComponent> OverheadUI;
-
-	/** 머리 위 UI가 볼 상태를 모으는 곳. 액터당 하나. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Component|Widget")
 	TObjectPtr<USFOverheadStatusComponent> StatusComponent;
 	// Construct Progress

@@ -63,6 +63,8 @@ private:
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FSFFogSourceEvent, UCombatTargetComponent*);
+/** 로컬 플레이어 기준으로 액터의 가시성이 바뀌었을 때. bVisible=false면 안개에 가려졌다. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FSFFogVisibilityEvent, const AActor*, bool);
 
 /** Shared team vision, persistent exploration, and local presentation. Never changes collision or AI ticking. */
 UCLASS()
@@ -92,10 +94,22 @@ public:
 	bool IsActorVisibleToLocalPlayer(const AActor* Actor) const;
 	UTexture2D* GetMinimapFogTexture() const { return MinimapTexture; }
 
+	/**
+	 * 직전 표시 갱신에서 로컬 플레이어가 볼 수 없던 액터인가.
+	 * OnActorFogVisibilityChanged와 같은 집합을 읽으므로, 구독을 시작할 때 현재 상태를 맞추는 데 쓴다.
+	 * 표시 갱신이 한 번도 돌지 않았으면 false다. 그때는 안개가 아무것도 숨기지 않는다.
+	 */
+	bool IsActorHiddenByFog(const AActor* Actor) const;
+
+	/** 가시성이 바뀐 액터만 알린다. 매 프레임 묻는 대신 이 신호를 받는다. */
+	FSFFogVisibilityEvent OnActorFogVisibilityChanged;
+
 private:
 	void UpdateVision();
 	void UpdatePresentation();
 	void RestorePresentation();
+	/** 이번 갱신의 '안 보이는 액터' 집합으로 교체하고, 이전과 달라진 액터만 알린다. */
+	void ApplyFogVisibility(TSet<TWeakObjectPtr<const AActor>>&& NotVisibleNow);
 	void UpdateTextures(int32 Team);
 	void EnsureTextures();
 	TArray<TWeakObjectPtr<UCombatTargetComponent>> Sources;
@@ -105,6 +119,11 @@ private:
 	TMap<int32, FSFFogTeamGrid> Teams;
 	TSet<TWeakObjectPtr<AActor>> FogHiddenActors;
 	TSet<TWeakObjectPtr<UWidgetComponent>> FogHiddenWidgets;
+	/**
+	 * 로컬 플레이어가 볼 수 없는 액터. 가시성 신호의 기준이다.
+	 * FogHiddenActors와 다르다. 저쪽은 안개가 직접 숨긴 액터만 담아 다른 시스템이 숨긴 액터가 빠진다.
+	 */
+	TSet<TWeakObjectPtr<const AActor>> FogNotVisibleActors;
 	TWeakObjectPtr<APlayerController> ViewingController;
 	TWeakObjectPtr<UCameraComponent> ViewingCamera;
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> VisionTexture;

@@ -11,6 +11,14 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class UPrimitiveComponent;
+class UNiagaraSystem;
+
+UENUM(BlueprintType)
+enum class ESFProjectileMovementType : uint8
+{
+    Homing		UMETA(DisplayName = "Homing"),
+    Ballistic	UMETA(DisplayName = "Ballistic")
+};
 
 UCLASS()
 class STRIKEFORGE_API ASFUnitProjectile : public AActor
@@ -27,6 +35,8 @@ public:
 	 */
 	void InitializeProjectile(AUnitBase* InSourceUnit, AActor* InTargetActor, float InDamageRatio, float InProjectileSpeed);
 
+    virtual void Tick(float DeltaSeconds) override;
+
 private:
     UFUNCTION()
     void HandleProjectileOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -39,6 +49,27 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement", meta = (AllowPrivateAccess = "true"))
+    ESFProjectileMovementType MovementType = ESFProjectileMovementType::Homing;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement",
+        meta = (AllowPrivateAccess = "true", EditCondition = "MovementType == ESFProjectileMovementType::Ballistic", ClampMin = "0.0", ClampMax = "1.0"))
+    float BallisticArcParam = 0.6f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement",
+        meta = (AllowPrivateAccess = "true", EditCondition = "MovementType == ESFProjectileMovementType::Ballistic", ClampMin = "0.1"))
+    float BallisticGravityScale = 1.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Effects",
+        meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UNiagaraSystem> ImpactEffect;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Effects",
+        meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
+    float ImpactEffectScale = 1.f;
+
+    bool bHasImpacted = false;
 
     UPROPERTY()
     TWeakObjectPtr<AUnitBase> SourceUnit;

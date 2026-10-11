@@ -12,6 +12,7 @@
 #include "TimerManager.h"
 #include "HAL/IConsoleManager.h"
 #include "Logging/SFLog.h"
+#include "Game/GameState/SFGameState.h"
 
 /**
  * 활성화 게이트를 전부 무시하고 처음부터 스폰하게 한다.
@@ -33,7 +34,8 @@ AUnitSpawner::AUnitSpawner()
 	, bSpawningEnabled(true)
 {
 	// 타이머로 돌리므로 틱이 필요 없다
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	SpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("SpawnPoint"));
 	SetRootComponent(SpawnPoint);
@@ -42,6 +44,8 @@ AUnitSpawner::AUnitSpawner()
 void AUnitSpawner::BeginPlay()
 {
 	Super::BeginPlay();
+	NextProgressionSpawnSeconds = InitialDelay;
+	SetActorTickEnabled(!SpawnPhases.IsEmpty() && !bWaveControlled && !bPlayerOwnedFactionSpawner);
 
 	ResolveInitialActivation();
 
@@ -52,6 +56,64 @@ void AUnitSpawner::BeginPlay()
 	{
 		StartSpawnTimer(InitialDelay);
 	}
+}
+
+void AUnitSpawner::ConfigureFactionOwnership(int32 InTeamIndex, bool bPlayerOwned)
+{
+	TeamIndex = InTeamIndex;
+	bPlayerOwnedFactionSpawner = bPlayerOwned;
+	if (bPlayerOwned)
+	{
+		bStartActive = false;
+		bSpawningEnabled = false;
+	}
+}
+
+void AUnitSpawner::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	const auto* GS = GetWorld()->GetGameState<ASFGameState>();
+	if (!GS || !GS->IsStagePlaying() || bPlayerOwnedFactionSpawner || bWaveControlled) return;
+	ProgressionElapsedSeconds += DeltaSeconds;
+	if (ProgressionElapsedSeconds < NextProgressionSpawnSeconds) return;
+	NextProgressionSpawnSeconds = ProgressionElapsedSeconds + FMath::Max(.1f, SpawnInterval);
+	HandleSpawnCycle();
+}
+
+int32 AUnitSpawner::GetProgressionPhaseIndex() const
+{
+	int32 Result = INDEX_NONE;
+	for (int32 Index = 0; Index < SpawnPhases.Num(); ++Index)
+	{
+		if (SpawnPhases[Index].StartSeconds <= ProgressionElapsedSeconds &&
+			(Result == INDEX_NONE || SpawnPhases[Index].StartSeconds >= SpawnPhases[Result].StartSeconds)) Result = Index;
+	}
+	return Result;
+}
+
+const FSFSpawnPoolEntry* AUnitSpawner::GetProgressionEntry()
+{
+	const int32 PhaseIndex = GetProgressionPhaseIndex();
+	if (!SpawnPhases.IsValidIndex(PhaseIndex)) return nullptr;
+	if (CachedProgressionPhase != PhaseIndex)
+	{
+		ProgressionSpawnBag.Reset();
+		CachedProgressionPhase = PhaseIndex;
+	}
+	const auto& Pool = SpawnPhases[PhaseIndex].UnitPool;
+	if (ProgressionSpawnBag.IsEmpty())
+	{
+		for (int32 Index = 0; Index < Pool.Num(); ++Index)
+		{
+			if (!Pool[Index].UnitClass || Pool[Index].RowName.IsNone()) continue;
+			for (int32 Copy = 0; Copy < FMath::Clamp(Pool[Index].Weight, 0, 100); ++Copy)
+				ProgressionSpawnBag.Add(Index);
+		}
+		// Weighted bags avoid unlucky streaks of elite units while preserving variety.
+		for (int32 Index = ProgressionSpawnBag.Num() - 1; Index > 0; --Index)
+			ProgressionSpawnBag.Swap(Index, FMath::RandRange(0, Index));
+	}
+	return ProgressionSpawnBag.IsEmpty() ? nullptr : &Pool[ProgressionSpawnBag.Last()];
 }
 
 // ─────────────────────────────────────────────────────────
@@ -443,7 +505,7 @@ void AUnitSpawner::HandleOwnerBuildingDestroyed(UCombatTargetComponent* InTarget
 
 void AUnitSpawner::StartSpawnTimer(float InFirstDelay)
 {
-	if (bWaveControlled) return;
+	if (bWaveControlled || !SpawnPhases.IsEmpty()) return;
 	if (GetWorldTimerManager().IsTimerActive(SpawnTimerHandle))
 	{
 		return;
@@ -514,7 +576,7 @@ int32 AUnitSpawner::GetAliveCount() const
 
 void AUnitSpawner::HandleSpawnCycle()
 {
-	if (!bActivated || !bSpawningEnabled || !UnitClass) return;
+	if (!bActivated || !bSpawningEnabled || (!UnitClass && SpawnPhases.IsEmpty())) return;
 
 	// 건물이 부서진 뒤에는 어떤 경로로 들어와도 스폰하지 않는다.
 	if (bOwnerBuildingDestroyed) return;
@@ -582,19 +644,33 @@ bool AUnitSpawner::FindSpawnLocation(FVector& OutLocation) const
 
 AUnitBase* AUnitSpawner::SpawnOne()
 {
+	if (bPlayerOwnedFactionSpawner) return nullptr;
 	if (bWaveControlled && !bExecutingWaveSpawn) return nullptr;
     // BP의 직접 호출도 타이머와 같은 게이트를 통과해야 한다.
     if (!bActivated || !bSpawningEnabled || bOwnerBuildingDestroyed) return nullptr;
     if (bStopWhenOwnerBuildingDestroyed && bRequireOwnerBuilding && !OwnerBuildingTarget.IsValid()) return nullptr;
+	if ((MaxTotal > 0 && TotalSpawned >= MaxTotal) || (MaxAlive > 0 && GetAliveCount() >= MaxAlive)) return nullptr;
+	const bool bProgression = !SpawnPhases.IsEmpty() && !bExecutingWaveSpawn;
+	TSubclassOf<AUnitBase> SpawnClass = UnitClass;
+	FName SpawnRow = UnitRowName;
+	if (bProgression)
+	{
+		const auto* GS = GetWorld()->GetGameState<ASFGameState>();
+		if (!GS || !GS->IsStagePlaying() || ProgressionElapsedSeconds < InitialDelay) return nullptr;
+		const auto* Entry = GetProgressionEntry();
+		if (!Entry) return nullptr;
+		SpawnClass = Entry->UnitClass;
+		SpawnRow = Entry->RowName;
+	}
 
-	if (!UnitClass)
+	if (!SpawnClass)
 	{
 		SF_LOG(Warning, "[UnitSpawner] %s : UnitClass 가 비어 있습니다.", *GetName());
 		return nullptr;
 	}
 
 	FVector SpawnLocation;
-	if (!FindSpawnLocation(SpawnLocation) && bWaveControlled) return nullptr;
+	if (!FindSpawnLocation(SpawnLocation) && (bWaveControlled || bProgression)) return nullptr;
 
 	// 캡슐 절반 높이만큼 띄워야 바닥에 파묻히지 않는다
 	SpawnLocation.Z += 90.f;
@@ -604,7 +680,7 @@ AUnitBase* AUnitSpawner::SpawnOne()
 	// Deferred 스폰: BeginPlay 가 돌기 전에 팀과 능력치를 심어야 한다.
 	// 그래야 레지스트리에 올바른 팀으로 등록된다.
 	AUnitBase* Unit = GetWorld()->SpawnActorDeferred<AUnitBase>(
-		UnitClass,
+		SpawnClass,
 		SpawnTM,
 		this,
 		nullptr,
@@ -619,15 +695,16 @@ AUnitBase* AUnitSpawner::SpawnOne()
 	}
 	Unit->SetAssignedLane(Lane);
 
-	if (!UnitRowName.IsNone())
+	if (!SpawnRow.IsNone())
 	{
-		Unit->InitStatFromTable(UnitRowName);
+		Unit->InitStatFromTable(SpawnRow);
 	}
 
 	UGameplayStatics::FinishSpawningActor(Unit, SpawnTM);
 
 	SpawnedUnits.Add(Unit);
 	++TotalSpawned;
+	if (bProgression) ProgressionSpawnBag.Pop(EAllowShrinking::No);
 
 	OnUnitSpawned(Unit);
 

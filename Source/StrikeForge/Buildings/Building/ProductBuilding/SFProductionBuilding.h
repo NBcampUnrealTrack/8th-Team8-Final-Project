@@ -73,7 +73,7 @@ protected:
 
 	UFUNCTION()
 	void HandleProductLineChanged(TArray<FProductInfo> InProductLine);
-	
+
 	UPROPERTY()
 	TObjectPtr<UProductComponent> ProductComponent;
 

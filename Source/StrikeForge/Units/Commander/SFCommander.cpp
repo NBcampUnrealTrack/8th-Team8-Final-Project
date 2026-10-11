@@ -13,6 +13,7 @@
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "ActorComponent/UI/SFUnitHealthBarComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
@@ -21,6 +22,9 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "Logging/SFLog.h"
+#include "Game/GameState/SFGameState.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "TimerManager.h"
 
 // Sets default values
 ASFCommander::ASFCommander()
@@ -37,6 +41,13 @@ ASFCommander::ASFCommander()
 	HealthComponent = CreateDefaultSubobject<UHealthComponent>(TEXT("HealthComponent"));
 	CombatTargetComponent = CreateDefaultSubobject<UCombatTargetComponent>(TEXT("CombatTargetComponent"));
 	CombatTargetComponent->SightRadius = 1400.f;
+	CreateDefaultSubobject<USFUnitHealthBarComponent>(TEXT("DamageHealthBar"))->SetupAttachment(RootComponent);
+}
+
+void ASFCommander::InitializePlayerCommander(int32 TeamIndex)
+{
+	bMyCommander = true;
+	CombatTargetComponent->SetTeamIndex(TeamIndex);
 }
 
 FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
@@ -74,7 +85,12 @@ void ASFCommander::StopMove_Implementation()
 // Called when the game starts or when spawned
 void ASFCommander::BeginPlay()
 {
+	// Initialize every commander before components and Blueprint BeginPlay observe
+	// health. Player-controller registration may be delayed or never happen for NPCs.
+	// CombatTargetComponent still applies any explicit OverrideMaxHealth afterward.
+	HealthComponent->InitializeHealth(300.f);
 	Super::BeginPlay();
+	HealthComponent->OnHealthIsZero.AddUniqueDynamic(this, &ASFCommander::HandleCommanderDeath);
 
 	// BP에서 붙인 무기 메시까지 배치 격자 데칼이 묻지 않도록 모든 렌더링 컴포넌트에 적용합니다.
 	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
@@ -97,12 +113,13 @@ void ASFCommander::BeginPlay()
 			0.f);
 	}
 	
-	// 지휘관을 컨트롤러에 등록할때 체력을 초기화합니다.
 }
 
 void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(LoadPCTimer);
+	GetWorldTimerManager().ClearTimer(RespawnTimer);
+	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ASFCommander::HandleCommanderDeath);
 	
 	if (CommandAction == ECommandAction::BUILD &&
 	EndPlayReason == EEndPlayReason::Destroyed)
@@ -131,6 +148,94 @@ void ASFCommander::Tick(float DeltaSeconds)
 			BeginBuild();
 		}
 	}
+}
+
+float ASFCommander::GetRespawnTimeRemaining() const
+{
+	return bAwaitingRespawn && GetWorld()
+		? FMath::Max(0.f, static_cast<float>(RespawnEndTime - GetWorld()->GetTimeSeconds())) : 0.f;
+}
+
+void ASFCommander::HandleCommanderDeath()
+{
+	if (bAwaitingRespawn) return;
+	bAwaitingRespawn = true;
+	RespawnEndTime = GetWorld()->GetTimeSeconds() + RespawnDelaySeconds;
+	if (bMyCommander)
+	{
+		if (auto* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+			PC->ClearPendingBuildingRef();
+	}
+	StopMoving();
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->DisableMovement();
+	if (auto* Anim = Cast<USFCommanderAnim>(GetMesh()->GetAnimInstance()))
+	{
+		Anim->OnSkillActiveDelegate.Unbind();
+		Anim->bSkillFloating = false;
+		Anim->Montage_Stop(0.f);
+	}
+	SetActorEnableCollision(false);
+	SetActorHiddenInGame(true);
+	GetWorldTimerManager().SetTimer(RespawnTimer, this, &ASFCommander::RespawnAtNexus, RespawnDelaySeconds, false);
+}
+
+bool ASFCommander::FindRespawnTransform(FTransform& OutTransform) const
+{
+	const auto* GS = GetWorld()->GetGameState<ASFGameState>();
+	const int32 Team = CombatTargetComponent->GetTeamIndex();
+	const auto* Nexus = GS ? GS->GetNexus(Team) : nullptr;
+	auto* Nav = UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!IsValid(Nexus) || Nexus->IsActorBeingDestroyed() || !Nav) return false;
+	const auto* NexusHealth = Nexus->FindComponentByClass<UHealthComponent>();
+	if (NexusHealth && NexusHealth->GetIsDead()) return false;
+	const auto* OtherNexus = GS->GetNexus(Team == 0 ? 1 : 0);
+	const FVector Base = Nexus->GetActorLocation();
+	FVector Forward = ((IsValid(OtherNexus) ? OtherNexus->GetActorLocation() : FVector::ZeroVector) - Base).GetSafeNormal2D();
+	if (Forward.IsNearlyZero()) Forward = Nexus->GetActorForwardVector().GetSafeNormal2D();
+	const FVector Side(-Forward.Y, Forward.X, 0.f);
+	const FVector Extent = Nexus->GetBuildBounds().TransformBy(Nexus->GetActorTransform()).GetBox().GetExtent();
+	const float Radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const float Clearance = FMath::Abs(Forward.X) * Extent.X + FMath::Abs(Forward.Y) * Extent.Y + Radius + 200.f;
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(CommanderRespawn), false, this);
+	for (float Distance : {0.f, 200.f, 400.f, 600.f})
+	{
+		for (float Offset : {0.f, -250.f, 250.f, -500.f, 500.f})
+		{
+			FNavLocation Ground;
+			const FVector Candidate = Base + Forward * (Clearance + Distance) + Side * Offset;
+			if (!Nav->ProjectPointToNavigation(Candidate, Ground, FVector(150.f, 150.f, 1000.f))) continue;
+			const FVector Location = Ground.Location + FVector(0.f, 0.f, HalfHeight + 5.f);
+			if (GetWorld()->OverlapBlockingTestByChannel(Location, FQuat::Identity, ECC_Pawn,
+				FCollisionShape::MakeCapsule(Radius, HalfHeight), Query)) continue;
+			OutTransform = FTransform(Forward.Rotation(), Location);
+			return true;
+		}
+	}
+	return false;
+}
+
+void ASFCommander::RespawnAtNexus()
+{
+	if (!bAwaitingRespawn) return;
+	FTransform Transform;
+	if (!FindRespawnTransform(Transform))
+	{
+		// A blocked entrance or a navmesh rebuild must not strand the commander forever.
+		GetWorldTimerManager().SetTimer(RespawnTimer, this, &ASFCommander::RespawnAtNexus, .5f, false);
+		return;
+	}
+	SetActorLocationAndRotation(Transform.GetLocation(), Transform.Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+	HealthComponent->SetHealth(HealthComponent->GetMaxHealth(), HealthComponent->GetMaxHealth());
+	// A health buff may have expired while HP was zero; recompute its current multiplier.
+	HealthComponent->BoostHealth(BuffComponent->Current_Status.HPMul);
+	bAwaitingRespawn = false;
+	RespawnEndTime = 0.0;
+	SetActorEnableCollision(true);
+	SetActorHiddenInGame(false);
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	CombatTargetComponent->RestoreAfterRespawn();
 }
 
 void ASFCommander::PossessedBy(AController* NewController)
@@ -234,11 +339,6 @@ void ASFCommander::LoadPlayerController()
 			// add : cached commander
 			// IMovable called when clicked commander and clicked floor
 			SFPC->RegisterCommander(this);
-			// 유닛별 체력이 있듯이
-			// 지휘관의 체력기준이 필요합니다. 현재는 임시로 300으로 초기설정합니다.
-			HealthComponent->InitializeHealth(300.f);
-			// TargetComponent에서 체력을 초기화하는 로직이 있습니다.
-			// 데이터테이블에서 관리하는듯한데 추가되면 InitializeHealth 삭제되야합니다.
 			
 			GetWorldTimerManager().ClearTimer(LoadPCTimer);
 			SF_LOG(Log, "ASFCommander: LoadPlayerController(): Success");
@@ -248,6 +348,12 @@ void ASFCommander::LoadPlayerController()
 
 void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Rotation)
 {
+	if (bAwaitingRespawn)
+	{
+		if (bMyCommander)
+			if (auto* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>()) PC->ClearPendingBuildingRef();
+		return;
+	}
 	float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	float CapsuleRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
 
@@ -405,6 +511,7 @@ void ASFCommander::CheckFailMoving(const FPathFollowingResult& Result)
 
 void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 {
+	if (bAwaitingRespawn) return;
 	if (CommandAction == ECommandAction::BUILD && OutAction != ECommandAction::BUILD)
 	{
 		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
@@ -469,6 +576,7 @@ bool ASFCommander::CheckCanBuild()
 
 void ASFCommander::BeginBuild()
 {
+	if (bAwaitingRespawn) return;
 	// 건설부지를 향해 제자리 회전
 	if (IsValid(GetController()) && IsValid(GetCharacterMovement()))
 	{
@@ -642,6 +750,7 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 
 void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
+	if (bAwaitingRespawn) return;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
 
@@ -881,6 +990,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 
 void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
+	if (bAwaitingRespawn) return;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
 

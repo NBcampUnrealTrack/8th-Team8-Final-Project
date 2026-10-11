@@ -113,7 +113,7 @@ struct STRIKEFORGE_API FSFStageBuildingRule
         EditAnywhere,
         BlueprintReadOnly,
         Category = "SF|Stage|Building",
-        meta = (ClampMin = "1")
+        meta = (ClampMin = "1", ClampMax = "3", UIMin = "1", UIMax = "3")
     )
     int32 MaxAllowedTier = 3;
 
@@ -172,6 +172,11 @@ public:
     /* 스테이지 진입 시 플레이어에게 기본 적용할 종족. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")
     ESFRace PlayerRace = ESFRace::None;
+
+    /** Two fixed bases: authored team 0 is Etherian, team 1 is Beast.
+     * The selected faction is remapped to player team 0 before actors begin play. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")
+    bool bUseFactionBases = false;
     
     // 스테이지에 참여하는 AI 팀 설정
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SF|Stage|Team")

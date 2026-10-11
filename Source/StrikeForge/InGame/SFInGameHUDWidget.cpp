@@ -1,4 +1,10 @@
-﻿#include "SFInGameHUDWidget.h"
+#include "SFInGameHUDWidget.h"
+#include "Game/Subsystem/SFStageBuffSubsystem.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
+#include "HUD/SFCommandFeedbackNiagara.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
@@ -69,13 +75,86 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "TimerManager.h"
-#include "Buildings/UI/Synergy/SFBuildingSynergyBadgeWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Buildings/UI/Synergy/SFPlacementSynergyBonusWidget.h"
 #include "Components/CanvasPanel.h"
-#include "Game/Subsystem/SFBuildingSynergySubsystem.h"
+#include "Game/Subsystem/SFOverheadUISubsystem.h"
 
 #include "Logging/SFLog.h"
 
+
+void USFInGameHUDWidget::RefreshStageBuffDisplay()
+{
+    const auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!PC || !WidgetTree) return;
+    const FText Summary = GetWorld()->GetSubsystem<USFStageBuffSubsystem>()->GetSummary(PC->GetMyTeamIndex());
+    if (Summary.IsEmpty() && !StageBuffPanel) return;
+    if (!StageBuffPanel)
+    {
+        UCanvasPanel* Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+        if (!Canvas) return;
+        StageBuffPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("StageBuffPanel"));
+        StageBuffText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StageBuffText"));
+        StageBuffPanel->SetBrushColor(FLinearColor(.025f, .065f, .055f, .9f));
+        StageBuffPanel->SetPadding(FMargin(14.f, 10.f));
+        StageBuffText->SetColorAndOpacity(FSlateColor(FLinearColor(.72f, 1.f, .72f)));
+        FSlateFontInfo Font = StageBuffText->GetFont(); Font.Size = 15;
+        StageBuffText->SetFont(Font);
+        StageBuffPanel->SetContent(StageBuffText);
+        auto* BuffSlot = Canvas->AddChildToCanvas(StageBuffPanel);
+        BuffSlot->SetAnchors(FAnchors(1.f, 0.f));
+        BuffSlot->SetAlignment(FVector2D(1.f, 0.f));
+        BuffSlot->SetPosition(FVector2D(-24.f, 150.f));
+        BuffSlot->SetAutoSize(true);
+        BuffSlot->SetZOrder(20);
+    }
+    StageBuffPanel->SetVisibility(Summary.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    if (!Summary.EqualTo(LastStageBuffText))
+    {
+        StageBuffText->SetText(Summary);
+        LastStageBuffText = Summary;
+    }
+}
+
+void USFInGameHUDWidget::RefreshCommanderRespawnDisplay()
+{
+    const auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    if (!PC || !WidgetTree) return;
+    TArray<FString> Lines;
+    for (TActorIterator<ASFCommander> It(GetWorld()); It; ++It)
+    {
+        const auto* Combat = It->FindComponentByClass<UCombatTargetComponent>();
+        if (!Combat || Combat->GetTeamIndex() != PC->GetMyTeamIndex() || !It->IsAwaitingRespawn()) continue;
+        const int32 Seconds = FMath::CeilToInt(It->GetRespawnTimeRemaining());
+        const FString Time = Seconds > 0 ? FString::Printf(TEXT("부활까지 %d초"), Seconds) : TEXT("부활 위치 확보 중");
+        Lines.Add(FString::Printf(TEXT("아군 커맨더 · %s"), *Time));
+    }
+    if (Lines.IsEmpty() && !CommanderRespawnPanel) return;
+    if (!CommanderRespawnPanel)
+    {
+        auto* Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+        if (!Canvas) return;
+        CommanderRespawnPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CommanderRespawnPanel"));
+        CommanderRespawnText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CommanderRespawnText"));
+        CommanderRespawnPanel->SetBrushColor(FLinearColor(.035f, .045f, .07f, .92f));
+        CommanderRespawnPanel->SetPadding(FMargin(20.f, 12.f));
+        CommanderRespawnText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, .82f, .45f)));
+        FSlateFontInfo Font = CommanderRespawnText->GetFont();
+        Font.Size = 20;
+        CommanderRespawnText->SetFont(Font);
+        CommanderRespawnText->SetJustification(ETextJustify::Center);
+        CommanderRespawnPanel->SetContent(CommanderRespawnText);
+        auto* PanelSlot = Canvas->AddChildToCanvas(CommanderRespawnPanel);
+        PanelSlot->SetAnchors(FAnchors(.5f, 0.f));
+        PanelSlot->SetAlignment(FVector2D(.5f, 0.f));
+        PanelSlot->SetPosition(FVector2D(0.f, 110.f));
+        PanelSlot->SetAutoSize(true);
+        PanelSlot->SetZOrder(25);
+    }
+    CommanderRespawnPanel->SetVisibility(Lines.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+    const FText Text = FText::FromString(FString::Join(Lines, TEXT("\n")));
+    if (!CommanderRespawnText->GetText().EqualTo(Text)) CommanderRespawnText->SetText(Text);
+}
 
 void USFInGameHUDWidget::NativeConstruct()
 {
@@ -303,19 +382,12 @@ void USFInGameHUDWidget::NativeConstruct()
         }
     }
     
-    // BuildingSynergy
-    if (USFBuildingSynergySubsystem* SynergySubsystem =
-    USFBuildingSynergySubsystem::Get(this))
+    // 건물 머리 위 판과 시너지 배지는 매니저가 이 캔버스에 띄웁니다.
+    CreateOverheadOverlayCanvas();
+
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
     {
-        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
-
-        SynergySubsystem->OnSynergyStateChanged.AddUniqueDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
-
-        RefreshSynergyBadges();
+        OverheadUI->SetOverlayCanvas(OverheadOverlayCanvas);
     }
 
     // 건물 배치 모드 동안 커서 옆에 시너지 보너스를 표시할 위젯을 만듭니다.
@@ -324,6 +396,9 @@ void USFInGameHUDWidget::NativeConstruct()
 
 void USFInGameHUDWidget::NativeDestruct()
 {
+    bEnemyHoverFeedbackActive = false;
+    HideEnemyHoverIndicator();
+
     bEnemyHoverFeedbackActive =
         false;
 
@@ -437,18 +512,12 @@ void USFInGameHUDWidget::NativeDestruct()
     UnbindSelectedCommandPathDelegates();
     HideQueuedMovePathIndicators();
 #pragma region BuildingSynergy
-    // HUD가 제거된 뒤 시너지 재계산 이벤트가 이 객체를 호출하지 않도록 연결을 해제합니다.
-    if (USFBuildingSynergySubsystem* SynergySubsystem =
-        USFBuildingSynergySubsystem::Get(this))
+    // HUD가 사라지면 매니저가 이 캔버스에 띄운 판과 배지를 모두 거둡니다.
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
     {
-        SynergySubsystem->OnSynergyStateChanged.RemoveDynamic(
-            this,
-            &USFInGameHUDWidget::HandleSynergyStateChanged);
+        OverheadUI->ClearOverlayCanvas(OverheadOverlayCanvas);
     }
-
-    // HUD가 소유하던 배지 참조를 정리합니다.
-    SynergyBadgeWidgets.Reset();
-#pragma endregion 
+#pragma endregion
     Super::NativeDestruct();
 }
 
@@ -478,12 +547,18 @@ void USFInGameHUDWidget::NativeTick(
     RefreshSelectedResourceInfo();
 
     RefreshCommanderSkillIcons();
+    RefreshStageBuffDisplay();
+    RefreshCommanderRespawnDisplay();
     UpdateEnemyHoverIndicator();
 
     UpdateEnemyHoverAttackFeedback(InDeltaTime);
 #pragma region BuildingSynergy
-    UpdateSynergyBadgeScreenPositions();
-#pragma endregion 
+    // UI Tick은 카메라 갱신 뒤에 돈다. 여기서 투영해야 판이 카메라를 늦게 따라가지 않는다.
+    if (USFOverheadUISubsystem* OverheadUI = USFOverheadUISubsystem::Get(this))
+    {
+        OverheadUI->UpdateScreenPositions();
+    }
+#pragma endregion
     if (!bIsSelectionDragging ||
         !IsValid(SelectionDragBox))
     {
@@ -1033,6 +1108,7 @@ void USFInGameHUDWidget::RefreshSelectionPanels()
     }
 
     RefreshCommanderSkillIcons();
+    RefreshStageBuffDisplay();
     RefreshSelectedResourceInfo();
 
     FResources UpgradeCost{};
@@ -1340,73 +1416,38 @@ bool USFInGameHUDWidget::RequestBuildingBySlot(
     );
 }
 #pragma region BuildingSynergy
-void USFInGameHUDWidget::HandleSynergyStateChanged()
+// 월드에 붙는 UI를 그릴 캔버스를 RootCanvas 맨 뒤에 한 번만 만듭니다.
+// WBP에 두지 않고 코드로 만드는 이유는 그리는 순서와 클릭 판정을 실수로 바꿀 수 없게 하기 위해서입니다.
+void USFInGameHUDWidget::CreateOverheadOverlayCanvas()
 {
-    RefreshSynergyBadges();
-}
-
-void USFInGameHUDWidget::RefreshSynergyBadges()
-{
-    if (!IsValid(RootCanvas) || !SynergyBadgeWidgetClass)
+    // HUD가 다시 화면에 붙을 때도 NativeConstruct가 불린다. 캔버스는 위젯 트리에 남아 있다.
+    if (IsValid(OverheadOverlayCanvas) || !IsValid(RootCanvas) || !IsValid(WidgetTree))
     {
         return;
     }
 
-    const ASFInGamePlayerController* PlayerController =
-        Cast<ASFInGamePlayerController>(GetOwningPlayer());
+    OverheadOverlayCanvas =
+        WidgetTree->ConstructWidget<UCanvasPanel>(
+            UCanvasPanel::StaticClass(),
+            TEXT("OverheadOverlayCanvas"));
 
-    USFBuildingSynergySubsystem* SynergySubsystem =
-        USFBuildingSynergySubsystem::Get(this);
-
-    if (!IsValid(PlayerController) || !IsValid(SynergySubsystem))
+    if (!IsValid(OverheadOverlayCanvas))
     {
         return;
     }
 
-    const TArray<FSFBuildingSynergyClusterProgressInfo> ProgressInfos =
-        SynergySubsystem->GetClusterProgressInfosForTeam(
-            PlayerController->GetMyTeamIndex());
+    UCanvasPanelSlot* CanvasSlot =
+        RootCanvas->AddChildToCanvas(OverheadOverlayCanvas);
 
-    while (SynergyBadgeWidgets.Num() < ProgressInfos.Num())
-    {
-        USFBuildingSynergyBadgeWidget* NewBadge =
-            CreateWidget<USFBuildingSynergyBadgeWidget>(
-                GetOwningPlayer(),
-                SynergyBadgeWidgetClass);
+    // 화면 전체를 덮는다. 매니저가 투영한 뷰포트 좌표를 그대로 슬롯 위치로 쓴다.
+    CanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+    CanvasSlot->SetOffsets(FMargin(0.f));
 
-        if (!IsValid(NewBadge))
-        {
-            break;
-        }
+    // HUD 패널 뒤에 그린다. 머리 위 판이 하단 패널을 덮지 않는다.
+    CanvasSlot->SetZOrder(-1000);
 
-        UCanvasPanelSlot* CanvasSlot =
-            RootCanvas->AddChildToCanvas(NewBadge);
-
-        CanvasSlot->SetAutoSize(true);
-        CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
-
-        SynergyBadgeWidgets.Add(NewBadge);
-    }
-
-    for (int32 Index = 0; Index < SynergyBadgeWidgets.Num(); ++Index)
-    {
-        USFBuildingSynergyBadgeWidget* Badge =
-            SynergyBadgeWidgets[Index];
-
-        if (!IsValid(Badge))
-        {
-            continue;
-        }
-
-        if (ProgressInfos.IsValidIndex(Index))
-        {
-            Badge->SetProgressInfo(ProgressInfos[Index]);
-        }
-        else
-        {
-            Badge->SetVisibility(ESlateVisibility::Collapsed);
-        }
-    }
+    // 캔버스 자신은 클릭을 받지 않는다. 배지 아이콘처럼 자식이 원하는 경우에만 받는다.
+    OverheadOverlayCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 // 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번만 만들어 넣습니다. 표시·숨김과 커서 추적은 위젯이 스스로 처리합니다.
@@ -1439,86 +1480,7 @@ void USFInGameHUDWidget::CreatePlacementSynergyBonusWidget()
     // 시너지 배지와 HUD 패널 위에 그립니다.
     CanvasSlot->SetZOrder(100);
 }
-
-void USFInGameHUDWidget::UpdateSynergyBadgeScreenPositions()
-{
-    APlayerController* PlayerController = GetOwningPlayer();
-
-    if (!IsValid(PlayerController) || !IsValid(RootCanvas))
-    {
-        return;
-    }
-
-    // 투영된 좌표와 같은 UI 좌표계를 사용하기 위해 실제 Canvas 크기를 사용합니다.
-    const FVector2D CanvasSize =
-        RootCanvas->GetCachedGeometry().GetLocalSize();
-
-    if (CanvasSize.X <= 0.f || CanvasSize.Y <= 0.f)
-    {
-        return;
-    }
-
-    const float SafeScreenMargin =
-        FMath::Max(0.f, SynergyBadgeScreenMargin);
-
-    for (USFBuildingSynergyBadgeWidget* Badge : SynergyBadgeWidgets)
-    {
-        // Collapsed는 현재 클러스터와 연결되지 않은 풀링용 뱃지입니다.
-        if (!IsValid(Badge) ||
-            Badge->GetVisibility() == ESlateVisibility::Collapsed)
-        {
-            continue;
-        }
-
-        FVector2D ScreenPosition;
-
-        const bool bProjected =
-            UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
-                PlayerController,
-                Badge->GetBadgeWorldLocation(),
-                ScreenPosition,
-                true);
-
-        UCanvasPanelSlot* CanvasSlot =
-            Cast<UCanvasPanelSlot>(Badge->Slot);
-
-        if (!bProjected || !IsValid(CanvasSlot))
-        {
-            // Hidden은 다음 Tick에도 다시 화면 투영을 검사할 수 있습니다.
-            Badge->SetVisibility(ESlateVisibility::Hidden);
-            continue;
-        }
-
-        const FVector2D BadgeSize = Badge->GetDesiredSize();
-        const FVector2D BadgeAlignment = CanvasSlot->GetAlignment();
-
-        // CanvasSlot의 Alignment를 반영해 뱃지의 실제 좌상단과 우하단을 계산합니다.
-        const FVector2D BadgeTopLeft =
-            ScreenPosition - BadgeSize * BadgeAlignment;
-
-        const FVector2D BadgeBottomRight =
-            BadgeTopLeft + BadgeSize;
-
-        const bool bIsFullyInsideScreen =
-            BadgeTopLeft.X >= SafeScreenMargin &&
-            BadgeTopLeft.Y >= SafeScreenMargin &&
-            BadgeBottomRight.X <=
-                CanvasSize.X - SafeScreenMargin &&
-            BadgeBottomRight.Y <=
-                CanvasSize.Y - SafeScreenMargin;
-
-        if (!bIsFullyInsideScreen)
-        {
-            Badge->SetVisibility(ESlateVisibility::Hidden);
-            continue;
-        }
-
-        CanvasSlot->SetPosition(ScreenPosition);
-        Badge->SetVisibility(
-            ESlateVisibility::SelfHitTestInvisible);
-    }
-}
-#pragma endregion 
+#pragma endregion
 void USFInGameHUDWidget::OpenBuildingMode()
 {
     if (
@@ -2551,6 +2513,7 @@ void USFInGameHUDWidget::UpdateEnemyHoverIndicator()
     if (HoveredEnemyActor.Get() == CandidateActor &&
         IsValid(EnemyHoverIndicator))
     {
+        EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(CandidateActor));
         return;
     }
 
@@ -2585,23 +2548,11 @@ bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
         USFCombatSubsystem::IsHostileTeam(Combat->GetLocalPlayerTeam(), Target->GetTeamIndex());
 }
 
-void USFInGameHUDWidget::ShowEnemyHoverIndicator(
-    AActor* Actor
-)
+void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor)
 {
-    if (!IsValid(Actor) ||
-        !IsValid(EnemyHoverIndicatorMaterial))
-    {
-        return;
-    }
-
-    USceneComponent* RootComponent =
-        Actor->GetRootComponent();
-
-    if (!IsValid(RootComponent))
-    {
-        return;
-    }
+    if (!IsValid(Actor) || !IsValid(Actor->GetRootComponent())) return;
+    UNiagaraSystem* System = HoverNiagaraSystem.LoadSynchronous();
+    if (!System) return;
 
     FVector BoundsOrigin, BoundsExtent;
     const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
@@ -2609,95 +2560,20 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(
     const float RingRadius = bIsBuilding
         ? FMath::Clamp(FVector2D(BoundsExtent.X, BoundsExtent.Y).Size() * 1.05f, 100.f, 1500.f)
         : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
-    const FVector Center = bIsBuilding ? Actor->GetActorLocation() : BoundsOrigin;
-    const FVector IndicatorLocation(Center.X, Center.Y, BoundsOrigin.Z - BoundsExtent.Z + 8.f);
-
-    UDecalComponent* Indicator =
-        NewObject<UDecalComponent>(Actor);
-
-    if (!IsValid(Indicator))
-    {
-        return;
-    }
-
-    Actor->AddInstanceComponent(
-        Indicator
-    );
-
-    Indicator->SetupAttachment(
-        RootComponent
-    );
-
-    Indicator->SetAbsolute(
-        false,
-        true,
-        true
-    );
-
-    Indicator->SetMobility(
-        EComponentMobility::Movable
-    );
-
-    EnemyHoverDynamicMaterial =
-        UMaterialInstanceDynamic::Create(
-            EnemyHoverIndicatorMaterial,
-            this
-        );
-
-    if (!IsValid(EnemyHoverDynamicMaterial))
-    {
-        Indicator->DestroyComponent();
-        return;
-    }
-
-    EnemyHoverDynamicMaterial->
-        SetScalarParameterValue(
-            TEXT("AttackFlash"),
-            0.f
-        );
-
-    Indicator->SetDecalMaterial(
-        EnemyHoverDynamicMaterial
-    );
-
-    Indicator->DecalSize =
-        FVector(
-            32.f,
-            RingRadius,
-            RingRadius
-        );
-
-    EnemyHoverBaseDecalSize = Indicator->DecalSize;
-
-    Indicator->SetSortOrder(
-        30
-    );
-
-    Indicator->RegisterComponent();
-
-    Indicator->SetWorldLocation(
-        IndicatorLocation
-    );
-
-    Indicator->SetWorldRotation(
-        FRotator(
-            -90.f,
-            0.f,
-            0.f
-        )
-    );
-
-    EnemyHoverIndicator =
-        Indicator;
-
-    HoveredEnemyActor =
-        Actor;
-
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] Enemy hover indicator created | Actor=%s",
-        *Actor->GetName()
-    );
+    const FVector Location = SFCommandFeedback::GroundLocation(Actor);
+    FLinearColor Color = FLinearColor::Red;
+    if (EnemyHoverIndicatorMaterial)
+        EnemyHoverIndicatorMaterial->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+    EnemyHoverBaseScale = FVector(RingRadius / FMath::Max(HoverNiagaraRadius, 1.f));
+    EnemyHoverDynamicMaterials.Reset();
+    EnemyHoverIndicator = SFCommandFeedback::Spawn(this, System, Location,
+        EnemyHoverBaseScale, Color, false, &EnemyHoverDynamicMaterials);
+    if (!EnemyHoverIndicator) return;
+    // Follow the target without inheriting its model scale or turning with it.
+    EnemyHoverIndicator->SetAbsolute(false, true, true);
+    EnemyHoverIndicator->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+    EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
+    HoveredEnemyActor = Actor;
 }
 
 void USFInGameHUDWidget::HideEnemyHoverIndicator()
@@ -2715,10 +2591,9 @@ void USFInGameHUDWidget::HideEnemyHoverIndicator()
     EnemyHoverIndicator =
         nullptr;
 
-    EnemyHoverDynamicMaterial =
-        nullptr;
+    EnemyHoverDynamicMaterials.Reset();
 
-    EnemyHoverBaseDecalSize =
+    EnemyHoverBaseScale =
         FVector::ZeroVector;
 
     bEnemyHoverFeedbackActive =
@@ -2803,14 +2678,8 @@ void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
     bEnemyHoverFeedbackActive =
         true;
 
-    if (IsValid(EnemyHoverDynamicMaterial))
-    {
-        EnemyHoverDynamicMaterial->
-            SetScalarParameterValue(
-                TEXT("AttackFlash"),
-                0.f
-            );
-    }
+    for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+        if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), 0.f);
 }
 
 void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
@@ -2829,6 +2698,7 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     }
 
     constexpr float PulseCount = 2.f;
+    EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(HoveredEnemyActor.Get()));
 
     EnemyHoverFeedbackElapsed +=
         InDeltaTime;
@@ -2862,32 +2732,16 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
             PulseAlpha
         );
 
-    EnemyHoverIndicator->DecalSize =
-        EnemyHoverBaseDecalSize *
-        CurrentScale;
+    EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale * CurrentScale);
 
-    if (IsValid(EnemyHoverDynamicMaterial))
-    {
-        EnemyHoverDynamicMaterial->
-            SetScalarParameterValue(
-                TEXT("AttackFlash"),
-                PulseAlpha
-            );
-    }
+    for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+        if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), PulseAlpha);
 
     if (Alpha >= 1.f)
     {
-        EnemyHoverIndicator->DecalSize =
-            EnemyHoverBaseDecalSize;
-
-        if (IsValid(EnemyHoverDynamicMaterial))
-        {
-            EnemyHoverDynamicMaterial->
-                SetScalarParameterValue(
-                    TEXT("AttackFlash"),
-                    0.f
-                );
-        }
+        EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
+        for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
+            if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), 0.f);
 
         EnemyHoverFeedbackElapsed =
             0.f;
@@ -3684,90 +3538,28 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
 }
 
 void USFInGameHUDWidget::ShowMoveDestinationIndicator(
-    const FVector& WorldLocation,
-    bool bIsAttack
-)
+    const FVector& WorldLocation, bool bIsAttack)
 {
-    UMaterialInterface* IndicatorMaterial =
-        bIsAttack && IsValid(AttackDestinationIndicatorMaterial)
-        ? AttackDestinationIndicatorMaterial
-        : MoveDestinationIndicatorMaterial;
-
-    if (!IsValid(IndicatorMaterial))
-    {
-        SF_LOG(
-            Warning,
-            "[SFInGameHUDWidget] Destination indicator material is invalid."
-        );
-        return;
-    }
-
-    UWorld* World = GetWorld();
-    if (!IsValid(World))
-    {
-        return;
-    }
-
-    UMaterialInstanceDynamic* DynamicMaterial =
-        UMaterialInstanceDynamic::Create(
-            IndicatorMaterial,
-            this
-        );
-
-    if (!IsValid(DynamicMaterial))
-    {
-        return;
-    }
-
-    DynamicMaterial->SetScalarParameterValue(
-        TEXT("StartTime"),
-        World->GetTimeSeconds()
-    );
-
-    DynamicMaterial->SetScalarParameterValue(
-        TEXT("AnimDuration"),
-        MoveDestinationIndicatorLifeTime
-    );
-
-    UDecalComponent* Indicator =
-        UGameplayStatics::SpawnDecalAtLocation(
-            this,
-            DynamicMaterial,
-            MoveDestinationIndicatorSize,
-            WorldLocation + FVector(0.f, 0.f, 8.f),
-            FRotator(-90.f, 0.f, 0.f),
-            MoveDestinationIndicatorLifeTime
-        );
-
-    if (!IsValid(Indicator))
-    {
-        return;
-    }
-
-    Indicator->SetSortOrder(20);
-
-    const float FadeStartDelay = FMath::Max(
-        0.f,
-        MoveDestinationIndicatorLifeTime -
-        MoveDestinationIndicatorFadeDuration
-    );
-
-    Indicator->SetFadeOut(
-        FadeStartDelay,
-        MoveDestinationIndicatorFadeDuration,
-        false
-    );
-
-    SF_LOG(
-        Log,
-        "[SFInGameHUDWidget] "
-        "Move destination indicator shown | Location: %s",
-        *WorldLocation.ToString()
-    );
+    UMaterialInterface* Palette = bIsAttack && AttackDestinationIndicatorMaterial
+        ? AttackDestinationIndicatorMaterial.Get() : MoveDestinationIndicatorMaterial.Get();
+    FLinearColor Color = bIsAttack ? FLinearColor::Red : FLinearColor(0.f, .5f, .5f);
+    if (Palette) Palette->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+    SFCommandFeedback::Spawn(this, DestinationNiagaraSystem.LoadSynchronous(),
+        WorldLocation + FVector(0.f, 0.f, 8.f),
+        FVector(MoveDestinationIndicatorSize.Y * .95f / FMath::Max(DestinationNiagaraRadius, 1.f),
+            MoveDestinationIndicatorSize.Z * .95f / FMath::Max(DestinationNiagaraRadius, 1.f),
+            MoveDestinationIndicatorSize.Y / FMath::Max(DestinationNiagaraRadius, 1.f)),
+        Color, true);
 }
 
-FName USFInGameHUDWidget::ResolveStageIntroRowName() const
+FName USFInGameHUDWidget::ResolveStageIntroRowName(bool bVictory) const
 {
+    const USFGameInstance* Instance = Cast<USFGameInstance>(GetGameInstance());
+    const ESFRace Race = Instance ? Instance->GetSelectedRace() : ESFRace::None;
+    const auto Resolve = [this, Race, bVictory](FName Stage)
+    {
+        return SFStageStory::ResolveRowName(StageIntroDataTable, Stage, Race, bVictory);
+    };
     if (UWorld* World = GetWorld())
     {
         if (ASFGameState* GameState = World->GetGameState<ASFGameState>())
@@ -3776,7 +3568,7 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
             if (!StageRowName.IsNone())
             {
-                return StageRowName;
+                return Resolve(StageRowName);
             }
         }
     }
@@ -3787,11 +3579,11 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName() const
 
         if (!StageRowName.IsNone())
         {
-            return StageRowName;
+            return Resolve(StageRowName);
         }
     }
 
-    return StageIntroFallbackRowName;
+    return Resolve(StageIntroFallbackRowName);
 }
 
 bool USFInGameHUDWidget::TryStartVictoryEpilogue()
@@ -3807,7 +3599,7 @@ bool USFInGameHUDWidget::TryStartVictoryEpilogue()
         return false;
     }
 
-    const FName EpilogueRowName(*(StageRowName.ToString() + TEXT("Clear")));
+    const FName EpilogueRowName = ResolveStageIntroRowName(true);
     if (!StageIntroDataTable->GetRowNames().Contains(EpilogueRowName))
     {
         return false;

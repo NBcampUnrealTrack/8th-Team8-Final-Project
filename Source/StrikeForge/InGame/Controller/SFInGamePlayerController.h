@@ -70,6 +70,9 @@ class STRIKEFORGE_API ASFInGamePlayerController
     // 함수 영역
 public:
     ASFInGamePlayerController();
+#if WITH_DEV_AUTOMATION_TESTS
+    friend struct FSFForcedAttackTestAccess;
+#endif
 
     UFUNCTION(BlueprintPure, Category = "SF|Building|Placement")
     UBuildingPlacement* GetBuildingPlacementComponent() const { return PlacementComponent; }
@@ -108,6 +111,7 @@ public:
     void RegisterCommander(ASFCommander* InCommander);
 
     /** 이 로컬 플레이어에게 등록된 지휘관을 반환한다. */
+    UFUNCTION(BlueprintPure, Category = "SF|Commander")
     ASFCommander* GetMyCommander() const
     {
         return MyCommander.Get();

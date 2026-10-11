@@ -15,12 +15,13 @@ actors = sub.get_all_level_actors()
 by_label = {a.get_actor_label(): a for a in actors}
 table = unreal.load_asset('/Game/Core/DataTable/DT_SFStage')
 rows = json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(table))
-hero = next(row for row in rows if row['Name'] == 'Stage_Hero')
+hero = next(row for row in rows if row['Name'] == 'StageHero')
 
 assert hero['PlayerRace'] == 'Human', hero
 assert hero['TeamSetups'] == ['(TeamIndex=1,Race=Beast)'], hero
 assert hero['StageLevel'] == MAP + '.PT_Stage_Hero', hero
-assert len([r for r in rows if r['Name'] == 'Stage_Hero']) == 1
+assert len([r for r in rows if r['StageLevel'] == hero['StageLevel']]) == 1
+assert hero['StageOrder'] == 5
 assert any('BuildingId="EtherMining",bCanBuild=True' in rule for rule in hero['BuildingRules'])
 spline=by_label['Hero_PlayerRoute'].get_editor_property('spline')
 assert spline.get_number_of_spline_points() == len(ROUTE)

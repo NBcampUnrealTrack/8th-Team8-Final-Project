@@ -405,6 +405,8 @@ public:
 #pragma endregion
 
 protected:
+	/** AI retaliation bypasses player command ownership, but not combat validation. */
+	void SetRetaliationTarget(AActor* Target);
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -646,7 +648,7 @@ private:
 	 * 건물에만 적용되는 값을 따로 둔다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
-	float BuildingRangeBonus = 250.f;
+	float BuildingRangeBonus = 50.f;
 
 	/** 교전 유지 여유. 사거리 경계에서 걷다 멈추다 반복하는 것을 막는다 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true, ClampMin = "0.0"))
@@ -1182,6 +1184,7 @@ private:
 	 * 대상이 바뀌거나 교전(Attacking) 상태에 들어가면 0으로 되돌린다.
 	 */
 	float CloseQuartersStuckTimer = 0.f;
+	float DirectApproachRemaining = 0.f;
 
 	/** 명령 목적지 마지막 구간에서 제자리인 시간(초). 도착 안전장치용 */
 	float CommandStallTimer = 0.f;

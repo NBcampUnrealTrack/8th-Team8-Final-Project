@@ -1544,15 +1544,21 @@ void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 		return;
 	}
 
-	const FVector LocalOffset =
-		HitLocalDirection *
+	const FVector WorldOffset =
+		HitWorldDirection *
 		HitMoveDistance *
 		CurveValue;
 
-	const FRotator LocalRotationOffset(
-		HitRotationAmount * CurveValue,
-		0.f,
-		-HitRotationAmount * CurveValue);
+	/*
+	 * 밀리는 방향에 수직인 축으로 돌려 건물 윗부분이 공격 반대쪽으로 기울게 한다.
+	 * 맞은 방향이 없으면(공격자가 바로 위) 기울이지 않는다.
+	 */
+	const FQuat WorldTiltOffset =
+		HitWorldTiltAxis.IsNearlyZero()
+			? FQuat::Identity
+			: FQuat(
+				HitWorldTiltAxis,
+				FMath::DegreesToRadians(HitRotationAmount * CurveValue));
 
 	const FQuat BaseRotation =
 		OriginalHitReactionTransform.GetRotation();
@@ -1562,11 +1568,12 @@ void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 
 	TargetTransform.SetLocation(
 		OriginalHitReactionTransform.GetLocation() +
-		BaseRotation.RotateVector(LocalOffset));
+		WorldOffset);
 
+	// 왼쪽에 곱해 월드 축 기준으로 기울인다.
 	TargetTransform.SetRotation(
-		(BaseRotation *
-		 LocalRotationOffset.Quaternion())
+		(WorldTiltOffset *
+		 BaseRotation)
 		.GetNormalized());
 
 	/*
@@ -1617,17 +1624,11 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& WorldDirection)
 
 	OriginalHitReactionTransform = Target->GetComponentTransform();
 
-	FVector HorizontalWorldDirection = WorldDirection;
-	HorizontalWorldDirection.Z = 0.f;
-	HorizontalWorldDirection.Normalize();
+	HitWorldDirection = WorldDirection.GetSafeNormal2D();
 
-	/*
-	 * UpdateHitReaction()에서 BaseRotation을 다시 적용하므로
-	 * 여기에서는 월드 방향을 Target 로컬 방향으로 변환한다.
-	 */
-	HitLocalDirection =
-		OriginalHitReactionTransform
-			.InverseTransformVectorNoScale(HorizontalWorldDirection).GetSafeNormal();
+	// 월드 Up × 밀리는 방향을 회전축으로 삼아 공격 반대쪽으로 기울인다.
+	HitWorldTiltAxis =
+		FVector::CrossProduct(FVector::UpVector, HitWorldDirection).GetSafeNormal();
 
 	HitReactionTimeline->PlayFromStart();
 }

@@ -410,6 +410,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
 	float HitMoveDistance = 5.0f;
 
+	/** 공격 반대 방향으로 기우는 최대 각도(도) */
 	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
 	float HitRotationAmount = 2.0f;
 
@@ -426,8 +427,12 @@ protected:
 	/** 진행 중인 HitReact를 중단하고 대상을 원위치로 복구한다. */
 	void StopHitReaction();
 	
-	FVector HitLocalDirection = FVector::ForwardVector;
-#pragma endregion 
+	/** 월드 기준 수평 피격 방향. */
+	FVector HitWorldDirection = FVector::ForwardVector;
+
+	/** 월드 기준 기울기 회전축. 월드 Up × 밀리는 방향을 맞은 순간 구한다. */
+	FVector HitWorldTiltAxis = FVector::ZeroVector;
+#pragma endregion
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()
 	FIntPoint ConfiguredGridSize = FIntPoint(1, 1);

@@ -116,4 +116,20 @@ bool FSFNeutralRewardTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("New stage has no buffs"), B.ResourceRewards+B.AttackStacks+B.HealthStacks, 0);
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFNeutralProximityTest, "StrikeForge.NeutralSlime.ProximityDealsDamage",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FSFNeutralProximityTest::RunTest(const FString& Parameters)
+{
+    SFSlimeTests::FWorld F;
+    auto* Camp = F.World->SpawnActor<ASFNeutralSlimeCamp>();
+    auto* Player = F.Unit(0, FVector(100,0,100));
+    auto* Slime = F.Slime(Camp, false, FVector(0,0,100));
+    const float Before = Player->GetHealthComponent()->GetCurrentHealth();
+    static_cast<AActor*>(Slime)->Tick(.3f);
+    TestTrue(TEXT("Proximity provokes the camp without an initial hit"), Slime->IsProvokedByTeam(0));
+    TestTrue(TEXT("Neutral attack actually decreases player health"), Player->GetHealthComponent()->GetCurrentHealth() < Before);
+    for (int32 I=0; I<20; ++I) static_cast<AActor*>(Slime)->Tick(.1f);
+    TestTrue(TEXT("Repeated attacks resume after cooldown"), Player->GetHealthComponent()->GetCurrentHealth() <= Before - 28.f);
+    return true;
+}
 #endif

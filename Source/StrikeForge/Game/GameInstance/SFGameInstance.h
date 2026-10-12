@@ -56,6 +56,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	int32 GetHighestClearedStageOrder() const { return HighestClearedStageOrder; }
+	UFUNCTION(BlueprintPure, Category="SF|Story")
+	bool HasUnreadStoryUnlock() const { return bUnreadStoryUnlock; }
+	UFUNCTION(BlueprintCallable, Category="SF|Story")
+	void MarkStoryUnlockRead() { bUnreadStoryUnlock = false; }
 
 	// 스테이지 클리어 기록
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
@@ -79,6 +83,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Race")
 	FORCEINLINE ESFRace GetSelectedRace() const { return SelectedRace; }
 private:
+	bool bUnreadStoryUnlock = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|Unit", meta = (AllowPrivateAccess = true))

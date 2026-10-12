@@ -1566,6 +1566,11 @@ void USFInGameHUDWidget::OpenBuildingMode()
     }
 }
 
+bool USFInGameHUDWidget::IsBuildingModeOpen() const
+{
+    return IsValid(ActiveBuildingModeWidget) && ActiveBuildingModeWidget->IsActivated();
+}
+
 UWidget* USFInGameHUDWidget::GetTutorialBuildModeButton() const
 {
     return BuildModeOpenButton.Get();
@@ -1767,24 +1772,10 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
     ApplySelectionUIData(Actor, SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
 
-    // 선택음은 여기서 한 번만 울린다.
-    //
-    // 원래는 ASFInGamePlayerController::PlaySelectionSound 를 부르면 되지만
-    // 그 함수가 private 이라 C++ 에서는 접근할 수 없다. UFUNCTION 이라
-    // BP 에서만 보이는 상태다. 컨트롤러는 담당자 파일이라 손대지 않고,
-    // 같은 내용을 여기서 직접 수행한다.
-    //
-    // 위에서 ISFSelectable 구현 여부를 이미 걸렀으므로 다시 검사하지 않는다.
-    // DT_Units 의 Selection Sound 를 비워둔 유닛은 소리가 null 이라 조용히
-    // 넘어간다 — 소리를 지정하지 않은 유닛이 무음인 것은 정상 동작이다.
-    if (USoundBase* SelectionSound =
-        ISFSelectable::Execute_GetSelectionSound(Actor))
+    // Route real HUD selection through the same serialized voice channel as commands.
+    if (auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
     {
-        UGameplayStatics::PlaySoundAtLocation(
-            this,
-            SelectionSound,
-            Actor->GetActorLocation()
-        );
+        PC->PlaySelectionSound(Actor);
     }
 }
 

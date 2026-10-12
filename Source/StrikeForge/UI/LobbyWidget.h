@@ -12,6 +12,7 @@ class USFMenuAtmosphereWidget;
 class USFLobbyStagePresentation;
 class USFStoryWidget;
 class USFRaceSelectionWidget;
+class UBorder;
 UCLASS()
 class STRIKEFORGE_API ULobbyWidget : public UUserWidget
 {
@@ -55,6 +56,8 @@ protected:
 protected:
 	UPROPERTY(Transient)
 	TObjectPtr<USFStoryWidget> StoryWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> StoryUnlockNotice;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Story_Btn;
 	FOnButtonClickedEvent OriginalStoryClick;

@@ -1,4 +1,5 @@
 #include "LobbyWidget.h"
+#include "Game/Audio/SFAudioLibrary.h"
 #include "SettingWidget.h"
 #include "Components/Button.h"
 #include "StrikeForge/Game/GameInstance/SFGameInstance.h"
@@ -13,6 +14,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Border.h"
+#include "Components/TextBlock.h"
+#include "Engine/Font.h"
 
 void ULobbyWidget::NativeConstruct()
 {
@@ -71,6 +75,7 @@ void ULobbyWidget::NativeConstruct()
 
 	// 로비 진입 시 스테이지 버튼들 잠금/클리어 상태 갱신
 	RefreshStageButtons();
+	USFAudioLibrary::ApplyMenuButtonSounds(this);
 
 	// Keep the existing Blueprint controls and navigation; add presentation siblings.
 	OriginalBackdrop = WidgetTree ? WidgetTree->FindWidget(TEXT("BackGround")) : nullptr;
@@ -98,10 +103,36 @@ void ULobbyWidget::NativeConstruct()
 		PresentationSlot->SetZOrder(-1);
 		StagePresentation->InitializeControls(this,AnimatedBackdrop,StageRowNames);
 	}
+	const auto* Progress = GetGameInstance<USFGameInstance>();
+	if (Canvas && Progress && Progress->HasUnreadStoryUnlock() && !StoryUnlockNotice)
+	{
+		StoryUnlockNotice = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("StoryUnlockNotice"));
+		StoryUnlockNotice->SetBrushColor(FLinearColor(.025f,.14f,.13f,.97f));
+		StoryUnlockNotice->SetPadding(FMargin(12.f));
+		auto* Button = WidgetTree->ConstructWidget<UButton>();
+		auto* Text = WidgetTree->ConstructWidget<UTextBlock>();
+		Text->SetText(NSLOCTEXT("SFLobby", "StoryUnlocked", "새로운 이야기가 해금되었습니다   스토리 보기"));
+		Text->SetFont(FSlateFontInfo(LoadObject<UFont>(nullptr, TEXT("/Game/Game/IN_UI/Font/Jua-Regular_Font.Jua-Regular_Font")), 22));
+		Text->SetColorAndOpacity(FLinearColor(.96f,.83f,.55f));
+		Text->SetJustification(ETextJustify::Center);
+		Button->SetContent(Text);
+		Button->SetBackgroundColor(FLinearColor::Transparent);
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::OnStoryButtonClicked);
+		StoryUnlockNotice->SetContent(Button);
+		auto* NoticeSlot = Canvas->AddChildToCanvas(StoryUnlockNotice);
+		NoticeSlot->SetAnchors(FAnchors(.5f,0.f));
+		NoticeSlot->SetAlignment(FVector2D(.5f,0.f));
+		NoticeSlot->SetPosition(FVector2D(0.f,105.f));
+		NoticeSlot->SetSize(FVector2D(680.f,72.f));
+		NoticeSlot->SetZOrder(30);
+		USFAudioLibrary::ApplyMenuButtonSounds(this);
+	}
 }
 
 void ULobbyWidget::NativeDestruct()
 {
+	if (StoryUnlockNotice) StoryUnlockNotice->RemoveFromParent();
+	StoryUnlockNotice = nullptr;
 	if (RaceSelectionWidget) RaceSelectionWidget->RemoveFromParent();
 	RaceSelectionWidget = nullptr;
 	if (StoryWidget)
@@ -162,6 +193,9 @@ void ULobbyWidget::OnStoryButtonClicked()
 	}
 	StoryWidget->AddToViewport(500);
 	StoryWidget->OpenStory();
+	if (auto* Progress = GetGameInstance<USFGameInstance>()) Progress->MarkStoryUnlockRead();
+	if (StoryUnlockNotice) StoryUnlockNotice->RemoveFromParent();
+	StoryUnlockNotice = nullptr;
 }
 
 void ULobbyWidget::OnStage1Clicked() { OpenStageLevel(0); }

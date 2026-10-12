@@ -313,6 +313,8 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
         return false;
     }
 
+    if (HighestClearedStageOrder < 3 && StageData->StageOrder >= 3)
+        bUnreadStoryUnlock = true;
     HighestClearedStageOrder =
         FMath::Max(HighestClearedStageOrder, StageData->StageOrder);
 

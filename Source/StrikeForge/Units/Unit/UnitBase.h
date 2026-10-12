@@ -460,8 +460,8 @@ protected:
 	 * 보낼 때 그 함수를 직접 부르므로, 유닛이 생산될 때마다 대답하게 된다.
 	 *
 	 * 여러 기를 한꺼번에 움직이면 선택한 수만큼 명령이 들어와 소리가 겹친다.
-	 * 스타크래프트처럼 한 기만 대답하도록 짧은 간격 안의 중복은 버린다
-	 * (sf.CommandVoiceInterval).
+	 * SFUnitVoiceSubsystem이 그룹 명령을 합치고, 현재 대사가 끝난 뒤
+	 * 가장 최근에 요청한 응답 하나만 이어서 재생한다.
 	 */
 	void PlayMoveCommandVoice();
 

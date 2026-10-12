@@ -15,6 +15,8 @@ public:
     virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Slime") bool bLarge = false;
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Slime") TObjectPtr<ASFNeutralSlimeCamp> Camp;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Slime", meta=(ClampMin="0",Units="cm"))
+    float NeutralAggroRadius = 650.f;
     UFUNCTION(BlueprintPure) bool IsProvokedByTeam(int32 Team) const { return ProvokedTeams.Contains(Team); }
     void Provoke(AActor* Aggressor);
     virtual void OnConstruction(const FTransform& Transform) override;
@@ -34,6 +36,8 @@ private:
     FVector Home = FVector::ZeroVector;
     int32 LastDamagingTeam = INDEX_NONE;
     bool bRewardPaid = false;
+    float AggroScanRemaining = 0.f;
+    bool bReturningHome = false;
     void PlayStateAnimation(UAnimationAsset* Animation, bool bLoop);
 };
 

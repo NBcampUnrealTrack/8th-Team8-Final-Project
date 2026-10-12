@@ -1,5 +1,6 @@
 #include "SFNeutralSlime.h"
 #include "Units/Unit/UnitAIController.h"
+#include "Units/Commander/SFCommander.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -45,8 +46,8 @@ FSFSelectableInfo ASFNeutralSlime::GetSelectableInfo_Implementation()
     auto Info = Super::GetSelectableInfo_Implementation();
     Info.DisplayName = FText::FromString(bLarge ? TEXT("대형 중립 슬라임") : TEXT("소형 중립 슬라임"));
     FString Description = bLarge
-        ? TEXT("공격받으면 무리가 반격합니다. 처치 시 광물 200.")
-        : TEXT("공격받으면 무리가 반격합니다. 처치 시 광물 100.");
+        ? TEXT("가까이 접근하거나 공격하면 무리가 반격합니다. 처치 시 광물 200.")
+        : TEXT("가까이 접근하거나 공격하면 무리가 반격합니다. 처치 시 광물 100.");
     if (Camp && Camp->bGrantClearReward)
         Description += TEXT(" 무리 전멸 시 이번 스테이지 한정 무작위 보상.");
     Info.Description = FText::FromString(Description);
@@ -85,6 +86,7 @@ void ASFNeutralSlime::Provoke(AActor* InstigatorActor)
     const int32 Team = USFCombatSubsystem::GetTeamOf(InstigatorActor);
     if (Team < 0 || Team == 3 || GetHealthComponent()->GetIsDead()) return;
     ProvokedTeams.Add(Team);
+    bReturningHome = false;
     Aggressor = InstigatorActor;
     SetRetaliationTarget(InstigatorActor);
 }
@@ -111,6 +113,27 @@ void ASFNeutralSlime::OnKilled(UCombatTargetComponent* Target)
 void ASFNeutralSlime::Tick(float DeltaSeconds)
 {
     if (GetHealthComponent()->GetIsDead()) return;
+    AggroScanRemaining -= DeltaSeconds;
+    if (!Aggressor.IsValid() && !bReturningHome && AggroScanRemaining <= 0.f)
+    {
+        AggroScanRemaining = .25f;
+        TArray<AActor*> Nearby;
+        GetWorld()->GetSubsystem<USFCombatSubsystem>()->GetHostilesInRadius(GetActorLocation(), GetTeamIndex(), NeutralAggroRadius, Nearby);
+        AActor* Nearest = nullptr;
+        float NearestDistance = FMath::Square(NeutralAggroRadius);
+        for (AActor* Candidate : Nearby)
+        {
+            if (!Cast<AUnitBase>(Candidate) && !Cast<ASFCommander>(Candidate)) continue;
+            const float Distance = FVector::DistSquared2D(GetActorLocation(), Candidate->GetActorLocation());
+            if (Distance <= NearestDistance && CanForceAttackTarget(Candidate) && HasLineOfSight(Candidate))
+            { Nearest = Candidate; NearestDistance = Distance; }
+        }
+        if (Nearest)
+        {
+            if (Camp) Camp->Provoke(Nearest);
+            else Provoke(Nearest);
+        }
+    }
     const auto* Target = USFCombatSubsystem::FindTargetComponent(Aggressor.Get());
     if (!Target || !Target->IsAlive() || FVector::DistSquared2D(GetActorLocation(), Home) > FMath::Square(1400.f)
         || FVector::DistSquared2D(Aggressor->GetActorLocation(), Home) > FMath::Square(1600.f))
@@ -118,6 +141,7 @@ void ASFNeutralSlime::Tick(float DeltaSeconds)
         Aggressor.Reset();
         SetRetaliationTarget(nullptr);
         CombatState = EUnitCombatState::Advancing;
+        bReturningHome = FVector::DistSquared2D(GetActorLocation(), Home) > FMath::Square(45.f);
         if (auto* AI = Cast<AUnitAIController>(GetController()))
         {
             if (FVector::DistSquared2D(GetActorLocation(), Home) > FMath::Square(45.f))

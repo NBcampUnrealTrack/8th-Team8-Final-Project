@@ -28,6 +28,7 @@
 #include "Game/Spawn/SFBuildingSpawnLibrary.h"
 #include "Buildings/Building/ProductBuilding/SFProductionBuilding.h"
 #include "Kismet/GameplayStatics.h"
+#include "Game/Audio/SFUnitVoiceSubsystem.h"
 
 ASFInGamePlayerController::ASFInGamePlayerController()
 {
@@ -660,6 +661,12 @@ void ASFInGamePlayerController::SetSFControlMode(
 
     CurrentControlMode = NewControlMode;
     bControlModeInitialized = true;
+    if (NewControlMode == ESFControlMode::Gameplay && IsValid(InGameHUDWidget))
+    {
+        // Placement temporarily removes the catalog mapping. Restore it when
+        // the catalog is still open, including after a successful placement.
+        SetBuildModeInputEnabled(InGameHUDWidget->IsBuildingModeOpen());
+    }
 }
 
 ESFControlMode
@@ -2018,11 +2025,10 @@ void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
         return;
     }
 
-    UGameplayStatics::PlaySoundAtLocation(
-        this,
-        SelectionSound,
-        SelectedTarget->GetActorLocation()
-    );
+    if (Cast<AUnitBase>(SelectedTarget) || Cast<ASFCommander>(SelectedTarget))
+        GetWorld()->GetSubsystem<USFUnitVoiceSubsystem>()->RequestVoice(SelectedTarget, SelectionSound);
+    else
+        UGameplayStatics::PlaySoundAtLocation(this, SelectionSound, SelectedTarget->GetActorLocation());
 }
 
 void ASFInGamePlayerController::HandleControlGroupInput(

@@ -85,6 +85,7 @@ public:
         Category = "SF|HUD|Building"
     )
     void OpenBuildingMode();
+    bool IsBuildingModeOpen() const;
 
     UFUNCTION(
         BlueprintCallable,
@@ -105,6 +106,7 @@ public:
     void DismissActiveStageIntroForDebug();
 #endif
 
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
     void SelectActor(AActor* Actor);
 
     /** 내 소유의 살아 있는 유닛과 지휘관을 모두 선택한다. 건물은 제외한다. */

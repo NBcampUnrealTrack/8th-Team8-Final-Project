@@ -14,6 +14,7 @@ assert unreal.EditorLoadingAndSavingUtils.load_map('/Game/Game/Stage/PT_Stage_4'
 unreal.EditorPythonScripting.set_keep_python_script_alive(True)
 state = dict(phase='start', started=time.time(), checks=[])
 refs = {}
+headless = '-nullrhi' in unreal.SystemLibrary.get_command_line().lower()
 table = unreal.load_asset('/Game/Game/IN_UI/DT/DT_SFStageIntro')
 rows = json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(table))
 last = len(next(r for r in rows if r['Name'] == 'Stage04')['Nodes']) - 1
@@ -36,14 +37,39 @@ def finish(error=None):
     quit_handle = unreal.register_slate_post_tick_callback(quit_tick)
 
 def kill(c):
+    mesh = c.get_editor_property('mesh')
+    sequence = c.get_editor_property('death_animation')
+    expected = ('AS_Beast_Commander_Death' if 'Beast' in c.get_class().get_name()
+                else 'AS_EtherCommanderDeath')
+    assert sequence and sequence.get_name() == expected
+    refs[c.get_name()+'_anim_class'] = mesh.get_anim_instance().get_class()
     combat(c).apply_combat_damage(100000., None)
     assert c.is_awaiting_respawn() and hp(c).get_is_dead()
     assert hp(c).get_current_health() == 0 and not combat(c).is_alive()
     assert not c.get_actor_enable_collision()
     assert 29.9 <= c.get_respawn_time_remaining() <= 30
+    assert not c.get_editor_property('hidden'), 'Death animation must remain visible'
+    assert mesh.get_animation_mode() == unreal.AnimationMode.ANIMATION_SINGLE_NODE
+    assert mesh.get_anim_instance().get_animation_asset() == sequence
     combat(c).apply_combat_damage(100000., None)
     c.move_to_location(c.get_actor_location()+unreal.Vector(800, 0, 0))
     assert c.get_component_by_class(unreal.CharacterMovementComponent).movement_mode == unreal.MovementMode.MOVE_NONE
+    state['checks'].append(dict(death_animation=expected, duration=sequence.get_play_length()))
+
+def check_death_animation(c, elapsed):
+    sequence = c.get_editor_property('death_animation')
+    if elapsed < sequence.get_play_length() - .1:
+        assert not c.get_editor_property('hidden'), 'Hidden before death animation finished'
+        if elapsed > .2:
+            assert c.get_editor_property('mesh').get_position() > 0, 'Death animation did not advance'
+    elif elapsed > sequence.get_play_length() + .2:
+        assert c.get_editor_property('hidden'), 'Corpse did not hide after death animation'
+
+def check_restored_animation(c):
+    mesh = c.get_editor_property('mesh')
+    assert not c.get_editor_property('hidden')
+    assert mesh.get_animation_mode() == unreal.AnimationMode.ANIMATION_BLUEPRINT
+    assert mesh.get_anim_instance().get_class() == refs[c.get_name()+'_anim_class']
 
 def tick(dt):
     try:
@@ -62,6 +88,9 @@ def tick(dt):
             return
         if not gs.is_stage_playing(): return
         sec = unreal.GameplayStatics.get_time_seconds(w)
+        for key, death_key in [('ally', 'death'), ('enemy', 'enemy_death')]:
+            if key in refs and death_key in state and refs[key].is_awaiting_respawn():
+                check_death_animation(refs[key], sec-state[death_key])
         if state['phase'] == 'start':
             pc = unreal.GameplayStatics.get_player_controller(w, 0)
             ally = pc.get_my_commander()
@@ -78,18 +107,21 @@ def tick(dt):
             kill(refs['enemy'])
             state.update(phase='countdown', enemy_death=sec)
         elif state['phase'] == 'countdown' and sec-state['enemy_death'] >= 2:
-            hud = unreal.WidgetLibrary.get_all_widgets_of_class(w, unreal.SFInGameHUDWidget, True)[0]
-            panel = hud.get_editor_property('commander_respawn_panel')
-            text = hud.get_editor_property('commander_respawn_text')
-            label = str(text.get_text())
-            assert '아군 커맨더' in label and '적군' not in label and '\n' not in label, label
-            assert panel.get_visibility() == unreal.SlateVisibility.HIT_TEST_INVISIBLE
+            label = 'HUD checks skipped with NullRHI'
+            if not headless:
+                hud = unreal.WidgetLibrary.get_all_widgets_of_class(w, unreal.SFInGameHUDWidget, True)[0]
+                panel = hud.get_editor_property('commander_respawn_panel')
+                text = hud.get_editor_property('commander_respawn_text')
+                label = str(text.get_text())
+                assert '아군 커맨더' in label and '적군' not in label and '\n' not in label, label
+                assert panel.get_visibility() == unreal.SlateVisibility.HIT_TEST_INVISIBLE
+                refs.update(panel=panel, text=text)
             for i, c in enumerate([refs['ally'], refs['enemy']]):
                 assert dist(c.get_actor_location(), refs['positions'][i]) < 1
                 assert c.is_awaiting_respawn() and hp(c).get_current_health() == 0
-            refs.update(panel=panel, text=text)
             state['checks'].append(dict(both_dead=True, blocked_movement=True, hud=label))
-            unreal.SystemLibrary.execute_console_command(w, 'Shot showui')
+            if not headless:
+                unreal.SystemLibrary.execute_console_command(w, 'Shot showui')
             refs['pause_remaining'] = refs['ally'].get_respawn_time_remaining()
             unreal.GameplayStatics.set_game_paused(w, True)
             state.update(phase='paused', pause_wall=time.time())
@@ -100,7 +132,8 @@ def tick(dt):
             state['phase'] = 'wait'
         elif state['phase'] == 'wait':
             if not refs['ally'].is_awaiting_respawn() and sec-state['death'] > 30.2 and refs['enemy'].is_awaiting_respawn():
-                assert refs['panel'].get_visibility() == unreal.SlateVisibility.COLLAPSED
+                if not headless:
+                    assert refs['panel'].get_visibility() == unreal.SlateVisibility.COLLAPSED
                 refs['enemy_timer_hidden'] = True
             for key, death in [('ally', state['death']), ('enemy', state['enemy_death'])]:
                 c = refs[key]
@@ -117,6 +150,7 @@ def tick(dt):
                 assert hp(c).get_current_health() == hp(c).get_max_health()
                 assert combat(c).is_alive() and c.get_actor_enable_collision()
                 assert c.get_respawn_time_remaining() == 0
+                check_restored_animation(c)
                 combat(c).apply_combat_damage(1., None)
                 assert hp(c).get_current_health() == hp(c).get_max_health()-1
                 refs[key+'_revived'] = True
@@ -124,23 +158,26 @@ def tick(dt):
             if refs.get('ally_revived') and refs.get('enemy_revived'):
                 assert refs['pc'].get_my_commander() == refs['ally']
                 assert refs.get('enemy_timer_hidden'), 'Enemy-only countdown must be hidden'
-                state['checks'].append(dict(enemy_timer_hidden=True))
+                state['checks'].append(dict(enemy_timer_hidden=True if not headless else 'skipped'))
                 refs['move_starts'] = [c.get_actor_location() for c in [refs['ally'], refs['enemy']]]
                 for c in [refs['ally'], refs['enemy']]:
                     c.move_to_location(c.get_actor_location()+c.get_actor_forward_vector()*250)
                 state.update(phase='second', since=sec)
         elif state['phase'] == 'second' and sec-state['since'] > 2:
-            assert refs['panel'].get_visibility() == unreal.SlateVisibility.COLLAPSED
+            if not headless:
+                assert refs['panel'].get_visibility() == unreal.SlateVisibility.COLLAPSED
             for i, c in enumerate([refs['ally'], refs['enemy']]):
                 assert dist(c.get_actor_location(), refs['move_starts'][i]) > 10, 'Cannot move after respawn'
             state['checks'].append(dict(both_can_move_after_respawn=True))
             kill(refs['ally'])
             kill(refs['enemy'])
-            state.update(phase='second_wait', since=sec)
+            state.update(phase='second_wait', since=sec, death=sec, enemy_death=sec)
         elif state['phase'] == 'second_wait' and sec-state['since'] > 30.5:
             for c in [refs['ally'], refs['enemy']]:
                 assert not c.is_awaiting_respawn() and combat(c).is_alive()
-            state['checks'].append(dict(repeated_death_and_respawn=True, hud_hides_after_revive=True))
+                check_restored_animation(c)
+            state['checks'].append(dict(repeated_death_and_respawn=True,
+                                       hud_hides_after_revive=True if not headless else 'skipped'))
             finish()
     except Exception:
         finish(traceback.format_exc())

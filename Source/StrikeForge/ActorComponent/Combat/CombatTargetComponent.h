@@ -98,6 +98,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
 	void ApplyCombatDamage(float InFinalDamage, AActor* InInstigator);
 
+	/** Rejoin combat after the owner explicitly restores its health on respawn. */
+	void RestoreAfterRespawn();
+
 	/** 소유 액터가 파괴된 순간 */
 	UPROPERTY(BlueprintAssignable, Category = "SF|Combat")
 	FCombatTargetDestroyed OnTargetDestroyed;

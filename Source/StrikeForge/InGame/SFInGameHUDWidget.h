@@ -41,7 +41,6 @@ class UWidget;
 class USFBuffComponent;
 // Badge Widget ( BuildingSynergy )
 class UCanvasPanel;
-class USFBuildingSynergyBadgeWidget;
 class USFPlacementSynergyBonusWidget;
 
 USTRUCT()
@@ -59,6 +58,18 @@ class STRIKEFORGE_API USFInGameHUDWidget
 {
     GENERATED_BODY()
     friend struct FSFForcedAttackTestAccess;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UBorder> StageBuffPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> StageBuffText;
+    FText LastStageBuffText;
+    void RefreshStageBuffDisplay();
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<UBorder> CommanderRespawnPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> CommanderRespawnText;
+    void RefreshCommanderRespawnDisplay();
 
     // ==================== Functions ====================
 
@@ -163,28 +174,17 @@ public:
     bool RequestBuildingBySlot(int32 SlotIndex);
 #pragma region BuildingSynergy
 public:
-    UFUNCTION()
-    void HandleSynergyStateChanged();
-
-    void RefreshSynergyBadges();
-    void UpdateSynergyBadgeScreenPositions();
-
     UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
     TObjectPtr<UCanvasPanel> RootCanvas = nullptr;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-    TSubclassOf<USFBuildingSynergyBadgeWidget> SynergyBadgeWidgetClass;
-    /** 뱃지가 화면 가장자리와 유지할 최소 간격입니다. */
-    UPROPERTY(
-        EditDefaultsOnly,
-        BlueprintReadOnly,
-        Category = "SF|HUD|Building Synergy",
-        meta = (ClampMin = "0.0")
-    )
-    float SynergyBadgeScreenMargin = 8.f;
+    /**
+     * 월드에 붙는 UI(건물 머리 위 판·시너지 배지)를 그릴 캔버스를 RootCanvas 맨 뒤에 한 번 만듭니다.
+     * 위젯은 USFOverheadUISubsystem이 이 캔버스에 띄웁니다. HUD는 캔버스를 넘기고 매 프레임 위치 갱신만 부릅니다.
+     */
+    void CreateOverheadOverlayCanvas();
 
     UPROPERTY(Transient)
-    TArray<TObjectPtr<USFBuildingSynergyBadgeWidget>> SynergyBadgeWidgets;
+    TObjectPtr<UCanvasPanel> OverheadOverlayCanvas;
 
     /** 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번 만들어 넣습니다. */
     void CreatePlacementSynergyBonusWidget();

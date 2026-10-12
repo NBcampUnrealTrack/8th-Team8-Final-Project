@@ -10,6 +10,7 @@
 
 class ASFInGamePlayerController;
 class UAnimationAsset;
+class UAnimSequence;
 class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
@@ -79,8 +80,6 @@ struct FSkillAsset
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Montage")
 	TObjectPtr<UAnimMontage> SkillMontage;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
-	TObjectPtr<USoundBase> SkillSound;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<UNiagaraSystem> SkillEffect;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<UNiagaraSystem> SkillHitEffect;
@@ -105,6 +104,14 @@ class STRIKEFORGE_API ASFCommander
 
 public:
 	ASFCommander();
+	/** Set ownership before FinishSpawning so BeginPlay enables player selection. */
+	void InitializePlayerCommander(int32 TeamIndex);
+	bool IsPlayerCommander() const { return bMyCommander; }
+	UFUNCTION(BlueprintPure, Category = "SF|Respawn")
+	bool IsAwaitingRespawn() const { return bAwaitingRespawn; }
+	UFUNCTION(BlueprintPure, Category = "SF|Respawn")
+	float GetRespawnTimeRemaining() const;
+	static constexpr float RespawnDelaySeconds = 30.f;
 	friend struct FSFPlaytestMovementAccess;
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
@@ -119,6 +126,9 @@ public:
 	// 지휘관 초상화 애니메이션 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
 	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Animation")
+	TObjectPtr<UAnimSequence> DeathAnimation = nullptr;
 
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
@@ -179,6 +189,15 @@ protected:
 	void PrintMessage(FString Msg);
 
 	void StopMoving();
+	UFUNCTION()
+	void HandleCommanderDeath();
+	void HideAfterDeathAnimation();
+	void RespawnAtNexus();
+	bool FindRespawnTransform(FTransform& OutTransform) const;
+	bool bAwaitingRespawn = false;
+	double RespawnEndTime = 0.0;
+	FTimerHandle RespawnTimer;
+	FTimerHandle DeathAnimationTimer;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;

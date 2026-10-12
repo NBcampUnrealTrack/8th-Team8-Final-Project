@@ -1,6 +1,5 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
-#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -206,6 +205,6 @@ FVector ASFProductionBuilding::GetRallyPoint() const
 void ASFProductionBuilding::HandleProductLineChanged(TArray<FProductInfo> InProductLine)
 {
 	// 내 건물만 진행도를 보여준다. 적 생산 상황은 노출하지 않는다.
-	OverheadUI->SetElementVisible(ESFOverheadElement::Progress,
+	StatusComponent->SetElementVisible(ESFOverheadElement::Progress,
 		!InProductLine.IsEmpty() && IsOwnedByLocalPlayer());
 }

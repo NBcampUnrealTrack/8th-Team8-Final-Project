@@ -1,6 +1,5 @@
 ﻿#include "SFMiningBuilding.h"
 #include "ActorComponent/Mining/MiningComponent.h"
-#include "ActorComponent/UI/SFOverheadUIComponent.h"
 #include "Game/GameState/SFGameState.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
@@ -217,16 +216,35 @@ void ASFMiningBuilding::RefreshMiningState()
 		MiningComponent->StopMining();
 		ApplyIncomeRate(0.f);
 
-		OverheadUI->SetElementVisible(
+		StatusComponent->SetElementVisible(
 			ESFOverheadElement::Progress,false);
+
+		/*
+		 * 기능이 켜져 있는데 채굴을 시작하지 못했다면 캘 자원이 남지 않은 것이다.
+		 * 채굴 대상은 격자 등록 때 한 번만 정해지므로 고갈된 광산은 다시 일하지 않는다.
+		 * 업그레이드 중(기능 꺼짐)은 고갈이 아니므로 제외한다.
+		 */
+		const bool bDepleted = IsTierActivated() && IsOwnedByLocalPlayer();
+
+		// 고갈 아이콘은 이 광산이 캐던 자원의 아이콘에 X를 겹쳐 그린다.
+		const ESFOverheadStatusIcon DepletedIcon =
+			GetMineResourceType() == EResourceType::Ether
+				? ESFOverheadStatusIcon::EtherDepleted
+				: ESFOverheadStatusIcon::MineralDepleted;
+
+		StatusComponent->SetStatusIcon(bDepleted
+			? DepletedIcon
+			: ESFOverheadStatusIcon::None);
 
 		return;
 	}
 
 	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
 
-	OverheadUI->SetElementVisible(
+	StatusComponent->SetElementVisible(
 		ESFOverheadElement::Progress,IsOwnedByLocalPlayer());
+
+	StatusComponent->SetStatusIcon(ESFOverheadStatusIcon::None);
 }
 
 //getter
@@ -288,14 +306,14 @@ void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 
 
 	/*
 	 * 획득은 상태가 아니라 사건이다.
-	 * 1초 뒤에 물어보면 보여줄 게 없으므로 상태 컴포넌트를 거치지 않고 바로 전달한다.
+	 * 1초 뒤에 물어보면 보여줄 게 없으므로 상태 구조체에 담지 않고 사건으로 바로 전달한다.
 	 *
 	 * 자원은 팀과 무관하게 쌓이지만 배지는 내 것만 띄운다.
 	 * 남의 수입은 보여줄 이유가 없고, 시야에 들어온 적 광산의 채굴량이 그대로 노출된다.
 	 */
 	if (!IsOwnedByLocalPlayer())	return;
 
-	OverheadUI->PlayResourceGain(InType, InAmount);
+	StatusComponent->PlayResourceGain(InType, InAmount);
 }
 
 void ASFMiningBuilding::OnResourceDepletedReceived()

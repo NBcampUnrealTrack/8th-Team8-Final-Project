@@ -51,7 +51,10 @@ public:
 	 */
 	void Play(EResourceType InResourceType, int32 InAmount);
 
-	/** 애니메이션이 끝났을 때. 판이 받아 컴포넌트에 올린다. */
+	/** 재생 중인 애니메이션을 멈춘다. 판이 풀로 돌아갈 때 부른다. */
+	void Stop();
+
+	/** 애니메이션이 끝났을 때. 판이 받아 매니저에 올린다. */
 	FSimpleMulticastDelegate OnFinished;
 
 protected:

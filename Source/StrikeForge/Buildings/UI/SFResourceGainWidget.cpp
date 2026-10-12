@@ -76,6 +76,14 @@ void USFResourceGainWidget::Play(EResourceType InResourceType, int32 InAmount)
 	PlayAnimation(GainAnim);
 }
 
+void USFResourceGainWidget::Stop()
+{
+	if (IsValid(GainAnim) && IsAnimationPlaying(GainAnim))
+	{
+		StopAnimation(GainAnim);
+	}
+}
+
 void USFResourceGainWidget::HandleAnimationFinished()
 {
 	OnFinished.Broadcast();

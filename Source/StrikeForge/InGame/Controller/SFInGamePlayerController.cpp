@@ -210,8 +210,8 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
 
     const int32 TeamIndex = GetMyTeamIndex();
 
-    // 실제 비용 차감에 성공해야 건설을 시작한다.
-    if (!SFGS->TrySpendCost(TeamIndex, ConstructCost))
+    // 자원 부족 피드백만 여기서 처리하고, 실제 차감은 건설 시작 함수에서 한다.
+    if (!SFGS->CanAffordResource(TeamIndex, ConstructCost))
     {
         SF_LOG(Warning, "[SFPC] 자원이 부족해 건설을 취소합니다: %s",
             *Building->GetName());
@@ -224,12 +224,10 @@ void ASFInGamePlayerController::NotifyBuilderArrived() // start construct ======
         return;
     }
 
-    // 비용 차감 후 건설 시작에 실패하면 비용을 복구한다.
+    // 건물이 검증 후 직접 비용을 차감하므로 실패한 요청은 환불할 필요가 없다.
     if (!Building->TryStartConstruction())
     {
-        SFGS->RefundCost(TeamIndex, ConstructCost);
-
-        SF_LOG(Error, "[SFPC] 건설 시작에 실패하여 비용을 환불했습니다: %s",
+        SF_LOG(Error, "[SFPC] 건설 시작에 실패했습니다: %s",
             *Building->GetName());
 
         ClearPendingBuildingRef();
@@ -1323,50 +1321,29 @@ void ASFInGamePlayerController::CheckForcedMoveGroups()
     {
         FSFForcedMoveGroup& Group = ActiveForcedMoveGroups[GroupIndex];
 
-        bool bAllCompleted = true;
-
-        for (const TWeakObjectPtr<AUnitBase>&UnitPtr : Group.Units)
+        // A straggler must not leave the rest of the squad idle under enemy fire.
+        // Each unit resumes automatic combat on reaching its own retreat destination.
+        Group.Units.RemoveAll([](const TWeakObjectPtr<AUnitBase>& UnitPtr)
         {
             AUnitBase* Unit = UnitPtr.Get();
-
-            // 제거된 유닛은 완료로 처리한다.
-            if (!IsValid(Unit))
+            if (!IsValid(Unit) || Unit->GetCombatState() == EUnitCombatState::Dead)
             {
-                continue;
+                return true;
             }
-
-            // 이동 중 사망한 유닛 때문에
-            // 그룹 전체가 영원히 기다리지 않게 한다.
-            if (Unit->GetCombatState() == EUnitCombatState::Dead)
+            if (Unit->HasCompletedGroupMove() || !Unit->IsWaitingForGroupMove())
             {
-                continue;
+                Unit->SetWaitingForGroupMove(false);
+                return true;
             }
+            return false;
+        });
 
-            // 한 기라도 이동 중이면
-            // 아직 그룹을 해제하지 않는다.
-            if (!Unit->HasCompletedGroupMove())
-            {
-                bAllCompleted = false;
-                break;
-            }
-        }
-
-        if (!bAllCompleted)
+        if (!Group.Units.IsEmpty())
         {
             continue;
         }
 
         const int32 CompletedGroupId = Group.GroupId;
-
-        // 먼저 모든 유닛의 대기 상태를
-        // 동시에 해제한다.
-        for (const TWeakObjectPtr<AUnitBase>&UnitPtr : Group.Units)
-        {
-            if (AUnitBase* Unit = UnitPtr.Get())
-            {
-                Unit->SetWaitingForGroupMove(false);
-            }
-        }
 
         ActiveForcedMoveGroups.RemoveAt(GroupIndex);
 

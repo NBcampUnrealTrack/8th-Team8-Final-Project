@@ -116,6 +116,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SF|Building")
 	bool TryStartConstruction();
 	bool HasLivingUnitInFootprint() const;
+
+	/** 최초 건설은 비용의 75% 환불 후 파괴하며, 업그레이드는 50% 환불 후 기존 티어로 복구한다. */
+	UFUNCTION(BlueprintCallable, Category = "SF|Building")
+	bool CancelConstruction();
 	
 	// 업그레이드 함수
 	/**
@@ -244,6 +248,12 @@ protected:
 	bool TryRegisterInitialGrid();
 	bool bGridRegistered = false;
 private:
+	// 건설 또는 업그레이드 비용을 지불한 팀. 완료 또는 취소 시 비운다.
+	int32 ConstructionPayerTeam = INDEX_NONE;
+	// 업그레이드 취소 시 현재 체력은 유지하고 이 최대 체력으로 제한한다.
+	float PreviousMaxHealth = 0.f;
+	bool bIsCancellingConstruction = false;
+
 	/** 로드된 Definition의 공통 데이터를 건물에 캐시한다. BeginPlay에서 호출되며 PrepareLoadedTier로 이어진다. */
 	bool CacheLoadedDefinitionData();
 	/** 로드된 Tier 리소스를 Pending 캐시에 준비한다. BeginPlay와 업그레이드 완료에서 호출되며 건설 상태 적용으로 이어진다. */
@@ -400,6 +410,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
 	float HitMoveDistance = 5.0f;
 
+	/** 공격 반대 방향으로 기우는 최대 각도(도) */
 	UPROPERTY(EditDefaultsOnly, Category = "HitReact")
 	float HitRotationAmount = 2.0f;
 
@@ -416,8 +427,12 @@ protected:
 	/** 진행 중인 HitReact를 중단하고 대상을 원위치로 복구한다. */
 	void StopHitReaction();
 	
-	FVector HitLocalDirection = FVector::ForwardVector;
-#pragma endregion 
+	/** 월드 기준 수평 피격 방향. */
+	FVector HitWorldDirection = FVector::ForwardVector;
+
+	/** 월드 기준 기울기 회전축. 월드 Up × 밀리는 방향을 맞은 순간 구한다. */
+	FVector HitWorldTiltAxis = FVector::ZeroVector;
+#pragma endregion
 	/** 배치 컴포넌트가 겹침 검사에 사용하는 데이터 테이블의 GridSize. */
 	UPROPERTY()
 	FIntPoint ConfiguredGridSize = FIntPoint(1, 1);

@@ -362,6 +362,7 @@ bool ASFBaseBuilding::HasLivingUnitInFootprint() const
 
 bool ASFBaseBuilding::TryStartConstruction()
 {
+	if (bIsCancellingConstruction || IsActorBeingDestroyed()) return false;
 	if (HasLivingUnitInFootprint()) return false;
 	if (CurrentBuildingState != EBuildingState::Preview || !CanStartPreparedConstruction())
 	{
@@ -373,7 +374,99 @@ bool ASFBaseBuilding::TryStartConstruction()
 		return false;
 	}
 
+	ASFGameState* const GameState = GetWorld()->GetGameState<ASFGameState>();
+	const FResources ConstructCost = GetConstructCost();
+	const int32 PayerTeam = GetTeamIndex();
+	if (!IsValid(GameState) || !GameState->TrySpendCost(PayerTeam, ConstructCost))
+	{
+		return false;
+	}
+
+	ConstructionPayerTeam = PayerTeam;
 	SetBuildingState(EBuildingState::UnderConstruction);
+	return true;
+}
+
+bool ASFBaseBuilding::CancelConstruction()
+{
+	if (CurrentBuildingState != EBuildingState::UnderConstruction ||
+		bIsCancellingConstruction || IsActorBeingDestroyed() ||
+		!IsValid(ProgressComponent) || !IsValid(HealthComponent) ||
+		HealthComponent->GetIsDead())
+	{
+		return false;
+	}
+
+	const bool bIsUpgrade = ActiveTierAssets.TierIndex != INDEX_NONE;
+	ASFGameState* const GameState = GetWorld()->GetGameState<ASFGameState>();
+	// 업그레이드는 시작 전 티어의 비용, 최초 건설은 건설 대상 티어의 비용을 사용한다.
+	const FSFBuildingTierData* const RefundTier =
+		bIsUpgrade ? GetCurrentTierInfo() : GetCostTierInfo();
+	if (!IsValid(GameState) || ConstructionPayerTeam == INDEX_NONE || !RefundTier)
+	{
+		return false;
+	}
+
+	if (bIsUpgrade)
+	{
+		if (!ActiveTierAssets.IsPreparedFor(CurrentTier) || PreviousMaxHealth <= 0.f)
+		{
+			return false;
+		}
+	}
+
+	// 환불과 체력 변경의 델리게이트에서 다시 호출돼도 한 번만 처리한다.
+	TGuardValue<bool> CancelGuard(bIsCancellingConstruction, true);
+	ProgressComponent->StopProgress();
+	StopHitReaction();
+
+	// 티어 DA 비용에서 건설은 75%, 업그레이드는 50%를 환불한다. 소수점은 버린다.
+	FResources RefundCost = bIsUpgrade
+		? RefundTier->Construction.UpgradeCost
+		: RefundTier->Construction.ConstructCost;
+	const int64 RefundPercent = bIsUpgrade ? 50 : 75;
+	RefundCost.Mineral = static_cast<int32>(RefundCost.Mineral * RefundPercent / 100);
+	RefundCost.Ether = static_cast<int32>(RefundCost.Ether * RefundPercent / 100);
+	// 지불 팀 기록부터 비워 중복 환불을 막는다.
+	const int32 PayerTeam = ConstructionPayerTeam;
+	ConstructionPayerTeam = INDEX_NONE;
+	GameState->RefundCost(PayerTeam, RefundCost);
+	if (IsActorBeingDestroyed() || CurrentBuildingState == EBuildingState::Destroyed)
+	{
+		return true;
+	}
+
+	if (bIsUpgrade)
+	{
+		// CurrentTier와 ActiveTierAssets는 완료 전까지 이전 티어를 유지한다.
+		const float CurrentHealth = HealthComponent->GetCurrentHealth();
+		const float RestoredMaxHealth = PreviousMaxHealth;
+		PendingTier = INDEX_NONE;
+		PendingTierAssets.Reset();
+		CurrentStageIndex = 0;
+		ConstructionCurrentHealthIncrease = 0.f;
+		PreviousMaxHealth = 0.f;
+
+		// InitializeHealth 내부에서 현재 체력을 이전 최대 체력 이하로 제한한다.
+		HealthComponent->InitializeHealth(RestoredMaxHealth, CurrentHealth);
+		if (IsActorBeingDestroyed() || CurrentBuildingState == EBuildingState::Destroyed)
+		{
+			return true;
+		}
+
+		SetBuildingState(EBuildingState::Completed);
+		bIsTierActivated = true;
+		OnTierActivated();
+		if (USFBuildingSynergySubsystem* Synergy = USFBuildingSynergySubsystem::Get(this))
+		{
+			Synergy->NotifyBuildingChanged(this);
+		}
+	}
+	else
+	{
+		SetBuildingState(EBuildingState::Destroyed);
+	}
+
 	return true;
 }
 
@@ -408,6 +501,7 @@ void ASFBaseBuilding::BeginConstruction()
 
 	const float StartCurrentHealth = bIsUpgrade	?
 				HealthComponent->GetCurrentHealth()	: 1.f;
+	PreviousMaxHealth = bIsUpgrade ? StartMaxHealth : 0.f;
 	// 건설 진행 중 현재체력에 더할 전체 수치
 	ConstructionCurrentHealthIncrease = FMath::Max(0.f,TargetMaxHealth - StartMaxHealth);
 
@@ -740,6 +834,7 @@ bool ASFBaseBuilding::HasNextUpgradeTier() const
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
+	if (bIsCancellingConstruction || IsActorBeingDestroyed()) return;
 	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
 	{
 		SF_LOG(Log, "[%s] 현재 튜토리얼 임무에서 허용하지 않은 티어 업입니다.", *GetName());
@@ -793,9 +888,10 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 
 	const FResources UpgradeCost =
 		GetUpgradeCost();
+	const int32 PayerTeam = GetTeamIndex();
 
 	if (!SFGS->CanAffordResource(
-		GetTeamIndex(),
+		PayerTeam,
 		UpgradeCost))
 	{
 		return;
@@ -831,7 +927,7 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	 */
 
 	if (!SFGS->TrySpendCost(
-		GetTeamIndex(),
+		PayerTeam,
 		UpgradeCost))
 	{
 		return;
@@ -841,18 +937,25 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	if (!PrepareLoadedTier(NextTier))
 	{
 		SFGS->RefundCost(
-			GetTeamIndex(),
+			PayerTeam,
 			UpgradeCost);
 
 		return;
 	}
 
+	ConstructionPayerTeam = PayerTeam;
 	SetBuildingState(
 		EBuildingState::UnderConstruction);
 }
 
 void ASFBaseBuilding::HandleCompleteConstruction()
 {
+	if (CurrentBuildingState != EBuildingState::UnderConstruction ||
+		bIsCancellingConstruction || IsActorBeingDestroyed())
+	{
+		return;
+	}
+
 	if (!FinalizeTierActivation())
 	{
 		UE_LOG(	LogTemp,Error, TEXT("[%s] 티어 활성화에 실패했습니다."),
@@ -1269,6 +1372,8 @@ bool ASFBaseBuilding::CommitPreparedTier()
 	PendingTier = INDEX_NONE;
 
 	CurrentTier = CommittedTier;
+	ConstructionPayerTeam = INDEX_NONE;
+	PreviousMaxHealth = 0.f;
 
 	return true;
 }
@@ -1439,15 +1544,21 @@ void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 		return;
 	}
 
-	const FVector LocalOffset =
-		HitLocalDirection *
+	const FVector WorldOffset =
+		HitWorldDirection *
 		HitMoveDistance *
 		CurveValue;
 
-	const FRotator LocalRotationOffset(
-		HitRotationAmount * CurveValue,
-		0.f,
-		-HitRotationAmount * CurveValue);
+	/*
+	 * 밀리는 방향에 수직인 축으로 돌려 건물 윗부분이 공격 반대쪽으로 기울게 한다.
+	 * 맞은 방향이 없으면(공격자가 바로 위) 기울이지 않는다.
+	 */
+	const FQuat WorldTiltOffset =
+		HitWorldTiltAxis.IsNearlyZero()
+			? FQuat::Identity
+			: FQuat(
+				HitWorldTiltAxis,
+				FMath::DegreesToRadians(HitRotationAmount * CurveValue));
 
 	const FQuat BaseRotation =
 		OriginalHitReactionTransform.GetRotation();
@@ -1457,11 +1568,12 @@ void ASFBaseBuilding::UpdateHitReaction(float CurveValue)
 
 	TargetTransform.SetLocation(
 		OriginalHitReactionTransform.GetLocation() +
-		BaseRotation.RotateVector(LocalOffset));
+		WorldOffset);
 
+	// 왼쪽에 곱해 월드 축 기준으로 기울인다.
 	TargetTransform.SetRotation(
-		(BaseRotation *
-		 LocalRotationOffset.Quaternion())
+		(WorldTiltOffset *
+		 BaseRotation)
 		.GetNormalized());
 
 	/*
@@ -1512,17 +1624,11 @@ void ASFBaseBuilding::PlayHitReaction(const FVector& WorldDirection)
 
 	OriginalHitReactionTransform = Target->GetComponentTransform();
 
-	FVector HorizontalWorldDirection = WorldDirection;
-	HorizontalWorldDirection.Z = 0.f;
-	HorizontalWorldDirection.Normalize();
+	HitWorldDirection = WorldDirection.GetSafeNormal2D();
 
-	/*
-	 * UpdateHitReaction()에서 BaseRotation을 다시 적용하므로
-	 * 여기에서는 월드 방향을 Target 로컬 방향으로 변환한다.
-	 */
-	HitLocalDirection =
-		OriginalHitReactionTransform
-			.InverseTransformVectorNoScale(HorizontalWorldDirection).GetSafeNormal();
+	// 월드 Up × 밀리는 방향을 회전축으로 삼아 공격 반대쪽으로 기울인다.
+	HitWorldTiltAxis =
+		FVector::CrossProduct(FVector::UpVector, HitWorldDirection).GetSafeNormal();
 
 	HitReactionTimeline->PlayFromStart();
 }

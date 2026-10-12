@@ -230,9 +230,17 @@ void USettingWidget::OnFullscreenModeChanged(FString SelectedItem, ESelectInfo::
 	{
 		NewMode = EWindowMode::Windowed;
 	}
+	else
+	{
+		return;
+	}
+	if (Settings->GetFullscreenMode() == NewMode) return;
 
 	Settings->SetFullscreenMode(NewMode);
-	Settings->ApplySettings(false);
+	// UE 5.5 ApplySettings recreates every component's render state. A resize
+	// during that empty-scene interval can assert in Nanite's primitive filter.
+	// This control changes display mode only; leave scalability/render state alone.
+	Settings->ApplyResolutionSettings(false);
 	Settings->SaveSettings();
 }
 
@@ -263,8 +271,11 @@ void USettingWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type
 		return;
 	}
 
-	Settings->SetScreenResolution(FIntPoint(Width, Height));
-	Settings->ApplySettings(false);
+	const FIntPoint Resolution(Width, Height);
+	if (Settings->GetScreenResolution() == Resolution) return;
+	Settings->SetScreenResolution(Resolution);
+	// Do not reapply graphics quality or recreate scene primitives for a resize.
+	Settings->ApplyResolutionSettings(false);
 	Settings->SaveSettings();
 }
 

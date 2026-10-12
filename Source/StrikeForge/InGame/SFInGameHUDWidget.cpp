@@ -14,6 +14,7 @@
 #include "Units/Commander/SFCommander.h"
 #include "Components/Image.h"
 #include "InGame/HUD/SFSkillCooldownWidget.h"
+#include "InGame/HUD/SFCommanderSkillTooltipWidget.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Engine/Texture2D.h"
@@ -1005,11 +1006,16 @@ void USFInGameHUDWidget::RefreshCommanderSkillIcons()
         const bool bUnlocked = Index < UnlockedTier;
         Icon->SetColorAndOpacity(bUnlocked ? FLinearColor::White : FLinearColor(0.28f, 0.28f, 0.28f, 1.f));
         Icon->SetVisibility(ESlateVisibility::Visible);
-        const FText Tip = FText::FromString(FString::Printf(TEXT("%s 키: %s\n%s\n넥서스 %d티어부터 사용 가능%s\n재사용 대기시간 30초"),
-            Keys[Index], *Commander->GetSkillName(Index + 1).ToString(),
-            *Commander->ReadSkillEffectDescription(Index + 1).ToString(),
-            Index + 1, bUnlocked ? TEXT("") : TEXT(" (잠김)")));
-        if (!Icon->GetToolTipText().EqualTo(Tip)) Icon->SetToolTipText(Tip);
+        auto* SkillTip = Cast<USFCommanderSkillTooltipWidget>(Icon->GetToolTip());
+        if (!SkillTip)
+        {
+            SkillTip = CreateWidget<USFCommanderSkillTooltipWidget>(GetOwningPlayer());
+            Icon->SetToolTipText(FText::GetEmpty());
+            Icon->SetToolTip(SkillTip);
+        }
+        if (SkillTip) SkillTip->SetSkillDetails(Commander->GetSkillName(Index + 1),
+            Commander->ReadSkillEffectDescription(Index + 1), Keys[Index], Index + 1,
+            bUnlocked, ASFCommander::SkillCooldownSeconds);
         auto* Overlay = Cast<UOverlay>(SelectionPanel->GetWidgetFromName(
             FName(*FString::Printf(TEXT("SkillSlotOverlay%02d"), Index + 1))));
         if (!Overlay) continue;

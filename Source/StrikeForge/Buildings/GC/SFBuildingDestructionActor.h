@@ -159,10 +159,10 @@ private:
 	float SurfaceFireRadialRatioStepPerLevel = 0.15f;
 	/** 조각 바운드가 레벨별 클러스터 바운드 가장자리에서 어느 정도 안쪽까지 있으면 표면 조각으로 인정할지 결정한다. */
 	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound",	meta=(ClampMin="0.0", ClampMax="0.5"))
-	float SurfaceFireClusterSurfaceTolerance = 0.08f;
+	float SurfaceFireClusterSurfaceTolerance = 0.5f;
 	/** 0은 조각 중심, 1은 조각 외부 면이다. 기본값은 중심에서 외부 면까지 80% 지점이다. */
 	UPROPERTY(EditDefaultsOnly, Category="BurnTest|SpawnBound", meta=(ClampMin="0.0", ClampMax="1.0"))
-	float SurfaceFireSurfaceRatio = 0.2f;
+	float SurfaceFireSurfaceRatio = 0.1f;
 	
 	// ---- 런타임 상태: 파괴 단계 ----
 	FBox CachedRestBounds = FBox(ForceInit);

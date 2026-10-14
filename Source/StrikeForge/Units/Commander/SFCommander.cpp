@@ -3,6 +3,7 @@
 
 #include "Units/Commander/SFCommander.h"
 #include "Units/Commander/SFCommanderAnim.h"
+#include "Animation/AnimSequence.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Units/Unit/UnitAIController.h"
 #include "Components/CapsuleComponent.h"
@@ -126,6 +127,7 @@ void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(LoadPCTimer);
 	GetWorldTimerManager().ClearTimer(RespawnTimer);
+	GetWorldTimerManager().ClearTimer(DeathAnimationTimer);
 	HealthComponent->OnHealthIsZero.RemoveDynamic(this, &ASFCommander::HandleCommanderDeath);
 	
 	if (CommandAction == ECommandAction::BUILD &&
@@ -183,8 +185,25 @@ void ASFCommander::HandleCommanderDeath()
 		Anim->Montage_Stop(0.f);
 	}
 	SetActorEnableCollision(false);
-	SetActorHiddenInGame(true);
+	if (DeathAnimation && DeathAnimation->GetPlayLength() > 0.f)
+	{
+		GetMesh()->PlayAnimation(DeathAnimation, false);
+		GetWorldTimerManager().SetTimer(DeathAnimationTimer, this,
+			&ASFCommander::HideAfterDeathAnimation, DeathAnimation->GetPlayLength(), false);
+	}
+	else
+	{
+		HideAfterDeathAnimation();
+	}
 	GetWorldTimerManager().SetTimer(RespawnTimer, this, &ASFCommander::RespawnAtNexus, RespawnDelaySeconds, false);
+}
+
+void ASFCommander::HideAfterDeathAnimation()
+{
+	if (bAwaitingRespawn)
+	{
+		SetActorHiddenInGame(true);
+	}
 }
 
 bool ASFCommander::FindRespawnTransform(FTransform& OutTransform) const
@@ -233,6 +252,9 @@ void ASFCommander::RespawnAtNexus()
 		GetWorldTimerManager().SetTimer(RespawnTimer, this, &ASFCommander::RespawnAtNexus, .5f, false);
 		return;
 	}
+	GetWorldTimerManager().ClearTimer(DeathAnimationTimer);
+	// PlayAnimation uses single-node mode; restore the locomotion/skill AnimBP on revival.
+	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
 	SetActorLocationAndRotation(Transform.GetLocation(), Transform.Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
 	HealthComponent->SetHealth(HealthComponent->GetMaxHealth(), HealthComponent->GetMaxHealth());
 	// A health buff may have expired while HP was zero; recompute its current multiplier.

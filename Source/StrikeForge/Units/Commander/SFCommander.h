@@ -10,6 +10,7 @@
 
 class ASFInGamePlayerController;
 class UAnimationAsset;
+class UAnimSequence;
 class USFBuffComponent;
 class UHealthComponent;
 class UCombatTargetComponent;
@@ -135,6 +136,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Audio")
 	TObjectPtr<USoundBase> MoveCommandSound = nullptr;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Animation")
+	TObjectPtr<UAnimSequence> DeathAnimation = nullptr;
+
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
 
@@ -196,11 +200,13 @@ protected:
 	void StopMoving();
 	UFUNCTION()
 	void HandleCommanderDeath();
+	void HideAfterDeathAnimation();
 	void RespawnAtNexus();
 	bool FindRespawnTransform(FTransform& OutTransform) const;
 	bool bAwaitingRespawn = false;
 	double RespawnEndTime = 0.0;
 	FTimerHandle RespawnTimer;
+	FTimerHandle DeathAnimationTimer;
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Component")
 	TObjectPtr<USFBuffComponent> BuffComponent;

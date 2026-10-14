@@ -1,4 +1,4 @@
-#include "SFInGameHUDWidget.h"
+﻿#include "SFInGameHUDWidget.h"
 #include "Game/Subsystem/SFStageBuffSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
@@ -893,6 +893,8 @@ void USFInGameHUDWidget::ApplySelectionUIData(
 
     InOutSelectableInfo.bShowSkillIcons =
         UIData->bShowSkillIcons;
+
+    
 }
 
 ESFRace USFInGameHUDWidget::ResolveActorRace(

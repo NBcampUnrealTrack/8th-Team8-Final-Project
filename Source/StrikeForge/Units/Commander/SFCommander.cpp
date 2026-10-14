@@ -56,8 +56,17 @@ FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 	FSFSelectableInfo Info;
 	Info.SelectableType = ESFSelectableType::Commander;
 	Info.DataRowName    = TEXT("Commander");
-	Info.CurrentHealth = HealthComponent->GetCurrentHealth();
-	Info.MaximumHealth = HealthComponent->GetMaxHealth();
+	
+	if (IsValid(HealthComponent))
+	{
+		Info.CurrentHealth = HealthComponent->GetCurrentHealth();
+		Info.MaximumHealth = HealthComponent->GetMaxHealth();
+	}
+	if (IsValid(BuffComponent))
+	{
+		Info.BuffCompPtr = BuffComponent;
+	}
+
 	Info.PortraitAnimation = PortraitIdleAnimation;
 	// 이동속도의 유일한 출처는 이동 컴포넌트다. UnitBase.cpp:488 과 같은 방식.
 	if (const UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -307,6 +316,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[0].Interval = 0.f;
 			SkillAsset[0].Radius = 750.f;
 			SkillAsset[0].SkillValue.Emplace(TEXT("SpeedMul"), 1.5f);
+			SkillAsset[0].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[1].Name = TEXT("전장의 포효");
@@ -315,6 +325,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[1].Radius = 750.f;
 			SkillAsset[1].SkillValue.Emplace(TEXT("AtkMul"), 1.3f);
 			SkillAsset[1].SkillValue.Emplace(TEXT("HPMul"), 1.5f);
+			SkillAsset[0].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[2].Name = TEXT("위압");
@@ -322,6 +333,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[2].Interval = 0.f;
 			SkillAsset[2].Radius = 1000.f;
 			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 1.5f);
+			SkillAsset[0].bIsBuff = false;
 		} while (false);
 		break;
 	case ERace::ETHERIAN:
@@ -331,6 +343,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[0].Interval = 1.f;
 			SkillAsset[0].Radius = 2000.f;
 			SkillAsset[0].SkillValue.Emplace(TEXT("HealAmount"), 5.f);
+			SkillAsset[0].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[1].Name = TEXT("빨리빨리");
@@ -338,6 +351,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[1].Interval = 0.f;
 			SkillAsset[1].Radius = -1.f;
 			SkillAsset[1].SkillValue.Emplace(TEXT("ProdSpeedMul"), 2.f);
+			SkillAsset[0].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[2].Name = TEXT("천상의 수호");
@@ -345,6 +359,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[2].Interval = 0.f;
 			SkillAsset[2].Radius = 600.f;
 			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 0.1f);
+			SkillAsset[0].bIsBuff = true;
 		} while (false);
 		break;
 	}
@@ -828,23 +843,30 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, SpeedMul]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("이동속도 %d%% 증가"),
+						FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("SpeedMul")) - 1.f) * 100.f));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TG, SpeedMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 
 							TG.BuffCompPtr->Current_Status.Speed *= SpeedMul;
-						},
-						[TG]()	// 버프 시작 시 실행(Begin)
+						};
+					BuffInfo.BeginEvent = [TG]()	// 버프 시작 시 실행(Begin)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
-						},
-						[TG]()	// 버프 종료 시 실행(End)
+						};
+					BuffInfo.EndEvent = [TG]()	// 버프 종료 시 실행(End)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Speed);
-						},
-						BuffTime,
-						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get());
+						};
+					BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 
@@ -902,28 +924,36 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, AtkMul, HPMul]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("공격력 %d%%, 최대 체력 %d%% 증가"),
+						FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("AtkMul")) - 1.f) * 100.f),
+						FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("HPMul")) - 1.f) * 100.f));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TG, AtkMul, HPMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 
 							TG.BuffCompPtr->Current_Status.AtkMul *= AtkMul;
 							TG.BuffCompPtr->Current_Status.HPMul *= HPMul;
-						},
-						[TG, HPMul]()	// 버프 시작 시 실행(Begin)
+						};
+					BuffInfo.BeginEvent = [TG, HPMul]()	// 버프 시작 시 실행(Begin)
 						{
 
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
-						},
-						[TG, HPMul]()	// 버프 종료 시 실행(End)
+						};
+					BuffInfo.EndEvent = [TG, HPMul]()	// 버프 종료 시 실행(End)
 						{
 
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::MaxHealth);
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Atk);
-						},
-						BuffTime,
-						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get());
+						};
+					BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
@@ -976,23 +1006,30 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("적에게 받는 피해 %d%% 증가"),
+						FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul")) - 1.f) * 100.f));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 
 							TG.BuffCompPtr->Current_Status.DmgMul *= DmgMul;
-						},
-						[TG]()	// 버프 시작 시 실행(Begin)
+						};
+					BuffInfo.BeginEvent = [TG]()	// 버프 시작 시 실행(Begin)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
-						},
-						[TG]()	// 버프 종료 시 실행(End)
+						};
+					BuffInfo.EndEvent = [TG]()	// 버프 종료 시 실행(End)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
-						},
-						BuffTime,
-						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get());
+						};
+						BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
@@ -1066,32 +1103,33 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, HealAmount]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("초당 %d 회복"),
+						FMath::RoundToInt32(SkillAsset[SkillTier - 1].FindValue(TEXT("HealAmount"))));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TG, HealAmount]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							// TODO: 틱 단위 함수 작성
-							//GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White, FString::Printf(TEXT("[%s] HealUp Buff Tick..."), *TG.ActorPtr->GetName()));
 							TWeakObjectPtr<UHealthComponent> HPComp = TG.ActorPtr->GetComponentByClass<UHealthComponent>();
 							if (HPComp.IsValid())
 							{
 								HPComp->IncreaseCurrentHealth(HealAmount);
 							}
-						},
-						[TG]()	// 버프 시작 시 실행(Begin)
+						};
+					BuffInfo.BeginEvent = [TG]()	// 버프 시작 시 실행(Begin)
 						{
-							// TODO: 버프 시작 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, FString::Printf(TEXT("[%s] HealUp Buff Begin"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Regen);
-						},
-						[TG]()	// 버프 종료 시 실행(End)
+						};
+					BuffInfo.EndEvent = [TG]()	// 버프 종료 시 실행(End)
 						{
-							// TODO: 버프 종료 시 함수 작성
-							//GEngine->AddOnScreenDebugMessage(4, 5.f, FColor::Emerald, FString::Printf(TEXT("[%s] HealUp Buff End"), *TG.ActorPtr->GetName()));
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::Regen);
-						},
-						BuffTime,
-						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get());
+						};
+					BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
@@ -1151,24 +1189,30 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TargetBuilding]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("생산 속도 %d%% 증가"),
+						FMath::RoundToInt32((SkillAsset[SkillTier - 1].FindValue(TEXT("ProdSpeedMul")) - 1.f) * 100.f));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TargetBuilding]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
-							// TODO: 틱 단위 함수 작성
-						},
-						[TargetBuilding, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
+						};
+					BuffInfo.BeginEvent = [TargetBuilding, ProductionSpeedMultiplier]()	// 버프 시작 시 실행(Begin)
 						{
 							// TODO: 버프 시작 시 함수 작성
 							TargetBuilding->ApplySpeedBuff(ProductionSpeedMultiplier);
-						},
-						[TargetBuilding]()	// 버프 종료 시 실행(End)
+						};
+					BuffInfo.EndEvent = [TargetBuilding]()	// 버프 종료 시 실행(End)
 						{
 							// TODO: 버프 종료 시 함수 작성
 							TargetBuilding->ResetSpeedMultiplier();
-						},
-						BuffTime,
-						1.f,
-						CurrentSkillHitEffectWPtr.Get());
+						};
+					BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())
@@ -1222,24 +1266,31 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				if (IsTarget)
 				{
 					// 버프 부여
-					TG.BuffCompPtr->AddBuff(BuffKey, BuffText,
-						[TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
+					FInputBuffData BuffInfo;
+					BuffInfo.KeyName = BuffKey;
+					BuffInfo.DisplayName = BuffText;
+					BuffInfo.Description = FString::Printf(TEXT("적에게 받는 피해 %d%% 감소"),
+						FMath::RoundToInt32((1.f - SkillAsset[SkillTier - 1].FindValue(TEXT("DmgMul"))) * 100.f));
+					BuffInfo.bIsBuff = SkillAsset[SkillTier - 1].bIsBuff;
+					BuffInfo.Image = SkillAsset[SkillTier - 1].BuffImage;
+					BuffInfo.TickEvent = [TG, DmgMul]()	// BuffInterval 주기로 반복 실행(Tick)
 						{
 							TG.BuffCompPtr->Current_Status.DmgMul *= DmgMul;
 						},
-						[TG]()	// 버프 시작 시 실행(Begin)
+					BuffInfo.BeginEvent = [TG]()	// 버프 시작 시 실행(Begin)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
-						[TG]()	// 버프 종료 시 실행(End)
+					BuffInfo.EndEvent = [TG]()	// 버프 종료 시 실행(End)
 						{
 							TG.BuffCompPtr->ApplyBuffFlag(EBuffApply::DamageMul);
 						},
-						BuffTime,
-						BuffInterval,
-						CurrentSkillHitEffectWPtr.Get(),
-						{ 1.f / 25.f, 1.f / 45.f },
-						{ 1.f / 55.f, 1.f / 35.f });
+					BuffInfo.InitialTime = BuffTime;
+					BuffInfo.TickInterval = BuffInterval;
+					BuffInfo.Particle = CurrentSkillHitEffectWPtr.Get();
+					BuffInfo.ParticleScaleForCharacter = { 1.f / 25.f, 1.f / 45.f };
+					BuffInfo.ParticleScaleForOther = { 1.f / 55.f, 1.f / 35.f };
+					TG.BuffCompPtr->AddBuff(BuffInfo);
 				}
 			}
 			if (CurrentSkillEffectWPtr.IsValid())

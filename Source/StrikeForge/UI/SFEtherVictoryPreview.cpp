@@ -8,6 +8,65 @@
 #include "Styling/CoreStyle.h"
 #include "Engine/Font.h"
 
+int32 PaintResultExitButton(const FGeometry& G,FSlateWindowElementList& Out,int32 Layer,
+    float Age,const FLinearColor& Tint,bool bVictory,bool bHovered,bool bPressed)
+{
+    const FVector2D S=G.GetLocalSize();
+    if(S.X<1 || S.Y<1)return Layer;
+    const float F=FMath::Min(S.X/420.,S.Y/88.);
+    const float Light=bPressed?.7f:bHovered?1.25f:1.f;
+    const FLinearColor Gem=bVictory?FLinearColor(.06f,.72f,.9f):FLinearColor(.85f,.16f,.07f);
+    const auto Resource=FSlateApplication::Get().GetRenderer()->GetResourceHandle(*FCoreStyle::Get().GetBrush("WhiteBrush"));
+    const auto* Proxy=Resource.GetResourceProxy();
+    const FVector2f UV=Proxy?Proxy->StartUV+Proxy->SizeUV*.5f:FVector2f(.5f,.5f);
+    auto Polygon=[&](const TArray<FVector2D>& Points,FLinearColor Top,FLinearColor Bottom)
+    {
+        TArray<FSlateVertex> V;TArray<SlateIndex> Indices;
+        for(const auto& P:Points)
+        {
+            const auto Color=FMath::Lerp(Top,Bottom,static_cast<float>(P.Y/S.Y));
+            V.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(G.GetAccumulatedRenderTransform(),FVector2f(P),UV,(Color*Tint).ToFColor(true)));
+        }
+        for(int I=1;I+1<V.Num();++I)Indices.Append({0,static_cast<SlateIndex>(I),static_cast<SlateIndex>(I+1)});
+        FSlateDrawElement::MakeCustomVerts(Out,Layer++,Resource,V,Indices,nullptr,0,0);
+    };
+    auto Shape=[&](float Inset)
+    {
+        const double X=Inset*F,Y=Inset*F, Cut=16*F;
+        return TArray<FVector2D>{{X+Cut,Y},{S.X-X-Cut,Y},{S.X-X,Y+Cut},{S.X-X,S.Y-Y-Cut},
+            {S.X-X-Cut,S.Y-Y},{X+Cut,S.Y-Y},{X,S.Y-Y-Cut},{X,Y+Cut}};
+    };
+    auto Line=[&](TArray<FVector2D> Points,FLinearColor Color,float Width)
+    {FSlateDrawElement::MakeLines(Out,Layer++,G.ToPaintGeometry(),Points,ESlateDrawEffect::None,Color*Tint,true,Width*F);};
+    Polygon(Shape(0),FLinearColor(.13f,.07f,.027f),FLinearColor(.035f,.018f,.01f));
+    Polygon(Shape(2),FLinearColor(.95f,.77f,.43f)*Light,FLinearColor(.29f,.14f,.045f));
+    Polygon(Shape(6),FLinearColor(.028f,.07f,.085f)*Light,FLinearColor(.005f,.012f,.022f));
+    if(!bVictory)Polygon(Shape(7),FLinearColor(.085f,.025f,.027f)*Light,FLinearColor(.022f,.006f,.01f));
+    auto Inner=Shape(9);
+    const FVector2D FirstCorner=Inner[0];
+    Inner.Add(FirstCorner);
+    Line(Inner,FLinearColor(Gem.R,Gem.G,Gem.B,bHovered?.72f:.28f),1);
+    Line({{22*F,3*F},{S.X-22*F,3*F}},FLinearColor(1,.91f,.65f,.8f),1.5f);
+    // Faceted stones and engraved wings echo the existing HUD frame.
+    for(int Side:{-1,1})
+    {
+        const double X=Side<0?24*F:S.X-24*F,Y=S.Y*.5;
+        const float R=13*F;
+        Polygon({{X,Y-R},{X+R*.7,Y},{X,Y+R},{X-R*.7,Y}},FLinearColor(.9f,.75f,.43f),FLinearColor(.24f,.1f,.025f));
+        Polygon({{X,Y-R*.73},{X+R*.44,Y},{X,Y+R*.73},{X-R*.44,Y}},Gem*Light,Gem*.3f);
+        Line({{X-R*.4,Y},{X,Y-R*.7},{X+R*.4,Y}},FLinearColor(.7f,.97f,1,bHovered?1.f:.8f),1);
+        const double Toward=-Side;
+        Line({{X+Toward*19*F,Y-13*F},{X+Toward*29*F,Y},{X+Toward*19*F,Y+13*F}},FLinearColor(.84f,.6f,.28f,.8f),1.5f);
+        if(bHovered)
+        {
+            const float Pulse=.65f+.35f*FMath::Sin(Age*2.5f);
+            Line({{X-4*F,Y-R*.4},{X+4*F,Y-R*.4}},FLinearColor(1,.95f,.76f,Pulse),1);
+            Line({{X,Y-R*.4-4*F},{X,Y-R*.4+4*F}},FLinearColor(1,.95f,.76f,Pulse),1);
+        }
+    }
+    return Layer;
+}
+
 int32 PaintEtherVictoryPreview(const FGeometry& G,FSlateWindowElementList& Out,int32 Layer,
     float T,UFont* Font,const FLinearColor& Tint,bool bVictory)
 {
@@ -86,14 +145,10 @@ int32 PaintEtherVictoryPreview(const FGeometry& G,FSlateWindowElementList& Out,i
         FSlateDrawElement::MakeText(Out,Layer,G.ToPaintGeometry(Extent,FSlateLayoutTransform(Center-Extent*.5)),Value,Info,ESlateDrawEffect::None,Palette(Color)*Tint);
     };
 
-    // The battlefield remains visible beneath the imploding ether core.
-    const float Shade=.2f+.63f*FMath::Clamp(T/.9f,0.f,1.f);
-    FSlateDrawElement::MakeBox(Out,Layer++,G.ToPaintGeometry(),White,ESlateDrawEffect::None,FLinearColor(.004f,.012f,.024f,Shade)*Tint);
+    // One edge-to-edge shade keeps every aspect ratio uniformly dark.
+    const float Shade=.78f+.19f*FMath::Clamp(T/.65f,0.f,1.f);
+    FSlateDrawElement::MakeBox(Out,Layer++,G.ToPaintGeometry(),White,ESlateDrawEffect::None,Palette(FLinearColor(.002f,.004f,.008f,Shade))*Tint);
     Glow(C,900,FLinearColor(.015f,.12f,.22f,.5f));
-    ++Layer;
-    const float BorderFade=FMath::Clamp(T/.8f,0.f,1.f);
-    for(double Y:{0.,S.Y-46*Fit})
-        FSlateDrawElement::MakeBox(Out,Layer,G.ToPaintGeometry(FVector2D(S.X,46*Fit),FSlateLayoutTransform(FVector2D(0,Y))),White,ESlateDrawEffect::None,FLinearColor(0,0,0,.5f*BorderFade)*Tint);
     ++Layer;
     if(T<Impact)
     {
@@ -211,11 +266,11 @@ int32 PaintEtherVictoryPreview(const FGeometry& G,FSlateWindowElementList& Out,i
         ++Layer;
         const float Settle=FMath::Sin(After*9.f)*FMath::Exp(-After*3.f)*9.f;
         const FVector2D Title=C+FVector2D(0,Settle)*Fit+FVector2D(0,8+(1-Ease)*48)*Fit;
-        Text(bVictory?TEXT("승리"):TEXT("패배"),Title+FVector2D(0,7)*Fit,174,FLinearColor(.18f,.07f,.015f,Ease),5);
+        Text(bVictory?TEXT("승리"):TEXT("패배"),Title+FVector2D(0,4)*Fit,160,FLinearColor(.18f,.07f,.015f,Ease),2);
         ++Layer;
-        Text(bVictory?TEXT("승리"):TEXT("패배"),Title,174,FLinearColor(1,.83f,.48f,Ease),3);
+        Text(bVictory?TEXT("승리"):TEXT("패배"),Title,160,FLinearColor(1,.83f,.48f,Ease),1);
         ++Layer;
-        Text(bVictory?TEXT("V I C T O R Y"):TEXT("D E F E A T"),C+FVector2D(0,136)*Fit,30,FLinearColor(.6f,.83f,.9f,Ease*.9f),0);
+        Text(bVictory?TEXT("V I C T O R Y"):TEXT("D E F E A T"),C+FVector2D(0,166)*Fit,28,FLinearColor(.6f,.83f,.9f,Ease*.9f),0);
         for(int Side:{-1,1})
         {
             const FVector2D P=C+FVector2D(Side*330,22)*Fit;

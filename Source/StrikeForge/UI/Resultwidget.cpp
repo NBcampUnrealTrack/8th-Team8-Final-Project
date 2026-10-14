@@ -2,13 +2,17 @@
 #include "SFResultPresentation.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
 #include "Components/AudioComponent.h"
 #include "Engine/Font.h"
-#include "Brushes/SlateRoundedBoxBrush.h"
+#include "Engine/FontFace.h"
+#include "Brushes/SlateNoResource.h"
 #include "Sound/SoundWave.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Framework/Application/SlateApplication.h"
@@ -24,11 +28,21 @@ UResultWidget::UResultWidget(const FObjectInitializer& ObjectInitializer) : Supe
     DefeatSound=Defeat.Object;
     static ConstructorHelpers::FObjectFinder<UFont> Font(TEXT("/Game/Game/IN_UI/Font/Jua-Regular_Font.Jua-Regular_Font"));
     VictoryFont=Font.Object;
+    static ConstructorHelpers::FObjectFinder<UFontFace> TitleFace(TEXT("/Game/Game/IN_UI/Font/NanumMyeongjo_ExtraBold.NanumMyeongjo_ExtraBold"));
+    ResultTitleFace=TitleFace.Object;
 }
 
 void UResultWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    if (ResultTitleFace && !ResultTitleFont)
+    {
+        ResultTitleFont=NewObject<UFont>(this);
+        ResultTitleFont->FontCacheType=EFontCacheType::Runtime;
+        FTypefaceEntry Entry(TEXT("Default"));
+        Entry.Font=FFontData(ResultTitleFace);
+        ResultTitleFont->CompositeFont.DefaultTypeface.Fonts.Add(Entry);
+    }
     if (Exit_Btn_W) Exit_Btn_W->OnClicked.AddUniqueDynamic(this,&UResultWidget::OnExitButtonClicked);
     if (Exit_Btn_F) Exit_Btn_F->OnClicked.AddUniqueDynamic(this,&UResultWidget::OnExitButtonClicked);
     for (UWidget* Widget : {Win_Image,Loose_Image,static_cast<UWidget*>(Exit_Btn_W),static_cast<UWidget*>(Exit_Btn_F),static_cast<UWidget*>(Win_Glow.Get()),static_cast<UWidget*>(Flash.Get())})
@@ -54,17 +68,37 @@ void UResultWidget::NativeConstruct()
             EtherPreviewExit->OnClicked.AddUniqueDynamic(this,&UResultWidget::OnExitButtonClicked);
             EtherPreviewExit->SetVisibility(ESlateVisibility::Collapsed);
             FButtonStyle Style;
-            Style.SetNormal(FSlateRoundedBoxBrush(FLinearColor(.012f,.045f,.065f,.95f),6.f,FLinearColor(.22f,.62f,.75f,.65f),1.5f));
-            Style.SetHovered(FSlateRoundedBoxBrush(FLinearColor(.03f,.14f,.19f,1.f),6.f,FLinearColor(.48f,.87f,1.f,1.f),2.f));
-            Style.SetPressed(FSlateRoundedBoxBrush(FLinearColor(.01f,.025f,.04f,1.f),6.f,FLinearColor(.8f,.64f,.32f,1.f),2.f));
+            Style.SetNormal(FSlateNoResource());
+            Style.SetHovered(FSlateNoResource());
+            Style.SetPressed(FSlateNoResource());
+            Style.SetDisabled(FSlateNoResource());
+            Style.SetNormalPadding(FMargin(0));
+            Style.SetPressedPadding(FMargin(0));
             EtherPreviewExit->SetStyle(Style);
+            auto* Content=WidgetTree->ConstructWidget<UOverlay>();
+            auto* ContentSlot=Cast<UButtonSlot>(EtherPreviewExit->AddChild(Content));
+            ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+            ContentSlot->SetVerticalAlignment(VAlign_Fill);
+            ContentSlot->SetPadding(FMargin(0));
+            ExitDecoration=WidgetTree->ConstructWidget<USFResultPresentation>();
+            ExitDecoration->bExitButtonDecoration=true;
+            ExitDecoration->ExitButton=EtherPreviewExit;
+            ExitDecoration->SetVisibility(ESlateVisibility::HitTestInvisible);
+            auto* DecorationSlot=Content->AddChildToOverlay(ExitDecoration);
+            DecorationSlot->SetHorizontalAlignment(HAlign_Fill);
+            DecorationSlot->SetVerticalAlignment(VAlign_Fill);
             auto* Label=WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),TEXT("EtherPreviewExitLabel"));
             Label->SetText(FText::FromString(TEXT("로비로 돌아가기")));
             Label->SetColorAndOpacity(FSlateColor(FLinearColor(.77f,.91f,.98f)));
             auto* Font=VictoryFont.Get();
             Label->SetFont(Font?FSlateFontInfo(Font,24):FCoreStyle::GetDefaultFontStyle("Bold",24));
-            if(Presentation)Presentation->PreviewFont=Font;
-            EtherPreviewExit->AddChild(Label);
+            if(Presentation)Presentation->PreviewFont=ResultTitleFont?ResultTitleFont.Get():Font;
+            auto* LabelSlot=Content->AddChildToOverlay(Label);
+            LabelSlot->SetHorizontalAlignment(HAlign_Center);
+            LabelSlot->SetVerticalAlignment(VAlign_Center);
+            LabelSlot->SetPadding(FMargin(56,8));
+            Label->SetShadowOffset(FVector2D(0,2));
+            Label->SetShadowColorAndOpacity(FLinearColor(0,0,0,.85f));
             auto* ExitSlot=Canvas->AddChildToCanvas(EtherPreviewExit);
             ExitSlot->SetZOrder(10);
         }
@@ -88,6 +122,7 @@ void UResultWidget::SetResultState(bool bIsWin)
     ResultStartTime=FSlateApplication::Get().GetCurrentTime();
     if (Presentation) { Presentation->bVictory=bVictory; Presentation->StartTime=ResultStartTime; Presentation->bEtherBurstPreview=bEtherBurstPreview; }
     if (ForegroundSparkles) { ForegroundSparkles->bVictory=bVictory; ForegroundSparkles->StartTime=ResultStartTime; ForegroundSparkles->bEtherBurstPreview=bEtherBurstPreview; }
+    if (ExitDecoration) { ExitDecoration->bVictory=bVictory; ExitDecoration->StartTime=ResultStartTime; }
     if (Win_Image) Win_Image->SetVisibility(bVictory && !bEtherBurstPreview?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
     if (Loose_Image) Loose_Image->SetVisibility(bVictory || bEtherBurstPreview?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible);
     if (Exit_Btn_W) Exit_Btn_W->SetVisibility(bVictory && !bEtherBurstPreview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
@@ -100,16 +135,6 @@ void UResultWidget::SetResultState(bool bIsWin)
     {
         EtherPreviewAudio=UGameplayStatics::CreateSound2D(this,ResultSound,.8f,1.f,0.f,nullptr,false,true);
         if(EtherPreviewAudio){EtherPreviewAudio->SetUISound(true);EtherPreviewAudio->Play();}
-    }
-    if(EtherPreviewExit)
-    {
-        FButtonStyle Style=EtherPreviewExit->GetStyle();
-        const FLinearColor Edge=bVictory?FLinearColor(.22f,.62f,.75f,.65f):FLinearColor(.64f,.26f,.21f,.8f);
-        const FLinearColor Face=bVictory?FLinearColor(.012f,.045f,.065f,.95f):FLinearColor(.055f,.018f,.023f,.95f);
-        Style.SetNormal(FSlateRoundedBoxBrush(Face,6.f,Edge,1.5f));
-        Style.SetHovered(FSlateRoundedBoxBrush(Face*1.8f,6.f,Edge*1.35f,2.f));
-        Style.SetPressed(FSlateRoundedBoxBrush(Face*.7f,6.f,Edge,2.f));
-        EtherPreviewExit->SetStyle(Style);
     }
     // Pause the simulation; Slate's real-time clock drives the presentation.
     UGameplayStatics::SetGamePaused(this,true);
@@ -151,7 +176,7 @@ void UResultWidget::NativeTick(const FGeometry& Geometry,float Delta)
         Crest->SetRenderOpacity(FMath::Clamp(Age/.3f,0.f,1.f));
     }
     UButton* Exit=bEtherBurstPreview?EtherPreviewExit.Get():(bVictory?Exit_Btn_W:Exit_Btn_F);
-    Layout(Exit,FVector2D(.5,bEtherBurstPreview?.82:.86),bEtherBurstPreview?FVector2D(360,76):FVector2D(353,149));
+    Layout(Exit,FVector2D(.5,bEtherBurstPreview?.82:.86),bEtherBurstPreview?FVector2D(420,88):FVector2D(353,149));
     if (Exit)
     {
         const float Hover=Exit->IsHovered()?1.04f:1.f;

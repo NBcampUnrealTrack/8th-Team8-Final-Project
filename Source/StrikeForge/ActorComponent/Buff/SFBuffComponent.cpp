@@ -54,7 +54,8 @@ const float UBuffData::GetTimeRate()
 	if (!World.IsValid())
 		return 0.f;
 
-	return FMath::Clamp(RemainTime / InitialTime, 0.f, 1.f);
+	if (InitialTime < 0.f) return 1.f;
+	return InitialTime > 0.f ? FMath::Clamp(RemainTime / InitialTime, 0.f, 1.f) : 0.f;
 }
 
 void UBuffData::OnNiagaraFinished(UNiagaraComponent* PSystem)
@@ -222,10 +223,12 @@ void USFBuffComponent::AddBuff(const FInputBuffData& InputBuffData)
 	BuffList.Last()->InitialTime = InputBuffData.InitialTime;
 	BuffList.Last()->TickInterval = InputBuffData.TickInterval;
 	BuffList.Last()->bIsBuff = InputBuffData.bIsBuff;
-	BuffList.Last()->Image = InputBuffData.Image;
-	BuffList.Last()->OnBuffTickEvent.AddLambda([InputBuffData]() {InputBuffData.TickEvent(); });
-	BuffList.Last()->OnBuffBeginEvent.AddLambda([InputBuffData]() {InputBuffData.BeginEvent(); });
-	BuffList.Last()->OnBuffEndEvent.AddLambda([InputBuffData]() {InputBuffData.EndEvent(); });
+	if (InputBuffData.TickEvent)
+		BuffList.Last()->OnBuffTickEvent.AddLambda([InputBuffData]() {InputBuffData.TickEvent(); });
+	if (InputBuffData.BeginEvent)
+		BuffList.Last()->OnBuffBeginEvent.AddLambda([InputBuffData]() {InputBuffData.BeginEvent(); });
+	if (InputBuffData.EndEvent)
+		BuffList.Last()->OnBuffEndEvent.AddLambda([InputBuffData]() {InputBuffData.EndEvent(); });
 
 	// 파티클 크기 결정
 	FVector ParticlePosition = FVector::ZeroVector;

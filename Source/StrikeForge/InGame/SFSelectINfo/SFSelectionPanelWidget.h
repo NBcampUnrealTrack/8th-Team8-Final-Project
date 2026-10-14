@@ -171,6 +171,8 @@ protected:
     TObjectPtr<UTextBlock> MiningResourceAmountText = nullptr;
 
 private:
+    void HandleBuffEntryGenerated(UUserWidget& EntryWidget);
+
     UFUNCTION()
     void HandleRallyPointButtonClicked();
 

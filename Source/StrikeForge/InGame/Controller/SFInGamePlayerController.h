@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
@@ -186,11 +186,6 @@ private:
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
-
-#if WITH_EDITOR
-    /** Stage03/05: K instant victory followed by the authored clear epilogue. */
-    void HandleStageDebugVictoryInput();
-#endif
 
     void HandleFocusCommanderInput();
 

@@ -38,6 +38,8 @@ public:
     virtual void Tick(float DeltaSeconds) override;
 
 private:
+    void ResolveImpact(const FVector& ImpactLocation);
+
     UFUNCTION()
     void HandleProjectileOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
@@ -70,6 +72,7 @@ private:
     float ImpactEffectScale = 1.f;
 
     bool bHasImpacted = false;
+    FVector PreviousLocation = FVector::ZeroVector;
 
     UPROPERTY()
     TWeakObjectPtr<AUnitBase> SourceUnit;

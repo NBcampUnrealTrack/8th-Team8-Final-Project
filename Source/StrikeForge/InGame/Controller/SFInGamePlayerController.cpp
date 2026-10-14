@@ -1,4 +1,4 @@
-﻿#include "SFInGamePlayerController.h"
+#include "SFInGamePlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "Game/Subsystem/SFFogOfWarSubsystem.h"
 #include "EnhancedInputSubsystemInterface.h"
@@ -10,7 +10,6 @@
 #include "ActorComponent/Controller/BuildingPlacement.h"
 #include "Buildings/Building/SFBaseBuilding.h"
 #include "Game/GameMode/SFGameMode.h"
-#include "Game/Defence/SFDefenceWaveController.h"
 #include "Game/GameState/SFGameState.h"
 #include "Game/Subsystem/SFBuildingSynergySubsystem.h"
 #include "InGame/SFInGameHUDWidget.h"
@@ -315,22 +314,6 @@ void ASFInGamePlayerController::BeginPlay()
 void ASFInGamePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
-
-#if WITH_EDITOR
-    if (IsValid(InputComponent))
-    {
-        // Campaign debug victories use the normal flow, including the clear epilogue.
-        FInputKeyBinding& DebugVictoryBinding = InputComponent->BindKey(
-            EKeys::K,
-            IE_Pressed,
-            this,
-            &ASFInGamePlayerController::HandleStageDebugVictoryInput);
-        DebugVictoryBinding.bExecuteWhenPaused = true;
-        // ProtoType과 PT_Stage_2의 레벨 BP도 같은 K 입력을 사용한다.
-        // 여기서 소비하면 Stage03이 아닌 경우 기존 즉시 승리가 막힌다.
-        DebugVictoryBinding.bConsumeInput = false;
-    }
-#endif
 
     UEnhancedInputComponent* EnhancedInputComponent =
         Cast<UEnhancedInputComponent>(
@@ -939,53 +922,6 @@ void ASFInGamePlayerController::HandleCancelBuildInput()
     ClearSpawnedBuildingRef();
     SetSFControlMode(ESFControlMode::Gameplay);
 }
-
-#if WITH_EDITOR
-void ASFInGamePlayerController::HandleStageDebugVictoryInput()
-{
-    UWorld* World = GetWorld();
-    ASFGameState* GameState = IsValid(World)
-        ? World->GetGameState<ASFGameState>()
-        : nullptr;
-
-    if (!IsValid(GameState) ||
-        (GameState->GetCurrentStageRowName() != TEXT("Stage03") &&
-         GameState->GetCurrentStageRowName() != TEXT("Stage05") &&
-         GameState->GetCurrentStageRowName() != TEXT("Stage06") &&
-         GameState->GetCurrentStageRowName() != TEXT("Stage07")) ||
-        !GameState->IsStagePlaying())
-    {
-        return;
-    }
-
-    // 시작 스토리나 단계별 가이드 도중 눌러도 기존 인트로를 먼저 정리한다.
-    // 그렇지 않으면 승리 후일담을 열 자리가 없어 결과 창으로 바로 넘어간다.
-    if (USFTutorialSubsystem* Tutorial = World->GetSubsystem<USFTutorialSubsystem>())
-    {
-        Tutorial->CancelGuide();
-        Tutorial->CancelObjectiveWait();
-    }
-
-    if (IsValid(InGameHUDWidget))
-    {
-        InGameHUDWidget->DismissActiveStageIntroForDebug();
-    }
-
-    ASFGameMode* GameMode = World->GetAuthGameMode<ASFGameMode>();
-    if (IsValid(GameMode))
-    {
-        // The epilogue pauses the world immediately, so a later wave Tick cannot clean up.
-        TArray<AActor*> WaveControllers;
-        UGameplayStatics::GetAllActorsOfClass(World, ASFDefenceWaveController::StaticClass(), WaveControllers);
-        for (AActor* Actor : WaveControllers)
-        {
-            CastChecked<ASFDefenceWaveController>(Actor)->StopWaves();
-        }
-        SF_LOG(Log, "[SFInGamePlayerController] %s editor debug victory (K).", *GameState->GetCurrentStageRowName().ToString());
-        GameMode->ProcessVictory();
-    }
-}
-#endif
 
 void ASFInGamePlayerController::CreateInGameHUD()
 {

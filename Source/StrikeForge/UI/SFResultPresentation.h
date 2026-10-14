@@ -13,6 +13,8 @@ public:
     bool bVictory = true;
     bool bForeground = false;
     bool bEtherBurstPreview = false;
+    bool bExitButtonDecoration = false;
+    TWeakObjectPtr<class UButton> ExitButton;
     UPROPERTY(Transient) TObjectPtr<class UFont> PreviewFont;
     double StartTime = 0.;
 protected:

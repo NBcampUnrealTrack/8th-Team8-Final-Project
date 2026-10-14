@@ -95,6 +95,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Spawn")
 	int32 GetAliveCount() const;
 
+	/** Combat survivors, excluding corpses even before their actors are removed. */
+	bool HasLivingSpawnedUnits() const;
+
 	/**
 	 * 이 스포너를 소유한 건물. 아직 연결되지 않았으면 nullptr.
 	 *

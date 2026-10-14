@@ -44,11 +44,14 @@ protected:
 private:
 	UPROPERTY(Transient) TObjectPtr<USFResultPresentation> Presentation;
 	UPROPERTY(Transient) TObjectPtr<USFResultPresentation> ForegroundSparkles;
+    UPROPERTY(Transient) TObjectPtr<USFResultPresentation> ExitDecoration;
 	UPROPERTY(Transient) TObjectPtr<UButton> EtherPreviewExit;
 	UPROPERTY(Transient) TObjectPtr<class UAudioComponent> EtherPreviewAudio;
 	UPROPERTY() TObjectPtr<class USoundWave> VictorySound;
     UPROPERTY() TObjectPtr<class USoundWave> DefeatSound;
     UPROPERTY() TObjectPtr<class UFont> VictoryFont;
+    UPROPERTY() TObjectPtr<class UFontFace> ResultTitleFace;
+    UPROPERTY(Transient) TObjectPtr<class UFont> ResultTitleFont;
 	bool bEtherBurstPreview = false;
 	bool bPreviewExitFocused = false;
 	double ResultStartTime = 0.;

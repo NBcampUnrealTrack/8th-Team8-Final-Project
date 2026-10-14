@@ -76,8 +76,13 @@ void ASFDefenceWaveController::Tick(float DeltaSeconds)
             SpawnBatch();
             SpawnCountdown = FMath::Max(0.1f, SpawnInterval);
         }
-        if (!bRequireFullWaveDuration && GetRemainingSpawnCount() == 0 &&
-            (WaveNumber < FMath::Max(1, TotalWaves) || !HasLivingEnemies())) CompleteWave();
+        if (GetRemainingSpawnCount() == 0)
+        {
+            const bool bCleared = !HasLivingEnemies();
+            if ((bEndWaveOnEnemyClear && bCleared) ||
+                (!bRequireFullWaveDuration && (WaveNumber < FMath::Max(1, TotalWaves) || bCleared)))
+                CompleteWave();
+        }
     }
 }
 
@@ -130,9 +135,10 @@ void ASFDefenceWaveController::BeginWave()
 
 bool ASFDefenceWaveController::HasLivingEnemies() const
 {
-    for (TActorIterator<AUnitBase> It(GetWorld()); It; ++It)
-        if (Spawners.Contains(Cast<AUnitSpawner>(It->GetOwner())) &&
-            It->GetCombatState() != EUnitCombatState::Dead) return true;
+    // Possession replaces a Pawn's Owner with its AI controller. The spawner's
+    // tracked units remain authoritative after possession and through death animations.
+    for (const AUnitSpawner* Spawner : Spawners)
+        if (IsValid(Spawner) && Spawner->HasLivingSpawnedUnits()) return true;
     return false;
 }
 

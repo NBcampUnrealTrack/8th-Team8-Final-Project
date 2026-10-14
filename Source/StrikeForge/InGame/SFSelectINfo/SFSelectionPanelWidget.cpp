@@ -4,6 +4,9 @@
 #include "Components/Button.h"
 #include "Components/ProgressBar.h"
 #include "Components/Widget.h"
+#include "Components/ListView.h"
+#include "InGame/HUD/SFBuffTooltipWidget.h"
+#include "UObject/UnrealType.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
@@ -13,6 +16,12 @@
 void USFSelectionPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    if (auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView"))))
+    {
+        BuffList->OnEntryWidgetGenerated().RemoveAll(this);
+        BuffList->OnEntryWidgetGenerated().AddUObject(this, &ThisClass::HandleBuffEntryGenerated);
+    }
 
     if (IsValid(TierUpButton))
     {
@@ -233,6 +242,10 @@ void USFSelectionPanelWidget::ClearMiningResourceAmount()
 
 void USFSelectionPanelWidget::NativeDestruct()
 {
+    if (auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView"))))
+    {
+        BuffList->OnEntryWidgetGenerated().RemoveAll(this);
+    }
     if (IsValid(RallyPointButton))
     {
         RallyPointButton->OnClicked.RemoveDynamic(
@@ -242,6 +255,22 @@ void USFSelectionPanelWidget::NativeDestruct()
     }
 
     Super::NativeDestruct();
+}
+
+void USFSelectionPanelWidget::HandleBuffEntryGenerated(UUserWidget& EntryWidget)
+{
+    auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView")));
+    UObject* Item = BuffList ? BuffList->GetListObjectFromEntry(EntryWidget) : nullptr;
+    if (!Item) return;
+    // BP_BuffEntry remains the source of both strings, including buff/debuff wording.
+    const auto* Name = FindFProperty<FTextProperty>(Item->GetClass(), TEXT("Name"));
+    const auto* Description = FindFProperty<FTextProperty>(Item->GetClass(), TEXT("Description"));
+    if (!Name || !Description) return;
+    auto* Tooltip = Cast<USFBuffTooltipWidget>(EntryWidget.GetToolTip());
+    if (!Tooltip) Tooltip = CreateWidget<USFBuffTooltipWidget>(GetOwningPlayer());
+    if (!Tooltip) return;
+    Tooltip->SetDetails(Name->GetPropertyValue_InContainer(Item), Description->GetPropertyValue_InContainer(Item));
+    EntryWidget.SetToolTip(Tooltip);
 }
 
 void USFSelectionPanelWidget::HandleTierUpgradeButtonClicked()

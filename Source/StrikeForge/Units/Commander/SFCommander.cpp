@@ -332,7 +332,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[1].Radius = 750.f;
 			SkillAsset[1].SkillValue.Emplace(TEXT("AtkMul"), 1.3f);
 			SkillAsset[1].SkillValue.Emplace(TEXT("HPMul"), 1.5f);
-			SkillAsset[0].bIsBuff = true;
+			SkillAsset[1].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[2].Name = TEXT("위압");
@@ -340,7 +340,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[2].Interval = 0.f;
 			SkillAsset[2].Radius = 1000.f;
 			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 1.5f);
-			SkillAsset[0].bIsBuff = false;
+			SkillAsset[2].bIsBuff = false;
 		} while (false);
 		break;
 	case ERace::ETHERIAN:
@@ -358,7 +358,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[1].Interval = 0.f;
 			SkillAsset[1].Radius = -1.f;
 			SkillAsset[1].SkillValue.Emplace(TEXT("ProdSpeedMul"), 2.f);
-			SkillAsset[0].bIsBuff = true;
+			SkillAsset[1].bIsBuff = true;
 		} while (false);
 		do {
 			SkillAsset[2].Name = TEXT("천상의 수호");
@@ -366,7 +366,7 @@ void ASFCommander::InitSkillAsset()
 			SkillAsset[2].Interval = 0.f;
 			SkillAsset[2].Radius = 600.f;
 			SkillAsset[2].SkillValue.Emplace(TEXT("DmgMul"), 0.1f);
-			SkillAsset[0].bIsBuff = true;
+			SkillAsset[2].bIsBuff = true;
 		} while (false);
 		break;
 	}

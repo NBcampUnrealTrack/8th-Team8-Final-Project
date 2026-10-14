@@ -14,8 +14,7 @@
 
 ASFUnitProjectile::ASFUnitProjectile()
 {
-    // 이동은 ProjectileMovementComponent가 담당하므로
-    // 액터 자체 Tick은 필요하지 않다.
+    // Movement is handled by the component; actor tick also verifies target contact.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
 
@@ -63,6 +62,8 @@ void ASFUnitProjectile::InitializeProjectile(AUnitBase* InSourceUnit, AActor* In
     SourceUnit = InSourceUnit;
     TargetActor = InTargetActor;
     DamageRatio = FMath::Max(0.f, InDamageRatio);
+    PreviousLocation = GetActorLocation();
+    AddTickPrerequisiteComponent(ProjectileMovement);
 
 	const float SafeSpeed = FMath::Max(1.f, InProjectileSpeed);
 
@@ -145,8 +146,37 @@ void ASFUnitProjectile::Tick(float DeltaSeconds)
 		if (TargetUnit->GetCombatState() == EUnitCombatState::Dead)
 		{
 			Destroy();
+			return;
 		}
 	}
+
+	if (bHasImpacted) return;
+	// BeginOverlap can fire before InitializeProjectile, or never fire when the
+	// target disables overlap events. Sweep only the intended target's real query
+	// collision, including the distance travelled this frame, so fast darts and
+	// point-blank shots still resolve exactly one impact.
+	const FVector CurrentLocation = GetActorLocation();
+	const float Radius = CollisionComponent->GetScaledSphereRadius();
+	const FCollisionShape Shape = FCollisionShape::MakeSphere(Radius);
+	TInlineComponentArray<UPrimitiveComponent*> TargetComponents(ValidTarget);
+	for (UPrimitiveComponent* Component : TargetComponents)
+	{
+		if (!IsValid(Component) || !Component->IsQueryCollisionEnabled()) continue;
+		FHitResult Hit;
+		FVector ClosestPoint;
+		if (Component->SweepComponent(Hit, PreviousLocation, CurrentLocation, FQuat::Identity, Shape))
+		{
+			ResolveImpact(Hit.ImpactPoint);
+			return;
+		}
+		const float Distance = Component->GetClosestPointOnCollision(CurrentLocation, ClosestPoint);
+		if (Distance >= 0.f && Distance <= Radius)
+		{
+			ResolveImpact(ClosestPoint);
+			return;
+		}
+	}
+	PreviousLocation = CurrentLocation;
 }
 
 void ASFUnitProjectile::HandleProjectileOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -164,8 +194,6 @@ void ASFUnitProjectile::HandleProjectileOverlap(UPrimitiveComponent* OverlappedC
 		return;
 	}
 
-	bHasImpacted = true;
-
 	// 피격 대상의 충돌 컴포넌트 중심을 기본 명중 위치로 사용한다.
 	FVector ImpactLocation = OtherActor->GetActorLocation();
 
@@ -179,6 +207,14 @@ void ASFUnitProjectile::HandleProjectileOverlap(UPrimitiveComponent* OverlappedC
 	{
 		ImpactLocation = SweepResult.ImpactPoint;
 	}
+	ResolveImpact(ImpactLocation);
+}
+
+void ASFUnitProjectile::ResolveImpact(const FVector& ImpactLocation)
+{
+	AActor* OtherActor = TargetActor.Get();
+	if (bHasImpacted || !IsValid(OtherActor)) return;
+	bHasImpacted = true;
 
 	if (IsValid(ImpactEffect))
 	{

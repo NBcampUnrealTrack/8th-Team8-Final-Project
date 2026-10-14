@@ -1,5 +1,6 @@
 #include "SFResultPresentation.h"
 #include "SFEtherVictoryPreview.h"
+#include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
@@ -23,6 +24,10 @@ public:
         const FVector2D S=G.GetLocalSize(), C(S.X*.5,S.Y*.42);
         const float Fit=FMath::Min(S.X/1920.,S.Y/1080.);
         const float T=FMath::Max(0.,FSlateApplication::Get().GetCurrentTime()-W->StartTime);
+        if (W->bExitButtonDecoration)
+            return PaintResultExitButton(G,Out,Layer,T,Style.GetColorAndOpacityTint(),W->bVictory,
+                W->ExitButton.IsValid() && (W->ExitButton->IsHovered() || W->ExitButton->HasKeyboardFocus()),
+                W->ExitButton.IsValid() && W->ExitButton->IsPressed());
         if (W->bEtherBurstPreview)
             return W->bForeground?Layer:PaintEtherVictoryPreview(G,Out,Layer,T,W->PreviewFont,Style.GetColorAndOpacityTint(),W->bVictory);
         const float Fade=FMath::Clamp(T/.65f,0.f,1.f);

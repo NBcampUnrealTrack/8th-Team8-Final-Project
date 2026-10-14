@@ -103,8 +103,6 @@ public:
     void ShowResultWidget(bool bIsWin);
 
 #if WITH_EDITOR
-    /** K 즉시 승리 테스트 전에 재생 중인 시작 스토리를 정리한다. */
-    void DismissActiveStageIntroForDebug();
     void PreviewResultForDebug(bool bWin) { bVictoryEpilogueCompleted=true; ShowResultWidget(bWin); }
     void ArmResultPreviewForDebug() { bVictoryEpilogueCompleted=true; }
 #endif
@@ -315,10 +313,12 @@ private:
     void UpdateEnemyHoverIndicator();
 
     void ShowEnemyHoverIndicator(
-        AActor* Actor
+        AActor* Actor, bool bForceAttack = false
     );
 
     void HideEnemyHoverIndicator();
+
+    bool IsValidHoverTarget(AActor* Actor) const;
 
     bool IsValidEnemyHoverTarget(
         AActor* Actor
@@ -740,6 +740,10 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UNiagaraComponent> EnemyHoverIndicator = nullptr;
+
+    // The projected ring stays visible on terrain even when Niagara is culled.
+    UPROPERTY(Transient)
+    TObjectPtr<UDecalComponent> HoverGroundRing = nullptr;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AActor> HoverSuppressedSelectionActor;

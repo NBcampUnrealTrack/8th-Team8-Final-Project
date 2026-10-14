@@ -96,8 +96,17 @@ FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
 {
 	FSFSelectableInfo BuildingInfo = Super::GetSelectableInfo_Implementation();
 	BuildingInfo.DisplayName = DisplayName;
-	BuildingInfo.CurrentHealth = HealthComponent->GetCurrentHealth();
-	BuildingInfo.MaximumHealth = HealthComponent->GetMaxHealth();
+
+	if (IsValid(HealthComponent))
+	{
+		BuildingInfo.CurrentHealth = HealthComponent->GetCurrentHealth();
+		BuildingInfo.MaximumHealth = HealthComponent->GetMaxHealth();
+	}
+	if (IsValid(BuffComponent))
+	{
+		BuildingInfo.BuffCompPtr = BuffComponent;
+	}
+
 	BuildingInfo.SelectableType = ESFSelectableType::None;
 	BuildingInfo.Tier = CurrentTier + 1;
 	BuildingInfo.bShowAttackPower = false;

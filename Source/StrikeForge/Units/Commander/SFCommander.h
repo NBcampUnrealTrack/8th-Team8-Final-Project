@@ -82,6 +82,12 @@ struct FSkillAsset
 	TObjectPtr<UNiagaraSystem> SkillEffect;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
 	TObjectPtr<UNiagaraSystem> SkillHitEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	TObjectPtr<UTexture2D> BuffImage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Skill|Asset")
+	uint8 bIsBuff : 1;
 public:
 	const float FindValue(FName TargetKey)
 	{

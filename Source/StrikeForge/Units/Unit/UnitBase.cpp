@@ -576,6 +576,11 @@ FSFSelectableInfo AUnitBase::GetSelectableInfo_Implementation()
 		Info.MaximumHealth = HealthComponent->GetMaxHealth();
 	}
 
+	if (IsValid(BuffComponent))
+	{
+		Info.BuffCompPtr = BuffComponent;
+	}
+
 	// 지휘관 버프 등이 적용된 실제 공격력을 보여준다 성윤 선택정보도 Getter를 쓰도록 변경
 	Info.AttackPower = GetCurrentAttackPower();
 	Info.MoveSpeed = GetCurrentMoveSpeed();

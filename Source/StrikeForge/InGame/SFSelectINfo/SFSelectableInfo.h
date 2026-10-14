@@ -5,6 +5,7 @@
 #include "SFSelectableInfo.generated.h"
 
 class UAnimationAsset;
+class USFBuffComponent;
 class UTexture2D;
 
 UENUM(BlueprintType)
@@ -145,4 +146,11 @@ public:
         Category = "SF|Selection|UI"
     )
     bool bShowSkillIcons = false;
+
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "SF|Selection|UI"
+    )
+    TWeakObjectPtr<USFBuffComponent> BuffCompPtr;
 };

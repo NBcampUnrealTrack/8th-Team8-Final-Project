@@ -26,6 +26,7 @@ public:
 
     void FinishBuff(bool bCallEndEvent);  // 버프 종료. 매개변수: 해당 버프의 종료이벤트 실행여부
     
+    UFUNCTION(BlueprintCallable, BlueprintPure)
     const float GetTimeRate(); // 버프 남은시간 비율(0~1)로 가져오기.
 
     UFUNCTION()
@@ -35,15 +36,21 @@ protected:
     virtual void BeginDestroy() override;
 
 public:
-    UPROPERTY(BlueprintReadWrite, Category = "Buff|Info")
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
     FString KeyName;   // 버프 Key명 (중복방지)
-    UPROPERTY(BlueprintReadWrite, Category = "Buff|Info")
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
     FText DisplayName; // 버프 명칭 (UI 디스플레이용)
-    UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
+    FString Description; // 버프 설명
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
+    TObjectPtr<UTexture2D> Image;
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
+    bool bIsBuff;  // 긍정적 효과인가? (false라면 부정적효과)
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
     float InitialTime;  // 지속시간 초기값. (음수라면 무한)
-    UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
     float TickInterval; // 효과발생 주기. (0이면 매 프레임 지속)
-    UPROPERTY(BlueprintReadWrite, Category = "Buff|Value")
+    UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
     TObjectPtr<UNiagaraComponent> ParticleComp; // 이펙트
 
     float RemainTime;       // 현재 남은 시간
@@ -64,6 +71,28 @@ struct FStatusData
     float AtkMul = 1.f;
     float HPMul = 1.f;
     float DmgMul = 1.f;
+};
+
+USTRUCT()
+struct FInputBuffData
+{
+    GENERATED_BODY()
+
+    FString KeyName;
+    FText DisplayName;
+    FString Description;
+    TFunction<void()> TickEvent;
+    TFunction<void()> BeginEvent;
+    TFunction<void()> EndEvent;
+    float InitialTime = -1.f;
+    float TickInterval = 0.f;
+    UNiagaraSystem* Particle = nullptr;
+    FVector2D ParticleScaleForCharacter = { 1.f / 25.f, 1.f / 45.f };
+    FVector2D ParticleScaleForOther = { 1.f / 23.f, 1.f / 23.f };
+
+    UPROPERTY()
+    TObjectPtr<UTexture2D> Image;
+    uint8 bIsBuff : 1;
 };
 
 // 버프가 적용되는 시점
@@ -87,7 +116,7 @@ class STRIKEFORGE_API USFBuffComponent : public UActorComponent
 public:	
 
     // C++전용
-    void AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime = -1.f, float _TickInterval = 0.f, UNiagaraSystem* _Particle = nullptr, FVector2D ParticleScaleForCharacter = { 1.f / 25.f, 1.f / 45.f }, FVector2D ParticleScaleForOther = { 1.f / 23.f, 1.f / 23.f });
+    void AddBuff(const FInputBuffData& InputBuffData);
     void ShrinkBuff();  // 만료된 버프 정리
     void ClearBuff();   // 모든 버프 제거
 

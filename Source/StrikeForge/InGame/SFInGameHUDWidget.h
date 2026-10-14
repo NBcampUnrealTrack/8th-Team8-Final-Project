@@ -1,0 +1,778 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "SFSelectInfo/SFSelectableInfo.h"
+#include "Datas/Race/SFRaceType.h"
+#include "SFSelectInfo/SFSelectionUIDataRow.h"
+// ESFStageState 를 UFUNCTION 인자로 받으려면 완전한 타입이 필요하다.
+// 전방 선언만으로는 UHT 가 델리게이트 시그니처를 만들지 못한다.
+#include "Game/GameState/SFGameState.h"
+#include "SFInGameHUDWidget.generated.h"
+
+class AActor;
+class UButton;
+class UBorder;
+class UCommonActivatableWidget;
+class UCommonActivatableWidgetStack;
+class UResultWidget;
+class USFProductionBuildingPanelWidget;
+class USFSelectionPanelWidget;
+class UHealthComponent;
+class UDecalComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
+class USFMultiSelectionPanelWidget;
+class UDataTable;
+class USFStageIntroWidget;
+class ASFUnitPortraitActor;
+class USoundBase;
+class ASFProductionBuilding;
+class AUnitBase;
+class UTexture2D;
+class USFControlGroupWidget;
+struct FSFSelectionUIDataRow;
+class ASFBaseBuilding;
+class UStaticMeshComponent;
+class UStaticMesh;
+class UWidget;
+class USFBuffComponent;
+// Badge Widget ( BuildingSynergy )
+class UCanvasPanel;
+class USFHUDPanelAccentWidget;
+class USFPlacementSynergyBonusWidget;
+
+USTRUCT()
+struct FSFControlGroup
+{
+    GENERATED_BODY()
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<AActor>> Actors;
+};
+
+UCLASS(Blueprintable)
+class STRIKEFORGE_API USFInGameHUDWidget
+    : public UUserWidget
+{
+    GENERATED_BODY()
+    friend struct FSFForcedAttackTestAccess;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UBorder> StageBuffPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> StageBuffText;
+    FText LastStageBuffText;
+    void RefreshStageBuffDisplay();
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<UBorder> CommanderRespawnPanel;
+    UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Respawn", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<class UTextBlock> CommanderRespawnText;
+    void RefreshCommanderRespawnDisplay();
+
+    // ==================== Functions ====================
+
+public:
+    /** 건설 안내가 고정 좌표 대신 실제 UI를 강조할 수 있게 대상 위젯을 돌려준다. */
+    UWidget* GetTutorialBuildModeButton() const;
+    UWidget* FindTutorialBuildCatalogEntry(FName BuildingRowName) const;
+    UWidget* FindTutorialProductionButton(FName UnitRowName) const;
+    UWidget* GetTutorialCommanderSkillWidget(int32 SkillTier) const;
+    void RefreshCommanderSkillIcons();
+    UFUNCTION(
+        BlueprintCallable,
+        Category = "SF|HUD|Building"
+    )
+    void OpenBuildingMode();
+    bool IsBuildingModeOpen() const;
+
+    UFUNCTION(
+        BlueprintCallable,
+        Category = "SF|HUD|Building"
+    )
+    void CloseBuildingMode();
+
+    UFUNCTION(
+        BlueprintCallable,
+        Category = "SF|HUD|Settings"
+    )
+    void ToggleSettings();
+
+    void ShowResultWidget(bool bIsWin);
+
+#if WITH_EDITOR
+    void PreviewResultForDebug(bool bWin) { bVictoryEpilogueCompleted=true; ShowResultWidget(bWin); }
+    void ArmResultPreviewForDebug() { bVictoryEpilogueCompleted=true; }
+#endif
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
+    void SelectActor(AActor* Actor);
+
+    /** 내 소유의 살아 있는 유닛과 지휘관을 모두 선택한다. 건물은 제외한다. */
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
+    void SelectAllOwnedUnits();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
+    void ToggleBuildingMode();
+
+    /**
+     * 현재 다중 선택된 액터 목록.
+     *
+     * 이동 명령을 선택 전체에 나눠주기 위해 PlayerController 에서 조회한다.
+     * 목록이 비어 있으면 단일 선택(SelectedActor)만 있는 상태다.
+     *
+     * UFUNCTION 을 붙이지 않는 이유:
+     * UHT 는 TObjectPtr 을 함수 반환값으로 허용하지 않는다.
+     * C++ 에서만 호출하므로 리플렉션 노출이 필요 없다.
+     */
+    const TArray<TObjectPtr<AActor>>& GetSelectedActors() const { return SelectedActors; }
+
+    UFUNCTION(BlueprintCallable, Category = "SF|Command|Feedback")
+    void ShowMoveDestinationIndicator(const FVector& WorldLocation, bool bIsAttack);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Production")
+    bool RequestProductionBySlot(int32 SlotIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
+    void PlayBuildStartSound();
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Sound")
+    void PlayResourceWarningSound();
+
+    UFUNCTION()
+    void HandleSelectedProductionBuildingTierActivated(
+        const TArray<FName>& SpawnableRowNames
+    );
+
+    void BindSelectedProductionBuilding(AActor* Actor);
+
+    void UnbindSelectedProductionBuilding();
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFProductionBuilding>
+        SelectedProductionBuilding;
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Rally")
+    void RefreshRallyPointIndicator();
+
+    bool IsPointerOverHUDPanel();
+
+    void SaveCurrentSelectionToControlGroup(
+        int32 GroupIndex,
+        bool bAppend
+    );
+
+    void SelectControlGroup(
+        int32 GroupIndex
+    );
+
+    UFUNCTION()
+    void HandleControlGroupResetRequested(int32 GroupIndex);
+
+    void PlayEnemyHoverAttackFeedback(AActor* Target);
+
+    UFUNCTION(BlueprintCallable, Category = "SF|HUD|Building")
+    bool RequestBuildingBySlot(int32 SlotIndex);
+#pragma region BuildingSynergy
+public:
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+    TObjectPtr<UCanvasPanel> RootCanvas = nullptr;
+
+    /**
+     * 월드에 붙는 UI(건물 머리 위 판·시너지 배지)를 그릴 캔버스를 RootCanvas 맨 뒤에 한 번 만듭니다.
+     * 위젯은 USFOverheadUISubsystem이 이 캔버스에 띄웁니다. HUD는 캔버스를 넘기고 매 프레임 위치 갱신만 부릅니다.
+     */
+    void CreateOverheadOverlayCanvas();
+
+    UPROPERTY(Transient)
+    TObjectPtr<UCanvasPanel> OverheadOverlayCanvas;
+
+    /** 커서 옆 시너지 보너스 위젯을 RootCanvas에 한 번 만들어 넣습니다. */
+    void CreatePlacementSynergyBonusWidget();
+
+    /** 건물 배치 모드 동안 커서 옆에 시너지 생산 보너스를 표시할 위젯 클래스입니다. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Building Synergy")
+    TSubclassOf<USFPlacementSynergyBonusWidget> PlacementSynergyBonusWidgetClass;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFPlacementSynergyBonusWidget> PlacementSynergyBonusWidget;
+#pragma endregion
+protected:
+    virtual void NativeConstruct() override;
+
+    virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime) override;
+
+    virtual void NativeDestruct() override;
+
+    TArray<TWeakObjectPtr<USFHUDPanelAccentWidget>> PanelAccents;
+    TWeakObjectPtr<AActor> LastAccentSelection;
+    float AccentDiscoveryTime = 0.f;
+
+    UFUNCTION()
+    void HandleSelectedHealthChanged(float BeforeHP, float CurrentHP, float MaxHP);
+
+    UFUNCTION()
+    void HandleSelectedUnitStatsChanged(float AttackPower,float MoveSpeed);
+
+    void BindSelectedUnitStatsDelegate(AActor* Actor);
+
+    void UnbindSelectedUnitStatsDelegate();
+
+    UFUNCTION()
+    void HandleSelectedBuffStatsChanged();
+
+    void BindSelectedHealthDelegate(AActor* Actor);
+
+    void UnbindSelectedHealthDelegate();
+
+private:
+    UFUNCTION()
+    void HandleSelectInput();
+
+    UFUNCTION()
+    void HandleProductionResourceWarningRequested();
+
+    UFUNCTION()
+    void HandleSelectedActorDestroyed(
+        AActor* DestroyedActor
+    );
+
+    UFUNCTION()
+    void HandleControlGroupClicked(int32 GroupIndex);
+
+    UFUNCTION()
+    void HandleControlGroupActorDestroyed(
+        AActor* DestroyedActor
+    );
+
+    void BindControlGroupActorsDestroyed();
+
+    void UnbindControlGroupActorsDestroyed();
+
+    void PerformSelectionTrace();
+
+    void AddActorToCurrentSelection(AActor* Actor);
+
+    void ApplySelection(
+        AActor* NewSelectedActor,
+        const FSFSelectableInfo& NewSelectedInfo
+    );
+
+
+    ESFRace ResolveActorRace(
+        AActor* Actor
+    ) const;
+
+    UTexture2D* ResolvePortraitImage(
+        const FSFSelectionUIDataRow& UIData,
+        ESFRace Race,
+        int32 Tier
+    ) const;
+
+    void ApplySelectionUIData(
+        AActor* SourceActor,
+        FSFSelectableInfo& InOutSelectableInfo
+    );
+
+    void RefreshSelectionPanels();
+
+    void RefreshSelectedResourceInfo();
+
+    /**
+    * 맵에 배치된 Portrait Actor를 저장할 포인터
+    * 선택 초상화를 갱신하는 함수
+    */
+    void RefreshSelectedPortrait();
+
+    void ClearSelection();
+
+    void BindSelectedActorsDestroyed();
+
+    void UnbindSelectedActorsDestroyed();
+
+    void HandleBuildingModeDeactivated();
+
+    void RefreshBuildModeOpenButtonVisibility();
+
+    UFUNCTION()
+    void HandleTierUpgradeRequested();
+
+    void HandleSettingsDeactivated();
+
+    UPROPERTY(Transient)
+    TObjectPtr<UCommonActivatableWidget> ActiveSettingsWidget = nullptr;
+
+    void ShowSelectionIndicator(AActor* Actor);
+
+    void HideSelectionIndicator(AActor* Actor);
+
+    void HideAllSelectionIndicators();
+
+    void UpdateEnemyHoverIndicator();
+
+    void ShowEnemyHoverIndicator(
+        AActor* Actor, bool bForceAttack = false
+    );
+
+    void HideEnemyHoverIndicator();
+
+    bool IsValidHoverTarget(AActor* Actor) const;
+
+    bool IsValidEnemyHoverTarget(
+        AActor* Actor
+    ) const;
+
+    void UpdateEnemyHoverAttackFeedback(
+        float InDeltaTime
+    );
+
+    UFUNCTION()
+    void HandleSelectionDragStarted(FVector2D StartScreenPosition);
+
+    UFUNCTION()
+    void HandleSelectionDragCompleted(
+        FVector2D StartScreenPosition,
+        FVector2D EndScreenPosition
+    );
+
+    void UpdateSelectionDragBox(FVector2D CurrentScreenPosition);
+
+    void PerformDragSelection(
+        FVector2D StartScreenPosition,
+        FVector2D EndScreenPosition,
+        bool bAddToExistingSelection
+    );
+
+    bool IsOwnedByLocalPlayer(AActor* Actor) const;
+
+    void ApplyMultipleSelection(
+        const TArray<AActor*>& NewSelectedActors
+    );
+
+    int32 GetSelectionPriority(AActor* Actor) const;
+
+    void RefreshMultiSelectionPanel();
+
+    UFUNCTION()
+    void HandlePrimarySelectionRequested(AActor* Actor);
+
+    UFUNCTION()
+    void HandleMultiSelectionRemoveRequested(AActor* Actor);
+
+    void CreateRallyPointIndicatorsForBuilding(
+        ASFProductionBuilding* ProductionBuilding
+    );
+
+    void TryStartStageIntro();
+
+    /**
+     * 스테이지가 실제로 시작될 때 인트로를 연다.
+     *
+     * 예전에는 HUD 가 만들어진 다음 프레임에 무조건 열었는데, 그 시점은
+     * 아직 스테이지 에셋을 비동기로 로딩하는 중이다. 로딩 화면과 겹치고,
+     * 인트로가 게임을 일시정지시키므로 로딩이 멈출 수도 있다.
+     *
+     * GameState 가 Playing 으로 바뀌는 순간은 로딩 화면이 이미 사라진
+     * 뒤이고 게임은 아직 아무 일도 일어나지 않은 시점이다.
+     */
+    UFUNCTION()
+    void HandleStageStateChanged(ESFStageState NewState);
+
+    /**
+     * 스테이지 인트로 위젯을 열고 지정한 노드부터 재생한다.
+     *
+     * TryStartStageIntro 의 본문을 그대로 옮겨온 것이다. 여는 절차(위젯 생성,
+     * HUD 숨김, 일시정지, 입력 모드 전환, OnDeactivated 바인딩)가 한 곳에만
+     * 있어야 목표 대기 후 재개할 때 상태가 어긋나지 않는다.
+     *
+     * @param InNodeIndex INDEX_NONE 이면 행에 지정된 StartNodeIndex 부터 시작한다.
+     *                    목표 대기에서 돌아올 때는 멈췄던 노드 번호가 들어온다.
+     */
+    bool OpenStageIntro(
+        UDataTable* InDataTable,
+        FName InRowName,
+        int32 InNodeIndex
+    );
+
+    /**
+     * 튜토리얼 목표 대기가 끝났다. 멈췄던 노드부터 인트로를 다시 연다.
+     *
+     * USFTutorialSubsystem::OnResumeRequested 에 연결된다. 동적 델리게이트라
+     * UFUNCTION 이 필요하다.
+     */
+    UFUNCTION()
+    void HandleTutorialResumeRequested(
+        UDataTable* InDataTable,
+        FName InRowName,
+        int32 InNodeIndex
+    );
+
+    void HandleStageIntroDeactivated();
+
+    FName ResolveStageIntroRowName(bool bVictory = false) const;
+
+    /**
+     * 현재 스테이지와 같은 이름에 Clear 접미사를 붙인 후일담 행을 연다.
+     * 예: Stage03 -> Stage03Clear. 행이 없으면 일반 승리 화면을 사용한다.
+     */
+    bool TryStartVictoryEpilogue();
+
+    UFUNCTION()
+    void HandleRallyPointRequested();
+
+    bool TryHandleUnitDoubleClick(
+        AActor* ClickedActor
+    );
+
+    void SelectNearbyUnitsOfSameType(
+        AUnitBase* CenterUnit
+    );
+
+    UFUNCTION()
+    void HandleSelectedBuildingTierActivated(int32 ActivatedTier);
+
+    void HideRallyPointIndicator();
+
+    void RefreshQueuedMovePathIndicators();
+
+    void HideQueuedMovePathIndicators();
+
+    void BindSelectedCommandPathDelegates();
+
+    void UnbindSelectedCommandPathDelegates();
+
+    UFUNCTION()
+    void HandleSelectedUnitCommandPathChanged();
+
+    // ==================== Variables ====================
+
+protected:
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    TObjectPtr<AActor> SelectedActor = nullptr;
+
+    TWeakObjectPtr<AActor> LastClickedUnit;
+
+    float LastUnitClickTime = -1.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "SF|Selection|Double Click")
+    float DoubleClickInterval = 0.3f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "SF|Selection|Double Click")
+    float SameUnitSearchRadius = 1000.0f;
+
+
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    TArray<TObjectPtr<AActor>> SelectedActors;
+
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Selection"
+    )
+    FSFSelectableInfo SelectedInfo;
+
+    // 26.08.27 추가분
+    UPROPERTY(
+        Transient,
+        BlueprintReadOnly,
+        Category = "SF|Portrait"
+    )
+    TObjectPtr<ASFUnitPortraitActor> UnitPortraitActor = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<USFSelectionPanelWidget> SelectionPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Resource",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> ResourcePanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Minimap",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> MinimapPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Selection",
+        meta = (BindWidget)
+    )
+    TObjectPtr<USFMultiSelectionPanelWidget> MultiSelectionPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Production",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<USFProductionBuildingPanelWidget>
+        ProductionBuildingPanel = nullptr;
+
+    // 멀티 선택·빌드·생산 패널을 감싸는 가운데 입력 차단 영역.
+    // WBP_SFInGameHUD에서 동일한 이름(CenterPanel)으로 지정한다.
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Input",
+        meta = (BindWidgetOptional)
+    )
+    TObjectPtr<UWidget> CenterPanel = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UCommonActivatableWidgetStack> BuildingUIStack = nullptr;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|HUD|Building",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UButton> BuildModeOpenButton = nullptr;
+
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "SF|HUD|Building"
+    )
+    TSubclassOf<UCommonActivatableWidget> BuildingModeWidgetClass;
+
+    UPROPERTY(
+        BlueprintReadOnly,
+        Category = "SF|Selection",
+        meta = (BindWidget)
+    )
+    TObjectPtr<UBorder> SelectionDragBox = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Result")
+    TSubclassOf<UResultWidget> ResultWidgetClass;
+
+    UPROPERTY(BlueprintReadOnly, Category = "SF|HUD|Settings", meta = (BindWidget))
+    TObjectPtr<UCommonActivatableWidgetStack> SettingsUIStack = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Settings")
+    TSubclassOf<UCommonActivatableWidget> SettingsWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Feedback")
+    TObjectPtr<UMaterialInterface> SelectionIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    TObjectPtr<UMaterialInterface> EnemyHoverIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> MoveDestinationIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> AttackDestinationIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    FVector MoveDestinationIndicatorSize = FVector(24.f, 70.f, 70.f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TSoftObjectPtr<UNiagaraSystem> DestinationNiagaraSystem =
+        TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/Game/IN_UI/WorldFeedback/Niagara/NS_SFClickMovement.NS_SFClickMovement")));
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Hover")
+    TSoftObjectPtr<UNiagaraSystem> HoverNiagaraSystem =
+        TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/Game/IN_UI/WorldFeedback/Niagara/NS_SFHoverRound.NS_SFHoverRound")));
+
+    // Authored Niagara radius at unit scale, in centimetres.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback", meta = (ClampMin = "1"))
+    float DestinationNiagaraRadius = 100.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Selection|Hover", meta = (ClampMin = "1"))
+    float HoverNiagaraRadius = 140.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorLifeTime = 0.65f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    float MoveDestinationIndicatorFadeDuration = 0.3f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TSubclassOf<USFStageIntroWidget> StageIntroWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    TObjectPtr<UDataTable> StageIntroDataTable = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro")
+    FName StageIntroFallbackRowName = NAME_None;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildModeOpenSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildModeCloseSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> BuildStartSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Sound")
+    TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Command|Feedback")
+    TObjectPtr<UMaterialInterface> RallyPointIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    TObjectPtr<UMaterialInterface> RallyPathIndicatorMaterial = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Rally")
+    float RallyPathIndicatorWidth = 30.f;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPathIndicators;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Rally")
+    TObjectPtr<UStaticMesh> RallyIndicatorMesh = nullptr;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>> QueuedMovePathIndicators;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathIndicatorWidth = 24.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathWaypointSize = 70.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly,
+        Category = "SF|HUD|Command Path")
+    float QueuedMovePathZOffset = 30.f;
+
+    UPROPERTY(BlueprintReadOnly,Category = "SF|HUD|ControlGroup",meta = (BindWidgetOptional))
+    TObjectPtr<USFControlGroupWidget> ControlGroupWidget = nullptr;
+
+    bool bEnemyHoverFeedbackActive =
+        false;
+
+    float EnemyHoverFeedbackElapsed =
+        0.f;
+
+    FVector EnemyHoverBaseScale =
+        FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    float EnemyHoverAttackPulseDuration = 0.35f;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "SF|Selection|Hover")
+    float EnemyHoverAttackPulseScale = 1.4f;
+
+private:
+    UPROPERTY(Transient)
+    TObjectPtr<UCommonActivatableWidget> ActiveBuildingModeWidget = nullptr;
+
+    // ── 스테이지 시작 대기 ──────────────────────────────
+
+    /** OnStageStateChanged 를 구독한 대상. NativeDestruct 에서 떼어낸다 */
+    UPROPERTY(Transient)
+    TObjectPtr<ASFGameState> BoundStageGameState = nullptr;
+
+    /**
+     * 인트로를 이미 요청했는가.
+     *
+     * Playing 은 한 판에 한 번뿐이지만, 델리게이트가 두 번 오는 경로가
+     * 생겨도 인트로 위젯이 두 개 열리지 않도록 막아둔다.
+     */
+    bool bStageIntroRequested = false;
+
+    /**
+     * 로딩이 끝날 때까지 HUD 를 숨길지.
+     *
+     * 로딩 화면이 불투명하면 꺼도 티가 안 나지만, 배경 영상에 투명도가
+     * 있거나 페이드를 넣으면 그 아래로 HUD 가 비친다.
+     *
+     * 문제가 생기면 이 값 하나로 예전 동작으로 되돌릴 수 있다.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|HUD|Stage Intro",
+        meta = (AllowPrivateAccess = "true"))
+    bool bHideHUDUntilStagePlaying = true;
+
+    /**
+     * 숨기기 전의 가시성.
+     *
+     * SelfHitTestInvisible 로 고정해서 되돌리면 WBP 가 설정한 값과
+     * 달라져 클릭 판정이 바뀐다. 원래 값을 그대로 돌려준다.
+     */
+    ESlateVisibility VisibilityBeforeStageLoading = ESlateVisibility::SelfHitTestInvisible;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UResultWidget> ResultWidget = nullptr;
+
+    /** 승리 후일담이 끝날 때까지 결과 UI를 보류하고 있는가. */
+    bool bPendingVictoryResultAfterEpilogue = false;
+
+    /** 같은 승리 결과 신호가 다시 와도 후일담을 두 번 재생하지 않는다. */
+    bool bVictoryEpilogueCompleted = false;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<UHealthComponent> SelectedHealthComponent;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AUnitBase> SelectedStatsUnit;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<USFBuffComponent> SelectedBuffComponent;
+
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<AActor>, TObjectPtr<UDecalComponent>> SelectionIndicatorComponents;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AActor> HoveredEnemyActor;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UNiagaraComponent> EnemyHoverIndicator = nullptr;
+
+    // The projected ring stays visible on terrain even when Niagara is culled.
+    UPROPERTY(Transient)
+    TObjectPtr<UDecalComponent> HoverGroundRing = nullptr;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AActor> HoverSuppressedSelectionActor;
+
+    bool bHoverSuppressedSelectionIndicator = false;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UMaterialInstanceDynamic>> EnemyHoverDynamicMaterials;
+
+    FVector2D SelectionDragStartPosition = FVector2D::ZeroVector;
+    bool bIsSelectionDragging = false;
+
+    UPROPERTY(Transient)
+    TObjectPtr<USFStageIntroWidget> ActiveStageIntroWidget = nullptr;
+
+    ESlateVisibility VisibilityBeforeStageIntro = ESlateVisibility::SelfHitTestInvisible;
+    bool bWasGamePausedBeforeStageIntro = false;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ASFBaseBuilding>
+        SelectedBuildingForTierDelegate;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>> RallyPointIndicators;
+
+    bool bAdditiveSelectionDrag = false;
+
+    bool bQueuedMovePathRefreshPending = false;
+
+    UPROPERTY(Transient)
+    TArray<FSFControlGroup> ControlGroups;
+};

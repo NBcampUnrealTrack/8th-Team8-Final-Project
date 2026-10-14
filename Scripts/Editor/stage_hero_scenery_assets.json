@@ -1,0 +1,354 @@
+{
+  "SM_OakAdultD": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/Trees/Oak/SM_OakAdultD.SM_OakAdultD",
+    "count": 197,
+    "scale": [
+      0.34137654304504395,
+      0.4831382930278778,
+      0.8567121028900146
+    ],
+    "origin": [
+      119.89584350585938,
+      22.318511962890625,
+      667.4965171813965
+    ],
+    "extent": [
+      695.7513732910156,
+      625.2272033691406,
+      687.0247230529785
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_GenericTreeD": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/Trees/GenericTrees/SM_GenericTreeD.SM_GenericTreeD",
+    "count": 161,
+    "scale": [
+      1.0343984367749404,
+      1.0343984367749404,
+      1.0343984367749404
+    ],
+    "origin": [
+      -43.26417541503906,
+      -26.524444580078125,
+      388.07732728123665
+    ],
+    "extent": [
+      267.11985778808594,
+      292.9337463378906,
+      388.21234557032585
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_GenericTreeB": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/Trees/GenericTrees/SM_GenericTreeB.SM_GenericTreeB",
+    "count": 26,
+    "scale": [
+      1.5,
+      1.5,
+      1.0
+    ],
+    "origin": [
+      -12.388771057128906,
+      24.46160888671875,
+      277.4372840002179
+    ],
+    "extent": [
+      151.75243377685547,
+      192.01466369628906,
+      277.66433953493834
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_PineVariantAGrowingB": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/Trees/Pines/SM_PineVariantAGrowingB.SM_PineVariantAGrowingB",
+    "count": 83,
+    "scale": [
+      2.5,
+      2.5,
+      3.0
+    ],
+    "origin": [
+      3.814697265625E-05,
+      -3.887939453125,
+      343.7120309029515
+    ],
+    "extent": [
+      157.91051483154297,
+      142.4501190185547,
+      343.7120413626735
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_BirchTreeAdultA": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/Trees/Birch/SM_BirchTreeAdultA.SM_BirchTreeAdultA",
+    "count": 48,
+    "scale": [
+      1.1449951371572467,
+      1.1449951371572467,
+      1.1449951371572467
+    ],
+    "origin": [
+      -35.47148895263672,
+      -34.37236785888672,
+      819.220784664154
+    ],
+    "extent": [
+      277.26917266845703,
+      247.8733901977539,
+      816.9473061561584
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_Rocks_01": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_01.SM_Rocks_01",
+    "count": 4,
+    "scale": [
+      16.0,
+      16.0,
+      16.274639129638672
+    ],
+    "origin": [
+      3.3794212341308594,
+      118.19990539550781,
+      16.226129531860362
+    ],
+    "extent": [
+      22.634496688842773,
+      25.783798217773438,
+      16.22612953186034
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "SM_Rocks_02": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_02.SM_Rocks_02",
+    "count": 29,
+    "scale": [
+      7.553858092779489,
+      10.56669807434082,
+      5.607715606689453
+    ],
+    "origin": [
+      131.31187438964844,
+      23.472891807556152,
+      27.928363800048828
+    ],
+    "extent": [
+      30.87127685546875,
+      33.010926246643066,
+      27.928363800048825
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "SM_Rocks_03": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_03.SM_Rocks_03",
+    "count": 5,
+    "scale": [
+      4.0,
+      4.0,
+      5.0
+    ],
+    "origin": [
+      -170.53623580932617,
+      70.61529636383057,
+      44.39151000976563
+    ],
+    "extent": [
+      109.20488357543945,
+      80.41949367523193,
+      44.391510009765625
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "SM_Rocks_05": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_05.SM_Rocks_05",
+    "count": 2,
+    "scale": [
+      7.1593780517578125,
+      4.0,
+      3.90099835395813
+    ],
+    "origin": [
+      234.86962890625,
+      14.827880859375,
+      57.23252487182617
+    ],
+    "extent": [
+      44.871490478515625,
+      45.137081146240234,
+      57.23252487182617
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "SM_Rocks_07": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_07.SM_Rocks_07",
+    "count": 11,
+    "scale": [
+      5.767891160132091,
+      8.237550790671774,
+      15.503429612840447
+    ],
+    "origin": [
+      50.38712501525879,
+      54.59109306335449,
+      20.47933959960938
+    ],
+    "extent": [
+      28.74501609802246,
+      28.853029251098633,
+      20.47933959960937
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "SM_Rocks_09": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/SM_Rocks_09.SM_Rocks_09",
+    "count": 19,
+    "scale": [
+      2.8967380506501295,
+      3.9813108143654135,
+      3.9813092945906132
+    ],
+    "origin": [
+      -156.41949081420898,
+      -73.81817245483398,
+      79.74763488769531
+    ],
+    "extent": [
+      43.950748443603516,
+      37.20321273803711,
+      79.74763488769533
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/rockpack/RocksStylized_M.RocksStylized_M"
+    ]
+  },
+  "Bush_average": {
+    "path": "/Game/Game/Stage/Props/asset/static_mesh/Bush_average.Bush_average",
+    "count": 302,
+    "scale": [
+      2.3480621337890626,
+      1.60421142578125,
+      1.789957046508789
+    ],
+    "origin": [
+      198.73534202575684,
+      1218.1813049316406,
+      203.89452803134918
+    ],
+    "extent": [
+      233.81174659729004,
+      224.06893920898438,
+      203.97632157802582
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/texture_material/AllColors_Material.AllColors_Material"
+    ]
+  },
+  "GrassClump01": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Grass/GrassClump01/GrassClump01.GrassClump01",
+    "count": 205,
+    "scale": [
+      1.9687109274388268,
+      2.847534216815121,
+      2.892027284048128
+    ],
+    "origin": [
+      0.0,
+      0.0,
+      27.96173095703125
+    ],
+    "extent": [
+      48.80523681640625,
+      49.16534423828125,
+      27.96173095703125
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Grass/GrassClump/GrassClump_M.GrassClump_M"
+    ]
+  },
+  "GrassClump02": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Grass/GrassClump02/GrassClump02.GrassClump02",
+    "count": 6,
+    "scale": [
+      2.331392572726521,
+      3.0354443875509887,
+      5.316718587746625
+    ],
+    "origin": [
+      0.0,
+      0.0,
+      23.5107421875
+    ],
+    "extent": [
+      47.23052978515625,
+      42.7978515625,
+      23.5107421875
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Grass/GrassClump/GrassClump_M.GrassClump_M"
+    ]
+  },
+  "SM_GrassLumpD": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Env/GrassLumps/SM_GrassLumpD.SM_GrassLumpD",
+    "count": 1035,
+    "scale": [
+      4.0,
+      10.4,
+      11.25
+    ],
+    "origin": [
+      0.6215229034423828,
+      -1.210702896118164,
+      9.361931800842285
+    ],
+    "extent": [
+      9.970612525939941,
+      9.496488571166992,
+      9.960116386413574
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M.baseline_palette_M"
+    ]
+  },
+  "SM_RuinedWallA": {
+    "path": "/Game/Game/Stage/Props/asset/designmesh/Nature/Meshes/Arch/RuinedWalls/SM_RuinedWallA.SM_RuinedWallA",
+    "count": 34,
+    "scale": [
+      6.0999908447265625,
+      1.6,
+      2.0
+    ],
+    "origin": [
+      26.604509353637695,
+      -359.3934065550566,
+      158.73864107206464
+    ],
+    "extent": [
+      34.206594467163086,
+      359.2024796754122,
+      158.86203641816974
+    ],
+    "materials": [
+      "/Game/Game/Stage/Props/asset/designmesh/Nature/Textures/baseline_palette_M1.baseline_palette_M1"
+    ]
+  }
+}

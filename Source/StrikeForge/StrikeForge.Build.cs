@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -8,16 +8,40 @@ public class StrikeForge : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			// basic, input
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			
+			// ai
+			"AIModule", "NavigationSystem", "GameplayTasks",
+			
+			// ui
+			"UMG", "Slate", "SlateCore", "CommonUI", "GameplayTags", "MediaAssets",
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+			// effect
+			"Niagara",
+			
+			// gc
+			"Chaos",
+			"GeometryCollectionEngine",
+			"FieldSystemEngine",
+        });
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+		PublicIncludePaths.AddRange(new string[] { "StrikeForge" });
+		// Deferred cleanup for the development-only menu screenshot renderer.
+		PrivateDependencyModuleNames.Add("RenderCore");
+		PrivateDependencyModuleNames.Add("ApplicationCore");
+		if (Target.bBuildEditor) PrivateDependencyModuleNames.Add("UnrealEd");
 
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
-	}
+        PublicDefinitions.Add("ECC_LANDSCAPE=ECC_GameTraceChannel1");
+
+        // Uncomment if you are using Slate UI
+        // PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+
+        // Uncomment if you are using online features
+        // PrivateDependencyModuleNames.Add("OnlineSubsystem");
+
+        // To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+    }
 }

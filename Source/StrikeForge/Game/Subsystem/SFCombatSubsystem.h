@@ -1,0 +1,409 @@
+﻿#pragma once
+
+#include "CoreMinimal.h"
+#include "Subsystems/WorldSubsystem.h"
+#include "Interfaces/Units/Targetable.h"
+#include "SFCombatSubsystem.generated.h"
+
+class UCombatTargetComponent;
+class ALanePath;
+
+/**
+ * 대상 하나를 둘러싸는 공격 슬롯 링.
+ *
+ * 여러 유닛이 한 대상에게 몰릴 때 전부 같은 한 점을 향하면 서로 밀친다.
+ * 대상 주위의 "각도" 를 미리 나눠 갖게 해서 각자 다른 방향에서 접근하게 한다.
+ *
+ * 링이 배분하는 것은 각도뿐이다. 실제로 서는 거리는 공격자마다 다르므로
+ * (근접은 붙고 원거리는 멀리 선다) 위치를 물을 때 자기 접근 거리를 넘긴다.
+ *
+ * UPROPERTY 를 붙이지 않는다. 약참조만 담아 GC 앵커가 필요 없고,
+ * TMap 키의 TWeakObjectPtr 리플렉션 처리가 엔진 버전을 타기 때문이다.
+ */
+struct FSFAttackSlotRing
+{
+	/** 슬롯 점유자. 배열 인덱스가 곧 각도다. 빈 칸은 무효 약참조 */
+	TArray<TWeakObjectPtr<AActor>> Occupants;
+
+	/** 대상의 수평 바운딩 반경. 슬롯 개수를 셀 때 쓴다 */
+	float TargetRadius = 0.f;
+
+	/**
+	 * 대상 바운딩 박스의 수평 반크기.
+	 *
+	 * 슬롯을 "중심에서 최대 반경" 이 아니라 "박스 표면" 기준으로 놓기 위해 필요하다.
+	 * 긴 직사각형 건물은 두 축의 크기가 크게 달라서, 최대 반경으로 재면
+	 * 짧은 변 쪽 슬롯이 사거리 밖에 놓인다.
+	 */
+	FVector2D BoxExtent = FVector2D::ZeroVector;
+
+	/**
+	 * 이 링의 세대. 링이 새로 만들어질 때마다 1씩 늘어난다. 0 은 "링 없음".
+	 *
+	 * 자리를 잡은 유닛은 인덱스와 함께 이 값을 들고 있는다.
+	 * 대상의 팀이 바뀌면 UnregisterTarget 이 링을 통째로 버리는데, 그때
+	 * 공격자들은 여전히 유효한 인덱스를 쥔 채로 남는다. 세대를 비교하지 않으면
+	 * UpdateAttackSlot 의 "이미 자리가 있다" 조기 탈출에 영원히 걸려
+	 * 그 대상에 대한 포위가 죽는다. 세대가 달라지면 스스로 다시 잡는다.
+	 */
+	uint32 Generation = 0;
+};
+
+/**
+ * 공간 격자 한 칸에 들어가는 항목.
+ *
+ * 컴포넌트 약참조만 담지 않고 액터·위치·팀·분류를 함께 복사해 둔다.
+ * 질의마다 ResolveTarget(유효성 + 생존 + GetOwner)을 다시 도는 비용이
+ * 실제 부하의 대부분이었기 때문이다. 프레임당 한 번만 확인하고,
+ * 그 프레임 동안은 이 복사본을 읽는다.
+ *
+ * 위치는 최대 한 프레임 낡을 수 있다. 분리력·교전 반경 판정에는 문제가 없고,
+ * 실제 사거리 판정은 AUnitBase 가 액터에서 직접 다시 잰다.
+ */
+struct FSFGridEntry
+{
+	/** 프레임 도중 파괴될 수 있으므로 약참조로 들고, 읽을 때 한 번 더 확인한다 */
+	TWeakObjectPtr<AActor> Actor;
+
+	FVector2D Location = FVector2D::ZeroVector;
+	int32 TeamIndex = INDEX_NONE;
+	ETargetType TargetType = ETargetType::CombatUnit;
+};
+
+/**
+ * 한 팀의 전투 대상 목록.
+ *
+ * TMap<int32, TArray<...>> 형태로는 UPROPERTY 를 붙일 수 없다(중첩 컨테이너 미지원).
+ * 구조체로 한 겹 풀어 리플렉션에 노출한다.
+ */
+USTRUCT()
+struct FSFTargetBucket
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TArray<TWeakObjectPtr<UCombatTargetComponent>> Targets;
+};
+
+/**
+ * 전투 대상 레지스트리.
+ *
+ * 등록 단위는 액터가 아니라 UCombatTargetComponent 다.
+ * 액터 클래스를 수정하지 않고 BP 에서 컴포넌트만 붙이면
+ * 전투 시스템에 편입되도록 하기 위한 구조다.
+ *
+ * 외부 API 는 AActor* 를 주고받는다. 이동·거리 계산이 액터 기준이기 때문이다.
+ *
+ * 레벨마다 초기화되어야 하므로 GameInstanceSubsystem 이 아니라 WorldSubsystem 이다.
+ */
+UCLASS()
+class STRIKEFORGE_API USFCombatSubsystem : public UWorldSubsystem
+{
+	GENERATED_BODY()
+
+public:
+	/** 어디서든 접근하는 헬퍼. WorldContext 는 보통 this */
+	static USFCombatSubsystem* Get(const UObject* WorldContext);
+
+	/** 액터에 붙은 전투 대상 컴포넌트를 찾는다. 없으면 nullptr */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	static UCombatTargetComponent* FindTargetComponent(const AActor* InActor);
+
+	// ── 등록 ────────────────────────────────────────────
+	void RegisterTarget(UCombatTargetComponent* InTarget);
+	void UnregisterTarget(UCombatTargetComponent* InTarget);
+
+	// ── 진격로 코리도 ───────────────────────────────────
+	//
+	// ALanePath 가 BeginPlay 에서 스스로 등록한다. 전투 대상과 같은 방식이다.
+	//
+	// 코리도는 "전투가 벌어져야 하는 길" 을 정의하고, 두 곳에서 쓰인다.
+	//   AUnitBase                             자동 전투가 길 밖으로 흘러나가지 않게
+	//   USFUnitSpawnLibrary::IsBuildableLocation  길 위에 건물을 못 세우게
+	//
+	// 등록된 라인이 하나도 없으면 두 제한 모두 꺼진다. 호출부는 HasAnyLane 으로
+	// 먼저 확인한다 — 코리도를 모르는 채로 유닛을 묶으면 전부 그 자리에 굳고,
+	// 건물은 어디에도 못 짓게 된다.
+
+	void RegisterLane(ALanePath* InLane);
+	void UnregisterLane(ALanePath* InLane);
+
+	/** 레벨에 진격로가 하나라도 배치돼 있는가. 코리도 제한의 on/off 스위치다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	bool HasAnyLane() const;
+
+	/**
+	 * 이 지점이 어느 코리도 밖으로 얼마나 벗어났는가(cm). 안이면 0.
+	 *
+	 * 라인이 여럿이면 "가장 가까운 라인" 기준이다. 갈래길에서는 어느 한
+	 * 라인 안이기만 하면 안으로 친다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	float GetDistanceOutsideLane(const FVector& InLocation) const;
+
+	/** 라인이 없으면 true(제한 없음)를 돌려준다. 호출부가 따로 분기하지 않아도 되게 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	bool IsInsideAnyLane(const FVector& InLocation) const;
+
+	/**
+	 * 이 팀이 쓸 수 있는 라인 중 가장 가까운 것.
+	 * 스포너가 SetAssignedLane 을 부르지 않았을 때 유닛이 스스로 찾는 경로다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Lane")
+	ALanePath* FindNearestLane(const FVector& InLocation, int32 InTeamIndex) const;
+
+	// ── 질의 ────────────────────────────────────────────
+	/**
+	 * 가장 가까운 적대 대상 1기.
+	 * @param InMaxRange 0 이하면 거리 제한 없음
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	AActor* FindNearestHostile(const FVector& InOrigin, int32 InSeekerTeam, ETargetType InTargetType, float InMaxRange) const;
+
+	/** 반경 내 적대 대상 전부 — 타겟 탐색·광역 피해용 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void GetHostilesInRadius(const FVector& InOrigin, int32 InSeekerTeam, float InRadius, TArray<AActor*>& OutActors) const;
+
+	/**
+	 * 반경 내 같은 팀 전투 유닛 전부(자기 자신 제외) — 근접 조향의 분리력 계산용.
+	 *
+	 * 건물은 뺀다. 크고 고정된 대상이라 분리 대상에 넣으면 그 근처에서
+	 * 밀려나 버려, 오히려 건물에 못 붙는 원인이 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void GetNearbyAlliesForSeparation(const AActor* InSelf, int32 InTeamIndex, float InRadius, TArray<AActor*>& OutActors) const;
+
+	/** 분류 무관, 거리 제한 없이 가장 가까운 적 — 진격 목표 탐색용 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	AActor* FindNearestHostileAny(const FVector& InOrigin, int32 InSeekerTeam) const;
+
+	/**
+	 * 특정 팀의 생존 대상 전부.
+	 * 드래그 박스 선택처럼 "우리 편 전체" 를 훑어야 할 때 쓴다.
+	 * GetAllActorsOfClass 보다 훨씬 빠르다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	void GetTeamTargets(int32 InTeamIndex, TArray<AActor*>& OutActors) const;
+
+	/** 팀 내 생존 대상 수 — 웨이브 판정·디버그용 */
+	UFUNCTION(BlueprintCallable, Category = "SF|Combat")
+	int32 GetTargetCount(int32 InTeamIndex) const;
+
+	/** 중립(-1)은 누구와도 적대하지 않는다 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	static bool IsHostileTeam(int32 InTeamA, int32 InTeamB);
+
+	/**
+	 * 아무 액터의 팀 번호를 얻는 단일 창구.
+	 *
+	 * 팀 값이 어디에 저장되는지를 호출하는 쪽이 알 필요가 없게 한다.
+	 * 유닛·건물·스포너가 각자 다른 곳에서 팀을 읽던 것이 "팀 값 불일치" 라는
+	 * 가장 흔한 사고의 원인이었다.
+	 *
+	 * 찾지 못하면 중립(-1)을 돌려주고 경고를 남긴다. 예전 ResolveTeamIndex 는
+	 * 0(플레이어 팀)을 돌려줘서, 팀 주입을 빠뜨린 액터가 조용히 아군이 됐다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	static int32 GetTeamOf(const AActor* InActor);
+
+	/**
+	 * 이 클라이언트가 조작하는 팀 번호. 찾지 못하면 중립(-1).
+	 *
+	 * 소유권 판정(플레이어가 이 유닛에 명령할 수 있는가)에 쓴다.
+	 * 진격 정책(AdvanceMode)과는 별개 개념이므로 따로 둔다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
+	int32 GetLocalPlayerTeam() const;
+
+	// ── 공격 슬롯 ───────────────────────────────────────
+	//
+	// 대상 주위 각도를 나눠 갖게 해서 포위 대형이 저절로 생기게 한다.
+	// 슬롯은 "접근 경로" 만 정한다. 사거리에 들어오면 그 자리에서 때린다 —
+	// 자리를 맞추겠다고 더 움직이면 그게 곧 공격 안 하고 이동만 하는 유닛이 된다.
+
+	/**
+	 * 각도상 가장 가까운 빈 슬롯을 잡는다.
+	 *
+	 * 이미 이 대상에 자리를 갖고 있으면 그것을 그대로 돌려준다.
+	 * 매번 다시 배정하면 대상이 조금 움직일 때마다 자리가 바뀌어
+	 * 유닛이 링 위를 빙빙 돌기만 한다.
+	 *
+	 * @return 슬롯 인덱스. 링이 가득 찼으면 INDEX_NONE
+	 */
+	int32 ClaimAttackSlot(AActor* InTarget, AActor* InAttacker, float InApproachDistance);
+
+	/** 슬롯을 반납한다. 타겟 변경·사망 시 반드시 부른다 */
+	void ReleaseAttackSlot(AActor* InTarget, AActor* InAttacker);
+
+	/**
+	 * 슬롯의 현재 월드 위치. 대상이 움직이면 따라 움직인다.
+	 *
+	 * @param InApproachDistance 대상 표면에서 떨어져 설 거리. 공격자가 자기 사거리로 정한다
+	 */
+	bool GetAttackSlotLocation(const AActor* InTarget, int32 InSlotIndex, float InApproachDistance, FVector& OutLocation) const;
+
+	/** 링이 가득 찼는가. 타겟 점수에 혼잡도 페널티를 줄 때 쓴다 */
+	bool IsSlotRingFull(const AActor* InTarget) const;
+
+	/** 이 대상을 노리는 공격자 수 */
+	int32 GetAttackerCount(const AActor* InTarget) const;
+
+	/**
+	 * 이 대상의 링 세대. 링이 없으면 0.
+	 *
+	 * 자리를 잡은 쪽이 함께 보관했다가, 값이 달라지면 링이 새로 만들어진 것으로
+	 * 보고 다시 잡는다.
+	 */
+	uint32 GetRingGeneration(const AActor* InTarget) const;
+
+	/**
+	 * 이 대상이 실제로 받아줄 수 있는 공격자 수.
+	 *
+	 * 슬롯 개수와 다르다. 링에 9칸이 있어도 실제로 도달 가능한 자리는 훨씬 적다.
+	 * 뒤에서 오는 유닛은 앞줄 캡슐을 통과할 수 없기 때문이다.
+	 * sf.MaxAttackersPerTarget 로 상한을 건다.
+	 */
+	int32 GetSlotCapacity(const AActor* InTarget) const;
+
+	/** 팀별 등록 현황을 로그로 출력한다. 콘솔 명령 sf.DumpCombatTargets 에서 호출 */
+	void DumpTargets() const;
+
+	/**
+	 * 전투 시스템 계측값을 출력하고 측정 창을 초기화한다.
+	 * 콘솔 명령 sf.CombatStats 에서 호출.
+	 */
+	void DumpStats() const;
+
+private:
+	/** 팀 인덱스별 버킷. 약참조라 파괴된 컴포넌트는 자동으로 무효화된다 */
+	UPROPERTY(Transient)
+	TMap<int32, FSFTargetBucket> TeamBuckets;
+
+	/**
+	 * 배치된 진격로. 약참조만 담으므로 리플렉션에 올리지 않는다.
+	 *
+	 * 레벨에 놓인 정적 액터라 개수가 한 자릿수다. 매번 훑어도 부담이 없어
+	 * 공간 분할 없이 선형 탐색으로 둔다.
+	 */
+	TArray<TWeakObjectPtr<ALanePath>> Lanes;
+
+	/** "라인이 없어 코리도 제한이 꺼졌다" 를 한 번만 알리기 위한 플래그 */
+	mutable bool bNoLaneReported = false;
+
+	/** 유효 + 생존 + 소유 액터 유효 여부를 한 번에 판정 */
+	static bool ResolveTarget(const TWeakObjectPtr<UCombatTargetComponent>& InWeak, AActor*& OutActor);
+
+	// ── 공격 슬롯 내부 ──────────────────────────────────
+
+	/** 대상별 공격 슬롯 링. 약참조만 담으므로 리플렉션에 올리지 않는다 */
+	TMap<TWeakObjectPtr<AActor>, FSFAttackSlotRing> SlotRings;
+
+	/** 다음에 만들 링에 붙일 세대 번호. 0 은 "링 없음" 이므로 1 부터 시작한다 */
+	uint32 NextRingGeneration = 1;
+
+	// ── 공간 격자 ───────────────────────────────────────
+	//
+	// 반경 질의가 전부 등록 목록 전체를 선형으로 훑고 있었다.
+	// 특히 근접 조향의 이웃 탐색은 유닛당 매 틱이라 프레임당 O(T²) 였다.
+	//
+	// 프레임당 한 번만 격자를 다시 채우고, 질의는 겹치는 칸만 본다.
+	// 리플렉션에 올리지 않는다 — 약참조만 담아 GC 앵커가 필요 없다.
+
+	/**
+	 * 격자 칸 크기(cm).
+	 *
+	 * 가장 좁은 질의인 분리력 반경(90)이 3x3 칸 안에 들어가야 한다.
+	 * 너무 작으면 칸 수가 늘어 재구성이 비싸지고, 너무 크면 칸마다
+	 * 걸러내는 후보가 늘어 격자 효과가 줄어든다.
+	 */
+	static constexpr float GridCellSize = 200.f;
+
+	mutable TMap<FIntPoint, TArray<FSFGridEntry>> Grid;
+
+	/** 이 프레임에 이미 채웠는가. GFrameCounter 와 비교한다 */
+	mutable uint64 GridBuiltFrame = 0;
+
+	mutable int32 GridEntryCount = 0;
+
+	/** 필요하면 이 프레임 기준으로 격자를 다시 채운다 */
+	void EnsureGridCurrent() const;
+
+	void RebuildGrid() const;
+
+	static FIntPoint ToCell(const FVector& InLocation);
+
+	/**
+	 * 반경에 겹치는 칸의 항목을 전부 훑는다.
+	 *
+	 * 칸 단위로만 거르므로 실제 거리 판정은 방문자가 한다.
+	 * 방문자는 항목의 유효성도 직접 확인해야 한다.
+	 */
+	template<typename FuncType>
+	void ForEachEntryInRadius(const FVector& InOrigin, float InRadius, FuncType&& InFunc) const
+	{
+		EnsureGridCurrent();
+
+		++StatRadiusQueries;
+
+		const FVector Extent(InRadius, InRadius, 0.f);
+		const FIntPoint Min = ToCell(InOrigin - Extent);
+		const FIntPoint Max = ToCell(InOrigin + Extent);
+
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			for (int32 Y = Min.Y; Y <= Max.Y; ++Y)
+			{
+				const TArray<FSFGridEntry>* Cell = Grid.Find(FIntPoint(X, Y));
+				if (!Cell) continue;
+
+				StatEntriesVisited += Cell->Num();
+
+				for (const FSFGridEntry& Entry : *Cell)
+				{
+					InFunc(Entry);
+				}
+			}
+		}
+	}
+
+	// ── 계측 ────────────────────────────────────────────
+	//
+	// 격자의 효과는 "질의가 훑은 후보 수" 로만 눈에 보인다.
+	// 프레임 수치가 아니라 창(window) 누적을 재고 sf.CombatStats 에서 비운다.
+
+	mutable int32 StatRadiusQueries = 0;
+	mutable int32 StatEntriesVisited = 0;
+	mutable int32 StatGridRebuilds = 0;
+	mutable int32 StatSlotClaims = 0;
+	mutable double StatWindowStart = 0.0;
+
+	// 슬롯 사이 최소 간격은 콘솔 변수 sf.SlotSpacing 이 갖는다(cpp 상단).
+	// PIE 에서 밀집도를 바로 바꿔볼 수 있어야 해서 멤버로 두지 않는다.
+
+	/** 대상 하나에 붙일 수 있는 최대 슬롯 수. 거대 건물에서 링이 폭주하는 것을 막는다 */
+	int32 MaxSlotsPerTarget = 32;
+
+	/**
+	 * 대상 하나에 두는 최소 슬롯 수.
+	 *
+	 * 근접 사거리에서는 링이 작아 6칸 남짓밖에 안 나온다. 그게 정상이다 —
+	 * 한 마리를 둘러쌀 수 있는 유닛 수에는 물리적 한계가 있다.
+	 * 억지로 늘리면 슬롯끼리 겹쳐 서로 밀치게 된다.
+	 */
+	int32 MinSlotsPerTarget = 3;
+
+	/**
+	 * 링을 찾거나 만든다. 사라진 점유자도 이 기회에 비운다.
+	 * @param InApproachDistance 링 크기를 정한다. 처음 자리를 잡는 유닛의 값이 기준이 된다
+	 */
+	FSFAttackSlotRing* FindOrCreateRing(AActor* InTarget, float InApproachDistance);
+
+	/** 조회 전용. TMap 키가 비상수 약참조라 const_cast 를 여기 한 곳에 가둔다 */
+	const FSFAttackSlotRing* FindRing(const AActor* InTarget) const;
+
+	/** 링 반지름에 몇 칸이 겹치지 않고 들어가는지 계산한다 */
+	int32 ComputeSlotCount(float InRingRadius) const;
+
+	/** 대상의 수평 바운딩 크기를 잰다 */
+	static void MeasureTargetBounds(const AActor* InTarget, float& OutRadius, FVector2D& OutExtent);
+};

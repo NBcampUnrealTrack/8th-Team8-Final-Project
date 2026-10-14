@@ -1,0 +1,11 @@
+// All lighting is alpha-masked to the new art; there is no rectangular glow backdrop.
+float2 atlasUV=lerp(Region.xy,Region.zw,UV);
+float4 art=Texture2DSample(Atlas,AtlasSampler,atlasUV);
+float sweep=frac(Elapsed*.42)*1.5-.25;
+float sheen=exp(-pow((UV.x+UV.y*.17-sweep)*19,2));
+float cyan=saturate((art.g-art.r)*4)*saturate((art.b-art.r)*4);
+float idle=.5+.5*sin(Elapsed*1.7);
+art.rgb*=1+Hover*.10-Press*.17;
+art.rgb+=float3(.09,.23,.22)*sheen*Hover*.65;
+art.rgb+=float3(.015,.10,.12)*cyan*(Hover*.8+Title*idle*.24);
+return art;

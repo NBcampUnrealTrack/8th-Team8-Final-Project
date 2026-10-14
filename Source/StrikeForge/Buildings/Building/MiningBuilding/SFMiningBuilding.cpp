@@ -1,0 +1,322 @@
+﻿#include "SFMiningBuilding.h"
+#include "ActorComponent/Mining/MiningComponent.h"
+#include "Game/GameState/SFGameState.h"
+#include "ActorComponent/UI/SFOverheadStatusComponent.h"
+#include "Datas/Building/BuildingDefinition/SFMiningBuildingDefinition.h"
+#include "Game/Subsystem/SFBuildingGridSubsystem.h"
+#include "Logging/SFLog.h"
+
+ASFMiningBuilding::ASFMiningBuilding()
+{
+	MiningComponent = CreateDefaultSubobject<UMiningComponent>("MiningComponent");
+}
+
+void ASFMiningBuilding::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	if (IsActorBeingDestroyed())
+	{
+		return;
+	}
+	
+	BindDelegateFunction();
+}
+
+void ASFMiningBuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (EndPlayReason != EEndPlayReason::LevelTransition)
+	{
+		ApplyIncomeRate(0.f);
+	}
+	
+	UnBindDelegateFunction();
+	
+	Super::EndPlay(EndPlayReason);
+}
+
+void ASFMiningBuilding::BindDelegateFunction()
+{
+	
+	MiningComponent->OnResourceExtracted.AddUniqueDynamic(this, &ThisClass::OnResourceExtractedReceived);
+	MiningComponent->OnResourceDepleted.AddUniqueDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	// 진행도는 건물을 거치지 않고 상태 컴포넌트가 직접 받는다.
+	MiningComponent->OnExtractProgressRatioChanged.AddUniqueDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
+}
+
+void ASFMiningBuilding::UnBindDelegateFunction()
+{
+	MiningComponent->OnResourceExtracted.RemoveDynamic(this, &ThisClass::OnResourceExtractedReceived);
+	MiningComponent->OnResourceDepleted.RemoveDynamic(this, &ThisClass::OnResourceDepletedReceived);
+	MiningComponent->OnExtractProgressRatioChanged.RemoveDynamic(
+		StatusComponent, &USFOverheadStatusComponent::HandleExtractProgressRatio);
+	
+}
+
+FSFSelectableInfo ASFMiningBuilding::GetSelectableInfo_Implementation()
+{
+	FSFSelectableInfo Info = Super::GetSelectableInfo_Implementation();
+	SF_LOG(Warning, "MiningBuilding Selected.");
+	Info.SelectableType = ESFSelectableType::ResourceBuilding;
+	return Info;
+}
+
+const FMinableData ASFMiningBuilding::GetMinableData()
+{
+	FMinableData Data;
+	
+	Data.ExtractAmount = GetExtractAmount();
+	Data.ResourceLeftAmount = GetResourceAmount();
+	Data.GetMiningProgressRatio = GetMiningProgressRatio();
+	Data.ResourceType = GetMineResourceType();
+	Data.UpgradeCost = GetUpgradeCost();
+	Data.MiningComponent = MiningComponent;
+	
+	return Data;
+}
+
+void ASFMiningBuilding::OnBuildingDefinitionLoaded()
+{
+	Super::OnBuildingDefinitionLoaded();
+	
+	const USFMiningBuildingDefinition* Definition =	Cast<USFMiningBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] MiningBuildingDefinition이 아닙니다. Definition=%s",
+			*GetName(),
+			*GetNameSafe(GetBuildingDefinition()));
+
+		return;
+	}
+
+	ConfiguredResourceSearchGridSize = Definition->ResourceSearchGridSize;
+
+	const FIntPoint BuildingGridSize = GetGridSize();
+	const bool bIsValidSearchGrid =
+		USFBuildingGridSubsystem::IsCenteredSubGridSizeValid(
+			BuildingGridSize,
+			ConfiguredResourceSearchGridSize);
+
+	if (!bIsValidSearchGrid)
+	{
+		SF_LOG(
+			Error,
+			"[%s] ResourceSearchGridSize가 건물 중심에 배치될 수 없습니다. Building=%s, Search=%s",
+			*GetName(),
+			*BuildingGridSize.ToString(),
+			*ConfiguredResourceSearchGridSize.ToString());
+	}
+	
+	MiningComponent->SetMineResourceType(Definition->CanDigResourceType);
+	SetProgressColorByResourceType(GetMineResourceType());
+}
+
+void ASFMiningBuilding::OnTierActivated()
+{
+	Super::OnTierActivated();
+	
+	const USFMiningBuildingDefinition* Definition =	Cast<USFMiningBuildingDefinition>(GetBuildingDefinition());
+	if (!IsValid(Definition))
+	{
+		SF_LOG(
+			Error,
+			"[%s] MiningBuildingDefinition이 아닙니다.",
+			*GetName());
+
+		return;
+	}
+
+	const FSFMiningBuildingTierData* ActivatedTier = Definition->FindMiningTier(GetCurrentTier());
+	if (!ActivatedTier)
+	{
+		SF_LOG(
+			Error,
+			"[%s] Mining Tier가 없습니다. Tier=%d",
+			*GetName(),
+			GetCurrentTier());
+
+		return;
+	}
+
+	MiningComponent->InitMineProperties(ActivatedTier->ExtractBaseWorkAmount, ActivatedTier->ExtractAmount);
+	
+	RefreshMiningState();
+}
+
+void ASFMiningBuilding::OnTierDeactivated()
+{
+	Super::OnTierDeactivated();
+	
+	RefreshMiningState();
+}
+
+void ASFMiningBuilding::SetProgressColorByResourceType(EResourceType InResourceType)
+{
+	// 색 규칙은 SFOverheadUIColors 한 곳에 있다. 획득 배지도 같은 함수를 쓴다.
+	StatusComponent->SetProgressColor(SFOverheadUIColors::FromResourceType(InResourceType));
+}
+
+bool ASFMiningBuilding::SetMiningTargets(const TArray<FSFMiningCellTarget>& InTargets)
+{
+	if (!IsValid(MiningComponent)) return false;
+
+	const bool bHasUsableTarget =
+		MiningComponent->SetMiningTargets(InTargets);
+
+	RefreshMiningState();
+
+	return bHasUsableTarget;
+}
+
+void ASFMiningBuilding::ClearMiningTargets()
+{
+	if (!IsValid(MiningComponent))
+	{
+		return;
+	}
+
+	MiningComponent->ClearMiningTargets();
+	RefreshMiningState();
+}
+
+FIntPoint ASFMiningBuilding::GetResourceSearchGridSize() const
+{
+	return ConfiguredResourceSearchGridSize;
+}
+
+// update gamestate UI
+void ASFMiningBuilding::ApplyIncomeRate(float NewRate)
+{
+	if (FMath::IsNearlyEqual(CurrentIncomeRatePerSecond, NewRate)) return;
+
+	if (ASFGameState* GS = GetWorld()->GetGameState<ASFGameState>())
+	{
+		GS->AddResourceIncomeRate(GetTeamIndex(), GetMineResourceType(), NewRate - CurrentIncomeRatePerSecond);
+	}
+	CurrentIncomeRatePerSecond = NewRate; 
+}
+
+void ASFMiningBuilding::RefreshMiningState()
+{
+	if (!IsValid(MiningComponent)) return;
+
+	/*
+	 * 티어가 활성화되어 있고,
+	 * 실제로 사용할 수 있는 0번 채굴 대상을
+	 * 준비할 수 있어야 채굴을 시작합니다.
+	 */
+	const bool bMiningStarted =
+		IsTierActivated() && MiningComponent->TryStartMining();
+
+	if (!bMiningStarted)
+	{
+		MiningComponent->StopMining();
+		ApplyIncomeRate(0.f);
+
+		StatusComponent->SetElementVisible(
+			ESFOverheadElement::Progress,false);
+
+		/*
+		 * 기능이 켜져 있는데 채굴을 시작하지 못했다면 캘 자원이 남지 않은 것이다.
+		 * 채굴 대상은 격자 등록 때 한 번만 정해지므로 고갈된 광산은 다시 일하지 않는다.
+		 * 업그레이드 중(기능 꺼짐)은 고갈이 아니므로 제외한다.
+		 */
+		const bool bDepleted = IsTierActivated() && IsOwnedByLocalPlayer();
+
+		// 고갈 아이콘은 이 광산이 캐던 자원의 아이콘에 X를 겹쳐 그린다.
+		const ESFOverheadStatusIcon DepletedIcon =
+			GetMineResourceType() == EResourceType::Ether
+				? ESFOverheadStatusIcon::EtherDepleted
+				: ESFOverheadStatusIcon::MineralDepleted;
+
+		StatusComponent->SetStatusIcon(bDepleted
+			? DepletedIcon
+			: ESFOverheadStatusIcon::None);
+
+		return;
+	}
+
+	ApplyIncomeRate(MiningComponent->GetIncomeRatePerSeconds());
+
+	StatusComponent->SetElementVisible(
+		ESFOverheadElement::Progress,IsOwnedByLocalPlayer());
+
+	StatusComponent->SetStatusIcon(ESFOverheadStatusIcon::None);
+}
+
+//getter
+EResourceType ASFMiningBuilding::GetMineResourceType() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMineResourceType::InValid MiningComponent"));
+	return MiningComponent->GetMineResourceType();
+}
+
+int32 ASFMiningBuilding::GetExtractAmount() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetExtractAmount::InValid MiningComponent"));
+	return MiningComponent->GetExtractAmount();
+}
+
+int32 ASFMiningBuilding::GetResourceAmount() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetResourceAmount::InValid MiningComponent"));
+	return MiningComponent->GetRemainingDeposit();
+}
+
+float ASFMiningBuilding::GetMiningProgressRatio() const
+{
+	ensureMsgf(MiningComponent, TEXT("MineBuilding-GetMiningProgressRatio::InValid MiningComponent"));
+	return MiningComponent->GetExtractProgressRatio();
+}
+
+void ASFMiningBuilding::SetProductionSpeedModifier(
+	FName ModifierId,
+	float InMultiplier)
+{
+	if (!IsValid(MiningComponent))
+	{
+		return;
+	}
+
+	MiningComponent->SetWorkRateModifier(ModifierId, InMultiplier);
+	RefreshMiningState();
+}
+
+void ASFMiningBuilding::RemoveProductionSpeedModifier(FName ModifierId)
+{
+	if (!IsValid(MiningComponent))
+	{
+		return;
+	}
+
+	MiningComponent->RemoveWorkRateModifier(ModifierId);
+	RefreshMiningState();
+}
+
+// delegates
+void ASFMiningBuilding::OnResourceExtractedReceived(EResourceType InType, int32 InAmount)
+{
+	ASFGameState* SFGameState = GetWorld()->GetGameState<ASFGameState>();
+	if (!IsValid(SFGameState)) return;
+	
+	SFGameState->AddResource(GetTeamIndex(), InType, InAmount);
+
+	/*
+	 * 획득은 상태가 아니라 사건이다.
+	 * 1초 뒤에 물어보면 보여줄 게 없으므로 상태 구조체에 담지 않고 사건으로 바로 전달한다.
+	 *
+	 * 자원은 팀과 무관하게 쌓이지만 배지는 내 것만 띄운다.
+	 * 남의 수입은 보여줄 이유가 없고, 시야에 들어온 적 광산의 채굴량이 그대로 노출된다.
+	 */
+	if (!IsOwnedByLocalPlayer())	return;
+
+	StatusComponent->PlayResourceGain(InType, InAmount);
+}
+
+void ASFMiningBuilding::OnResourceDepletedReceived()
+{
+	RefreshMiningState();
+}

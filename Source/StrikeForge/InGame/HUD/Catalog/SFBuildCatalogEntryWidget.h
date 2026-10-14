@@ -1,0 +1,147 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "CommonButtonBase.h"
+#include "Datas/Resource/SFResourceTypes.h"
+
+#include "InGame/HUD/Catalog/SFBuildCatalogUIData.h"
+
+#include "SFBuildCatalogEntryWidget.generated.h"
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FSFOnBuildCatalogEntryClicked,
+	FName,
+	BuildingRowName
+);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnBuildResourceWarningRequested);
+
+class USFBuildingDefinition;
+class USoundBase;
+class UTextBlock;
+
+UCLASS()
+class STRIKEFORGE_API USFBuildCatalogEntryWidget
+	: public UCommonButtonBase
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "SF|Build Catalog")
+	void InitializeBuildingEntry(
+	USFBuildingDefinition* InDefinition);
+
+	UFUNCTION(BlueprintPure, Category = "SF|Build Catalog")
+	FName GetBuildingRowName() const;
+
+	UFUNCTION(
+		BlueprintPure,
+		Category = "SF|Build Catalog"
+	)
+	FName GetSelectionUIRowName() const;
+
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "SF|Build Catalog"
+	)
+	
+	FSFOnBuildCatalogEntryClicked OnBuildCatalogEntryClicked;
+
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "SF|Build Catalog|Sound"
+	)
+	FSFOnBuildResourceWarningRequested OnBuildResourceWarningRequested;
+
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "SF|Build Catalog"
+	)
+	void SetCanAfford(
+		bool bNewCanAfford
+	);
+
+	void SetStageBuildAllowed(bool bAllowed);
+
+	UFUNCTION(BlueprintPure,Category = "SF|Build Catalog")
+	bool CanAfford() const
+	{
+		return bCanAfford;
+	}
+
+	UFUNCTION(BlueprintCallable,Category = "SF|Build Catalog")
+	void SetHotkeyText(const FText& InHotkey);
+
+	UFUNCTION(
+		BlueprintPure,
+		Category = "SF|Build Catalog"
+	)
+	FResources GetConstructionCost() const;
+
+	void TriggerEntryClickedFromHotkey();
+
+protected:
+	virtual void NativeConstruct() override;
+
+	virtual void NativeDestruct() override;
+
+	UFUNCTION(
+		BlueprintImplementableEvent,
+		Category = "SF|Build Catalog"
+	)
+	void OnBuildingEntryInitialized(
+		FName InBuildingRowName,
+		const FSFBuildCatalogUIDataRow& InCatalogData
+	);
+
+	UFUNCTION(
+		BlueprintImplementableEvent,
+		Category = "SF|Build Catalog"
+	)
+	void BP_OnAffordabilityChanged(
+		bool bNewCanAfford
+	);
+
+	UFUNCTION(
+		BlueprintImplementableEvent,
+		Category = "SF|Build Catalog"
+	)
+	void BP_OnStageBuildLockChanged(
+		bool bStageLocked
+	);
+
+	UPROPERTY(
+		meta = (BindWidget),
+		BlueprintReadOnly,
+		Category = "SF|Build Catalog"
+	)
+	TObjectPtr<UTextBlock> HotkeyText;
+
+private:
+	/**
+	 * 건설 카탈로그 항목 클릭을 처리한다.
+	 * 버튼 클릭 이벤트에서 호출되며 TryStartBuildingPlacement를 통해
+	 * 고스트 건물을 생성한 뒤 배치 컨트롤 모드로 전환한다.
+	 */
+	void HandleEntryClicked();
+
+	UPROPERTY(Transient)
+	FName BuildingRowName = NAME_None;
+	// 현재종족의 건물 종합 카테고리
+	UPROPERTY(Transient)
+	TObjectPtr<USFBuildingDefinition> BuildingDefinition;
+
+	UPROPERTY(Transient)
+	bool bCanAfford = true;
+
+	UPROPERTY(Transient)
+	bool bStageBuildAllowed = true;
+
+protected:
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SF|Build Catalog|Sound"
+	)
+	TObjectPtr<USoundBase> ResourceWarningSound = nullptr;
+};

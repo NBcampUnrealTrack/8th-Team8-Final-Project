@@ -31,6 +31,9 @@ bool FSFDefenceWaveFlowTest::RunTest(const FString& Parameters)
         AUnitSpawner* Spawner = World->SpawnActor<AUnitSpawner>(FVector(Index * 1000.f, 0.f, 0.f), FRotator::ZeroRotator);
         FindFProperty<FBoolProperty>(AUnitSpawner::StaticClass(), TEXT("bStopWhenOwnerBuildingDestroyed"))
             ->SetPropertyValue_InContainer(Spawner, false);
+        // Authored wave spawners use the controller's budget, without a per-spawner cap.
+        FindFProperty<FIntProperty>(AUnitSpawner::StaticClass(), TEXT("MaxAlive"))
+            ->SetPropertyValue_InContainer(Spawner, 0);
         Spawner->bWaveControlled = true;
         Spawner->DispatchBeginPlay();
         Controller->Spawners.Add(Spawner);
@@ -133,7 +136,7 @@ bool FSFDefenceWaveFlowTest::RunTest(const FString& Parameters)
     Controller->StopWaves();
     Controller->Tick(300.f);
     TestTrue(TEXT("Stopped waves never restart"), Controller->GetPhase() == ESFDefencePhase::Stopped);
-    // Stage06 retains the full 300 seconds even if every scheduled unit is gone.
+    // Preserve the optional strict-duration mode when early-clear is disabled.
     StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
         StateProperty->ContainerPtrToValuePtr<void>(State), static_cast<int64>(ESFStageState::Playing));
     ResultProperty->GetUnderlyingProperty()->SetIntPropertyValue(
@@ -151,12 +154,38 @@ bool FSFDefenceWaveFlowTest::RunTest(const FString& Parameters)
             CombatStateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
                 CombatStateProperty->ContainerPtrToValuePtr<void>(*It), static_cast<int64>(EUnitCombatState::Dead));
         Controller->Tick(1.f);
-        TestEqual(TEXT("Stage06 cannot complete early"), Controller->GetPhase(), ESFDefencePhase::Wave);
+        TestEqual(TEXT("Strict-duration mode cannot complete early"), Controller->GetPhase(), ESFDefencePhase::Wave);
         TestTrue(TEXT("Stage06 still playing before deadline"), State->IsStagePlaying());
         Controller->Tick(Controller->GetRemainingSeconds());
     }
     TestEqual(TEXT("Stage06 wins after all five full waves"), State->GetStageResult(), ESFStageResult::Victory);
     TestEqual(TEXT("Stage06 stops at wave five"), Controller->GetWaveNumber(), 5);
+    StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+        StateProperty->ContainerPtrToValuePtr<void>(State), static_cast<int64>(ESFStageState::Playing));
+    ResultProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+        ResultProperty->ContainerPtrToValuePtr<void>(State), static_cast<int64>(ESFStageResult::Undetermined));
+    Controller->bEndWaveOnEnemyClear = true;
+    Controller->WaveNumber = 0;
+    Controller->BeginPreparation();
+    for (int32 Wave = 1; Wave <= 5; ++Wave)
+    {
+        TestEqual(TEXT("Cleared-wave preparation resets to sixty seconds"), Controller->GetRemainingSeconds(), 60.f);
+        Controller->Tick(60.f);
+        Controller->Tick(.1f);
+        TestEqual(TEXT("An unfinished spawn schedule cannot clear the wave"), Controller->GetPhase(), ESFDefencePhase::Wave);
+        for (int32 Spawn = 0; Spawn < 15; ++Spawn) Controller->Tick(4.f);
+        // AI possession replaces Owner in real play; this must not look like a clear.
+        for (TActorIterator<AUnitBase> It(World); It; ++It) It->SetOwner(nullptr);
+        Controller->Tick(.1f);
+        TestEqual(TEXT("Live enemies keep the wave active after the last spawn"), Controller->GetPhase(), ESFDefencePhase::Wave);
+        for (TActorIterator<AUnitBase> It(World); It; ++It)
+            CombatStateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                CombatStateProperty->ContainerPtrToValuePtr<void>(*It), static_cast<int64>(EUnitCombatState::Dead));
+        Controller->Tick(.1f);
+        TestEqual(TEXT("All enemies defeated advances immediately, without waiting for the deadline"),
+            Controller->GetPhase(), Wave < 5 ? ESFDefencePhase::Preparation : ESFDefencePhase::Stopped);
+    }
+    TestEqual(TEXT("Last-wave clear wins immediately"), State->GetStageResult(), ESFStageResult::Victory);
     World->DestroyWorld(false);
     return true;
 }

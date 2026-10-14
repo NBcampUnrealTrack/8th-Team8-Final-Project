@@ -296,8 +296,8 @@ int32 USFLobbyStagePresentation::NativePaint(const FPaintArgs& Args, const FGeom
                 Lines({Q-FVector2D(0,4)*S,Q+FVector2D(0,4)*S},Glow,1.4,7);
             }
         }
-        // The same tower identity survives as rubble after a clear. Progress is still owned by GameInstance.
-        const bool bDrawRuin=State.bCleared && ClearedIcon;
+        // Keep the stage landmark intact; the gold seal and CLEARED label show progress.
+        const bool bDrawRuin=false;
         FSlateBrush Brush; Brush.SetResourceObject(bDrawRuin ? ClearedIcon.Get() : IconAtlas.Get()); Brush.DrawAs=ESlateBrushDrawType::Image;
         if (!bDrawRuin) Brush.SetUVRegion(FBox2D(FVector2D(.5,0),FVector2D(.75,.5)));
         const float IconSize=(Boss ? 211.f : 200.f)*(1+.035f*H)*S;
@@ -306,7 +306,7 @@ int32 USFLobbyStagePresentation::NativePaint(const FPaintArgs& Args, const FGeom
         Box(P-FVector2D(IconSize*.5,IconSize*.57)+FVector2D(0,bDrawRuin ? 10*S : 0),FVector2D(IconSize),Tint,5,&Brush);
         if (State.bCleared)
         {
-            // A small gold victory seal also distinguishes a conquered ruin from a locked stage.
+            // A small gold victory seal distinguishes a completed stage from a locked stage.
             const FVector2D Seal=Foot+FVector2D(69,-5)*S;
             Ring(Seal,FVector2D(13,13)*S,FLinearColor(.19,.24,.18,Alpha),13,6);
             Ring(Seal,FVector2D(14,14)*S,FLinearColor(Gold.R,Gold.G,Gold.B,Alpha),2,7);

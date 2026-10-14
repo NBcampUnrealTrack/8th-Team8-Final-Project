@@ -81,6 +81,10 @@ struct FSFForcedAttackTestAccess
 		HUD->SelectionIndicatorMaterial = Green;
 	}
 	static bool IsEnemy(USFInGameHUDWidget* HUD, AActor* Actor) { return HUD->IsValidEnemyHoverTarget(Actor); }
+	static bool CanHover(USFInGameHUDWidget* HUD, AActor* Actor) { return HUD->IsValidHoverTarget(Actor); }
+	static void Hover(USFInGameHUDWidget* HUD, AActor* Actor) { HUD->ShowEnemyHoverIndicator(Actor); }
+	static void ClearHover(USFInGameHUDWidget* HUD) { HUD->HideEnemyHoverIndicator(); }
+	static UDecalComponent* GroundRing(USFInGameHUDWidget* HUD) { return HUD->HoverGroundRing; }
 	static void Select(USFInGameHUDWidget* HUD, AActor* Actor)
 	{
 		HUD->SelectedActor = Actor;
@@ -104,6 +108,25 @@ static FAutoConsoleCommandWithWorld CombatDiagnose(TEXT("SF.Combat.Diagnose"), T
 		for (TActorIterator<AUnitBase> It(World); It; ++It)
 			if (It->ActorHasTag(TEXT("CombatFeedback"))) FSFForcedAttackTestAccess::Diagnose(*It);
 	}));
+
+#if WITH_EDITOR
+// Only changes visual feedback on an explicitly tagged disposable PIE fixture.
+static FAutoConsoleCommandWithWorld FeedbackPulsePreview(TEXT("SF.Combat.FeedbackPulsePreview"),
+	TEXT("PIE visual QA: play the normal two-pulse feedback on the SFHoverProbe actor."),
+	FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+	{
+		if (!World || World->WorldType != EWorldType::PIE) return;
+		auto* PC = World->GetFirstPlayerController<ASFInGamePlayerController>();
+		auto* HUD = PC ? PC->GetInGameHUDWidget() : nullptr;
+		if (!HUD) return;
+		for (TActorIterator<AActor> It(World); It; ++It)
+			if (It->ActorHasTag(TEXT("SFHoverProbe")))
+			{
+				HUD->PlayEnemyHoverAttackFeedback(*It);
+				return;
+			}
+	}));
+#endif
 
 namespace SFForcedAttackTests
 {
@@ -266,6 +289,49 @@ bool FSFMissingAttackNotifyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFProjectileContactTest, "StrikeForge.ForcedAttack.ProjectileContact",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FSFProjectileContactTest::RunTest(const FString& Parameters)
+{
+	using namespace SFForcedAttackTests;
+	FWorldFixture F;
+	auto* Shooter = F.Unit(0, FVector::ZeroVector);
+	auto* Bystander = F.Unit(1, FVector(200,0,100));
+	auto* Target = F.Unit(1, FVector(500,0,100));
+	Target->GetCapsuleComponent()->SetGenerateOverlapEvents(false);
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	auto Launch = [&](AActor* Victim, const FVector& Start)
+	{
+		auto* Projectile = F.World->SpawnActor<ASFUnitProjectile>(Start, FRotator::ZeroRotator, Params);
+		Projectile->InitializeProjectile(Shooter, Victim, 1.f, 1500.f);
+		return Projectile;
+	};
+	auto* Dart = Launch(Target, FVector(0,0,100));
+	Dart->SetActorLocation(FVector(200,0,100), false);
+	Dart->Tick(.016f);
+	TestEqual(TEXT("Passing another enemy does not hit the bystander"), Health(Bystander), 100.f);
+	TestEqual(TEXT("The intended target receives no damage before contact"), Health(Target), 100.f);
+	Dart->SetActorLocation(FVector(800,0,100), false);
+	Dart->Tick(.016f);
+	const float AfterImpact = Health(Target);
+	TestTrue(TEXT("A fast dart crossing a target without overlap events deals damage"), AfterImpact < 100.f);
+	Dart->Tick(.016f);
+	TestEqual(TEXT("Impact cannot apply twice"), Health(Target), AfterImpact);
+	Target->GetCapsuleComponent()->SetGenerateOverlapEvents(true);
+	auto* CloseDart = Launch(Target, Target->GetActorLocation());
+	CloseDart->Tick(.016f);
+	TestTrue(TEXT("Spawning already inside a target does not lose the initial impact"), Health(Target) < AfterImpact);
+	auto* Building = F.Building(1, FVector(700,500,100));
+	TInlineComponentArray<UPrimitiveComponent*> Components(Building);
+	for (UPrimitiveComponent* Component : Components) Component->SetGenerateOverlapEvents(false);
+	auto* BuildingDart = Launch(Building, FVector(0,500,100));
+	BuildingDart->SetActorLocation(FVector(1000,500,100), false);
+	BuildingDart->Tick(.016f);
+	TestTrue(TEXT("Building collision also receives projectile damage without overlap events"), Health(Building) < 100.f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFUnitDamagedBarTest, "StrikeForge.HealthBar.DamageHealDeath",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FSFUnitDamagedBarTest::RunTest(const FString& Parameters)
@@ -284,8 +350,14 @@ bool FSFUnitDamagedBarTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("One HP damage appears immediately even on a large health pool"), Bar->IsVisible());
 		HP->IncreaseCurrentHealth(1.f);
 		TestFalse(TEXT("Full healing hides bar"), Bar->IsVisible());
+		if (UUserWidget* Widget = Bar->GetUserWidgetObject())
+			TestEqual(TEXT("Full healing also hides the screen-space widget before its tick stops"), Widget->GetVisibility(), ESlateVisibility::Collapsed);
 		HP->ApplyDamage(100000.f);
 		TestFalse(TEXT("Dead unit hides bar"), Bar->IsVisible());
+		HP->SetHealth(100000.f, 100000.f);
+		TestFalse(TEXT("Full-health revival keeps the damaged bar hidden"), Bar->IsVisible());
+		if (UUserWidget* Widget = Bar->GetUserWidgetObject())
+			TestEqual(TEXT("Revival cannot reuse the old damaged widget"), Widget->GetVisibility(), ESlateVisibility::Collapsed);
 	}
 	return true;
 }
@@ -359,6 +431,21 @@ bool FSFForcedAttackRingTest::RunTest(const FString& Parameters)
 	FSFForcedAttackTestAccess::SetMaterials(HUD, Red, Green);
 	TestTrue(TEXT("Enemy building is a normal red hover target"), FSFForcedAttackTestAccess::IsEnemy(HUD, EnemyBuilding));
 	TestFalse(TEXT("Friendly building is not a normal red hover target"), FSFForcedAttackTestAccess::IsEnemy(HUD, AllyBuilding));
+	AUnitBase* Neutral = Fixture.Unit(-1, FVector(200.f, 0.f, 0.f));
+	for (AActor* Target : TArray<AActor*>{Ally, AllyBuilding, EnemyBuilding, Neutral})
+	{
+		TestTrue(TEXT("All visible living teams support hovering"), FSFForcedAttackTestAccess::CanHover(HUD, Target));
+		FSFForcedAttackTestAccess::Hover(HUD, Target);
+		UDecalComponent* GroundRing = FSFForcedAttackTestAccess::GroundRing(HUD);
+		if (!TestNotNull(TEXT("Hover always creates a terrain-projected ring"), GroundRing)) return false;
+		FLinearColor Color;
+		GroundRing->GetDecalMaterial()->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+		const bool bFriendly = Target == Ally || Target == AllyBuilding;
+		TestTrue(TEXT("Friendly hover is blue; enemy and neutral hover are red"),
+			Color.Equals(bFriendly ? FLinearColor(0.f, .55f, 1.f) : FLinearColor::Red));
+		FSFForcedAttackTestAccess::ClearHover(HUD);
+		TestNull(TEXT("Leaving a target removes its projected hover ring"), FSFForcedAttackTestAccess::GroundRing(HUD));
+	}
 	FSFForcedAttackTestAccess::Select(HUD, EnemyBuilding);
 	UDecalComponent* Selection = FSFForcedAttackTestAccess::Selection(HUD, EnemyBuilding);
 	if (!TestNotNull(TEXT("Enemy building selection ring"), Selection)) return false;
@@ -369,6 +456,11 @@ bool FSFForcedAttackRingTest::RunTest(const FString& Parameters)
 		HUD->PlayEnemyHoverAttackFeedback(Target);
 		UNiagaraComponent* Ring = FSFForcedAttackTestAccess::Ring(HUD);
 		if (!TestNotNull(TEXT("Target command creates a ring without prior hover"), Ring)) return false;
+		UDecalComponent* GroundRing = FSFForcedAttackTestAccess::GroundRing(HUD);
+		if (!TestNotNull(TEXT("Forced attack also creates a projected ring"), GroundRing)) return false;
+		FLinearColor GroundColor;
+		GroundRing->GetDecalMaterial()->GetVectorParameterValue(TEXT("SelectionColor"), GroundColor);
+		TestTrue(TEXT("Forced attacks use red even against friendly units"), GroundColor.Equals(FLinearColor::Red));
 		TestEqual(TEXT("Hover and forced attack use the rounded purchased marker"), Ring->GetAsset()->GetName(), FString(TEXT("NS_SFHoverRound")));
 		const auto& Materials = FSFForcedAttackTestAccess::RingMaterials(HUD);
 		TestTrue(TEXT("All renderer materials receive the palette"), Materials.Num() >= 2);
@@ -389,12 +481,16 @@ bool FSFForcedAttackRingTest::RunTest(const FString& Parameters)
 		const float Quarter = FSFForcedAttackTestAccess::QuarterDuration(HUD);
 		FSFForcedAttackTestAccess::Step(HUD, Quarter);
 		TestTrue(TEXT("First pulse grows"), Ring->GetComponentScale().Y > Base * 1.2f);
+		TestTrue(TEXT("Projected ring first pulse grows"), GroundRing->GetComponentScale().Y > 1.2f);
 		FSFForcedAttackTestAccess::Step(HUD, Quarter);
 		TestTrue(TEXT("First pulse shrinks"), FMath::IsNearlyEqual(Ring->GetComponentScale().Y, Base, .01f));
+		TestTrue(TEXT("Projected ring first pulse shrinks"), FMath::IsNearlyEqual(GroundRing->GetComponentScale().Y, 1.f, .01f));
 		FSFForcedAttackTestAccess::Step(HUD, Quarter);
 		TestTrue(TEXT("Second pulse grows"), Ring->GetComponentScale().Y > Base * 1.2f);
+		TestTrue(TEXT("Projected ring second pulse grows"), GroundRing->GetComponentScale().Y > 1.2f);
 		FSFForcedAttackTestAccess::Step(HUD, Quarter + .01f);
 		TestNull(TEXT("Feedback ends after exactly two pulses"), FSFForcedAttackTestAccess::Ring(HUD));
+		TestNull(TEXT("Projected ring also ends after two pulses"), FSFForcedAttackTestAccess::GroundRing(HUD));
 	}
 	TestNotNull(TEXT("Selected enemy building ring is restored after feedback"), FSFForcedAttackTestAccess::Selection(HUD, EnemyBuilding));
 	HUD->PlayEnemyHoverAttackFeedback(Ally);

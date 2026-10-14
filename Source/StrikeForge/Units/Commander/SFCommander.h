@@ -16,6 +16,7 @@ class UHealthComponent;
 class UCombatTargetComponent;
 class UNiagaraSystem;
 class UTexture2D;
+class USoundBase;
 struct FPathFollowingResult;
 
 UENUM(BlueprintType)
@@ -121,6 +122,7 @@ public:
 	friend struct FSFPlaytestMovementAccess;
 	
 	virtual FSFSelectableInfo GetSelectableInfo_Implementation() override;
+	virtual USoundBase* GetSelectionSound_Implementation() override;
 	virtual void MoveToLocation_Implementation(const FVector& InDestination) override;
 	virtual void StopMove_Implementation() override;
 	
@@ -132,6 +134,13 @@ public:
 	// 지휘관 초상화 애니메이션 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Portrait")
 	TObjectPtr<UAnimationAsset> PortraitIdleAnimation = nullptr;
+
+	/** Race-specific response cues, assigned by each commander Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Audio")
+	TObjectPtr<USoundBase> SelectionSound = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Audio")
+	TObjectPtr<USoundBase> MoveCommandSound = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Animation")
 	TObjectPtr<UAnimSequence> DeathAnimation = nullptr;

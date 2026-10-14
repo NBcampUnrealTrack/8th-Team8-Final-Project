@@ -5,10 +5,67 @@
 #include "Game/GameState/SFGameState.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "Logging/SFLog.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/HorizontalBoxSlot.h"
 
 void USFResourcePanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    for (UTextBlock* Value : { MineralValueText.Get(), EtherValueText.Get(), PopulationValueText.Get() })
+        if (Value)
+        {
+            FSlateFontInfo Font = Value->GetFont();
+            Font.Size = 24;
+            Value->SetFont(Font);
+        }
+    for (UTextBlock* Rate : { MineralRateText.Get(), EtherRateText.Get() })
+        if (Rate)
+        {
+            FSlateFontInfo Font = Rate->GetFont();
+            Font.Size = 18;
+            Rate->SetFont(Font);
+        }
+    for (const TCHAR* Name : { TEXT("MineralIconSizeBox"), TEXT("EtherIconSizeBox"), TEXT("PopulationIconSizeBox") })
+        if (auto* Icon = Cast<USizeBox>(GetWidgetFromName(Name)))
+        {
+            Icon->SetWidthOverride(60.f);
+            Icon->SetHeightOverride(60.f);
+        }
+
+    // Let long numbers take their natural width. The enclosing row does the
+    // fitting once, so nested scale boxes cannot make just the numbers tiny.
+    for (const TCHAR* Name : { TEXT("MineralValueTextFixedWidth"), TEXT("EtherValueTextFixedWidth") })
+        if (auto* Box = Cast<USizeBox>(GetWidgetFromName(Name))) Box->ClearWidthOverride();
+    for (const TCHAR* Name : { TEXT("MineralValueTextAutoFit"), TEXT("EtherValueTextAutoFit") })
+        if (auto* Box = Cast<UScaleBox>(GetWidgetFromName(Name))) Box->SetStretch(EStretch::None);
+    for (const TCHAR* Name : { TEXT("MineralResourceBox"), TEXT("EtherResourceBox"), TEXT("PopulationResourceBox") })
+        if (auto* Box = GetWidgetFromName(Name))
+            if (auto* GroupSlot = Cast<UHorizontalBoxSlot>(Box->Slot)) GroupSlot->SetPadding(FMargin(8.f, 0.f, 0.f, 0.f));
+
+    // Fit the complete row, including income and population, inside the frame.
+    // Fitting only the two resource values left population free to overflow.
+    if (auto* Background = Cast<UBorder>(GetWidgetFromName(TEXT("ResourcePanelBackground"))))
+    {
+        UWidget* Content = GetWidgetFromName(TEXT("ResourceContent"));
+        if (Content && Content->GetParent() == Background)
+        {
+            auto* Fit = WidgetTree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), TEXT("ResourceRowFit"));
+            Content->RemoveFromParent();
+            Fit->SetStretch(EStretch::ScaleToFit);
+            Fit->SetStretchDirection(EStretchDirection::DownOnly);
+            Fit->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+            auto* FitSlot = Cast<UScaleBoxSlot>(Fit->AddChild(Content));
+            FitSlot->SetHorizontalAlignment(HAlign_Center);
+            FitSlot->SetVerticalAlignment(VAlign_Center);
+            Background->SetPadding(FMargin(14.f, 4.f));
+            Background->SetContent(Fit);
+        }
+    }
 
     BindResourceData();
 }

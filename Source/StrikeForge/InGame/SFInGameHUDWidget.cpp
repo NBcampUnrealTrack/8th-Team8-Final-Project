@@ -1,4 +1,4 @@
-﻿#include "SFInGameHUDWidget.h"
+#include "SFInGameHUDWidget.h"
 #include "Game/Subsystem/SFStageBuffSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
@@ -14,6 +14,7 @@
 #include "Units/Commander/SFCommander.h"
 #include "Components/Image.h"
 #include "InGame/HUD/SFSkillCooldownWidget.h"
+#include "InGame/HUD/SFHUDPanelAccentWidget.h"
 #include "InGame/HUD/SFCommanderSkillTooltipWidget.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -74,6 +75,7 @@
 #include "Math/RotationMatrix.h"
 
 #include "Kismet/GameplayStatics.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 
 #include "TimerManager.h"
 #include "Blueprint/WidgetTree.h"
@@ -162,6 +164,7 @@ void USFInGameHUDWidget::NativeConstruct()
     Super::NativeConstruct();
 
     ControlGroups.SetNum(6);
+    USFHUDPanelAccentWidget::Install(this, PanelAccents);
 
     if (IsValid(ControlGroupWidget))
     {
@@ -532,6 +535,19 @@ void USFInGameHUDWidget::NativeTick(
         InDeltaTime
     );
 
+    AccentDiscoveryTime -= InDeltaTime;
+    if (AccentDiscoveryTime <= 0.f)
+    {
+        USFHUDPanelAccentWidget::Install(this, PanelAccents);
+        AccentDiscoveryTime = .5f;
+    }
+    if (LastAccentSelection.Get() != SelectedActor)
+    {
+        LastAccentSelection = SelectedActor;
+        for (const auto& Accent : PanelAccents)
+            if (Accent.IsValid() && Accent->Panel != USFHUDPanelAccentWidget::EPanel::Minimap) Accent->Pulse();
+    }
+
     if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
     {
         if (IsValid(SelectedActor) && !Fog->IsActorVisibleToLocalPlayer(SelectedActor)) ClearSelection();
@@ -824,6 +840,11 @@ void USFInGameHUDWidget::ApplySelection(
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
     RefreshSelectedPortrait();
+
+    // Replacing the selection may hide the previously focused HUD button.
+    // Return keyboard commands to the battlefield, while respecting modal pauses.
+    if (!UGameplayStatics::IsGamePaused(this) && IsVisible())
+        UWidgetBlueprintLibrary::SetFocusToGameViewport();
 }
 
 void USFInGameHUDWidget::ApplySelectionUIData(
@@ -1568,6 +1589,11 @@ void USFInGameHUDWidget::OpenBuildingMode()
     }
 }
 
+bool USFInGameHUDWidget::IsBuildingModeOpen() const
+{
+    return IsValid(ActiveBuildingModeWidget) && ActiveBuildingModeWidget->IsActivated();
+}
+
 UWidget* USFInGameHUDWidget::GetTutorialBuildModeButton() const
 {
     return BuildModeOpenButton.Get();
@@ -1662,21 +1688,12 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
 
     BuildModeOpenButton->SetVisibility(
         bIsBuildingSelected ||
-        bIsBuildingModeActive
+        bIsBuildingModeActive ||
+        SelectedActors.Num() > 1
         ? ESlateVisibility::Collapsed
         : ESlateVisibility::Visible
     );
 }
-
-#if WITH_EDITOR
-void USFInGameHUDWidget::DismissActiveStageIntroForDebug()
-{
-    if (IsValid(ActiveStageIntroWidget))
-    {
-        ActiveStageIntroWidget->DeactivateWidget();
-    }
-}
-#endif
 
 void USFInGameHUDWidget::ShowResultWidget(
     bool bIsWin
@@ -1769,24 +1786,10 @@ void USFInGameHUDWidget::SelectActor(AActor* Actor)
     ApplySelectionUIData(Actor, SelectableInfo);
     ApplySelection(Actor, SelectableInfo);
 
-    // 선택음은 여기서 한 번만 울린다.
-    //
-    // 원래는 ASFInGamePlayerController::PlaySelectionSound 를 부르면 되지만
-    // 그 함수가 private 이라 C++ 에서는 접근할 수 없다. UFUNCTION 이라
-    // BP 에서만 보이는 상태다. 컨트롤러는 담당자 파일이라 손대지 않고,
-    // 같은 내용을 여기서 직접 수행한다.
-    //
-    // 위에서 ISFSelectable 구현 여부를 이미 걸렀으므로 다시 검사하지 않는다.
-    // DT_Units 의 Selection Sound 를 비워둔 유닛은 소리가 null 이라 조용히
-    // 넘어간다 — 소리를 지정하지 않은 유닛이 무음인 것은 정상 동작이다.
-    if (USoundBase* SelectionSound =
-        ISFSelectable::Execute_GetSelectionSound(Actor))
+    // Route real HUD selection through the same serialized voice channel as commands.
+    if (auto* PC = Cast<ASFInGamePlayerController>(GetOwningPlayer()))
     {
-        UGameplayStatics::PlaySoundAtLocation(
-            this,
-            SelectionSound,
-            Actor->GetActorLocation()
-        );
+        PC->PlaySelectionSound(Actor);
     }
 }
 
@@ -2512,16 +2515,18 @@ void USFInGameHUDWidget::UpdateEnemyHoverIndicator()
     AActor* CandidateActor =
         HitResult.GetActor();
 
-    if (!IsValidEnemyHoverTarget(CandidateActor))
+    if (!IsValidHoverTarget(CandidateActor))
     {
         HideEnemyHoverIndicator();
         return;
     }
 
     if (HoveredEnemyActor.Get() == CandidateActor &&
-        IsValid(EnemyHoverIndicator))
+        (IsValid(EnemyHoverIndicator) || IsValid(HoverGroundRing)))
     {
-        EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(CandidateActor));
+        const FVector Ground = SFCommandFeedback::GroundLocation(CandidateActor);
+        if (EnemyHoverIndicator) EnemyHoverIndicator->SetWorldLocation(Ground);
+        if (HoverGroundRing) HoverGroundRing->SetWorldLocation(Ground);
         return;
     }
 
@@ -2539,28 +2544,32 @@ void USFInGameHUDWidget::UpdateEnemyHoverIndicator()
     ShowEnemyHoverIndicator(CandidateActor);
 }
 
-bool USFInGameHUDWidget::IsValidEnemyHoverTarget(
-    AActor* Actor
-) const
+bool USFInGameHUDWidget::IsValidHoverTarget(AActor* Actor) const
 {
+    if (!IsValid(Actor)) return false;
     if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
     {
         if (!Fog->IsActorVisibleToLocalPlayer(Actor)) return false;
     }
-    if (!IsValid(Actor)) return false;
     const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
-    const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
-    if (!Target || !Target->IsAlive() || !Combat) return false;
+    if (!Target || !Target->IsAlive()) return false;
     const ASFBaseBuilding* Building = Cast<ASFBaseBuilding>(Actor);
-    return (!Building || Building->ProvidesVision()) &&
-        USFCombatSubsystem::IsHostileTeam(Combat->GetLocalPlayerTeam(), Target->GetTeamIndex());
+    return !Building || Building->ProvidesVision();
 }
 
-void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor)
+bool USFInGameHUDWidget::IsValidEnemyHoverTarget(AActor* Actor) const
+{
+    if (!IsValidHoverTarget(Actor)) return false;
+    const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(Actor);
+    const USFCombatSubsystem* Combat = USFCombatSubsystem::Get(this);
+    // Neutral targets use red feedback too, without changing combat hostility.
+    return Combat && Target->GetTeamIndex() != Combat->GetLocalPlayerTeam();
+}
+
+void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor, bool bForceAttack)
 {
     if (!IsValid(Actor) || !IsValid(Actor->GetRootComponent())) return;
     UNiagaraSystem* System = HoverNiagaraSystem.LoadSynchronous();
-    if (!System) return;
 
     FVector BoundsOrigin, BoundsExtent;
     const bool bIsBuilding = Actor->IsA<ASFBaseBuilding>();
@@ -2569,9 +2578,27 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor)
         ? FMath::Clamp(FVector2D(BoundsExtent.X, BoundsExtent.Y).Size() * 1.05f, 100.f, 1500.f)
         : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
     const FVector Location = SFCommandFeedback::GroundLocation(Actor);
-    FLinearColor Color = FLinearColor::Red;
-    if (EnemyHoverIndicatorMaterial)
-        EnemyHoverIndicatorMaterial->GetVectorParameterValue(TEXT("SelectionColor"), Color);
+    const bool bRed = bForceAttack || IsValidEnemyHoverTarget(Actor);
+    const FLinearColor Color = bRed ? FLinearColor::Red : FLinearColor(0.f, .55f, 1.f);
+    UMaterialInterface* RingMaterial = bRed ? EnemyHoverIndicatorMaterial : SelectionIndicatorMaterial;
+    if (RingMaterial)
+    {
+        HoverGroundRing = NewObject<UDecalComponent>(Actor);
+        Actor->AddInstanceComponent(HoverGroundRing);
+        HoverGroundRing->SetupAttachment(Actor->GetRootComponent());
+        HoverGroundRing->SetAbsolute(false, true, true);
+        HoverGroundRing->SetMobility(EComponentMobility::Movable);
+        auto* Dynamic = UMaterialInstanceDynamic::Create(RingMaterial, HoverGroundRing);
+        Dynamic->SetVectorParameterValue(TEXT("SelectionColor"), Color);
+        HoverGroundRing->SetDecalMaterial(Dynamic);
+        HoverGroundRing->DecalSize = FVector(128.f, RingRadius, RingRadius);
+        HoverGroundRing->SetFadeScreenSize(0.f);
+        HoverGroundRing->SetSortOrder(40);
+        HoverGroundRing->RegisterComponent();
+        HoverGroundRing->SetWorldLocation(Location);
+        HoverGroundRing->SetWorldRotation(FRotator(-90.f, 0.f, 0.f));
+    }
+    HoveredEnemyActor = Actor;
     EnemyHoverBaseScale = FVector(RingRadius / FMath::Max(HoverNiagaraRadius, 1.f));
     EnemyHoverDynamicMaterials.Reset();
     EnemyHoverIndicator = SFCommandFeedback::Spawn(this, System, Location,
@@ -2595,6 +2622,9 @@ void USFInGameHUDWidget::HideEnemyHoverIndicator()
     {
         EnemyHoverIndicator->DestroyComponent();
     }
+
+    if (IsValid(HoverGroundRing)) HoverGroundRing->DestroyComponent();
+    HoverGroundRing = nullptr;
 
     EnemyHoverIndicator =
         nullptr;
@@ -2673,8 +2703,8 @@ void USFInGameHUDWidget::PlayEnemyHoverAttackFeedback(
         bHoverSuppressedSelectionIndicator = true;
         HideSelectionIndicator(Target);
     }
-    ShowEnemyHoverIndicator(Target);
-    if (!IsValid(EnemyHoverIndicator))
+    ShowEnemyHoverIndicator(Target, true);
+    if (!IsValid(EnemyHoverIndicator) && !IsValid(HoverGroundRing))
     {
         HideEnemyHoverIndicator();
         return;
@@ -2697,7 +2727,7 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     if (!bEnemyHoverFeedbackActive) return;
     const UCombatTargetComponent* Target = USFCombatSubsystem::FindTargetComponent(HoveredEnemyActor.Get());
     const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this);
-    if (!IsValid(EnemyHoverIndicator) || !Target || !Target->IsAlive() ||
+    if ((!IsValid(EnemyHoverIndicator) && !IsValid(HoverGroundRing)) || !Target || !Target->IsAlive() ||
         (Fog && !Fog->IsActorVisibleToLocalPlayer(HoveredEnemyActor.Get())))
     {
         bEnemyHoverFeedbackActive = false;
@@ -2706,7 +2736,9 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
     }
 
     constexpr float PulseCount = 2.f;
-    EnemyHoverIndicator->SetWorldLocation(SFCommandFeedback::GroundLocation(HoveredEnemyActor.Get()));
+    const FVector Ground = SFCommandFeedback::GroundLocation(HoveredEnemyActor.Get());
+    if (EnemyHoverIndicator) EnemyHoverIndicator->SetWorldLocation(Ground);
+    if (HoverGroundRing) HoverGroundRing->SetWorldLocation(Ground);
 
     EnemyHoverFeedbackElapsed +=
         InDeltaTime;
@@ -2740,14 +2772,15 @@ void USFInGameHUDWidget::UpdateEnemyHoverAttackFeedback(
             PulseAlpha
         );
 
-    EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale * CurrentScale);
+    if (EnemyHoverIndicator) EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale * CurrentScale);
+    if (HoverGroundRing) HoverGroundRing->SetWorldScale3D(FVector(1.f, CurrentScale, CurrentScale));
 
     for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
         if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), PulseAlpha);
 
     if (Alpha >= 1.f)
     {
-        EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
+        if (EnemyHoverIndicator) EnemyHoverIndicator->SetWorldScale3D(EnemyHoverBaseScale);
         for (UMaterialInstanceDynamic* Material : EnemyHoverDynamicMaterials)
             if (Material) Material->SetScalarParameterValue(TEXT("FeedbackFlash"), 0.f);
 

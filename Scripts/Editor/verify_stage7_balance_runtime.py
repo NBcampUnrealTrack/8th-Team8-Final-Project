@@ -58,21 +58,21 @@ def tick(dt):
         if state.pop('travelling',False):return
         if state['phase']=='start':
             buildings=actors(w,unreal.SFBaseBuilding)
-            assert len(buildings)==16,len(buildings)
+            assert len(buildings)==26,len(buildings)
             assert ('Animal' if race=='Beast' else 'Human') in gs.get_team_building_catalog(0).get_path_name()
             for team in [0,1]:
                 assert gs.get_nexus(team).get_current_tier()==2
                 own=[b for b in buildings if combat(b).get_team_index()==team]
                 special=[b for b in own if 'Special' in b.get_building_definition().get_name()]
-                assert len(own)==8 and len(special)==1
+                assert len(own)==13 and len(special)==2
                 assert all(b.get_current_tier()==0 for b in own if isinstance(b,unreal.SFProductionBuilding))
                 assert gs.get_mineral_income_rate(team)>0 and gs.get_ether_income_rate(team)>0
             for b in buildings:combat(b).set_damage_multiplier(0.)
             spawners=actors(w,unreal.UnitSpawner)
-            assert len(spawners)==6
+            assert len(spawners)==16
             enemy=[s for s in spawners if s.get_editor_property('team_index')==1]
             player=[s for s in spawners if s.get_editor_property('team_index')==0]
-            assert len(enemy)==len(player)==3
+            assert len(enemy)==len(player)==8
             for s in spawners:
                 assert s.get_owner_building()
                 assert combat(s.get_owner_building()).get_team_index()==s.get_editor_property('team_index')
@@ -81,7 +81,7 @@ def tick(dt):
                 assert s.spawn_one() is None
             for s in enemy:assert s.get_editor_property('total_spawned')==0
             refs.update(enemy=enemy,player=player,buildings=buildings)
-            state['checks'].append(dict(buildings=16,sanctuary_per_team=1,nexus_tier=3,production_tier=1,both_incomes=True,ownership=True))
+            state['checks'].append(dict(buildings=26,sanctuary_per_team=2,nexus_tier=3,production_tier=1,both_incomes=True,ownership=True))
             camera=unreal.GameplayStatics.get_player_pawn(w,0)
             camera.set_actor_tick_enabled(False)
             camera.get_component_by_class(unreal.FloatingPawnMovement).stop_movement_immediately()

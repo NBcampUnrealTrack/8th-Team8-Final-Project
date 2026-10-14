@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
@@ -100,6 +100,7 @@ public:
      */
     bool TryStartBuildingPlacement(FName InBuildingId);
 
+    UFUNCTION(BlueprintCallable, Category = "SF|Building|Placement")
     void ClearSpawnedBuildingRef();
 
     void ClearPendingBuildingRef();
@@ -147,6 +148,13 @@ public:
 
     void SetBuildModeInputEnabled(bool bEnabled);
 
+    UFUNCTION(BlueprintPure, Category = "SF|Input")
+    bool IsBuildModeInputEnabled() const { return bBuildModeInputEnabled; }
+
+    /** Shared selection audio entry point for mouse, HUD and blueprint selection. */
+    UFUNCTION(BlueprintCallable)
+    void PlaySelectionSound(AActor* SelectedTarget);
+
 protected:
     virtual void BeginPlay() override;
 
@@ -178,11 +186,6 @@ private:
     void HandleConfirmBuildInput();
 
     void HandleCancelBuildInput();
-
-#if WITH_EDITOR
-    /** Stage03/05: K instant victory followed by the authored clear epilogue. */
-    void HandleStageDebugVictoryInput();
-#endif
 
     void HandleFocusCommanderInput();
 
@@ -260,10 +263,6 @@ private:
 
     /** 그룹 이동 완료 검사 타이머 */
     FTimerHandle ForcedMoveGroupCheckTimer;
-
-    // 선택하면 소리재생 함수
-    UFUNCTION(BlueprintCallable)
-    void PlaySelectionSound(AActor* SelectedTarget);
 
     // Async
 

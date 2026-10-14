@@ -6,6 +6,7 @@
 
 class UAudioComponent;
 class USoundBase;
+class UUserWidget;
 
 /**
  * 일시정지 중에도 계속 나와야 하는 소리를 다루는 헬퍼.
@@ -23,6 +24,7 @@ class STRIKEFORGE_API USFAudioLibrary : public UBlueprintFunctionLibrary
     GENERATED_BODY()
 
 public:
+    static void ApplyMenuButtonSounds(UUserWidget* Widget);
     /** Positional battle sound, attenuated around the RTS camera's ground focus. */
     UFUNCTION(BlueprintCallable, Category = "SF|Audio", meta = (WorldContext = "WorldContext"))
     static void PlayBattleSound(const UObject* WorldContext, USoundBase* Sound, FVector Location);

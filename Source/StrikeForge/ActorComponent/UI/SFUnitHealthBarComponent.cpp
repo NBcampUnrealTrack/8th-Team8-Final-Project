@@ -96,6 +96,11 @@ void USFUnitHealthBarComponent::HealthChanged(float Before, float Current, float
 	// No percentage threshold: even 1 HP missing from a very large health pool shows the bar.
 	const bool bDamaged = Maximum > 0.f && Current > 0.f && Current < Maximum;
 	SetVisibility(bDamaged);
+	if (UUserWidget* HealthWidget = GetUserWidgetObject())
+		HealthWidget->SetVisibility(bDamaged ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	// Screen-space widgets stay in the viewport until explicitly removed or ticked.
+	// Remove before disabling tick so healing/death/respawn cannot leave an old fill on screen.
+	if (!bDamaged) RemoveWidgetFromScreen();
 	SetComponentTickEnabled(bDamaged);
 	if (bDamaged) RefreshLayout();
 }

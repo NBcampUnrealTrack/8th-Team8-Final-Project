@@ -1,4 +1,7 @@
 #include "Game/Audio/SFAudioLibrary.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Button.h"
 
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -77,4 +80,21 @@ UAudioComponent* USFAudioLibrary::PlayMusic2D(
     SF_LOG(Log, "[SFAudioLibrary] 배경음 재생 | %s", *InSound->GetName());
 
     return Component;
+}
+
+void USFAudioLibrary::ApplyMenuButtonSounds(UUserWidget* Widget)
+{
+    if (!Widget || !Widget->WidgetTree) return;
+    auto* Hover = LoadObject<USoundBase>(nullptr, TEXT("/Game/Sound/INUI_soundEffect/Button/T_SFhover02-1.T_SFhover02-1"));
+    auto* Click = LoadObject<USoundBase>(nullptr, TEXT("/Game/Sound/INUI_soundEffect/Button/T_SFClick.T_SFClick"));
+    Widget->WidgetTree->ForEachWidget([Hover, Click](UWidget* Child)
+    {
+        if (auto* Button = Cast<UButton>(Child))
+        {
+            auto Style = Button->GetStyle();
+            Style.HoveredSlateSound.SetResourceObject(Hover);
+            Style.PressedSlateSound.SetResourceObject(Click);
+            Button->SetStyle(Style);
+        }
+    });
 }

@@ -99,7 +99,7 @@ for row, weight in [('Brawler',5), ('Berserker',3), ('Predator',1), ('Hunter',5)
     pool.append(e)
 c = place(unreal.SFDefenceWaveController, 'Stage06_WaveController', unreal.Vector())
 for key, value in dict(spawners=spawners, unit_pool=pool, total_waves=5,
-        initial_preparation_duration=60., preparation_duration=60., wave_duration=300., require_full_wave_duration=True,
+        initial_preparation_duration=60., preparation_duration=60., wave_duration=300., require_full_wave_duration=True, end_wave_on_enemy_clear=True,
         spawn_interval=4., first_wave_copies_per_type=6, additional_copies_per_wave=3, spawn_count_multiplier=0.4/3.).items(): c.set_editor_property(key,value)
 for a in actors:
     if isinstance(a, unreal.SFAmbushDefenseDirector): a.set_editor_property('spawners', [])

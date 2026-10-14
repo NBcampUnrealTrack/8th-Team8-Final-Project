@@ -574,6 +574,14 @@ int32 AUnitSpawner::GetAliveCount() const
 	return Count;
 }
 
+bool AUnitSpawner::HasLivingSpawnedUnits() const
+{
+	for (const TWeakObjectPtr<AUnitBase>& Weak : SpawnedUnits)
+		if (const AUnitBase* Unit = Weak.Get(); IsValid(Unit) && Unit->GetCombatState() != EUnitCombatState::Dead)
+			return true;
+	return false;
+}
+
 void AUnitSpawner::HandleSpawnCycle()
 {
 	if (!bActivated || !bSpawningEnabled || (!UnitClass && SpawnPhases.IsEmpty())) return;

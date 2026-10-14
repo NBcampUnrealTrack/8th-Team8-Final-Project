@@ -20,6 +20,11 @@ bool FSFCampaignProgressTest::RunTest(const FString& Parameters)
     for (int32 Order = 1; Order <= 4; ++Order)
         TestTrue(TEXT("Sequential clear recorded"), GI->MarkStageCleared(FName(*FString::Printf(TEXT("Stage%02d"), Order))));
     TestEqual(TEXT("Stage04 clear unlocks Stage05"), GI->GetStageProgressState(TEXT("Stage05")), ESFStageProgressState::Unlocked);
+    TestTrue(TEXT("Stage03 reveals an unread story notice"), GI->HasUnreadStoryUnlock());
+    GI->MarkStoryUnlockRead();
+    TestFalse(TEXT("Opening the story dismisses the notice"), GI->HasUnreadStoryUnlock());
+    GI->MarkStageCleared(TEXT("Stage03"));
+    TestFalse(TEXT("Replaying Stage03 does not duplicate the notice"), GI->HasUnreadStoryUnlock());
     TestTrue(TEXT("Stage05 selects successfully"), GI->SelectStage(TEXT("Stage05")));
     TestEqual(TEXT("Stage05 uses Etherian"), GI->GetSelectedRace(), ESFRace::Human);
     TestTrue(TEXT("Stage05 clear unlocks Stage06"), GI->MarkStageCleared(TEXT("Stage05")));

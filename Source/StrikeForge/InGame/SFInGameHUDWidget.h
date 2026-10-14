@@ -41,6 +41,7 @@ class UWidget;
 class USFBuffComponent;
 // Badge Widget ( BuildingSynergy )
 class UCanvasPanel;
+class USFHUDPanelAccentWidget;
 class USFPlacementSynergyBonusWidget;
 
 USTRUCT()
@@ -85,6 +86,7 @@ public:
         Category = "SF|HUD|Building"
     )
     void OpenBuildingMode();
+    bool IsBuildingModeOpen() const;
 
     UFUNCTION(
         BlueprintCallable,
@@ -101,10 +103,11 @@ public:
     void ShowResultWidget(bool bIsWin);
 
 #if WITH_EDITOR
-    /** K 즉시 승리 테스트 전에 재생 중인 시작 스토리를 정리한다. */
-    void DismissActiveStageIntroForDebug();
+    void PreviewResultForDebug(bool bWin) { bVictoryEpilogueCompleted=true; ShowResultWidget(bWin); }
+    void ArmResultPreviewForDebug() { bVictoryEpilogueCompleted=true; }
 #endif
 
+    UFUNCTION(BlueprintCallable, Category = "SF|Selection")
     void SelectActor(AActor* Actor);
 
     /** 내 소유의 살아 있는 유닛과 지휘관을 모두 선택한다. 건물은 제외한다. */
@@ -202,6 +205,10 @@ protected:
     virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime) override;
 
     virtual void NativeDestruct() override;
+
+    TArray<TWeakObjectPtr<USFHUDPanelAccentWidget>> PanelAccents;
+    TWeakObjectPtr<AActor> LastAccentSelection;
+    float AccentDiscoveryTime = 0.f;
 
     UFUNCTION()
     void HandleSelectedHealthChanged(float BeforeHP, float CurrentHP, float MaxHP);
@@ -306,10 +313,12 @@ private:
     void UpdateEnemyHoverIndicator();
 
     void ShowEnemyHoverIndicator(
-        AActor* Actor
+        AActor* Actor, bool bForceAttack = false
     );
 
     void HideEnemyHoverIndicator();
+
+    bool IsValidHoverTarget(AActor* Actor) const;
 
     bool IsValidEnemyHoverTarget(
         AActor* Actor
@@ -731,6 +740,10 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UNiagaraComponent> EnemyHoverIndicator = nullptr;
+
+    // The projected ring stays visible on terrain even when Niagara is culled.
+    UPROPERTY(Transient)
+    TObjectPtr<UDecalComponent> HoverGroundRing = nullptr;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<AActor> HoverSuppressedSelectionActor;

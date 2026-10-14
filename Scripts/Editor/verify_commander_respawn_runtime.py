@@ -6,7 +6,7 @@ from pathlib import Path
 import unreal
 
 root = Path(unreal.Paths.project_dir())
-out = root / 'Saved/CommanderRespawn'
+out = Path(globals().get('RESPAWN_WORK', root / 'Saved/CommanderRespawn'))
 out.mkdir(parents=True, exist_ok=True)
 editor = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 level = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -36,6 +36,32 @@ def finish(error=None):
     global quit_handle
     quit_handle = unreal.register_slate_post_tick_callback(quit_tick)
 
+def check_voice(c, phase):
+    # Temporarily make the enemy fixture friendly to exercise both race cues.
+    w = editor.get_game_world()
+    voice = next(o for o in unreal.ObjectIterator(unreal.SFUnitVoiceSubsystem) if o.get_outer() == w)
+    active = voice.get_active_voice()
+    if active:
+        active.stop()
+    pc = unreal.GameplayStatics.get_player_controller(w, 0)
+    original_team = combat(c).get_team_index()
+    combat(c).set_team_index(combat(pc.get_my_commander()).get_team_index())
+    try:
+        unit = 'BeastCommander' if 'Beast' in c.get_class().get_name() else 'EtherianCommander'
+        faction = 'Beast' if unit == 'BeastCommander' else 'Etherian'
+        for kind, field in [('Selection', 'selection_sound'), ('Move', 'move_command_sound')]:
+            cue = unreal.load_asset(f'/Game/Sound/Voices/{faction}/{unit}/{kind}/SC_{unit}_{kind}')
+            assert cue and c.get_editor_property(field) == cue, (unit, field)
+        pc.play_selection_sound(c)
+        active = voice.get_active_voice()
+        assert active and active.is_playing(), (unit, phase, 'voice did not play')
+        assert active.get_editor_property('sound') == c.get_selection_sound()
+        pc.play_selection_sound(c)
+        assert voice.get_active_voice() == active, 'Busy click interrupted voice'
+        state['checks'].append(dict(voice=unit, phase=phase, selection_played=True, move_cue_preserved=True))
+    finally:
+        combat(c).set_team_index(original_team)
+
 def kill(c):
     mesh = c.get_editor_property('mesh')
     sequence = c.get_editor_property('death_animation')
@@ -43,6 +69,7 @@ def kill(c):
                 else 'AS_EtherCommanderDeath')
     assert sequence and sequence.get_name() == expected
     refs[c.get_name()+'_anim_class'] = mesh.get_anim_instance().get_class()
+    check_voice(c, 'before_death')
     combat(c).apply_combat_damage(100000., None)
     assert c.is_awaiting_respawn() and hp(c).get_is_dead()
     assert hp(c).get_current_health() == 0 and not combat(c).is_alive()
@@ -70,6 +97,7 @@ def check_restored_animation(c):
     assert not c.get_editor_property('hidden')
     assert mesh.get_animation_mode() == unreal.AnimationMode.ANIMATION_BLUEPRINT
     assert mesh.get_anim_instance().get_class() == refs[c.get_name()+'_anim_class']
+    check_voice(c, 'after_respawn')
 
 def tick(dt):
     try:

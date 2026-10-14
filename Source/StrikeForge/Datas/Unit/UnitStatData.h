@@ -166,8 +166,8 @@ struct FUnitStatData : public FTableRowBase
 	 * 로드한다. 명령할 때마다 로드하면 그 유닛에게 처음 명령하는 순간
 	 * 히치가 생긴다.
 	 *
-	 * 여러 기를 한꺼번에 움직여도 한 기만 대답한다 — 간격은
-	 * sf.CommandVoiceInterval 로 조절한다.
+	 * 여러 기의 명령은 SFUnitVoiceSubsystem에서 합치며,
+	 * 재생 중인 대사가 끝난 뒤 최근 응답을 이어서 재생한다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio|Command")
 	TSoftObjectPtr<class USoundBase> MoveCommandSound;

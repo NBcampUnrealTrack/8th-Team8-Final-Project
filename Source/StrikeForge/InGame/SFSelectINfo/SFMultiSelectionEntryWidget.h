@@ -51,6 +51,9 @@ public:
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
+    virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
+        const FSlateRect& CullingRect, FSlateWindowElementList& Elements, int32 Layer,
+        const FWidgetStyle& Style, bool bParentEnabled) const override;
 
     UPROPERTY(BlueprintReadOnly, Category = "SF|Selection", meta = (BindWidget))
     TObjectPtr<UButton> EntryButton = nullptr;

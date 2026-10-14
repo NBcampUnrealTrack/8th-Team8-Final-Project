@@ -1,4 +1,5 @@
 #include "StartWidget.h"
+#include "Game/Audio/SFAudioLibrary.h"
 #include "SFStartButtonFeedbackWidget.h"
 #include "SettingWidget.h"
 #include "Components/Button.h"
@@ -35,6 +36,7 @@ UStartWidget::UStartWidget(const FObjectInitializer& ObjectInitializer) : Super(
 void UStartWidget::ApplyStartArt()
 {
     if (!WidgetTree || !ArtControls.IsEmpty()) return;
+    USFAudioLibrary::ApplyMenuButtonSounds(this);
     ArtElapsed = 0.f;
     // Remove the old global blur / black veil; light belongs to the 3D scene.
     if (UWidget* Backdrop = GetWidgetFromName(TEXT("BackgroundBlur_149")))

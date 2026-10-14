@@ -2,7 +2,11 @@
 
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ProgressBar.h"
 #include "Components/Widget.h"
+#include "Components/ListView.h"
+#include "InGame/HUD/SFBuffTooltipWidget.h"
+#include "UObject/UnrealType.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
 
@@ -12,6 +16,12 @@
 void USFSelectionPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+
+    if (auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView"))))
+    {
+        BuffList->OnEntryWidgetGenerated().RemoveAll(this);
+        BuffList->OnEntryWidgetGenerated().AddUObject(this, &ThisClass::HandleBuffEntryGenerated);
+    }
 
     if (IsValid(TierUpButton))
     {
@@ -95,6 +105,17 @@ void USFSelectionPanelWidget::ShowSelection(
     BP_OnSelectionInfoUpdated(
         CurrentSelectableInfo
     );
+
+    if (auto* Bar = Cast<UProgressBar>(GetWidgetFromName(TEXT("SelectedHealthBar"))))
+    {
+        const float Ratio = CurrentSelectableInfo.MaximumHealth > 0.f
+            ? CurrentSelectableInfo.CurrentHealth / CurrentSelectableInfo.MaximumHealth : 0.f;
+        FProgressBarStyle BarStyle = Bar->GetWidgetStyle();
+        BarStyle.FillImage.TintColor = FSlateColor(FLinearColor::White);
+        Bar->SetWidgetStyle(BarStyle);
+        Bar->SetFillColorAndOpacity(Ratio < .3f ? FLinearColor(1.f,.06f,.035f)
+            : Ratio < .6f ? FLinearColor(1.f,.5f,.05f) : FLinearColor(.03f,.65f,1.f));
+    }
 
     // Blueprint refreshes (including health changes) must not resurrect a max-tier button.
     if (CurrentSelectableInfo.Tier >= 3) SetTierUpButtonVisible(false);
@@ -221,6 +242,10 @@ void USFSelectionPanelWidget::ClearMiningResourceAmount()
 
 void USFSelectionPanelWidget::NativeDestruct()
 {
+    if (auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView"))))
+    {
+        BuffList->OnEntryWidgetGenerated().RemoveAll(this);
+    }
     if (IsValid(RallyPointButton))
     {
         RallyPointButton->OnClicked.RemoveDynamic(
@@ -230,6 +255,22 @@ void USFSelectionPanelWidget::NativeDestruct()
     }
 
     Super::NativeDestruct();
+}
+
+void USFSelectionPanelWidget::HandleBuffEntryGenerated(UUserWidget& EntryWidget)
+{
+    auto* BuffList = Cast<UListView>(GetWidgetFromName(TEXT("BuffListView")));
+    UObject* Item = BuffList ? BuffList->GetListObjectFromEntry(EntryWidget) : nullptr;
+    if (!Item) return;
+    // BP_BuffEntry remains the source of both strings, including buff/debuff wording.
+    const auto* Name = FindFProperty<FTextProperty>(Item->GetClass(), TEXT("Name"));
+    const auto* Description = FindFProperty<FTextProperty>(Item->GetClass(), TEXT("Description"));
+    if (!Name || !Description) return;
+    auto* Tooltip = Cast<USFBuffTooltipWidget>(EntryWidget.GetToolTip());
+    if (!Tooltip) Tooltip = CreateWidget<USFBuffTooltipWidget>(GetOwningPlayer());
+    if (!Tooltip) return;
+    Tooltip->SetDetails(Name->GetPropertyValue_InContainer(Item), Description->GetPropertyValue_InContainer(Item));
+    EntryWidget.SetToolTip(Tooltip);
 }
 
 void USFSelectionPanelWidget::HandleTierUpgradeButtonClicked()

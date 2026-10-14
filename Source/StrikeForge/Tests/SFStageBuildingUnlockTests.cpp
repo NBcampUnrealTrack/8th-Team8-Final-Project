@@ -3,6 +3,7 @@
 #include "Engine/World.h"
 #include "Game/GameState/SFGameState.h"
 #include "UObject/Script.h"
+#include "Datas/Stage/SFStageData.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFStageBuildingUnlockTest,
     "StrikeForge.Stage.Building.UnlockAfterTutorial",
@@ -55,6 +56,39 @@ bool FSFStageBuildingUnlockTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Invalid building ID is still rejected"),
         GameState->IsBuildingAllowedInCurrentStage(NAME_None));
 
+    World->DestroyWorld(false);
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFStage03TempleProgressionTest,
+    "StrikeForge.Stage.Building.Stage03TempleProgression",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSFStage03TempleProgressionTest::RunTest(const FString& Parameters)
+{
+    UDataTable* Table = LoadObject<UDataTable>(nullptr, TEXT("/Game/Core/DataTable/DT_SFStage.DT_SFStage"));
+    const FSFStageData* Stage = Table ? Table->FindRow<FSFStageData>(TEXT("Stage03"), TEXT("Temple progression")) : nullptr;
+    if (!TestNotNull(TEXT("Authored Stage03 row"), Stage)) return false;
+    FEditorScriptExecutionGuard ScriptGuard;
+    UWorld::InitializationValues Values;
+    Values.AllowAudioPlayback(false).CreatePhysicsScene(false).CreateNavigation(false).CreateAISystem(false);
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true,
+        ERHIFeatureLevel::Num, &Values);
+    ASFGameState* State = World->SpawnActor<ASFGameState>();
+    State->BeginRaceDataLoading();
+    State->InitializeStage(TEXT("Stage03"), Stage->BuildingRules);
+    // Stage03 starts with these buildings; both mines must spawn on usable resources.
+    State->RecordCompletedBuilding(0, TEXT("AnimalHouse"), TEXT("House"));
+    State->RecordCompletedBuilding(0, TEXT("AnimalMineralMine"), TEXT("MineralMining"));
+    State->RecordCompletedBuilding(0, TEXT("AnimalBarrack"), TEXT("Barrack"));
+    TestTrue(TEXT("Stage03 permits Temple construction"), State->IsBuildingAllowedInCurrentStage(TEXT("Temple")));
+    TestFalse(TEXT("Academy must complete first"), State->AreBuildingRequirementsMet(0, TEXT("Temple")));
+    State->RecordCompletedBuilding(0, TEXT("AnimalAcademy"), TEXT("Academy"));
+    TestFalse(TEXT("A missing starting Ether mine must not bypass the authored prerequisite"),
+        State->AreBuildingRequirementsMet(0, TEXT("Temple")));
+    State->RecordCompletedBuilding(0, TEXT("AnimalEtherMine"), TEXT("EtherMining"));
+    TestTrue(TEXT("Completing the guided Academy unlocks the next Temple step"),
+        State->AreBuildingRequirementsMet(0, TEXT("Temple")));
+    TestFalse(TEXT("Another team does not inherit the unlock"), State->AreBuildingRequirementsMet(1, TEXT("Temple")));
     World->DestroyWorld(false);
     return true;
 }

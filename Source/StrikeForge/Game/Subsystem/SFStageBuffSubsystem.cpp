@@ -1,4 +1,4 @@
-#include "SFStageBuffSubsystem.h"
+﻿#include "SFStageBuffSubsystem.h"
 #include "Units/Unit/UnitBase.h"
 #include "ActorComponent/Buff/SFBuffComponent.h"
 #include "ActorComponent/Stat/HealthComponent.h"
@@ -62,13 +62,20 @@ void USFStageBuffSubsystem::ApplyToUnit(AUnitBase* Unit)
     if (!Buff) return;
     const TWeakObjectPtr<USFBuffComponent> WeakBuff(Buff);
     const float Attack = 1.f + .1f * B.AttackStacks, Health = 1.f + .1f * B.HealthStacks;
-    Buff->AddBuff(TEXT("StageSlimeReward"), GetSummary(Unit->GetTeamIndex()), [WeakBuff, Attack, Health]()
-    {
-        if (auto* C = WeakBuff.Get())
+    
+    FInputBuffData BuffInfo;
+    BuffInfo.KeyName = TEXT("StageSlimeReward");
+    BuffInfo.DisplayName = FText::FromString(TEXT("슬라임 보상 · 이번 스테이지 한정"));
+    BuffInfo.Description = GetSummary(Unit->GetTeamIndex()).ToString();
+    BuffInfo.TickEvent = [WeakBuff, Attack, Health]()
         {
-            C->Current_Status.AtkMul *= Attack;
-            C->Current_Status.HPMul *= Health;
-            C->ApplyBuffFlag(EBuffApply::Atk | EBuffApply::MaxHealth);
-        }
-    }, [](){}, [](){});
+            if (auto* C = WeakBuff.Get())
+            {
+                C->Current_Status.AtkMul *= Attack;
+                C->Current_Status.HPMul *= Health;
+                C->ApplyBuffFlag(EBuffApply::Atk | EBuffApply::MaxHealth);
+            }
+        };
+    BuffInfo.bIsBuff = true;
+    Buff->AddBuff(BuffInfo);
 }

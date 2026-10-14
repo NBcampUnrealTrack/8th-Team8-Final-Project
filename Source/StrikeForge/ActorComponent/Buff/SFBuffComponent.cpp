@@ -54,7 +54,7 @@ const float UBuffData::GetTimeRate()
 	if (!World.IsValid())
 		return 0.f;
 
-	return RemainTime / InitialTime;
+	return FMath::Clamp(RemainTime / InitialTime, 0.f, 1.f);
 }
 
 void UBuffData::OnNiagaraFinished(UNiagaraComponent* PSystem)
@@ -195,7 +195,7 @@ void USFBuffComponent::RefreshBuffStats(float DeltaTime)
 	if (bStatsApplied) OnBuffStatsChanged.Broadcast();
 }
 
-void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayName, TFunction<void()> _TickEvent, TFunction<void()> _BeginEvent, TFunction<void()> _EndEvent, float _InitialTime, float _TickInterval, UNiagaraSystem* _Particle, FVector2D ParticleScaleForCharacter, FVector2D ParticleScaleForOther)
+void USFBuffComponent::AddBuff(const FInputBuffData& InputBuffData)
 {
 	ShrinkBuff();
 	if (BuffList.IsEmpty())
@@ -207,7 +207,7 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 	}
 	for (UBuffData* BD : BuffList)
 	{
-		if (BD->KeyName == _KeyName)
+		if (BD->KeyName == InputBuffData.KeyName)
 		{
 			BD->FinishBuff(false);
 			BuffList.Remove(BD);
@@ -215,13 +215,17 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 		}
 	}
 	BuffList.Add(NewObject<UBuffData>(this));
-	BuffList.Last()->KeyName = _KeyName;
-	BuffList.Last()->DisplayName = _DisplayName;
-	BuffList.Last()->InitialTime = _InitialTime;
-	BuffList.Last()->TickInterval = _TickInterval;
-	BuffList.Last()->OnBuffTickEvent.AddLambda([_TickEvent]() {_TickEvent(); });
-	BuffList.Last()->OnBuffBeginEvent.AddLambda([_BeginEvent]() {_BeginEvent(); });
-	BuffList.Last()->OnBuffEndEvent.AddLambda([_EndEvent]() {_EndEvent(); });
+	BuffList.Last()->KeyName = InputBuffData.KeyName;
+	BuffList.Last()->DisplayName = InputBuffData.DisplayName;
+	BuffList.Last()->Description = InputBuffData.Description;
+	BuffList.Last()->Image = InputBuffData.Image;
+	BuffList.Last()->InitialTime = InputBuffData.InitialTime;
+	BuffList.Last()->TickInterval = InputBuffData.TickInterval;
+	BuffList.Last()->bIsBuff = InputBuffData.bIsBuff;
+	BuffList.Last()->Image = InputBuffData.Image;
+	BuffList.Last()->OnBuffTickEvent.AddLambda([InputBuffData]() {InputBuffData.TickEvent(); });
+	BuffList.Last()->OnBuffBeginEvent.AddLambda([InputBuffData]() {InputBuffData.BeginEvent(); });
+	BuffList.Last()->OnBuffEndEvent.AddLambda([InputBuffData]() {InputBuffData.EndEvent(); });
 
 	// 파티클 크기 결정
 	FVector ParticlePosition = FVector::ZeroVector;
@@ -231,8 +235,8 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 		// 캐릭터라면 캡슐크기로 결정
 		if (IsValid(SFCharacter->GetCapsuleComponent()))
 		{
-			ParticleScale.X = ParticleScale.Y = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius() * ParticleScaleForCharacter.X;
-			ParticleScale.Z = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() * ParticleScaleForCharacter.Y;
+			ParticleScale.X = ParticleScale.Y = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius() * InputBuffData.ParticleScaleForCharacter.X;
+			ParticleScale.Z = SFCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() * InputBuffData.ParticleScaleForCharacter.Y;
 		}
 	}
 	else
@@ -240,13 +244,13 @@ void USFBuffComponent::AddBuff(const FString& _KeyName, const FText& _DisplayNam
 		// 아니라면 바운드 크기로 결정
 		FVector Origin;
 		GetOwner()->GetActorBounds(true, Origin, ParticleScale);
-		ParticleScale.X *= ParticleScaleForOther.X;
-		ParticleScale.Y *= ParticleScaleForOther.X;
-		ParticleScale.Z *= ParticleScaleForOther.Y;
+		ParticleScale.X *= InputBuffData.ParticleScaleForOther.X;
+		ParticleScale.Y *= InputBuffData.ParticleScaleForOther.X;
+		ParticleScale.Z *= InputBuffData.ParticleScaleForOther.Y;
 	}
-	if (IsValid(_Particle))
+	if (IsValid(InputBuffData.Particle))
 	{
-		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(_Particle, GetOwner()->GetRootComponent(), NAME_None, ParticlePosition, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
+		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(InputBuffData.Particle, GetOwner()->GetRootComponent(), NAME_None, ParticlePosition, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
 		BuffList.Last()->ParticleComp->SetUsingAbsoluteRotation(true);
 		BuffList.Last()->ParticleComp->OnSystemFinished.AddDynamic(BuffList.Last(), &UBuffData::OnNiagaraFinished);
 	}

@@ -41,6 +41,7 @@ class UWidget;
 class USFBuffComponent;
 // Badge Widget ( BuildingSynergy )
 class UCanvasPanel;
+class USFHUDPanelAccentWidget;
 class USFPlacementSynergyBonusWidget;
 
 USTRUCT()
@@ -104,6 +105,8 @@ public:
 #if WITH_EDITOR
     /** K 즉시 승리 테스트 전에 재생 중인 시작 스토리를 정리한다. */
     void DismissActiveStageIntroForDebug();
+    void PreviewResultForDebug(bool bWin) { bVictoryEpilogueCompleted=true; ShowResultWidget(bWin); }
+    void ArmResultPreviewForDebug() { bVictoryEpilogueCompleted=true; }
 #endif
 
     UFUNCTION(BlueprintCallable, Category = "SF|Selection")
@@ -204,6 +207,10 @@ protected:
     virtual void NativeTick(const FGeometry& MyGeometry,float InDeltaTime) override;
 
     virtual void NativeDestruct() override;
+
+    TArray<TWeakObjectPtr<USFHUDPanelAccentWidget>> PanelAccents;
+    TWeakObjectPtr<AActor> LastAccentSelection;
+    float AccentDiscoveryTime = 0.f;
 
     UFUNCTION()
     void HandleSelectedHealthChanged(float BeforeHP, float CurrentHP, float MaxHP);

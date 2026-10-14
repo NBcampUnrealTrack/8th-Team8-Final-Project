@@ -25,6 +25,8 @@
 #include "Game/GameState/SFGameState.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "TimerManager.h"
+#include "Game/Audio/SFUnitVoiceSubsystem.h"
+#include "Sound/SoundBase.h"
 
 // Sets default values
 ASFCommander::ASFCommander()
@@ -70,6 +72,11 @@ FSFSelectableInfo ASFCommander::GetSelectableInfo_Implementation()
 	Info.bShowSkillIcons = true;
 
 	return Info;
+}
+
+USoundBase* ASFCommander::GetSelectionSound_Implementation()
+{
+	return SelectionSound;
 }
 
 void ASFCommander::MoveToLocation_Implementation(const FVector& InDestination)
@@ -533,6 +540,10 @@ void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 	}
 
 	OwnerController->RequestMoveToLocation(Dest, MoveRqAcceptRadius);
+	if (MoveCommandSound && GetWorld())
+	{
+		GetWorld()->GetSubsystem<USFUnitVoiceSubsystem>()->RequestVoice(this, MoveCommandSound, true);
+	}
 }
 
 bool ASFCommander::CheckCanBuild()

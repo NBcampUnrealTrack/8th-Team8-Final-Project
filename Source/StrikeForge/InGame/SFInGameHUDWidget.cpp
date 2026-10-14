@@ -14,6 +14,7 @@
 #include "Units/Commander/SFCommander.h"
 #include "Components/Image.h"
 #include "InGame/HUD/SFSkillCooldownWidget.h"
+#include "InGame/HUD/SFHUDPanelAccentWidget.h"
 #include "InGame/HUD/SFCommanderSkillTooltipWidget.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -74,6 +75,7 @@
 #include "Math/RotationMatrix.h"
 
 #include "Kismet/GameplayStatics.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 
 #include "TimerManager.h"
 #include "Blueprint/WidgetTree.h"
@@ -162,6 +164,7 @@ void USFInGameHUDWidget::NativeConstruct()
     Super::NativeConstruct();
 
     ControlGroups.SetNum(6);
+    USFHUDPanelAccentWidget::Install(this, PanelAccents);
 
     if (IsValid(ControlGroupWidget))
     {
@@ -532,6 +535,19 @@ void USFInGameHUDWidget::NativeTick(
         InDeltaTime
     );
 
+    AccentDiscoveryTime -= InDeltaTime;
+    if (AccentDiscoveryTime <= 0.f)
+    {
+        USFHUDPanelAccentWidget::Install(this, PanelAccents);
+        AccentDiscoveryTime = .5f;
+    }
+    if (LastAccentSelection.Get() != SelectedActor)
+    {
+        LastAccentSelection = SelectedActor;
+        for (const auto& Accent : PanelAccents)
+            if (Accent.IsValid() && Accent->Panel != USFHUDPanelAccentWidget::EPanel::Minimap) Accent->Pulse();
+    }
+
     if (const USFFogOfWarSubsystem* Fog = USFFogOfWarSubsystem::Get(this))
     {
         if (IsValid(SelectedActor) && !Fog->IsActorVisibleToLocalPlayer(SelectedActor)) ClearSelection();
@@ -824,6 +840,11 @@ void USFInGameHUDWidget::ApplySelection(
     RefreshSelectionPanels();
     RefreshMultiSelectionPanel();
     RefreshSelectedPortrait();
+
+    // Replacing the selection may hide the previously focused HUD button.
+    // Return keyboard commands to the battlefield, while respecting modal pauses.
+    if (!UGameplayStatics::IsGamePaused(this) && IsVisible())
+        UWidgetBlueprintLibrary::SetFocusToGameViewport();
 }
 
 void USFInGameHUDWidget::ApplySelectionUIData(
@@ -1665,7 +1686,8 @@ void USFInGameHUDWidget::RefreshBuildModeOpenButtonVisibility()
 
     BuildModeOpenButton->SetVisibility(
         bIsBuildingSelected ||
-        bIsBuildingModeActive
+        bIsBuildingModeActive ||
+        SelectedActors.Num() > 1
         ? ESlateVisibility::Collapsed
         : ESlateVisibility::Visible
     );

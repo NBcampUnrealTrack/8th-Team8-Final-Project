@@ -2,6 +2,7 @@
 
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ProgressBar.h"
 #include "Components/Widget.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -95,6 +96,17 @@ void USFSelectionPanelWidget::ShowSelection(
     BP_OnSelectionInfoUpdated(
         CurrentSelectableInfo
     );
+
+    if (auto* Bar = Cast<UProgressBar>(GetWidgetFromName(TEXT("SelectedHealthBar"))))
+    {
+        const float Ratio = CurrentSelectableInfo.MaximumHealth > 0.f
+            ? CurrentSelectableInfo.CurrentHealth / CurrentSelectableInfo.MaximumHealth : 0.f;
+        FProgressBarStyle BarStyle = Bar->GetWidgetStyle();
+        BarStyle.FillImage.TintColor = FSlateColor(FLinearColor::White);
+        Bar->SetWidgetStyle(BarStyle);
+        Bar->SetFillColorAndOpacity(Ratio < .3f ? FLinearColor(1.f,.06f,.035f)
+            : Ratio < .6f ? FLinearColor(1.f,.5f,.05f) : FLinearColor(.03f,.65f,1.f));
+    }
 
     // Blueprint refreshes (including health changes) must not resurrect a max-tier button.
     if (CurrentSelectableInfo.Tier >= 3) SetTierUpButtonVisible(false);

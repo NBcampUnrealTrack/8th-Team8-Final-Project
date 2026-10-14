@@ -5,7 +5,7 @@
 class UAudioComponent;
 class USoundBase;
 
-/** One local unit voice at a time; only the latest pending response is retained. */
+/** One local unit voice at a time. Requests during playback are discarded, never queued. */
 UCLASS()
 class STRIKEFORGE_API USFUnitVoiceSubsystem : public UWorldSubsystem
 {
@@ -18,7 +18,5 @@ private:
     void StartVoice(AActor* Speaker, USoundBase* Sound);
     void VoiceFinished(UAudioComponent* Component);
     UPROPERTY(Transient) TObjectPtr<UAudioComponent> ActiveVoice;
-    UPROPERTY(Transient) TObjectPtr<USoundBase> PendingSound;
-    TWeakObjectPtr<AActor> PendingSpeaker;
     double LastCommandTime = -1.;
 };

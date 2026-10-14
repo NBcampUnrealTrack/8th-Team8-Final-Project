@@ -6,6 +6,7 @@ class UButton;
 class UWidget;
 class UImage;
 class UWidgetAnimation;
+class USFResultPresentation;
 
 
 UCLASS()
@@ -14,11 +15,14 @@ class STRIKEFORGE_API UResultWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+    UResultWidget(const FObjectInitializer& ObjectInitializer);
 	UFUNCTION(BlueprintCallable, Category = "SF|Result")
 	void SetResultState(bool bIsWin);
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UFUNCTION()
 	void OnExitButtonClicked();
@@ -38,7 +42,17 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* Exit_Btn_F;
 private:
-	UFUNCTION() void OnWinAnimFinished();
-	FWidgetAnimationDynamicEvent WinAnimFinishedEvent;
+	UPROPERTY(Transient) TObjectPtr<USFResultPresentation> Presentation;
+	UPROPERTY(Transient) TObjectPtr<USFResultPresentation> ForegroundSparkles;
+	UPROPERTY(Transient) TObjectPtr<UButton> EtherPreviewExit;
+	UPROPERTY(Transient) TObjectPtr<class UAudioComponent> EtherPreviewAudio;
+	UPROPERTY() TObjectPtr<class USoundWave> VictorySound;
+    UPROPERTY() TObjectPtr<class USoundWave> DefeatSound;
+    UPROPERTY() TObjectPtr<class UFont> VictoryFont;
+	bool bEtherBurstPreview = false;
+	bool bPreviewExitFocused = false;
+	double ResultStartTime = 0.;
+	bool bVictory = true;
+	bool bPresenting = false;
 	
 };

@@ -39,6 +39,8 @@ public:
 
 private:
     void ResolveImpact(const FVector& ImpactLocation);
+    UFUNCTION(NetMulticast, Unreliable)
+    void MulticastImpactEffect(FVector_NetQuantize ImpactLocation);
 
     UFUNCTION()
     void HandleProjectileOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

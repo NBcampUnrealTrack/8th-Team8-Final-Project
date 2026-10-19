@@ -27,3 +27,6 @@ Content/Developers/
 # Python editor-tool bytecode
 __pycache__/
 *.py[cod]
+
+# Steam generates this development marker next to the executable.
+steam_appid.txt

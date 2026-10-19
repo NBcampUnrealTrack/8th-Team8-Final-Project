@@ -1,0 +1,163 @@
+commit b857ed46550bf9e03b71daea539e0818bb1ebf3e
+Author: 장성윤 <iosers0564@naver.com>
+Date:   Tue Oct 6 18:03:00 2026 +0900
+
+    성윤 add 스테이지 6,7 feat 스테이지 이동경로 수정 미니맵 이동걸림 수정, 유닛초상화 적용
+
+diff --git a/Source/StrikeForge/InGame/Controller/SFRTSCameraPawn.cpp b/Source/StrikeForge/InGame/Controller/SFRTSCameraPawn.cpp
+index 035c1415..d91b9e0d 100644
+--- a/Source/StrikeForge/InGame/Controller/SFRTSCameraPawn.cpp
++++ b/Source/StrikeForge/InGame/Controller/SFRTSCameraPawn.cpp
+@@ -280,7 +280,7 @@ void ASFRTSCameraPawn::PushOverheadUIScale() const
+ 
+ void ASFRTSCameraPawn::HandleEdgeScroll()
+ {
+-    if (!bEnableEdgeScroll)
++    if (!bEnableEdgeScroll || bMinimapInteractionActive)
+     {
+         return;
+     }
+@@ -453,7 +453,8 @@ void ASFRTSCameraPawn::ClampCameraLocation()
+ 
+     if (!CurrentLocation.Equals(ClampedLocation))
+     {
+-        SetActorLocation(ClampedLocation, true);
++        // Bounds correction must also recover a pawn already outside the wall.
++        SetActorLocation(ClampedLocation, false, nullptr, ETeleportType::TeleportPhysics);
+     }
+ }
+ 
+@@ -477,10 +478,45 @@ void ASFRTSCameraPawn::FocusOnWorldLocation(
+     NewLocation.Y =
+         WorldLocation.Y;
+ 
+-    SetActorLocation(
+-        NewLocation,
+-        true
+-    );
++    ConsumeMovementInputVector();
++    if (IsValid(FloatingPawnMovement))
++    {
++        FloatingPawnMovement->StopMovementImmediately();
++    }
++
++    if (bConstrainCameraToBounds)
++    {
++        NewLocation.X = FMath::Clamp(NewLocation.X, MinimumCameraBounds.X, MaximumCameraBounds.X);
++        NewLocation.Y = FMath::Clamp(NewLocation.Y, MinimumCameraBounds.Y, MaximumCameraBounds.Y);
++    }
++
++    // A focus request is a jump, not a sweep through everything between the points.
++    // Maps without configured bounds retain their authored collision restrictions.
++    SetActorLocation(NewLocation, !bConstrainCameraToBounds, nullptr, ETeleportType::TeleportPhysics);
+ 
+     ClampCameraLocation();
+ }
++
++void ASFRTSCameraPawn::SetStageCameraBounds(const FBox& NavigationBounds, float BoundaryThickness)
++{
++    if (!NavigationBounds.IsValid) return;
++    const float Margin = FMath::Max(0.0f, BoundaryThickness)
++        + (IsValid(CameraCollision) ? CameraCollision->GetScaledSphereRadius() : 0.0f) + 2.0f;
++    const FVector2D Min(NavigationBounds.Min.X + Margin, NavigationBounds.Min.Y + Margin);
++    const FVector2D Max(NavigationBounds.Max.X - Margin, NavigationBounds.Max.Y - Margin);
++    if (Min.X >= Max.X || Min.Y >= Max.Y) return;
++    MinimumCameraBounds = Min;
++    MaximumCameraBounds = Max;
++    bConstrainCameraToBounds = true;
++    ClampCameraLocation();
++}
++
++void ASFRTSCameraPawn::SetMinimapInteractionActive(bool bActive)
++{
++    if (bActive && !bMinimapInteractionActive)
++    {
++        ConsumeMovementInputVector();
++        if (IsValid(FloatingPawnMovement)) FloatingPawnMovement->StopMovementImmediately();
++    }
++    bMinimapInteractionActive = bActive;
++}
+diff --git a/Source/StrikeForge/InGame/HUD/Minimap/SFMinimapPanelWidget.cpp b/Source/StrikeForge/InGame/HUD/Minimap/SFMinimapPanelWidget.cpp
+index 20444195..69d88845 100644
+--- a/Source/StrikeForge/InGame/HUD/Minimap/SFMinimapPanelWidget.cpp
++++ b/Source/StrikeForge/InGame/HUD/Minimap/SFMinimapPanelWidget.cpp
+@@ -1,4 +1,4 @@
+-#include "SFMinimapPanelWidget.h"
++﻿#include "SFMinimapPanelWidget.h"
+ #include "SFMinimapViewIndicatorWidget.h"
+ #include "Game/Subsystem/SFFogOfWarSubsystem.h"
+ #include "Game/Subsystem/SFCombatSubsystem.h"
+@@ -154,6 +154,9 @@ void USFMinimapPanelWidget::NativeConstruct()
+ 
+ void USFMinimapPanelWidget::NativeDestruct()
+ {
++    bIsMinimapCameraDragging = false;
++    if (InteractionCamera.IsValid()) InteractionCamera->SetMinimapInteractionActive(false);
++    InteractionCamera.Reset();
+     UnbindMarkerRegistry();
+     if (FogOverlay) FogOverlay->RemoveFromParent();
+     FogOverlay = nullptr;
+@@ -1851,6 +1854,7 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
+     if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+     {
+         bIsMinimapCameraDragging = true;
++        UpdateCameraInteraction();
+         MoveCameraToPointerPosition(InMouseEvent);
+ 
+         SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag started.");
+@@ -1920,6 +1924,7 @@ FReply USFMinimapPanelWidget::NativeOnMouseMove(const FGeometry& InGeometry, con
+     if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+     {
+         bIsMinimapCameraDragging = false;
++        UpdateCameraInteraction();
+         return FReply::Handled().ReleaseMouseCapture();
+     }
+ 
+@@ -1933,6 +1938,8 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
+     {
+         bIsMinimapCameraDragging = false;
+ 
++        UpdateCameraInteraction();
++
+         SF_LOG(Log, "[SFMinimapPanelWidget] Camera drag ended.");
+ 
+         return FReply::Handled().ReleaseMouseCapture();
+@@ -1941,6 +1948,38 @@ FReply USFMinimapPanelWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
+     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+ }
+ 
++void USFMinimapPanelWidget::UpdateCameraInteraction()
++{
++    ASFRTSCameraPawn* CameraPawn = Cast<ASFRTSCameraPawn>(GetOwningPlayerPawn());
++    if (InteractionCamera.Get() != CameraPawn && InteractionCamera.IsValid())
++        InteractionCamera->SetMinimapInteractionActive(false);
++    InteractionCamera = CameraPawn;
++    if (CameraPawn)
++        // Hovering over the minimap must still allow screen-edge scrolling.
++        // Only an active minimap drag owns camera movement.
++        CameraPawn->SetMinimapInteractionActive(bIsMinimapCameraDragging);
++}
++
++void USFMinimapPanelWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
++{
++    Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
++    UpdateCameraInteraction();
++}
++
++void USFMinimapPanelWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
++{
++    Super::NativeOnMouseLeave(InMouseEvent);
++    UpdateCameraInteraction();
++}
++
++void USFMinimapPanelWidget::NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
++{
++    Super::NativeOnMouseCaptureLost(CaptureLostEvent);
++    bIsMinimapCameraDragging = false;
++    // Capture can disappear without MouseUp (window focus change, widget removal).
++    UpdateCameraInteraction();
++}
++
+ void USFMinimapPanelWidget::HandleCombatTargetDamaged(
+     UCombatTargetComponent* InTarget,
+     float InDamage,

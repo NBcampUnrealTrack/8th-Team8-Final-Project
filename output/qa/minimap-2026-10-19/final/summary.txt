@@ -1,0 +1,4 @@
+assertions=132
+failed_assertions=0
+repetitions=3
+scenario_executions=24

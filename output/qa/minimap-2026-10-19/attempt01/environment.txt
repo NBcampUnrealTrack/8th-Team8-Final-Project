@@ -1,0 +1,8 @@
+map=JSY_TestMap
+engine=5.5.4-40574608+++UE5+Release-5.5
+viewport=1600x900
+original_bounds=0
+minimum=X=-5083.000 Y=-3973.000
+maximum=X=3763.000 Y=3973.000
+minimap=/Game/Game/IN_UI/HUD/WBP/Events/Minimap/WBP_SFMinimapPanel.WBP_SFMinimapPanel_C
+input=Slate routed pointer events (not NativeOnMouse overrides)

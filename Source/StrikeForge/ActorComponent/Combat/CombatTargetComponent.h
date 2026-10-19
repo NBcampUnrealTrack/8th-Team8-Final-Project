@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -44,6 +44,8 @@ class STRIKEFORGE_API UCombatTargetComponent : public UActorComponent
 
 public:
 	UCombatTargetComponent();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	UFUNCTION() void OnRep_Team(int32 PreviousTeam);
 
 	/** Shared by allied/enemy units, commanders and buildings. Zero disables vision. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SF|Vision", meta = (ClampMin = "0.0", Units = "cm"))
@@ -127,7 +129,7 @@ protected:
 
 private:
 	/** 소속 팀. -1 은 중립이며 누구와도 교전하지 않는다 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
+	UPROPERTY(ReplicatedUsing=OnRep_Team, EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (AllowPrivateAccess = true))
 	int32 TeamIndex = 0;
 
 	/** 공격 우선순위 판단에 쓰인다 */

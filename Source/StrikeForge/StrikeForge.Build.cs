@@ -32,6 +32,9 @@ public class StrikeForge : ModuleRules
 		// Deferred cleanup for the development-only menu screenshot renderer.
 		PrivateDependencyModuleNames.Add("RenderCore");
 		PrivateDependencyModuleNames.Add("ApplicationCore");
+		PublicDependencyModuleNames.AddRange(new string[] { "OnlineSubsystem", "OnlineSubsystemUtils" });
+		DynamicallyLoadedModuleNames.Add("OnlineSubsystemNull");
+		DynamicallyLoadedModuleNames.Add("OnlineSubsystemSteam");
 		if (Target.bBuildEditor) PrivateDependencyModuleNames.Add("UnrealEd");
 
         PublicDefinitions.Add("ECC_LANDSCAPE=ECC_GameTraceChannel1");

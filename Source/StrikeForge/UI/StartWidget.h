@@ -53,6 +53,9 @@ protected:
     UFUNCTION() void OnStartButtonPressed();
     UFUNCTION() void OnSettingButtonPressed();
     UFUNCTION() void OnExitButtonPressed();
+    UFUNCTION() void OnPVPButtonPressed();
+    UFUNCTION() void OnPVPButtonClicked();
+    UPROPERTY(Transient) TObjectPtr<UButton> PVPButton;
 
 	UFUNCTION()
 	void OnStartButtonClicked();

@@ -1,4 +1,5 @@
 #include "UnitBase.h"
+#include "Net/UnrealNetwork.h"
 #include "Game/Audio/SFUnitVoiceSubsystem.h"
 
 #include "UnitAIController.h"
@@ -726,6 +727,9 @@ void AUnitBase::StopMove_Implementation()
 // ─────────────────────────────────────────────────────────
 bool AUnitBase::IsCommandableByPlayer() const
 {
+	// PVP ownership is checked by the issuing controller's server RPC. Both seats
+	// are players; the campaign's automatic enemy team must not reject seat 1.
+	if (PVPUnitId != INDEX_NONE) return true;
 	// 자동 진격 팀(AutoAdvanceTeams)은 스스로 움직인다.
 	// 드래그 선택에 상대 유닛까지 같이 담겨 명령이 넘어와도 여기서 막는다.
 	if (AutoAdvanceTeams.Contains(GetTeamIndex())) return false;
@@ -1721,6 +1725,7 @@ AActor* AUnitBase::FindBestTarget(const AActor* InExcludedTarget)
 // ─────────────────────────────────────────────────────────
 void AUnitBase::PerformAttack(AActor* InTarget)
 {
+	if (!HasAuthority()) return;
 	/**
 	 * PerformAttack에서는 공격 대상 설정과 몽타주 재생만 처리한다.
 	 * 기존의 즉시 피해 계산은 Notify 피해와 중복될 수 있으므로 제거하고,
@@ -1731,6 +1736,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 		return;
 	}
 
+	if (GetNetMode() != NM_Standalone) MulticastAttackAnimation();
 	// 이번 공격 모션에서 사용할 대상과 타격 횟수를 초기화한다.
 	PendingAttackTarget = InTarget;
 	AppliedAttackHitCount = 0;
@@ -1768,6 +1774,7 @@ void AUnitBase::PerformAttack(AActor* InTarget)
 /** 공격 애니메이션의 타격 Notify에서 호출한다 */
 void AUnitBase::HandleAttackHit(float DamageRatio)
 {
+	if (!HasAuthority()) return;
 	// 죽은 유닛의 늦은 Notify가 피해를 주는 것을 방지한다.
 	if (CombatState == EUnitCombatState::Dead)
 	{
@@ -1810,6 +1817,7 @@ void AUnitBase::HandleAttackHit(float DamageRatio)
 /** 원거리 공격 애니메이션의 발사 Notify에서 호출한다 */
 void AUnitBase::HandleProjectileLaunch(float DamageRatio)
 {
+	if (!HasAuthority()) return;
 	// 죽은 유닛의 늦은 Notify에서는 발사하지 않는다.
 	if (CombatState == EUnitCombatState::Dead)
 	{
@@ -1923,6 +1931,7 @@ void AUnitBase::HandleProjectileLaunch(float DamageRatio)
 
 void AUnitBase::HandleProjectileImpact(AActor* InTarget, float DamageRatio)
 {
+	if (!HasAuthority()) return;
 	if (!IsTargetUsable(InTarget))
 	{
 		return;
@@ -2444,6 +2453,7 @@ static FAutoConsoleCommandWithWorldAndArgs GSFSetUnitsBlockEachOther(
 void AUnitBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (!HasAuthority()) return;
 
 	// 어느 분기로 빠지든 표시되도록 맨 앞에서 그린다
 	DrawCombatDebug();
@@ -2946,4 +2956,14 @@ void AUnitBase::ReceiveAssistTarget(AActor* InTarget)
 	{
 		AI->ForceRepath();
 	}
+}
+
+void AUnitBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+ DOREPLIFETIME(AUnitBase, UnitRowName); DOREPLIFETIME(AUnitBase, PVPUnitId);
+}
+void AUnitBase::MulticastAttackAnimation_Implementation()
+{
+ if(!HasAuthority() && CombatState != EUnitCombatState::Dead && AttackMontage) PlayAnimMontage(AttackMontage);
 }

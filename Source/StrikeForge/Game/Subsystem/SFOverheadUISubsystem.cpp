@@ -1,4 +1,5 @@
 #include "SFOverheadUISubsystem.h"
+#include "Kismet/GameplayStatics.h"
 
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Blueprint/SlateBlueprintLibrary.h"
@@ -69,6 +70,9 @@ USFOverheadUISubsystem* USFOverheadUISubsystem::Get(const UObject* WorldContext)
 void USFOverheadUISubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	const FString MenuLevel=UGameplayStatics::GetCurrentLevelName(&InWorld,true);
+	// Menu display actors and dedicated servers never present combat status panels.
+	if(InWorld.GetNetMode()==NM_DedicatedServer||MenuLevel==TEXT("Start")||MenuLevel==TEXT("Lobby")||MenuLevel==TEXT("PVPLobby"))return;
 
 	// 액터 BeginPlay보다 먼저 불린다. 판을 띄우기 전에 클래스를 준비해 둔다.
 	LoadedPanelClass = OverheadPanelClass.LoadSynchronous();

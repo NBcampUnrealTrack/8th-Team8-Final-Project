@@ -8,6 +8,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "UI/StartWidget.h"
 #include "Components/Button.h"
+#include "UI/SettingWidget.h"
 #include "UnrealClient.h"
 #include "Game/Multiplayer/SFPVPBattle.h"
 #include "ActorComponent/Stat/HealthComponent.h"
@@ -46,6 +47,7 @@ static FAutoConsoleCommandWithWorldAndArgs SFPVPQA(
                 else if(Op==TEXT("join"))Sub->JoinRoom(FCString::Atoi(*Value));
                 else if(Op==TEXT("connect"))Sub->ConnectAddress(Value);
                 else if(Op==TEXT("race")&&PC)PC->ServerSetRace(static_cast<ESFRace>(FCString::Atoi(*Value)));
+                else if(Op==TEXT("random")&&PC)PC->ServerSetRandomRace();
                 else if(Op==TEXT("ready")&&PC)PC->ServerSetReady(Value==TEXT("1"));
                 else if(Op==TEXT("start")&&PC)PC->ServerStartBattle();
                 else if(Op==TEXT("all")&&BattlePC)BattlePC->SelectAll();
@@ -70,16 +72,23 @@ static FAutoConsoleCommandWithWorldAndArgs SFPVPQA(
                 else if(Op==TEXT("title"))Sub->Leave(true);
                 else if(Op==TEXT("shot"))FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir()/TEXT("PVPQA")/(FPaths::GetCleanFilename(Value)+TEXT(".png")),true,false);
                 else if(Op==TEXT("quit"))FPlatformMisc::RequestExit(false);
-                else if(Op==TEXT("pvp")||Op==TEXT("pve"))
+                else if(Op==TEXT("pvp")||Op==TEXT("pve")||Op==TEXT("settings"))
                 {
                     TArray<UUserWidget*> Widgets;UWidgetBlueprintLibrary::GetAllWidgetsOfClass(W,Widgets,UStartWidget::StaticClass(),false);
-                    if(!Widgets.IsEmpty())if(auto* B=Cast<UButton>(Widgets[0]->GetWidgetFromName(Op==TEXT("pvp")?TEXT("PVP_Btn"):TEXT("Start_Btn"))))B->OnClicked.Broadcast();
+                    if(!Widgets.IsEmpty())if(auto* B=Cast<UButton>(Widgets[0]->GetWidgetFromName(Op==TEXT("pvp")?TEXT("PVP_Btn"):Op==TEXT("settings")?TEXT("Setting_Btn"):TEXT("Start_Btn"))))B->OnClicked.Broadcast();
+                }
+                else if(Op==TEXT("settings_close"))
+                {
+                    TArray<UUserWidget*> Widgets;UWidgetBlueprintLibrary::GetAllWidgetsOfClass(W,Widgets,USettingWidget::StaticClass(),false);
+                    for(auto* Widget:Widgets)if(auto* B=Cast<UButton>(Widget->GetWidgetFromName(TEXT("BackUi_Btn"))))B->OnClicked.Broadcast();
                 }
             }
             if(++Count%4==0)
             {
                 FString Snapshot=FString::Printf(TEXT("map=%s net=%d busy=%d rooms=%d"),*W->GetMapName(),int32(W->GetNetMode()),Sub->IsBusy(),Sub->GetRooms().Num());
                 if(State)for(int32 I=0;I<2;++I)if(auto* P=State->GetSeat(I))Snapshot+=FString::Printf(TEXT(" seat%d[race=%d ready=%d]"),I,int32(P->Race),P->bReady);
+                if(State)for(int32 I=0;I<2;++I)if(auto* P=State->GetSeat(I))Snapshot+=FString::Printf(TEXT(" random%d=%d"),I,P->bRandomRace);
+                if(auto* Local=GI->GetFirstLocalPlayerController())Snapshot+=FString::Printf(TEXT(" ownSeat=%d titleCamera=%s"),Local->GetPlayerState<ASFPVPLobbyPlayerState>()?Local->GetPlayerState<ASFPVPLobbyPlayerState>()->Seat:INDEX_NONE,*GetNameSafe(Local->GetViewTarget()));
                 if(auto* BS=Cast<ASFPVPBattleState>(State))Snapshot+=FString::Printf(TEXT(" battleReady=%d battleStatus=%s"),BS->bBattleReady,*BS->BattleStatus);
                 if(BattlePC)Snapshot+=FString::Printf(TEXT(" localTeam=%d view=%s camera=%s"),BattlePC->GetMyTeamIndex(),*GetNameSafe(BattlePC->GetViewTarget()),*BattlePC->PlayerCameraManager->GetCameraLocation().ToString());
                 FString Units;

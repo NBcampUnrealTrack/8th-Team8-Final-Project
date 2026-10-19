@@ -91,14 +91,15 @@ bool FSFSettingsInteractionTest::RunTest(const FString& Parameters)
     USlider* Sensitivity = Cast<USlider>(Widget->GetWidgetFromName(TEXT("MouseSensitivitySlider")));
     TestEqual(TEXT("Sensitivity includes slow cursor movement"), Sensitivity->GetMinValue(), .1f);
     TestEqual(TEXT("Sensitivity includes fast cursor movement"), Sensitivity->GetMaxValue(), 3.f);
-    for (const TCHAR* Name : {TEXT("BackUi_Btn"), TEXT("BackCaptionHitArea")})
+    TestNotNull(TEXT("Native settings panel"), Widget->GetWidgetFromName(TEXT("SettingsModalRoot")));
+    for (const TCHAR* Name : {TEXT("BackUi_Btn")})
     {
-        // This headless fixture has no viewport focus; exercise the two close hit targets.
+        // The complete decorated button now contains its caption and shares one hit target.
         Widget->SetVisibility(ESlateVisibility::Visible);
         UButton* Button = Cast<UButton>(Widget->GetWidgetFromName(Name));
         if (!TestNotNull(Name, Button)) continue;
         Button->OnClicked.Broadcast();
-        TestTrue(TEXT("Both icon and caption close settings"), Widget->GetVisibility() == ESlateVisibility::Collapsed);
+        TestTrue(TEXT("Full button closes settings"), Widget->GetVisibility() == ESlateVisibility::Collapsed);
     }
     Instance->Shutdown();
     World->DestroyWorld(false);

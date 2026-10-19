@@ -1,6 +1,7 @@
 param(
     [string]$GameExecutable,
-    [string]$EngineRoot = 'C:/Program Files/Epic Games/UE_5.5'
+    [string]$EngineRoot = 'C:/Program Files/Epic Games/UE_5.5',
+    [switch]$Lobby
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -20,7 +21,8 @@ try {
     } else {
         $editor = Join-Path $EngineRoot 'Engine/Binaries/Win64/UnrealEditor.exe'
         if (-not (Test-Path -LiteralPath $editor -PathType Leaf)) { throw 'Unreal Engine 5.5 not found. Supply -EngineRoot.' }
-        & $editor (Join-Path $projectRoot 'StrikeForge.uproject') '/Game/Core/Levels/Start' '-game' '-windowed'
+        $map = if ($Lobby) { '/Game/Core/Levels/PVPLobby' } else { '/Game/Core/Levels/Start' }
+        & $editor (Join-Path $projectRoot 'StrikeForge.uproject') $map '-game' '-windowed'
     }
 } finally {
     $env:SteamAppId = $previousSteamAppId

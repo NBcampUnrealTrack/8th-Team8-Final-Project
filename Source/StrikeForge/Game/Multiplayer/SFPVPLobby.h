@@ -15,6 +15,7 @@ public:
     UPROPERTY(Replicated) int32 Seat = INDEX_NONE;
     UPROPERTY(Replicated) ESFRace Race = ESFRace::Human;
     UPROPERTY(Replicated) bool bReady = false;
+    UPROPERTY(Replicated) bool bRandomRace = false;
     virtual void CopyProperties(APlayerState* PlayerState) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 };
@@ -42,6 +43,7 @@ public:
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
     UFUNCTION(Server, Reliable) void ServerSetRace(ESFRace Race);
     UFUNCTION(Server, Reliable) void ServerSetReady(bool bReady);
+    UFUNCTION(Server, Reliable) void ServerSetRandomRace();
     UFUNCTION(Server, Reliable) void ServerStartBattle();
 private:
     UPROPERTY(Transient) TObjectPtr<class USFPVPLobbyWidget> LobbyWidget;
@@ -56,5 +58,8 @@ public:
     virtual void InitGameState() override;
     virtual void PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
     virtual void PostLogin(APlayerController* NewPlayer) override;
+    virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
     virtual void Logout(AController* Exiting) override;
+private:
+    void AssignSeat(APlayerController* Player);
 };

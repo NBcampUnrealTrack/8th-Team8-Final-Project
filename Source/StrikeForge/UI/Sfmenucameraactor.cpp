@@ -39,7 +39,7 @@ void ASFMenuCameraActor::BeginPlay()
 
     if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0))
     {
-        PlayerController->SetViewTarget(this);
+        if(PlayerController->IsLocalController())PlayerController->SetViewTarget(this);
     }
 }
 

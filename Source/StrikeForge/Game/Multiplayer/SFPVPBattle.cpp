@@ -22,6 +22,8 @@
 #include "Engine/GameViewportClient.h"
 #include "UnrealClient.h"
 #include "Misc/CommandLine.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 
 void ASFPVPBattleState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -36,11 +38,11 @@ ASFPVPBattleMode::ASFPVPBattleMode()
     GameStateClass=ASFPVPBattleState::StaticClass();
     HUDClass=ASFPVPBattleHUD::StaticClass(); DefaultPawnClass=nullptr;
     bUseSeamlessTravel=true;
-    static ConstructorHelpers::FClassFinder<AUnitBase> HumanM(TEXT("/Game/Core/Units/Etherial_Human/BP_Human_Fighter"));
-    static ConstructorHelpers::FClassFinder<AUnitBase> HumanR(TEXT("/Game/Core/Units/Etherial_Human/BP_Human_Shooter"));
-    static ConstructorHelpers::FClassFinder<AUnitBase> BeastM(TEXT("/Game/Core/Units/Beast_Fox/BP_Fox_Brawler"));
-    static ConstructorHelpers::FClassFinder<AUnitBase> BeastR(TEXT("/Game/Core/Units/Beast_Fox/BP_Fox_Hunter"));
-    StartingUnits={HumanM.Class,HumanR.Class,BeastM.Class,BeastR.Class};
+    // Do not load four combat Blueprint dependency trees while opening the title or lobby.
+    StartingUnits={TSoftClassPtr<AUnitBase>(FSoftObjectPath(TEXT("/Game/Core/Units/Etherial_Human/BP_Human_Fighter.BP_Human_Fighter_C"))),
+        TSoftClassPtr<AUnitBase>(FSoftObjectPath(TEXT("/Game/Core/Units/Etherial_Human/BP_Human_Shooter.BP_Human_Shooter_C"))),
+        TSoftClassPtr<AUnitBase>(FSoftObjectPath(TEXT("/Game/Core/Units/Beast_Fox/BP_Fox_Brawler.BP_Fox_Brawler_C"))),
+        TSoftClassPtr<AUnitBase>(FSoftObjectPath(TEXT("/Game/Core/Units/Beast_Fox/BP_Fox_Hunter.BP_Fox_Hunter_C")))};
 }
 void ASFPVPBattleMode::BeginPlay()
 {
@@ -97,6 +99,17 @@ void ASFPVPBattleMode::TrySpawnArmies()
     int32 Connected=0;for(FConstPlayerControllerIterator It=GetWorld()->GetPlayerControllerIterator();It;++It)
         if(auto* PC=Cast<ASFPVPBattleController>(It->Get());PC && PC->HasClientLoadedCurrentWorld())++Connected;
     if(Connected!=2 || !S->GetSeat(0)||!S->GetSeat(1))return;
+    if(!StartingUnitLoad)
+    {
+        TArray<FSoftObjectPath> Required;
+        for(int32 Team=0;Team<2;++Team)
+        {const int32 Offset=S->GetSeat(Team)->Race==ESFRace::Beast?2:0;Required.AddUnique(StartingUnits[Offset].ToSoftObjectPath());Required.AddUnique(StartingUnits[Offset+1].ToSoftObjectPath());}
+        StartingUnitLoad=UAssetManager::GetStreamableManager().RequestAsyncLoad(Required);
+        S->BattleStatus=TEXT("선택한 종족의 병력을 불러오고 있습니다.");S->ForceNetUpdate();
+        if(!StartingUnitLoad){S->BattleStatus=TEXT("병력 데이터를 불러오지 못했습니다. Esc로 로비에 돌아가 주세요.");GetWorldTimerManager().ClearTimer(SpawnTimer);}
+        return;
+    }
+    if(!StartingUnitLoad->HasLoadCompleted())return;
     FVector A,B;if(!FindBattleGround(A,B))
     {
         S->BattleStatus=TEXT("전장의 이동 경로를 준비하고 있습니다.");
@@ -114,7 +127,7 @@ void ASFPVPBattleMode::TrySpawnArmies()
             FVector Desired=Center+FVector((I/3)*180.f,(I%3-1)*180.f,0);
             if(!Nav->ProjectPointToNavigation(Desired,Position,FVector(200,200,300)))Position.Location=Center;
             FTransform Transform((Team==0?B-A:A-B).Rotation(),Position.Location+FVector(0,0,100));
-            auto* Unit=GetWorld()->SpawnActorDeferred<AUnitBase>(StartingUnits[Offset+(I>=3?1:0)],Transform,nullptr,nullptr,ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+            auto* Unit=GetWorld()->SpawnActorDeferred<AUnitBase>(StartingUnits[Offset+(I>=3?1:0)].Get(),Transform,nullptr,nullptr,ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
             if(!Unit)continue;
             Unit->SetReplicates(true);Unit->SetReplicateMovement(true);Unit->bAlwaysRelevant=true;Unit->SetNetUpdateFrequency(30.f);
             Unit->PVPUnitId=Team*100+I;

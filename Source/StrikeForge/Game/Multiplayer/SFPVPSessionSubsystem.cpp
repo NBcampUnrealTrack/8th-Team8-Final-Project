@@ -11,6 +11,9 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerState.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/CommandLine.h"
+#include "UI/SFTitlePresentation.h"
+#include "SFPVPLobby.h"
 
 bool USFPVPSessionSubsystem::IsInternetConfigured() const
 {
@@ -18,9 +21,15 @@ bool USFPVPSessionSubsystem::IsInternetConfigured() const
     return GConfig->GetBool(TEXT("OnlineSubsystemSteam"),TEXT("bEnabled"),bEnabled,GEngineIni)&&bEnabled
         &&GConfig->GetInt(TEXT("OnlineSubsystemSteam"),TEXT("SteamDevAppId"),AppId,GEngineIni)&&AppId>0;
 }
+bool USFPVPSessionSubsystem::IsInternetPlaySupported() const
+{
+    // UE disables OnlineSubsystemSteam inside the editor's PIE process, even in a separate preview window.
+    return GetWorld() && GetWorld()->WorldType != EWorldType::PIE && (!GIsEditor || IsRunningGame())
+        && !FParse::Param(FCommandLine::Get(),TEXT("forcepassthrough"));
+}
 IOnlineIdentityPtr USFPVPSessionSubsystem::Identity() const
 {
-    if(!CachedIdentity.IsValid()&&IsInternetConfigured()&&GetWorld())
+    if(!CachedIdentity.IsValid()&&IsInternetConfigured()&&IsInternetPlaySupported())
         CachedIdentity=Online::GetIdentityInterface(GetWorld(),FName(TEXT("STEAM")));
     return CachedIdentity;
 }
@@ -32,6 +41,7 @@ bool USFPVPSessionSubsystem::IsInternetLoggedIn() const
 FString USFPVPSessionSubsystem::BrowserPrompt() const
 {
     if(!bInternet)return TEXT("같은 네트워크의 방을 검색하거나 방을 만들어 주세요.");
+    if(!IsInternetPlaySupported())return TEXT("에디터 미리보기에서는 Steam 대전을 지원하지 않습니다. Play-Steam.cmd로 별도 실행해 주세요.");
     if(!IsInternetConfigured())return TEXT("Steam 연결 설정이 필요합니다. App ID 설정 후 게임을 다시 실행해 주세요.");
     return IsInternetLoggedIn()?TEXT("Steam 인터넷 방을 검색하거나 방을 만들어 주세요."):TEXT("Steam을 실행해 로그인한 뒤 ‘Steam 연결’을 눌러 주세요.");
 }
@@ -61,6 +71,7 @@ void USFPVPSessionSubsystem::SetInternetMode(bool bEnabled)
 void USFPVPSessionSubsystem::LoginInternet()
 {
     if(bBusy||!bInternet||GetWorld()->GetNetMode()!=NM_Standalone)return;
+    if(!IsInternetPlaySupported()){Status=BrowserPrompt();return;}
     if(!IsInternetConfigured()){Status=BrowserPrompt();return;}
     const auto Account=Identity();
     if(!Account.IsValid()){Status=TEXT("Steam에 연결하지 못했습니다. Steam 실행 및 로그인 후 게임을 다시 실행해 주세요.");return;}
@@ -183,6 +194,15 @@ void USFPVPSessionSubsystem::Deinitialize()
 void USFPVPSessionSubsystem::OpenBrowser()
 {
     if (bBusy) return;
+    if(UGameplayStatics::GetCurrentLevelName(this,true)==TEXT("Start")&&GetWorld()->GetNetMode()!=NM_Standalone)
+    {
+        // Editor multiplayer already has connected players. Preserve that connection instead of
+        // OpenLevel disconnecting both clients and creating a separate seat 0 for each of them.
+        if(GetWorld()->GetNetMode()==NM_Client)
+        {if(auto* PC=Cast<ASFTitleController>(GetGameInstance()->GetFirstLocalPlayerController()))PC->ServerOpenPVPLobby();return;}
+        bInternet=false;ApplyLocalIdentity();
+        GetWorld()->ServerTravel(FString(LobbyMap)+TEXT("?game=/Script/StrikeForge.SFPVPLobbyMode?SFOnline=0"),true);return;
+    }
     Status = BrowserPrompt();
     UGameplayStatics::OpenLevel(this, FName(LobbyMap));
 }
@@ -266,6 +286,12 @@ void USFPVPSessionSubsystem::JoinRoom(int32 Index)
 {
     if (bBusy || !Rooms.IsValidIndex(Index) || GetWorld()->GetNetMode() != NM_Standalone) return;
     if(!EnsureOnlineReady())return;
+    if(bInternet&&CachedIdentity.IsValid())
+    {
+        const auto Id=CachedIdentity->GetUniquePlayerId(0);
+        if(Id.IsValid()&&Rooms[Index].Session.OwningUserId.IsValid()&&*Id==*Rooms[Index].Session.OwningUserId)
+        {Status=TEXT("같은 Steam 계정으로 자신의 방에 참가할 수 없습니다. 두 PC에서 서로 다른 계정을 사용해 주세요.");return;}
+    }
     if (Rooms[Index].Session.NumOpenPublicConnections <= 0) { Status = TEXT("이미 가득 찬 방입니다."); return; }
     auto S = Sessions(); if (!S.IsValid()) return;
     bBusy = true; Status = TEXT("방에 접속하고 있습니다...");
@@ -309,9 +335,15 @@ void USFPVPSessionSubsystem::ConnectAddress(const FString& Address)
 void USFPVPSessionSubsystem::LobbyArrived()
 {
     bBusy = false; bLeaving = false; bRecovering = false;
+    if(GetWorld()->GetNetMode()!=NM_Standalone)if(const auto* State=GetWorld()->GetGameState<ASFPVPLobbyState>())
+    {
+        if(bInternet!=State->bInternetRoom){ClearSessionDelegates();CachedSessions.Reset();Rooms.Reset();bInternet=State->bInternetRoom;}
+    }
     if (GetWorld()->GetNetMode() != NM_Standalone) Status = TEXT("종족을 선택하고 준비해 주세요.");
     else if (Status.IsEmpty() || Status == TEXT("종족을 선택하고 준비해 주세요."))Status=BrowserPrompt();
     ApplyLocalIdentity();
+    if(bInternet&&GetWorld()->GetNetMode()==NM_Standalone&&IsInternetPlaySupported())
+        FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this,[this](float){LoginInternet();return false;}),.1f);
 }
 void USFPVPSessionSubsystem::Leave(bool bInToTitle)
 {

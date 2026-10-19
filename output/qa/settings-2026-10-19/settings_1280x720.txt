@@ -1,0 +1,7 @@
+PASS ResolutionComboBox position=X=488.000 Y=544.875 size=X=440.000 Y=44.000
+PASS FullScreenComboBox position=X=488.000 Y=646.875 size=X=440.000 Y=44.000
+PASS MouseSensitivitySlider position=X=488.000 Y=737.875 size=X=440.000 Y=44.000
+PASS MasterVolumeSlider position=X=1050.000 Y=533.875 size=X=440.000 Y=44.000
+PASS BGMVolumeSlider position=X=1050.000 Y=635.875 size=X=440.000 Y=44.000
+PASS SXVolumeSlider position=X=1050.000 Y=737.875 size=X=440.000 Y=44.000
+PASS BackUi_Btn position=X=1240.000 Y=862.875 size=X=280.000 Y=70.000

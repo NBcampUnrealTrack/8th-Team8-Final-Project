@@ -14,8 +14,8 @@ class STRIKEFORGE_API USFPVPSessionSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 public:
     static constexpr const TCHAR* LobbyMap = TEXT("/Game/Core/Levels/PVPLobby");
-    static constexpr const TCHAR* Protocol = TEXT("StrikeForge.Steam.3");
-    static constexpr const TCHAR* ProtocolVersion = TEXT("3");
+    static constexpr const TCHAR* Protocol = TEXT("StrikeForge.Steam.4");
+    static constexpr const TCHAR* ProtocolVersion = TEXT("4");
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
     void OpenBrowser();
@@ -34,6 +34,7 @@ public:
     void SetInternetMode(bool bEnabled);
     bool IsInternetMode() const { return bInternet; }
     bool IsInternetConfigured() const;
+    bool IsInternetPlaySupported() const;
     bool IsInternetLoggedIn() const;
     void LoginInternet();
     FString GetConnectionDescription() const;

@@ -11,14 +11,24 @@ class USlider;
 class USoundMix;
 class USoundClass;
 class UMouseSensitivitySubsystem;
+class UFont;
+class UFontFace;
+class UCanvasPanel;
+class UTextBlock;
+class USFPauseMenuPresentation;
+class USFOptionsPresentation;
 
 UCLASS()
 class STRIKEFORGE_API USettingWidget : public UCommonActivatableWidget
 {
 	GENERATED_BODY()
 public:
+    USettingWidget(const FObjectInitializer& ObjectInitializer);
 	void OpenSetting();
 protected:
+    virtual TSharedRef<SWidget> RebuildWidget() override;
+    virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+    virtual FReply NativeOnMouseButtonDown(const FGeometry&, const FPointerEvent&) override;
 	virtual void NativeConstruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	UFUNCTION()
@@ -37,6 +47,21 @@ protected:
 	void OnMouseSensitivityChanged(float Value);
 	void InitializeSettingOptions();
 	void CloseSetting();
+    void BuildSettingsPresentation();
+    void UpdateSettingsReadouts();
+    UFUNCTION()
+    UWidget* GenerateOptionLabel(FString Item);
+    UPROPERTY(Transient) TObjectPtr<UCanvasPanel> SettingsRoot;
+    UPROPERTY(Transient) TObjectPtr<UFont> SettingsFont;
+    UPROPERTY(Transient) TObjectPtr<UFontFace> SettingsBodyFace;
+    UPROPERTY(Transient) TObjectPtr<UFontFace> SettingsTitleFace;
+    UPROPERTY(Transient) TObjectPtr<UFont> SettingsTitleFont;
+    UPROPERTY(Transient) TObjectPtr<USFPauseMenuPresentation> SettingsAtmosphere;
+    UPROPERTY(Transient) TObjectPtr<USFOptionsPresentation> SettingsPanelArt;
+    UPROPERTY(Transient) TObjectPtr<UWidget> SettingsContent;
+    bool bSettingsOpening = false;
+    UPROPERTY(Transient) TArray<TObjectPtr<USlider>> ReadoutSliders;
+    UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> ValueLabels;
 protected:
 	UPROPERTY(meta = (BindWidget))
 	UButton* BackUi_Btn;

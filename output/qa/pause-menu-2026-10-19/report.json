@@ -1,0 +1,441 @@
+{
+  "start": 1792396733.1627135,
+  "phase": "done",
+  "checks": [
+    {
+      "check": "F10 HUD stack activates redesigned menu",
+      "passed": true
+    },
+    {
+      "check": "Opening menu pauses gameplay",
+      "passed": true
+    },
+    {
+      "check": "menu_1600x900: all buttons fit viewport",
+      "passed": true
+    },
+    {
+      "check": "Settings button opens existing options controls",
+      "passed": true
+    },
+    {
+      "check": "Options keep gameplay paused",
+      "passed": true
+    },
+    {
+      "check": "settings_open: all buttons fit viewport",
+      "passed": true
+    },
+    {
+      "check": "Options back button returns to menu",
+      "passed": true
+    },
+    {
+      "check": "Menu stays open after closing options",
+      "passed": true
+    },
+    {
+      "check": "Routed mouse click on Continue closes menu",
+      "passed": true
+    },
+    {
+      "check": "Continue resumes gameplay",
+      "passed": true
+    },
+    {
+      "check": "Menu reopens correctly from CommonUI pool",
+      "passed": true
+    },
+    {
+      "check": "menu_1280x720: all buttons fit viewport",
+      "passed": true
+    },
+    {
+      "check": "menu_1920x1080: all buttons fit viewport",
+      "passed": true
+    },
+    {
+      "check": "Escape closes menu through Slate focus routing",
+      "passed": true
+    },
+    {
+      "check": "Escape resumes gameplay",
+      "passed": true
+    },
+    {
+      "check": "F10 closes menu through Slate focus routing",
+      "passed": true
+    },
+    {
+      "check": "F10 resumes gameplay",
+      "passed": true
+    },
+    {
+      "check": "menu_hover: all buttons fit viewport",
+      "passed": true
+    },
+    {
+      "check": "Routed mouse click on Exit travels to Lobby",
+      "passed": true
+    }
+  ],
+  "since": 1792396768.2713437,
+  "widgets": [
+    {
+      "name": "CanvasPanel_30",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "MainBG",
+      "type": "Border"
+    },
+    {
+      "name": "CanvasPanel_72",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "SlotBG",
+      "type": "Border"
+    },
+    {
+      "name": "ContinueButton",
+      "type": "Button"
+    },
+    {
+      "name": "TextBlock_62",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingButton",
+      "type": "Button"
+    },
+    {
+      "name": "TextBlock",
+      "type": "TextBlock"
+    },
+    {
+      "name": "ExitButton",
+      "type": "Button"
+    },
+    {
+      "name": "TextBlock_137",
+      "type": "TextBlock"
+    },
+    {
+      "name": "WidgetSwitcher_344",
+      "type": "WidgetSwitcher"
+    },
+    {
+      "name": "SettingContent",
+      "type": "WBP_Setting_C"
+    },
+    {
+      "name": "CanvasPanel_45",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "BackgroundBlur",
+      "type": "BackgroundBlur"
+    },
+    {
+      "name": "SettingPanel",
+      "type": "Border"
+    },
+    {
+      "name": "MastervolumeSlider",
+      "type": "Slider"
+    },
+    {
+      "name": "BGMvolumeSlider",
+      "type": "Slider"
+    },
+    {
+      "name": "SXvolumeSlider",
+      "type": "Slider"
+    },
+    {
+      "name": "MouseSensitivitySlider",
+      "type": "Slider"
+    },
+    {
+      "name": "FullScreenComboBox",
+      "type": "ComboBoxString"
+    },
+    {
+      "name": "ResolutionComboBox",
+      "type": "ComboBoxString"
+    },
+    {
+      "name": "BackUi_Btn",
+      "type": "Button"
+    },
+    {
+      "name": "PauseMenuRoot",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "SFPauseMenuPresentation_0",
+      "type": "SFPauseMenuPresentation"
+    },
+    {
+      "name": "ScaleBox_0",
+      "type": "ScaleBox"
+    },
+    {
+      "name": "SizeBox_0",
+      "type": "SizeBox"
+    },
+    {
+      "name": "CanvasPanel_0",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "SFPauseMenuPresentation_1",
+      "type": "SFPauseMenuPresentation"
+    },
+    {
+      "name": "PauseMenuTitle",
+      "type": "TextBlock"
+    },
+    {
+      "name": "PauseMenuSubtitle",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Overlay_0",
+      "type": "Overlay"
+    },
+    {
+      "name": "SFResultPresentation_0",
+      "type": "SFResultPresentation"
+    },
+    {
+      "name": "TextBlock_0",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Overlay_1",
+      "type": "Overlay"
+    },
+    {
+      "name": "SFResultPresentation_1",
+      "type": "SFResultPresentation"
+    },
+    {
+      "name": "TextBlock_1",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Overlay_2",
+      "type": "Overlay"
+    },
+    {
+      "name": "SFResultPresentation_2",
+      "type": "SFResultPresentation"
+    },
+    {
+      "name": "TextBlock_2",
+      "type": "TextBlock"
+    },
+    {
+      "name": "PauseMenuShortcut",
+      "type": "TextBlock"
+    },
+    {
+      "name": "PauseMenuSignature",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingsModalRoot",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "SFPauseMenuPresentation_0",
+      "type": "SFPauseMenuPresentation"
+    },
+    {
+      "name": "ScaleBox_0",
+      "type": "ScaleBox"
+    },
+    {
+      "name": "SizeBox_0",
+      "type": "SizeBox"
+    },
+    {
+      "name": "CanvasPanel_0",
+      "type": "CanvasPanel"
+    },
+    {
+      "name": "SFOptionsPresentation_0",
+      "type": "SFOptionsPresentation"
+    },
+    {
+      "name": "SettingsTitle",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingsSubtitle",
+      "type": "TextBlock"
+    },
+    {
+      "name": "DisplaySection",
+      "type": "TextBlock"
+    },
+    {
+      "name": "AudioSection",
+      "type": "TextBlock"
+    },
+    {
+      "name": "DisplayHelp",
+      "type": "TextBlock"
+    },
+    {
+      "name": "AudioHelp",
+      "type": "TextBlock"
+    },
+    {
+      "name": "ResolutionLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Image_0",
+      "type": "Image"
+    },
+    {
+      "name": "ScreenModeLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Image_1",
+      "type": "Image"
+    },
+    {
+      "name": "SensitivityLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SensitivityLabelValue",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SensitivityLabelLow",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SensitivityLabelHigh",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MasterVolumeLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MasterVolumeLabelValue",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MasterVolumeLabelLow",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MasterVolumeLabelHigh",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MusicVolumeLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MusicVolumeLabelValue",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MusicVolumeLabelLow",
+      "type": "TextBlock"
+    },
+    {
+      "name": "MusicVolumeLabelHigh",
+      "type": "TextBlock"
+    },
+    {
+      "name": "EffectsVolumeLabel",
+      "type": "TextBlock"
+    },
+    {
+      "name": "EffectsVolumeLabelValue",
+      "type": "TextBlock"
+    },
+    {
+      "name": "EffectsVolumeLabelLow",
+      "type": "TextBlock"
+    },
+    {
+      "name": "EffectsVolumeLabelHigh",
+      "type": "TextBlock"
+    },
+    {
+      "name": "Overlay_0",
+      "type": "Overlay"
+    },
+    {
+      "name": "SFResultPresentation_0",
+      "type": "SFResultPresentation"
+    },
+    {
+      "name": "TextBlock_0",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingsHint",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingsShortcut",
+      "type": "TextBlock"
+    },
+    {
+      "name": "SettingsSignature",
+      "type": "TextBlock"
+    },
+    {
+      "name": "TextBlock_1",
+      "type": "TextBlock"
+    },
+    {
+      "name": "TextBlock_2",
+      "type": "TextBlock"
+    },
+    {
+      "name": "TextBlock_3",
+      "type": "TextBlock"
+    },
+    {
+      "name": "TextBlock_4",
+      "type": "TextBlock"
+    }
+  ],
+  "geometry": [
+    {
+      "frame": "menu_1600x900",
+      "layout": "PASS ContinueButton position=X=780.000 Y=524.875 size=X=420.000 Y=88.000\nPASS SettingButton position=X=790.000 Y=628.875 size=X=400.000 Y=80.000\nPASS ExitButton position=X=790.000 Y=724.875 size=X=400.000 Y=80.000\n"
+    },
+    {
+      "frame": "settings_open",
+      "layout": "PASS ResolutionComboBox position=X=488.000 Y=544.875 size=X=440.000 Y=44.000\nPASS FullScreenComboBox position=X=488.000 Y=646.875 size=X=440.000 Y=44.000\nPASS MouseSensitivitySlider position=X=488.000 Y=737.875 size=X=440.000 Y=44.000\nPASS MasterVolumeSlider position=X=1050.000 Y=533.875 size=X=440.000 Y=44.000\nPASS BGMVolumeSlider position=X=1050.000 Y=635.875 size=X=440.000 Y=44.000\nPASS SXVolumeSlider position=X=1050.000 Y=737.875 size=X=440.000 Y=44.000\nPASS BackUi_Btn position=X=1240.000 Y=862.875 size=X=280.000 Y=70.000\n"
+    },
+    {
+      "frame": "menu_1280x720",
+      "layout": "PASS ContinueButton position=X=780.000 Y=524.875 size=X=420.000 Y=88.000\nPASS SettingButton position=X=790.000 Y=628.875 size=X=400.000 Y=80.000\nPASS ExitButton position=X=790.000 Y=724.875 size=X=400.000 Y=80.000\n"
+    },
+    {
+      "frame": "menu_1920x1080",
+      "layout": "PASS ContinueButton position=X=780.000 Y=524.875 size=X=420.000 Y=88.000\nPASS SettingButton position=X=790.000 Y=628.875 size=X=400.000 Y=80.000\nPASS ExitButton position=X=790.000 Y=724.875 size=X=400.000 Y=80.000\n"
+    },
+    {
+      "frame": "menu_hover",
+      "layout": "PASS ContinueButton position=X=780.000 Y=524.875 size=X=420.000 Y=88.000\nPASS SettingButton position=X=790.000 Y=628.875 size=X=400.000 Y=80.000\nPASS ExitButton position=X=790.000 Y=724.875 size=X=400.000 Y=80.000\n"
+    }
+  ],
+  "passed": true,
+  "error": null
+}

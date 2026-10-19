@@ -1,0 +1,3 @@
+PASS ContinueButton position=X=780.000 Y=524.875 size=X=420.000 Y=88.000
+PASS SettingButton position=X=790.000 Y=628.875 size=X=400.000 Y=80.000
+PASS ExitButton position=X=790.000 Y=724.875 size=X=400.000 Y=80.000

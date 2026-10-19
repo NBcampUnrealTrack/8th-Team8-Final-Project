@@ -1,0 +1,22 @@
+[
+  {
+    "Algorithm": "SHA256",
+    "Hash": "B8748C3EC79DFCD55B18C14628346E15B258C04C3FDC75326F59F266A3D93E33",
+    "Path": "C:\\TeamProject\\8th-Team8-Final-Project\\Binaries\\Win64\\UnrealEditor-StrikeForge.dll"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "17F52EE8C3C14BA4D82D8A7E78466E3EF7E63CB71D41B169A1257EF7F4A467E4",
+    "Path": "C:\\TeamProject\\8th-Team8-Final-Project\\Source\\StrikeForge\\Tests\\SFMinimapRenderedQA.cpp"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "80A8991AC81EA17C7EFC22A843D40375ABC240CB4A3D57795838FE5C49DF38FD",
+    "Path": "C:\\TeamProject\\8th-Team8-Final-Project\\Source\\StrikeForge\\InGame\\Controller\\SFRTSCameraPawn.cpp"
+  },
+  {
+    "Algorithm": "SHA256",
+    "Hash": "0C2892778D5892DA14111CAEAB3ABF78C69166F1F4F8C612ECE5AB08686BD612",
+    "Path": "C:\\TeamProject\\8th-Team8-Final-Project\\Source\\StrikeForge\\InGame\\HUD\\Minimap\\SFMinimapPanelWidget.cpp"
+  }
+]

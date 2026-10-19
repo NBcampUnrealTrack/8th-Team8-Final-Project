@@ -20,6 +20,7 @@
 #include "Components/ButtonSlot.h"
 #include "Engine/Font.h"
 #include "Styling/SlateBrush.h"
+#include "Game/Multiplayer/SFPVPSessionSubsystem.h"
 
 UStartWidget::UStartWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -44,12 +45,13 @@ void UStartWidget::ApplyStartArt()
         OriginalBackdropVisibility = Backdrop->GetVisibility();
         Backdrop->SetVisibility(ESlateVisibility::Collapsed);
     }
-    UWidget* Widgets[] = { Title, Start_Btn, Setting_Btn, Exit_Btn };
+    UWidget* Widgets[] = { Title, Start_Btn, Setting_Btn, Exit_Btn, PVPButton };
     const FText Labels[] = {
-        NSLOCTEXT("SFStart", "Start", "게임 시작"),
+        NSLOCTEXT("SFStart", "PVE", "PVE"),
         NSLOCTEXT("SFStart", "Settings", "설정"),
-        NSLOCTEXT("SFStart", "Exit", "게임 종료") };
-    for (int32 I=0; I<4; ++I)
+        NSLOCTEXT("SFStart", "Exit", "게임 종료"),
+        NSLOCTEXT("SFStart", "PVP", "PVP") };
+    for (int32 I=0; I<5; ++I)
     {
         FSFStartArtControl& State = ArtControls.AddDefaulted_GetRef();
         State.Widget = Widgets[I];
@@ -60,8 +62,8 @@ void UStartWidget::ApplyStartArt()
             State.OriginalLayout = ArtLayoutSlot->GetLayout();
             ArtLayoutSlot->SetAnchors(FAnchors(.5f, I==0 ? .28f : .65f));
             ArtLayoutSlot->SetAlignment(FVector2D(.5f,.5f));
-            ArtLayoutSlot->SetSize(I==0 ? FVector2D(1050,350) : FVector2D(300,54));
-            ArtLayoutSlot->SetPosition(FVector2D(0,I==0 ? 0 : (I-1)*64));
+            ArtLayoutSlot->SetSize(I==0 ? FVector2D(1050,350) : FVector2D((I==1 || I==4) ? 180 : 300,54));
+            ArtLayoutSlot->SetPosition(FVector2D(I==1 ? -100 : (I==4 ? 100 : 0), I==0 || I==4 ? 0 : (I-1)*64));
         }
         if (auto* Image = Cast<UImage>(State.Widget))
         {
@@ -87,7 +89,7 @@ void UStartWidget::ApplyStartArt()
             if (!State.Feedback) continue;
             State.Label = State.Feedback->CreateLabel();
             State.Label->SetText(Labels[I-1]);
-            State.Label->SetFont(FSlateFontInfo(MenuFont,I==1 ? 28 : 22));
+            State.Label->SetFont(FSlateFontInfo(MenuFont,I==1 || I==4 ? 28 : 22));
             State.Label->SetJustification(ETextJustify::Center);
             State.Label->SetColorAndOpacity(FSlateColor(FLinearColor(.94f,.91f,.82f,1.f)));
             State.Label->SetShadowColorAndOpacity(FLinearColor(0.018f,.023f,.023f,.9f));
@@ -150,6 +152,16 @@ void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
 void UStartWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (!PVPButton && WidgetTree && Start_Btn)
+	{
+		if (auto* Canvas = Cast<UCanvasPanel>(Start_Btn->GetParent()))
+		{
+			PVPButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PVP_Btn"));
+			Canvas->AddChildToCanvas(PVPButton);
+			PVPButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OnPVPButtonClicked);
+			PVPButton->OnPressed.AddUniqueDynamic(this, &ThisClass::OnPVPButtonPressed);
+		}
+	}
 	ApplyStartArt();
 	if (!MenuShade && MenuShadeMaterial && WidgetTree)
 	{
@@ -200,6 +212,12 @@ void UStartWidget::PlayButtonFeedback(int32 Index)
 void UStartWidget::OnStartButtonPressed() { PlayButtonFeedback(1); }
 void UStartWidget::OnSettingButtonPressed() { PlayButtonFeedback(2); }
 void UStartWidget::OnExitButtonPressed() { PlayButtonFeedback(3); }
+void UStartWidget::OnPVPButtonPressed() { PlayButtonFeedback(4); }
+void UStartWidget::OnPVPButtonClicked()
+{
+    if (bEnteringLobby || (SettingWidget && SettingWidget->IsVisible())) return;
+    if (auto* Sessions = GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()) Sessions->OpenBrowser();
+}
 
 void UStartWidget::OnStartButtonClicked()
 {
@@ -263,6 +281,8 @@ void UStartWidget::NativeDestruct()
         }
 	}
 	ArtControls.Empty();
+	if (PVPButton) PVPButton->RemoveFromParent();
+	PVPButton = nullptr;
     if (UWidget* Backdrop=GetWidgetFromName(TEXT("BackgroundBlur_149"))) Backdrop->SetVisibility(OriginalBackdropVisibility);
 	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(LobbyTransitionTimer);
 	if (DepartureMist) DepartureMist->RemoveFromParent();

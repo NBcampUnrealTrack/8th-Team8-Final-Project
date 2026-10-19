@@ -1,0 +1,133 @@
+repeat,case,check,passed,actual_x,actual_y,expected_x,expected_y,detail
+1,TC01,legacy_sweep_negative_control,1,-738.000,0.000,340.000,0.000,current fixture replays old sweep operation; not an old executable
+1,TC01,real_slate_drag_capture,1,339.997,0.002,340.000,0.000,
+1,TC01,focus_crosses_wall,1,339.997,0.002,340.000,0.000,
+1,TC01,wall_jump_stable_after_click,1,339.997,0.002,340.000,0.000,
+1,TC02,corner_0_capture,1,-5082.999,-3972.997,-5083.000,-3973.000,
+1,TC02,corner_0_clamp,1,-5082.999,-3972.997,-5083.000,-3973.000,
+1,TC02,corner_0_stable_after_release,1,-5082.999,-3972.997,-5083.000,-3973.000,
+1,TC02,corner_1_capture,1,3762.997,-3972.997,3763.000,-3973.000,
+1,TC02,corner_1_clamp,1,3762.997,-3972.997,3763.000,-3973.000,
+1,TC02,corner_1_stable_after_release,1,3762.997,-3972.997,3763.000,-3973.000,
+1,TC02,corner_2_capture,1,-5082.999,3973.000,-5083.000,3973.000,
+1,TC02,corner_2_clamp,1,-5082.999,3973.000,-5083.000,3973.000,
+1,TC02,corner_2_stable_after_release,1,-5082.999,3973.000,-5083.000,3973.000,
+1,TC02,corner_3_capture,1,3762.997,3973.000,3763.000,3973.000,
+1,TC02,corner_3_clamp,1,3762.997,3973.000,3763.000,3973.000,
+1,TC02,corner_3_stable_after_release,1,3762.997,3973.000,3763.000,3973.000,
+1,TC03,click_clears_velocity,1,-310.005,199.998,-310.000,200.000,
+1,TC03,click_clears_pending_input,1,-310.005,199.998,-310.000,200.000,
+1,TC03,moving_camera_reaches_click,1,-310.005,199.998,-310.000,200.000,
+1,TC03,no_post_click_drift,1,-310.005,199.998,-310.000,200.000,
+1,TC04,hover_preserves_velocity,1,-660.000,0.000,-660.000,0.000,
+1,TC04,hover_allows_edge_scroll,1,-1024.210,367.173,-660.000,0.000,
+1,TC05,drag_capture_started,1,-660.002,0.002,-660.000,0.000,
+1,TC05,capture_retained_outside_minimap,1,3763.000,-3973.000,-660.000,0.000,
+1,TC05,outside_drag_clamped,1,3763.000,-3973.000,-660.000,0.000,
+1,TC05,outside_mouseup_releases_capture,1,3763.000,-3973.000,-660.000,0.000,
+1,TC05,move_after_mouseup_does_not_drag,1,3763.000,-3973.000,-660.000,0.000,
+1,TC05,edge_scroll_restored_after_mouseup,1,-660.000,-433.005,-660.000,0.000,
+1,TC06,capture_present_before_loss,1,-660.002,0.002,-660.000,0.000,
+1,TC06,capture_lost_callback_path,1,3763.000,-3973.000,-660.000,0.000,
+1,TC06,edge_scroll_restored_after_capture_loss,1,-660.000,-436.116,-660.000,0.000,
+1,TC07,disabled_preference_survives_hover_drag_release,1,-660.002,0.002,-660.000,0.000,
+1,TC07,disabled_edge_scroll_stays_still,1,-660.002,0.002,-660.000,0.000,
+1,TC07,enabled_edge_scroll_moves,1,-660.002,-443.726,-660.000,0.000,
+1,TC08,unconfigured_bounds_preserve_collision,1,-738.000,0.001,340.000,0.000,same map with runtime bounds disabled; controlled fixture; not a second authored map
+1,TC08,resolution_applied,1,-660.000,0.000,340.000,0.000,actual=1280x720 expected=1280x720
+1,TC08,resized_minimap_click_alignment,1,-359.999,-199.993,-360.000,-200.000,1280x720
+1,TC08,resized_click_stable_after_release,1,-359.999,-199.993,-360.000,-200.000,
+1,TC08,resolution_applied,1,-359.999,-199.993,-360.000,-200.000,actual=1600x900 expected=1600x900
+1,TC08,resized_minimap_click_alignment,1,-359.999,-200.000,-360.000,-200.000,1600x900
+1,TC08,resized_click_stable_after_release,1,-359.999,-200.000,-360.000,-200.000,
+1,TC08,resolution_applied,1,-359.999,-200.000,-360.000,-200.000,actual=1920x1080 expected=1920x1080
+1,TC08,resized_minimap_click_alignment,1,-359.998,-199.996,-360.000,-200.000,1920x1080
+1,TC08,resized_click_stable_after_release,1,-359.998,-199.996,-360.000,-200.000,
+2,TC01,legacy_sweep_negative_control,1,-738.000,0.000,340.000,0.000,current fixture replays old sweep operation; not an old executable
+2,TC01,real_slate_drag_capture,1,339.999,-0.001,340.000,0.000,
+2,TC01,focus_crosses_wall,1,339.999,-0.001,340.000,0.000,
+2,TC01,wall_jump_stable_after_click,1,339.999,-0.001,340.000,0.000,
+2,TC02,corner_0_capture,1,-5082.998,-3973.000,-5083.000,-3973.000,
+2,TC02,corner_0_clamp,1,-5082.998,-3973.000,-5083.000,-3973.000,
+2,TC02,corner_0_stable_after_release,1,-5082.998,-3973.000,-5083.000,-3973.000,
+2,TC02,corner_1_capture,1,3763.000,-3973.000,3763.000,-3973.000,
+2,TC02,corner_1_clamp,1,3763.000,-3973.000,3763.000,-3973.000,
+2,TC02,corner_1_stable_after_release,1,3763.000,-3973.000,3763.000,-3973.000,
+2,TC02,corner_2_capture,1,-5082.998,3973.000,-5083.000,3973.000,
+2,TC02,corner_2_clamp,1,-5082.998,3973.000,-5083.000,3973.000,
+2,TC02,corner_2_stable_after_release,1,-5082.998,3973.000,-5083.000,3973.000,
+2,TC02,corner_3_capture,1,3763.000,3973.000,3763.000,3973.000,
+2,TC02,corner_3_clamp,1,3763.000,3973.000,3763.000,3973.000,
+2,TC02,corner_3_stable_after_release,1,3763.000,3973.000,3763.000,3973.000,
+2,TC03,click_clears_velocity,1,-309.999,200.001,-310.000,200.000,
+2,TC03,click_clears_pending_input,1,-309.999,200.001,-310.000,200.000,
+2,TC03,moving_camera_reaches_click,1,-309.999,200.001,-310.000,200.000,
+2,TC03,no_post_click_drift,1,-309.999,200.001,-310.000,200.000,
+2,TC04,hover_preserves_velocity,1,-660.000,0.000,-660.000,0.000,
+2,TC04,hover_allows_edge_scroll,1,-1028.390,380.086,-660.000,0.000,
+2,TC05,drag_capture_started,1,-659.999,-0.001,-660.000,0.000,
+2,TC05,capture_retained_outside_minimap,1,3763.000,-3973.000,-660.000,0.000,
+2,TC05,outside_drag_clamped,1,3763.000,-3973.000,-660.000,0.000,
+2,TC05,outside_mouseup_releases_capture,1,3763.000,-3973.000,-660.000,0.000,
+2,TC05,move_after_mouseup_does_not_drag,1,3763.000,-3973.000,-660.000,0.000,
+2,TC05,edge_scroll_restored_after_mouseup,1,-660.000,-434.184,-660.000,0.000,
+2,TC06,capture_present_before_loss,1,-659.999,-0.001,-660.000,0.000,
+2,TC06,capture_lost_callback_path,1,3763.000,-3973.000,-660.000,0.000,
+2,TC06,edge_scroll_restored_after_capture_loss,1,-660.000,-434.116,-660.000,0.000,
+2,TC07,disabled_preference_survives_hover_drag_release,1,-659.999,-0.001,-660.000,0.000,
+2,TC07,disabled_edge_scroll_stays_still,1,-659.999,-0.001,-660.000,0.000,
+2,TC07,enabled_edge_scroll_moves,1,-659.999,-443.551,-660.000,0.000,
+2,TC08,unconfigured_bounds_preserve_collision,1,-738.000,-0.000,340.000,0.000,same map with runtime bounds disabled; controlled fixture; not a second authored map
+2,TC08,resolution_applied,1,-660.000,0.000,340.000,0.000,actual=1280x720 expected=1280x720
+2,TC08,resized_minimap_click_alignment,1,-359.999,-199.993,-360.000,-200.000,1280x720
+2,TC08,resized_click_stable_after_release,1,-359.999,-199.993,-360.000,-200.000,
+2,TC08,resolution_applied,1,-359.999,-199.993,-360.000,-200.000,actual=1600x900 expected=1600x900
+2,TC08,resized_minimap_click_alignment,1,-359.999,-200.000,-360.000,-200.000,1600x900
+2,TC08,resized_click_stable_after_release,1,-359.999,-200.000,-360.000,-200.000,
+2,TC08,resolution_applied,1,-359.999,-200.000,-360.000,-200.000,actual=1920x1080 expected=1920x1080
+2,TC08,resized_minimap_click_alignment,1,-359.998,-199.996,-360.000,-200.000,1920x1080
+2,TC08,resized_click_stable_after_release,1,-359.998,-199.996,-360.000,-200.000,
+3,TC01,legacy_sweep_negative_control,1,-738.000,0.000,340.000,0.000,current fixture replays old sweep operation; not an old executable
+3,TC01,real_slate_drag_capture,1,339.999,-0.001,340.000,0.000,
+3,TC01,focus_crosses_wall,1,339.999,-0.001,340.000,0.000,
+3,TC01,wall_jump_stable_after_click,1,339.999,-0.001,340.000,0.000,
+3,TC02,corner_0_capture,1,-5082.998,-3973.000,-5083.000,-3973.000,
+3,TC02,corner_0_clamp,1,-5082.998,-3973.000,-5083.000,-3973.000,
+3,TC02,corner_0_stable_after_release,1,-5082.998,-3973.000,-5083.000,-3973.000,
+3,TC02,corner_1_capture,1,3763.000,-3973.000,3763.000,-3973.000,
+3,TC02,corner_1_clamp,1,3763.000,-3973.000,3763.000,-3973.000,
+3,TC02,corner_1_stable_after_release,1,3763.000,-3973.000,3763.000,-3973.000,
+3,TC02,corner_2_capture,1,-5082.998,3973.000,-5083.000,3973.000,
+3,TC02,corner_2_clamp,1,-5082.998,3973.000,-5083.000,3973.000,
+3,TC02,corner_2_stable_after_release,1,-5082.998,3973.000,-5083.000,3973.000,
+3,TC02,corner_3_capture,1,3763.000,3973.000,3763.000,3973.000,
+3,TC02,corner_3_clamp,1,3763.000,3973.000,3763.000,3973.000,
+3,TC02,corner_3_stable_after_release,1,3763.000,3973.000,3763.000,3973.000,
+3,TC03,click_clears_velocity,1,-309.999,200.001,-310.000,200.000,
+3,TC03,click_clears_pending_input,1,-309.999,200.001,-310.000,200.000,
+3,TC03,moving_camera_reaches_click,1,-309.999,200.001,-310.000,200.000,
+3,TC03,no_post_click_drift,1,-309.999,200.001,-310.000,200.000,
+3,TC04,hover_preserves_velocity,1,-660.000,0.000,-660.000,0.000,
+3,TC04,hover_allows_edge_scroll,1,-1025.454,376.065,-660.000,0.000,
+3,TC05,drag_capture_started,1,-659.999,-0.001,-660.000,0.000,
+3,TC05,capture_retained_outside_minimap,1,3763.000,-3973.000,-660.000,0.000,
+3,TC05,outside_drag_clamped,1,3763.000,-3973.000,-660.000,0.000,
+3,TC05,outside_mouseup_releases_capture,1,3763.000,-3973.000,-660.000,0.000,
+3,TC05,move_after_mouseup_does_not_drag,1,3763.000,-3973.000,-660.000,0.000,
+3,TC05,edge_scroll_restored_after_mouseup,1,-660.000,-440.000,-660.000,0.000,
+3,TC06,capture_present_before_loss,1,-659.999,-0.001,-660.000,0.000,
+3,TC06,capture_lost_callback_path,1,3763.000,-3973.000,-660.000,0.000,
+3,TC06,edge_scroll_restored_after_capture_loss,1,-660.000,-442.129,-660.000,0.000,
+3,TC07,disabled_preference_survives_hover_drag_release,1,-659.999,-0.001,-660.000,0.000,
+3,TC07,disabled_edge_scroll_stays_still,1,-659.999,-0.001,-660.000,0.000,
+3,TC07,enabled_edge_scroll_moves,1,-659.999,-440.337,-660.000,0.000,
+3,TC08,unconfigured_bounds_preserve_collision,1,-738.000,-0.000,340.000,0.000,same map with runtime bounds disabled; controlled fixture; not a second authored map
+3,TC08,resolution_applied,1,-660.000,0.000,340.000,0.000,actual=1280x720 expected=1280x720
+3,TC08,resized_minimap_click_alignment,1,-359.999,-199.993,-360.000,-200.000,1280x720
+3,TC08,resized_click_stable_after_release,1,-359.999,-199.993,-360.000,-200.000,
+3,TC08,resolution_applied,1,-359.999,-199.993,-360.000,-200.000,actual=1600x900 expected=1600x900
+3,TC08,resized_minimap_click_alignment,1,-359.999,-200.000,-360.000,-200.000,1600x900
+3,TC08,resized_click_stable_after_release,1,-359.999,-200.000,-360.000,-200.000,
+3,TC08,resolution_applied,1,-359.999,-200.000,-360.000,-200.000,actual=1920x1080 expected=1920x1080
+3,TC08,resized_minimap_click_alignment,1,-359.998,-199.996,-360.000,-200.000,1920x1080
+3,TC08,resized_click_stable_after_release,1,-359.998,-199.996,-360.000,-200.000,

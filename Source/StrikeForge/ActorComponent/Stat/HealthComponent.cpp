@@ -1,14 +1,17 @@
-﻿#include "HealthComponent.h"
+#include "HealthComponent.h"
+#include "Net/UnrealNetwork.h"
 
 
 UHealthComponent::UHealthComponent()
 	:IsDead(false)
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true);
 
 }
 void UHealthComponent::ApplyDamage(float InDamage)
 {
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	// 이미 죽은 대상이 사망 이벤트를 다시 쏘지 않게 막는다.
 	// 같은 프레임에 광역 피해를 여러 번 맞는 경우가 있다.
 	if (IsDead) return;
@@ -43,6 +46,7 @@ void UHealthComponent::InitializeHealth(float InMaxHealth)
 
 void UHealthComponent::InitializeHealth(float InMaxHealth, float InCurrentHealth)
 {
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	const float PreviousHealth = CurrentHealth;
 
 	MaxHealth = FMath::Max(1.f, InMaxHealth);
@@ -55,6 +59,7 @@ void UHealthComponent::InitializeHealth(float InMaxHealth, float InCurrentHealth
 
 void UHealthComponent::SetHealth(float InMaxHealth, float InCurrentHealth)
 {
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	const float PreviousHealth = CurrentHealth;
 
 	MaxHealth = FMath::Max(1.f, InMaxHealth);
@@ -66,6 +71,7 @@ void UHealthComponent::SetHealth(float InMaxHealth, float InCurrentHealth)
 
 void UHealthComponent::BoostHealth(float HealthMultiplier)
 {
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	const float PreviousHealth = CurrentHealth;
 	const float HealthRatio = GetHealthPercent();
 
@@ -76,7 +82,9 @@ void UHealthComponent::BoostHealth(float HealthMultiplier)
 }
 
 void UHealthComponent::IncreaseCurrentHealth(float InAmount)
-{	// 현재체력 회복
+{
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+	// 현재체력 회복
 	if (IsDead || InAmount <= 0.f) return;
 
 	const float PreviousHealth = CurrentHealth;
@@ -102,4 +110,22 @@ void UHealthComponent::IncreaseCurrentHealth(float InAmount)
 float UHealthComponent::GetHealthPercent() const
 {
 	return MaxHealth > 0.f ? CurrentHealth / MaxHealth : 0.f;
+}
+
+void UHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+ DOREPLIFETIME(UHealthComponent, MaxHealth);
+ DOREPLIFETIME(UHealthComponent, CurrentHealth);
+}
+void UHealthComponent::OnRep_CurrentHealth(float PreviousHealth)
+{
+ const bool bWasDead=IsDead;
+ IsDead=CurrentHealth<=0.f;
+ OnHealthValueChanged.Broadcast(PreviousHealth,CurrentHealth,MaxHealth);
+ if(IsDead&&!bWasDead) OnHealthIsZero.Broadcast();
+}
+void UHealthComponent::OnRep_MaxHealth()
+{
+ OnHealthValueChanged.Broadcast(CurrentHealth,CurrentHealth,MaxHealth);
 }

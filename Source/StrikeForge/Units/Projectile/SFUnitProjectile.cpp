@@ -1,4 +1,4 @@
-﻿// SFUnitProjectile.cpp
+// SFUnitProjectile.cpp
 
 
 #include "Units/Projectile/SFUnitProjectile.h"
@@ -59,6 +59,7 @@ void ASFUnitProjectile::InitializeProjectile(AUnitBase* InSourceUnit, AActor* In
         return;
     }
 
+    if (GetNetMode() != NM_Standalone) { SetReplicates(true); SetReplicateMovement(true); SetNetUpdateFrequency(30.f); }
     SourceUnit = InSourceUnit;
     TargetActor = InTargetActor;
     DamageRatio = FMath::Max(0.f, InDamageRatio);
@@ -130,6 +131,7 @@ void ASFUnitProjectile::InitializeProjectile(AUnitBase* InSourceUnit, AActor* In
 void ASFUnitProjectile::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+    if (!HasAuthority()) { ProjectileMovement->Deactivate(); return; }
 
 	// 타깃 액터가 이미 제거됐다면 발사체도 제거한다.
 	AActor* ValidTarget = TargetActor.Get();
@@ -212,10 +214,20 @@ void ASFUnitProjectile::HandleProjectileOverlap(UPrimitiveComponent* OverlappedC
 
 void ASFUnitProjectile::ResolveImpact(const FVector& ImpactLocation)
 {
+	if (!HasAuthority()) return;
 	AActor* OtherActor = TargetActor.Get();
 	if (bHasImpacted || !IsValid(OtherActor)) return;
 	bHasImpacted = true;
+	MulticastImpactEffect(ImpactLocation);
+	if (AUnitBase* ValidSource = SourceUnit.Get())
+	{
+		ValidSource->HandleProjectileImpact(OtherActor, DamageRatio);
+	}
+	Destroy();
+}
 
+void ASFUnitProjectile::MulticastImpactEffect_Implementation(FVector_NetQuantize ImpactLocation)
+{
 	if (IsValid(ImpactEffect))
 	{
 		const FVector EffectScale(ImpactEffectScale);
@@ -232,11 +244,5 @@ void ASFUnitProjectile::ResolveImpact(const FVector& ImpactLocation)
 		);
 	}
 
-	if (AUnitBase* ValidSource = SourceUnit.Get())
-	{
-		ValidSource->HandleProjectileImpact(OtherActor, DamageRatio);
-	}
-
-	Destroy();
 }
 

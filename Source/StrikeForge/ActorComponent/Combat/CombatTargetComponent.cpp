@@ -1,4 +1,5 @@
-﻿#include "CombatTargetComponent.h"
+#include "CombatTargetComponent.h"
+#include "Net/UnrealNetwork.h"
 
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "Game/Subsystem/SFCombatSubsystem.h"
@@ -14,6 +15,7 @@ UCombatTargetComponent::UCombatTargetComponent()
 	, bDead(false)
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true);
 }
 
 void UCombatTargetComponent::BeginPlay()
@@ -175,6 +177,7 @@ bool UCombatTargetComponent::IsWithinSight(const AActor* Target) const
 
 void UCombatTargetComponent::ApplyCombatDamage(float InFinalDamage, AActor* InInstigator)
 {
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner)) return;
 
@@ -252,4 +255,13 @@ void UCombatTargetComponent::HandleOwnerDeath()
 	}
 
 	OnTargetDestroyed.Broadcast(this);
+}
+
+void UCombatTargetComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps); DOREPLIFETIME(UCombatTargetComponent,TeamIndex);
+}
+void UCombatTargetComponent::OnRep_Team(int32 PreviousTeam)
+{
+ const int32 NewTeam=TeamIndex; TeamIndex=PreviousTeam; SetTeamIndex(NewTeam);
 }

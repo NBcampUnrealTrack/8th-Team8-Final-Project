@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -13,6 +13,9 @@ class STRIKEFORGE_API UHealthComponent : public UActorComponent
 	GENERATED_BODY()
 public:
 	UHealthComponent();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	UFUNCTION() void OnRep_CurrentHealth(float PreviousHealth);
+	UFUNCTION() void OnRep_MaxHealth();
 	
 	void ApplyDamage(float InDamage);
 	
@@ -60,8 +63,8 @@ private:
 	bool IsDead = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float InitialHealth = 100.f;	// 순정 상태의 최대체력 (버프의 영향을 받지 않은)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
+	UPROPERTY(ReplicatedUsing=OnRep_MaxHealth, EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float MaxHealth = 100.f;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
+	UPROPERTY(ReplicatedUsing=OnRep_CurrentHealth, EditDefaultsOnly, BlueprintReadOnly, Category = "Health", meta = (AllowPrivateAccess = true))
 	float CurrentHealth = 1.f;
 };

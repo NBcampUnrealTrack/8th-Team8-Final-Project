@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -116,6 +116,9 @@ class STRIKEFORGE_API AUnitBase : public ACharacter, public ISFSelectable, publi
 
 public:
 	AUnitBase();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	UFUNCTION(NetMulticast, Unreliable) void MulticastAttackAnimation();
+	UPROPERTY(Replicated) int32 PVPUnitId = INDEX_NONE;
 	
 	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
 
@@ -575,7 +578,7 @@ private:
 #pragma region Information
 
 	/** 데이터테이블 RowName. 비우면 아래 기본값을 그대로 쓴다 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))
 	FName UnitRowName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Information", meta = (AllowPrivateAccess = true))

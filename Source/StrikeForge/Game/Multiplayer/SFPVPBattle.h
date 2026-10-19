@@ -31,7 +31,8 @@ public:
 private:
     void TrySpawnArmies();
     bool FindBattleGround(FVector& A,FVector& B) const;
-    UPROPERTY() TArray<TSubclassOf<AUnitBase>> StartingUnits;
+    UPROPERTY() TArray<TSoftClassPtr<AUnitBase>> StartingUnits;
+    TSharedPtr<struct FStreamableHandle> StartingUnitLoad;
     FTimerHandle SpawnTimer;
     double WaitStarted = 0;
 };

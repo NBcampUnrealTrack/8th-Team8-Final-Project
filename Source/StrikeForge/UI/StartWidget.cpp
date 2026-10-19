@@ -21,6 +21,7 @@
 #include "Engine/Font.h"
 #include "Styling/SlateBrush.h"
 #include "Game/Multiplayer/SFPVPSessionSubsystem.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 
 UStartWidget::UStartWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -56,6 +57,7 @@ void UStartWidget::ApplyStartArt()
         FSFStartArtControl& State = ArtControls.AddDefaulted_GetRef();
         State.Widget = Widgets[I];
         if (!State.Widget) continue;
+        State.OriginalVisibility=State.Widget->GetVisibility();
         State.Transform = State.Widget->GetRenderTransform();
         if (auto* ArtLayoutSlot = Cast<UCanvasPanelSlot>(State.Widget->Slot))
         {
@@ -109,11 +111,14 @@ void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
 {
     Super::NativeTick(Geometry,DeltaTime);
     ArtElapsed += DeltaTime;
+    const bool bSettingsOpen=SettingWidget&&SettingWidget->IsVisible();
+    const float ButtonScale=FMath::Clamp(1.f/FMath::Max(.35f,UWidgetLayoutLibrary::GetViewportScale(this)),1.f,1.8f);
     for (int32 I=0; I<ArtControls.Num(); ++I)
     {
         auto& State=ArtControls[I];
         if (!State.Widget) continue;
         auto* Button=Cast<UButton>(State.Widget);
+        if(Button)State.Widget->SetVisibility(bSettingsOpen?ESlateVisibility::Collapsed:State.OriginalVisibility);
         const bool Hover=Button && (Button->IsHovered() || Button->HasKeyboardFocus()) && !bEnteringLobby
             && (!SettingWidget || !SettingWidget->IsVisible());
         if (Hover && !State.bWasHovered) State.HoverTime=0.f;
@@ -124,6 +129,8 @@ void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
         State.Press=FMath::FInterpTo(State.Press,Button && Button->IsPressed() ? 1.f : 0.f,DeltaTime,24.f);
         if (State.Label)
         {
+            const int32 Size=FMath::RoundToInt((I==1||I==4?28.f:22.f)*ButtonScale);
+            if(State.Label->GetFont().Size!=Size){auto Font=State.Label->GetFont();Font.Size=Size;State.Label->SetFont(Font);}
             State.Label->SetColorAndOpacity(FSlateColor(FMath::Lerp(FLinearColor(.94f,.91f,.82f),FLinearColor(.24f,1.f,.83f),State.Hover)));
             const float Kick=FMath::Max(0.f,1.f-State.ClickTime/.32f);
             State.Label->SetRenderTransformPivot(FVector2D(.5f,.5f));
@@ -144,6 +151,11 @@ void UStartWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
                 const float Width=FMath::Min(1050.f,Geometry.GetLocalSize().X*.68f);
                 ArtLayoutSlot->SetSize(FVector2D(Width,Width/3.f));
             }
+        if(I>0)if(auto* ArtSlot=Cast<UCanvasPanelSlot>(State.Widget->Slot))
+        {
+            ArtSlot->SetSize(FVector2D((I==1||I==4?180.f:300.f)*ButtonScale,54.f*ButtonScale));
+            ArtSlot->SetPosition(FVector2D((I==1?-100.f:(I==4?100.f:0.f))*ButtonScale,(I==4?0.f:(I-1)*64.f)*ButtonScale));
+        }
     }
     if (IsValid(SceneAmbience) && Title)
         SceneAmbience->UpdateLogoParticles(Title->GetCachedGeometry());
@@ -158,11 +170,13 @@ void UStartWidget::NativeConstruct()
 		{
 			PVPButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("PVP_Btn"));
 			Canvas->AddChildToCanvas(PVPButton);
+			if(auto* PVPLayout=Cast<UCanvasPanelSlot>(PVPButton->Slot))if(auto* PVELayout=Cast<UCanvasPanelSlot>(Start_Btn->Slot))PVPLayout->SetZOrder(PVELayout->GetZOrder());
 			PVPButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OnPVPButtonClicked);
 			PVPButton->OnPressed.AddUniqueDynamic(this, &ThisClass::OnPVPButtonPressed);
 		}
 	}
 	ApplyStartArt();
+	if(SettingWidget)if(auto* SettingsSlot=Cast<UCanvasPanelSlot>(SettingWidget->Slot))SettingsSlot->SetZOrder(1000);
 	if (!MenuShade && MenuShadeMaterial && WidgetTree)
 	{
 		if (UCanvasPanel* Canvas=Cast<UCanvasPanel>(GetRootWidget()))
@@ -221,7 +235,7 @@ void UStartWidget::OnPVPButtonClicked()
 
 void UStartWidget::OnStartButtonClicked()
 {
-	if (bEnteringLobby) return;
+	if (bEnteringLobby || (SettingWidget&&SettingWidget->IsVisible())) return;
 	USFGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance<USFGameInstance>() : nullptr;
 	if (!IsValid(GameInstance))
 	{
@@ -272,6 +286,7 @@ void UStartWidget::NativeDestruct()
 	{
 		if (!State.Widget) continue;
 		State.Widget->SetRenderTransform(State.Transform);
+		State.Widget->SetVisibility(State.OriginalVisibility);
 		if (UCanvasPanelSlot* ArtSlot=Cast<UCanvasPanelSlot>(State.Widget->Slot)) ArtSlot->SetLayout(State.OriginalLayout);
 		if (UImage* Image=Cast<UImage>(State.Widget)) Image->SetBrush(State.OriginalImage);
 		if (UButton* Button=Cast<UButton>(State.Widget))
@@ -296,11 +311,13 @@ void UStartWidget::OnSettingButtonClicked()
 	if (IsValid(SettingWidget))
 	{
 		SettingWidget->OpenSetting();
+		if(PVPButton)PVPButton->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
 void UStartWidget::OnExitButtonClicked()
 {
+	if(SettingWidget&&SettingWidget->IsVisible())return;
 	APlayerController* SpecificPlayer = GetOwningPlayer();
 	if (IsValid(SpecificPlayer))
 	{

@@ -22,10 +22,14 @@ private:
     UPROPERTY() TObjectPtr<class UFont> Font;
     UPROPERTY() TObjectPtr<class UTexture2D> EtherPortrait;
     UPROPERTY() TObjectPtr<UTexture2D> BeastPortrait;
-    FSlateBrush EtherBrush, BeastBrush, PanelBrush;
-    FButtonStyle ButtonStyle;
+    UPROPERTY() TObjectPtr<UTexture2D> CampArt;
+    UPROPERTY() TObjectPtr<UTexture2D> Wordmark;
+    FSlateBrush EtherBrush, BeastBrush, PanelBrush, InsetBrush, CardBrush, CampBrush, LogoBrush;
+    FButtonStyle ButtonStyle, PrimaryButtonStyle, TabButtonStyle;
     FEditableTextBoxStyle InputStyle;
+    TSharedPtr<class SSFPVPAmbience> Ambience;
     TSharedPtr<class SEditableTextBox> RoomInput, AddressInput;
     TSharedPtr<class SVerticalBox> RoomList;
     FString RoomSignature;
+    FString PlayerSignature;
 };

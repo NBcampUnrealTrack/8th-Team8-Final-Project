@@ -30,6 +30,7 @@ struct FSFStartArtControl
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> Label;
     UPROPERTY(Transient) TObjectPtr<USFStartButtonFeedbackWidget> Feedback;
 	UPROPERTY(Transient) TObjectPtr<UWidget> OriginalContent;
+    ESlateVisibility OriginalVisibility = ESlateVisibility::Visible;
 	FWidgetTransform Transform;
 	float Hover = 0.f;
 	float Press = 0.f;

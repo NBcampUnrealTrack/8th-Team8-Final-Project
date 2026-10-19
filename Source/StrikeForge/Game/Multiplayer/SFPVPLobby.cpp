@@ -10,7 +10,7 @@
 void ASFPVPLobbyPlayerState::CopyProperties(APlayerState* PlayerState)
 {
     Super::CopyProperties(PlayerState);
-    if(auto* P=Cast<ASFPVPLobbyPlayerState>(PlayerState)){P->Seat=Seat;P->Race=Race;P->bReady=bReady;}
+    if(auto* P=Cast<ASFPVPLobbyPlayerState>(PlayerState)){P->Seat=Seat;P->Race=Race;P->bReady=bReady;P->bRandomRace=bRandomRace;}
 }
 
 void ASFPVPLobbyPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -19,6 +19,7 @@ void ASFPVPLobbyPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
     DOREPLIFETIME(ASFPVPLobbyPlayerState, Seat);
     DOREPLIFETIME(ASFPVPLobbyPlayerState, Race);
     DOREPLIFETIME(ASFPVPLobbyPlayerState, bReady);
+    DOREPLIFETIME(ASFPVPLobbyPlayerState, bRandomRace);
 }
 void ASFPVPLobbyState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -56,8 +57,14 @@ void ASFPVPLobbyController::ServerSetRace_Implementation(ESFRace Race)
     if (Race != ESFRace::Human && Race != ESFRace::Beast) return;
     if (auto* P = GetPlayerState<ASFPVPLobbyPlayerState>())
     {
-        if (P->Race != Race) { P->Race = Race; P->bReady = false; P->ForceNetUpdate(); }
+        if (P->Race != Race || P->bRandomRace) { P->Race = Race; P->bRandomRace=false; P->bReady = false; P->ForceNetUpdate(); }
     }
+}
+void ASFPVPLobbyController::ServerSetRandomRace_Implementation()
+{
+    if(auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();S&&S->bStarting)return;
+    if(auto* P=GetPlayerState<ASFPVPLobbyPlayerState>())
+    {P->bRandomRace=true;P->bReady=false;P->ForceNetUpdate();}
 }
 void ASFPVPLobbyController::EndPlay(const EEndPlayReason::Type Reason)
 {
@@ -89,7 +96,8 @@ void ASFPVPLobbyMode::InitGameState()
     if (auto* S = GetGameState<ASFPVPLobbyState>())
     {
         S->RoomName = GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->GetRoomName();
-        S->bInternetRoom=GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->IsInternetMode();
+        const FString Online=UGameplayStatics::ParseOption(OptionsString,TEXT("SFOnline"));
+        S->bInternetRoom=Online.IsEmpty()?GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->IsInternetMode():Online==TEXT("1");
     }
     if (GameSession) GameSession->MaxPlayers = 2;
 }
@@ -122,6 +130,8 @@ void ASFPVPLobbyController::ServerStartBattle_Implementation()
     }
     if(Maps.IsEmpty()){S->StartError=TEXT("사용 가능한 PVP 전장이 없습니다.");return;}
     const FString Map=Maps[FMath::RandRange(0,Maps.Num()-1)];
+    for(int32 Seat=0;Seat<2;++Seat)if(auto* SelectedState=S->GetSeat(Seat);SelectedState&&SelectedState->bRandomRace)
+    {SelectedState->Race=FMath::RandBool()?ESFRace::Human:ESFRace::Beast;SelectedState->ForceNetUpdate();}
     S->bStarting=true;S->StartError.Empty();S->ForceNetUpdate();
     GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->CloseJoining();
     UE_LOG(LogTemp,Display,TEXT("[PVP] Starting random battlefield: %s"),*Map);
@@ -131,9 +141,19 @@ void ASFPVPLobbyController::ServerStartBattle_Implementation()
 void ASFPVPLobbyMode::PostLogin(APlayerController* NewPlayer)
 {
     Super::PostLogin(NewPlayer);
+    AssignSeat(NewPlayer);
+}
+void ASFPVPLobbyMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+    AssignSeat(NewPlayer);
+    Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+}
+void ASFPVPLobbyMode::AssignSeat(APlayerController* NewPlayer)
+{
     auto* S = GetGameState<ASFPVPLobbyState>();
     auto* P = NewPlayer->GetPlayerState<ASFPVPLobbyPlayerState>();
     if (!S || !P) return;
+    if(P->Seat>=0&&P->Seat<2&&S->GetSeat(P->Seat)==P)return;
     const int32 Seat = !S->GetSeat(0) ? 0 : (!S->GetSeat(1) ? 1 : INDEX_NONE);
     // Also enforce capacity here: simultaneous logins may both pass PreLogin.
     if (Seat == INDEX_NONE) { GameSession->KickPlayer(NewPlayer, FText::FromString(TEXT("PVP_ROOM_FULL"))); return; }

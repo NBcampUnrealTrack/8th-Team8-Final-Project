@@ -71,7 +71,7 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
     return SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
     .BorderBackgroundColor(FLinearColor(.008f,.019f,.023f)).Padding(28)
     [SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::DownOnly)
-    [SNew(SBox).WidthOverride(1080).HeightOverride(860)
+    [SNew(SBox).WidthOverride(1080).HeightOverride_Lambda([this]{return FOptionalSize(InRoom()?1060.f:860.f);})
     [SNew(SVerticalBox)
         + SVerticalBox::Slot().AutoHeight()[Label(TEXT("S T R I K E F O R G E"),20,Gold)]
         + SVerticalBox::Slot().AutoHeight().Padding(0,6)[Label(TEXT("PVP  |  결투의 전당"),42,Cream)]
@@ -94,7 +94,7 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                 + SHorizontalBox::Slot().AutoWidth()
                 [SNew(SButton).ButtonStyle(&ButtonStyle)
                     .Visibility_Lambda([this]{return Sessions()->IsInternetMode()?EVisibility::Visible:EVisibility::Collapsed;})
-                    .IsEnabled_Lambda([this]{return !Sessions()->IsBusy()&&Sessions()->IsInternetConfigured()&&!Sessions()->IsInternetLoggedIn();})
+                    .IsEnabled_Lambda([this]{return !Sessions()->IsBusy()&&Sessions()->IsInternetConfigured()&&Sessions()->IsInternetPlaySupported()&&!Sessions()->IsInternetLoggedIn();})
                     .OnClicked_Lambda([this]{Sessions()->LoginInternet();return FReply::Handled();})
                     [SNew(STextBlock).Font(FSlateFontInfo(Font,21)).ColorAndOpacity(Cream)
                         .Text_Lambda([this]{return FText::FromString(Sessions()->GetIdentityLabel());})]]]

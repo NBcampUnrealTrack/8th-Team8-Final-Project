@@ -34,6 +34,7 @@ public:
     void SetInternetMode(bool bEnabled);
     bool IsInternetMode() const { return bInternet; }
     bool IsInternetConfigured() const;
+    bool IsInternetPlaySupported() const;
     bool IsInternetLoggedIn() const;
     void LoginInternet();
     FString GetConnectionDescription() const;

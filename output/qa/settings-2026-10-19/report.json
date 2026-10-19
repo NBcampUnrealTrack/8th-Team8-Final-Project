@@ -1,0 +1,65 @@
+{
+  "start": 1792396832.3075526,
+  "phase": "escaped",
+  "checks": [
+    {
+      "check": "Lobby settings button opens real modal",
+      "passed": true
+    },
+    {
+      "check": "Native Korean title replaces old raster",
+      "passed": true
+    },
+    {
+      "check": "settings_1600x900: all seven controls fit",
+      "passed": true
+    },
+    {
+      "check": "settings_hover: all seven controls fit",
+      "passed": true
+    },
+    {
+      "check": "Screen mode dropdown opens through pointer input",
+      "passed": true
+    },
+    {
+      "check": "Escape dismisses dropdown without dismissing settings",
+      "passed": true
+    },
+    {
+      "check": "Pointer input changes master volume",
+      "passed": true
+    },
+    {
+      "check": "Volume readout follows slider",
+      "passed": true
+    },
+    {
+      "check": "Sensitivity readout follows slider",
+      "passed": true
+    },
+    {
+      "check": "settings_1280x720: all seven controls fit",
+      "passed": true
+    },
+    {
+      "check": "settings_1920x1080: all seven controls fit",
+      "passed": true
+    },
+    {
+      "check": "Full back button closes modal",
+      "passed": true
+    },
+    {
+      "check": "Lobby can reopen settings",
+      "passed": true
+    },
+    {
+      "check": "Escape closes settings through Slate focus",
+      "passed": true
+    }
+  ],
+  "since": 1792396850.5129893,
+  "passed": true,
+  "error": null
+}

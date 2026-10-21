@@ -8,6 +8,111 @@
 #include "Datas/Stage/SFStageData.h"
 #include "Game/Subsystem/SFBuildingAssetSubsystem.h"
 #include "Engine/World.h"
+#include "Game/Save/SFCampaignSaveGame.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+
+void USFGameInstance::Init()
+{
+    Super::Init();
+    // QA can opt into a separate slot without touching the player's campaign.
+    FString SlotOverride;
+    if (CampaignSaveSlotName == TEXT("SFCampaignProgress") &&
+        FParse::Value(FCommandLine::Get(), TEXT("SFCampaignSaveSlot="), SlotOverride) &&
+        !SlotOverride.IsEmpty() && !SlotOverride.GetCharArray().ContainsByPredicate([](TCHAR C)
+        { return C != 0 && !FChar::IsAlnum(C) && C != TEXT('_') && C != TEXT('-'); }))
+    {
+        CampaignSaveSlotName = SlotOverride;
+    }
+    LoadCampaignProgress();
+}
+
+void USFGameInstance::Shutdown()
+{
+    if (bCampaignProgressDirty) SaveCampaignProgress();
+    Super::Shutdown();
+}
+
+int32 USFGameInstance::GetCampaignStageCount() const
+{
+    int32 Count = 0;
+    if (!IsValid(StageDataTable)) return Count;
+    // Only numbered, contiguous campaign rows participate; prototype aliases do not.
+    while (const FSFStageData* Stage = StageDataTable->FindRow<FSFStageData>(
+        FName(*FString::Printf(TEXT("Stage%02d"), Count + 1)), TEXT("CampaignProgress"), false))
+    {
+        if (Stage->StageOrder != Count + 1 || Stage->StageLevel.IsNull()) break;
+        ++Count;
+    }
+    return Count;
+}
+
+FName USFGameInstance::GetNextCampaignStageRowName() const
+{
+    return HighestClearedStageOrder < GetCampaignStageCount()
+        ? FName(*FString::Printf(TEXT("Stage%02d"), HighestClearedStageOrder + 1)) : NAME_None;
+}
+
+void USFGameInstance::LoadCampaignProgress()
+{
+    HighestClearedStageOrder = 0;
+    bUnreadStoryUnlock = false;
+    bCampaignProgressDirty = false;
+    bCampaignSaveWritable = true;
+    for (const FString& Slot : { CampaignSaveSlotName, CampaignSaveSlotName + TEXT("_Backup") })
+    {
+        if (!UGameplayStatics::DoesSaveGameExist(Slot, 0)) continue;
+        const USFCampaignSaveGame* Save = Cast<USFCampaignSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, 0));
+        if (Save && Save->SaveVersion > USFCampaignSaveGame::CurrentVersion)
+        {
+            // An older build must never overwrite a newer build's progress.
+            bCampaignSaveWritable = false;
+            SF_LOG(Warning, "[Campaign] Newer save version in %s; keeping the file untouched.", *Slot);
+            return;
+        }
+        if (!Save || Save->SaveVersion != USFCampaignSaveGame::CurrentVersion ||
+            Save->HighestClearedStageOrder < 0 || Save->HighestClearedStageOrder > GetCampaignStageCount())
+        {
+            SF_LOG(Warning, "[Campaign] Invalid save in %s; trying the backup.", *Slot);
+            continue;
+        }
+        HighestClearedStageOrder = Save->HighestClearedStageOrder;
+        bUnreadStoryUnlock = HighestClearedStageOrder >= 3 && Save->bUnreadStoryUnlock;
+        // A recovered backup is written back on the next save or clean shutdown.
+        bCampaignProgressDirty = Slot != CampaignSaveSlotName;
+        SF_LOG(Log, "[Campaign] Loaded %s: highest cleared stage=%d", *Slot, HighestClearedStageOrder);
+        return;
+    }
+}
+
+bool USFGameInstance::SaveCampaignProgress()
+{
+    if (!bCampaignSaveWritable) return false;
+    USFCampaignSaveGame* Save = Cast<USFCampaignSaveGame>(
+        UGameplayStatics::CreateSaveGameObject(USFCampaignSaveGame::StaticClass()));
+    if (!Save) return false;
+    Save->HighestClearedStageOrder = HighestClearedStageOrder;
+    Save->bUnreadStoryUnlock = bUnreadStoryUnlock;
+    // This tiny save runs at victory/story screens. Finish before level travel or exit.
+    if (!UGameplayStatics::SaveGameToSlot(Save, CampaignSaveSlotName, 0))
+    {
+        SF_LOG(Warning, "[Campaign] Auto-save failed in %s; will retry at the next save or shutdown.", *CampaignSaveSlotName);
+        return false;
+    }
+    bCampaignProgressDirty = false;
+    if (!UGameplayStatics::SaveGameToSlot(Save, CampaignSaveSlotName + TEXT("_Backup"), 0))
+        SF_LOG(Warning, "[Campaign] Primary save succeeded, but backup save failed.");
+    SF_LOG(Log, "[Campaign] Saved highest cleared stage=%d", HighestClearedStageOrder);
+    return true;
+}
+
+void USFGameInstance::MarkStoryUnlockRead()
+{
+    if (!bUnreadStoryUnlock) return;
+    bUnreadStoryUnlock = false;
+    bCampaignProgressDirty = true;
+    SaveCampaignProgress();
+}
 
 #if WITH_EDITOR
 void USFGameInstance::ResolveEditorStageSelection(const UWorld* PlayWorld)
@@ -313,10 +418,16 @@ bool USFGameInstance::MarkStageCleared(FName StageRowName)
         return false;
     }
 
+    const int32 PreviousHighest = HighestClearedStageOrder;
     if (HighestClearedStageOrder < 3 && StageData->StageOrder >= 3)
         bUnreadStoryUnlock = true;
     HighestClearedStageOrder =
         FMath::Max(HighestClearedStageOrder, StageData->StageOrder);
+
+    if (HighestClearedStageOrder != PreviousHighest) bCampaignProgressDirty = true;
+    if (bCampaignProgressDirty) SaveCampaignProgress();
+
+    if (HighestClearedStageOrder != PreviousHighest) NotifyPVEAchievementUnlocked(StageRowName);
 
     SF_LOG(
         Log,

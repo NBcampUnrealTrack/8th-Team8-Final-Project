@@ -1,5 +1,6 @@
 """Disposable Stage03 PIE: real synergy, spawn geometry and off-screen combat."""
 import json
+import re
 import time
 import traceback
 from pathlib import Path
@@ -47,9 +48,14 @@ def tick(delta):
             for w in unreal.WidgetLibrary.get_all_widgets_of_class(world,unreal.SFStageIntroWidget,False):
                 w.start_stage_intro_at(intro,'Stage03',12)
             unreal.GameplayStatics.set_game_paused(world,False)
-            for name,xy in [('AnimalRanged',(1200,550)),('AnimalSpecial',(1200,50))]:
+            stage = next(row for row in json.loads(
+                unreal.DataTableFunctionLibrary.export_data_table_to_json_string(intro)) if row['Name'] == 'Stage03')
+            for name, node in [('AnimalRanged', 5), ('AnimalSpecial', 8)]:
+                target = re.search(r'TargetKind=WorldLocation,.*?WorldLocation=\(X=([^,]+),Y=([^,]+),Z=([^\)]+)\)', stage['Nodes'][node])
+                assert target, 'Missing current Stage03 construction target'
+                xyz = tuple(float(value) for value in target.groups())
                 definition=unreal.load_asset('/Game/Core/Primary/Buildings/Definitions/Animal/DA_'+name)
-                transform=unreal.Transform(location=unreal.Vector(*xy,0),rotation=unreal.Rotator(),scale=unreal.Vector(1,1,1))
+                transform=unreal.Transform(location=unreal.Vector(*xyz),rotation=unreal.Rotator(),scale=unreal.Vector(1,1,1))
                 building=unreal.SFBuildingSpawnLibrary.spawn_building_from_definition(world,definition,0,transform,unreal.SFBuildingSpawnMode.VIEW_PORT_PLACED_MODE,0)
                 assert building, 'Could not create '+name
                 refs[name]=building

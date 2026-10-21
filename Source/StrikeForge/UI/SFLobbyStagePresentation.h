@@ -50,6 +50,7 @@ public:
     USFLobbyStagePresentation(const FObjectInitializer& ObjectInitializer);
     void InitializeControls(UUserWidget* Lobby, USFMenuAtmosphereWidget* Backdrop, const TArray<FName>& Rows);
     void RestoreControls();
+    void RequestLaunch(int32 Index);
 #if WITH_DEV_AUTOMATION_TESTS
     int32 PreviewHover = INDEX_NONE;
     int32 PreviewHeaderHover = INDEX_NONE;
@@ -60,7 +61,6 @@ protected:
     virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullRect,
         FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style, bool bEnabled) const override;
 private:
-    void RequestLaunch(int32 Index);
     UFUNCTION() void Click1() { RequestLaunch(0); }
     UFUNCTION() void Click2() { RequestLaunch(1); }
     UFUNCTION() void Click3() { RequestLaunch(2); }

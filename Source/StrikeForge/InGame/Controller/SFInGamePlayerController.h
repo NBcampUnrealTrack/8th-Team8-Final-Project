@@ -72,6 +72,7 @@ public:
     ASFInGamePlayerController();
 #if WITH_DEV_AUTOMATION_TESTS
     friend struct FSFForcedAttackTestAccess;
+    friend struct FSFCampaignTestAccess;
 #endif
 
     UFUNCTION(BlueprintPure, Category = "SF|Building|Placement")
@@ -192,6 +193,9 @@ private:
     void CreateInGameHUD();
 
     void HandleToggleSettingsInput();
+
+    /** Temporary K shortcut. Only an active standalone PvE battle can finish. */
+    void HandleInstantPVEVictory();
 
     void HandleSelectAllUnitsInput();
 

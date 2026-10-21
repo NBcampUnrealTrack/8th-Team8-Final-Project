@@ -112,6 +112,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "SF|Stage")
     bool IsStageFinished() const;
 
+    /** Captured on entry, so recording this run's first victory does not skip its epilogue. */
+    UFUNCTION(BlueprintPure, Category = "SF|Stage")
+    bool IsClearedStageReplay() const { return bClearedStageReplay; }
+
     // InGameUI에서 사용될 광물, 에테르, 인구수
     UFUNCTION(BlueprintPure, Category = "SF|Resource")
     int32 GetMineral(int32 TeamIndex) const;
@@ -252,6 +256,7 @@ private:
     TArray<FSFStageBuildingRule> CurrentStageBuildingRules;
 
     bool bBuildingRestrictionsReleasedAfterTutorial = false;
+    bool bClearedStageReplay = false;
 
     mutable TMap<int32, TSet<FName>> CompletedBuildingUnlocksByTeam;
 	

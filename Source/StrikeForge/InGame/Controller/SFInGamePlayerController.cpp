@@ -311,9 +311,28 @@ void ASFInGamePlayerController::BeginPlay()
     CreateInGameHUD();
 }
 
+void ASFInGamePlayerController::HandleInstantPVEVictory()
+{
+    UWorld* World = GetWorld();
+    if (!World || World->GetNetMode() != NM_Standalone || !IsLocalController() ||
+        UGameplayStatics::IsGamePaused(this)) return;
+
+    // PvP uses ASFPVPBattleMode. Check the mode again even if this is invoked directly.
+    ASFGameMode* Mode = World->GetAuthGameMode<ASFGameMode>();
+    const ASFGameState* State = World->GetGameState<ASFGameState>();
+    if (Mode && State && State->IsStagePlaying()) Mode->ProcessVictory();
+}
+
 void ASFInGamePlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
+
+    if (InputComponent && GetNetMode() == NM_Standalone &&
+        GetWorld()->GetAuthGameMode<ASFGameMode>())
+    {
+        InputComponent->BindKey(EKeys::K, IE_Pressed, this,
+            &ASFInGamePlayerController::HandleInstantPVEVictory);
+    }
 
     UEnhancedInputComponent* EnhancedInputComponent =
         Cast<UEnhancedInputComponent>(

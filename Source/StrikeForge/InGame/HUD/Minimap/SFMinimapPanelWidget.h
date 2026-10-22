@@ -62,6 +62,7 @@ protected:
 
 private:
     friend class FSFCameraMinimapTest;
+    friend struct FSFPVPTeamAudit;
     void UpdateCameraInteraction();
     TWeakObjectPtr<ASFRTSCameraPawn> InteractionCamera;
     int32 MapClockwiseQuarterTurns = 0;

@@ -4,6 +4,13 @@
 #include "Datas/Building/SFBuildingCatalog.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 
+void USFTeamState::ApplyNetworkValues(int32 InMineral,int32 InEther,float InMineralRate,float InEtherRate,int32 InPopulation,int32 InCapacity)
+{
+    SetMineral(InMineral);SetEther(InEther);SetMineralIncomeRate(InMineralRate);SetEtherIncomeRate(InEtherRate);
+    if(CurrentPopulation!=InPopulation||MaximumPopulation!=InCapacity)
+    {CurrentPopulation=InPopulation;MaximumPopulation=InCapacity;OnPopulationChanged.Broadcast(CurrentPopulation,MaximumPopulation);}
+}
+
 void USFTeamState::AddPopulation(int32 InDelta)
 {
 	if (InDelta == 0) return;

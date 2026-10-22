@@ -10,4 +10,6 @@ public:
     UFUNCTION(BlueprintCallable,Category="SF|Editor") static FString DescribeLevelScript(UWorld* World);
     UFUNCTION(BlueprintCallable,Category="SF|Editor") static bool MigrateTitle(UWorld* World);
     UFUNCTION(BlueprintCallable,Category="SF|PVP|Editor") static int32 PrepareBattlefield(UWorld* World);
+    UFUNCTION(BlueprintCallable,Category="SF|PVP|Editor") static FString RestoreBattlefieldResources(UWorld* World,UWorld* CampaignWorld);
+    UFUNCTION(BlueprintCallable,Category="SF|PVP|Editor") static int32 RestoreBattlefieldBases(UWorld* World,UWorld* CampaignWorld);
 };

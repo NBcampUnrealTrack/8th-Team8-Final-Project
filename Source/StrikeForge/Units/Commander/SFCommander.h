@@ -111,6 +111,7 @@ class STRIKEFORGE_API ASFCommander
 
 public:
 	ASFCommander();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	/** Set ownership before FinishSpawning so BeginPlay enables player selection. */
 	void InitializePlayerCommander(int32 TeamIndex);
 	bool IsPlayerCommander() const { return bMyCommander; }
@@ -147,6 +148,8 @@ public:
 
 	UFUNCTION()
 	void ActiveCommanderSkill(int32 SkillTier);
+    UFUNCTION(NetMulticast,Reliable) void MulticastSkillStarted(int32 SkillTier);
+    UFUNCTION(NetMulticast,Reliable) void MulticastSkillEffect(UNiagaraSystem* Effect,FVector_NetQuantize Location,FVector Scale,bool bAttached);
 
 	/** Player-facing tiers are 1..3; the Nexus stores zero-based upgrade tiers. */
 	UFUNCTION(BlueprintPure, Category = "SF|Skill")
@@ -174,7 +177,7 @@ public:
 
 protected:
 	// Game time stops with pause; each skill keeps its own timer across HUD selection changes.
-	double SkillCooldownEnds[3] = {0.0, 0.0, 0.0};
+    UPROPERTY(Replicated) TArray<double> SkillCooldownEnds={0.0,0.0,0.0};
 	friend struct FSFCommanderCooldownTestAccess;
 
 	virtual void BeginPlay() override;
@@ -209,8 +212,12 @@ protected:
 	void HideAfterDeathAnimation();
 	void RespawnAtNexus();
 	bool FindRespawnTransform(FTransform& OutTransform) const;
-	bool bAwaitingRespawn = false;
-	double RespawnEndTime = 0.0;
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkRespawn) bool bAwaitingRespawn=false;
+    UPROPERTY(Replicated) double RespawnEndTime=0.0;
+    UFUNCTION() void OnRep_NetworkRespawn();
+    UFUNCTION() void OnRep_PlayerCommander();
+    ASFInGamePlayerController* FindOwningPlayerController() const;
+    bool bClientDeathVisible=false;
 	FTimerHandle RespawnTimer;
 	FTimerHandle DeathAnimationTimer;
 protected:
@@ -224,7 +231,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, EditFixedSize, Category = "SF|Skill|Asset")
 	TArray<FSkillAsset> SkillAsset;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SF|SpawnProperty")
+	UPROPERTY(ReplicatedUsing=OnRep_PlayerCommander, EditAnywhere, BlueprintReadOnly, Meta = (ExposeOnSpawn = "true"), Category = "SF|SpawnProperty")
 	uint8 bMyCommander : 1;	// true일 시 로드 즉시 플레이어의 제어를 받음.
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SF|Race")

@@ -25,11 +25,12 @@ private:
     UPROPERTY() TObjectPtr<UTexture2D> CampArt;
     UPROPERTY() TObjectPtr<UTexture2D> Wordmark;
     FSlateBrush EtherBrush, BeastBrush, PanelBrush, InsetBrush, CardBrush, CampBrush, LogoBrush;
-    FButtonStyle ButtonStyle, PrimaryButtonStyle, TabButtonStyle;
+    FButtonStyle ButtonStyle, PrimaryButtonStyle, TabButtonStyle, SmallButtonStyle;
     FEditableTextBoxStyle InputStyle;
     TSharedPtr<class SSFPVPAmbience> Ambience;
     TSharedPtr<class SEditableTextBox> RoomInput, AddressInput;
     TSharedPtr<class SVerticalBox> RoomList;
     FString RoomSignature;
     FString PlayerSignature;
+    TSet<uint8> WarmedRaces;
 };

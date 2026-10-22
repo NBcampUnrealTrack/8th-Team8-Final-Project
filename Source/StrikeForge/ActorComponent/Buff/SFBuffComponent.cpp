@@ -9,6 +9,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "Units/Unit/UnitBase.h"
+#include "GameFramework/GameStateBase.h"
 
 void UBuffData::ExecuteBuff()
 {
@@ -32,6 +33,8 @@ void UBuffData::ExecuteBuff()
 
 void UBuffData::FinishBuff(bool bCallEndEvent)
 {
+    if (bFinished) return;
+    bFinished = true;
 	// 버프종료 이벤트 실행
 	if (bCallEndEvent == true && OnBuffEndEvent.IsBound())
 	{
@@ -54,13 +57,19 @@ const float UBuffData::GetTimeRate()
 	if (!World.IsValid())
 		return 0.f;
 
-	if (InitialTime < 0.f) return 1.f;
+    if (bFinished) return 0.f;
+    if (bNetworkPresentation && InitialTime >= 0.f)
+    {
+        const AGameStateBase* State = World->GetGameState();
+        RemainTime = FMath::Max(0.f, float(NetworkEndTime - (State ? State->GetServerWorldTimeSeconds() : World->GetTimeSeconds())));
+    }
+    if (InitialTime < 0.f) return 1.f;
 	return InitialTime > 0.f ? FMath::Clamp(RemainTime / InitialTime, 0.f, 1.f) : 0.f;
 }
 
 void UBuffData::OnNiagaraFinished(UNiagaraComponent* PSystem)
 {
-	this->ConditionalBeginDestroy();
+    if (ParticleComp == PSystem) ParticleComp = nullptr;
 }
 
 void UBuffData::BeginDestroy()
@@ -74,6 +83,7 @@ void UBuffData::BeginDestroy()
 USFBuffComponent::USFBuffComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+    SetIsReplicatedByDefault(true);
 }
 
 void USFBuffComponent::BeginPlay()
@@ -101,6 +111,12 @@ void USFBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void USFBuffComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    if (GetOwner() && !GetOwner()->HasAuthority())
+    {
+        if (bNetworkPresentationPending) ApplyNetworkPresentation();
+        for (UBuffData* Buff : BuffList) if (IsValid(Buff)) Buff->GetTimeRate();
+        return;
+    }
 	RefreshBuffStats(DeltaTime);
 }
 
@@ -193,11 +209,13 @@ void USFBuffComponent::RefreshBuffStats(float DeltaTime)
 	const bool bStatsApplied = Flag_Apply != EBuffApply::None;
 	Flag_Apply = EBuffApply::None;
 	ShrinkBuff();
+    RefreshNetworkBuffs();
 	if (bStatsApplied) OnBuffStatsChanged.Broadcast();
 }
 
 void USFBuffComponent::AddBuff(const FInputBuffData& InputBuffData)
 {
+    if (GetOwner() && !GetOwner()->HasAuthority()) return;
 	ShrinkBuff();
 	if (BuffList.IsEmpty())
 	{
@@ -251,6 +269,9 @@ void USFBuffComponent::AddBuff(const FInputBuffData& InputBuffData)
 		ParticleScale.Y *= InputBuffData.ParticleScaleForOther.X;
 		ParticleScale.Z *= InputBuffData.ParticleScaleForOther.Y;
 	}
+    BuffList.Last()->ParticleAsset = InputBuffData.Particle;
+    BuffList.Last()->ParticleScale = ParticleScale;
+    BuffList.Last()->NetworkEndTime = GetWorld()->GetTimeSeconds() + InputBuffData.InitialTime;
 	if (IsValid(InputBuffData.Particle))
 	{
 		BuffList.Last()->ParticleComp = UNiagaraFunctionLibrary::SpawnSystemAttached(InputBuffData.Particle, GetOwner()->GetRootComponent(), NAME_None, ParticlePosition, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, false, ENCPoolMethod::AutoRelease, false);
@@ -266,11 +287,11 @@ void USFBuffComponent::AddBuff(const FInputBuffData& InputBuffData)
 
 void USFBuffComponent::ShrinkBuff()
 {
-	// FinishBuff starts destruction immediately; such objects can still be non-null
-	// and pass IsValid until GC. Never repeat their end callback on subsequent ticks.
+    // Expiration is independent of Niagara finishing (a buff can have no particle).
+    // Remove finished entries before GC and never repeat their end callback.
 	BuffList.RemoveAll([](const TObjectPtr<UBuffData>& Buff)
 	{
-		return !IsValid(Buff) || Buff->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
+		return !IsValid(Buff) || Buff->bFinished || Buff->HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
 	});
 	BuffList.Shrink();
 }
@@ -284,6 +305,7 @@ void USFBuffComponent::ClearBuff()
 	}
 	BuffList.Empty();
 	RefreshBuffStats(0.f);
+    RefreshNetworkBuffs();
 }
 
 const TArray<TObjectPtr<UBuffData>> USFBuffComponent::GetBuffList()

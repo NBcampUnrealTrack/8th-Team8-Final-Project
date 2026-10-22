@@ -27,6 +27,7 @@ class STRIKEFORGE_API AResourceBase
 public:
 	// Sets default values for this actor's properties
 	AResourceBase();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	FSFOnResourceNodeDepleted OnDepleted;
 	
@@ -85,7 +86,7 @@ protected: // properties
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Resource")
 	EResourceType ResourceType = EResourceType::Mineral;
 	// 매장량
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "Resource", meta = (ClampMin = "1", UIMin = "1"))
 	int32 ResourceDeposit = 1;
 	// 등급 ( 품질 )
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource", meta = (ClampMin = "1"))
@@ -104,10 +105,12 @@ protected: // properties
 	FName SelectionUIDataRowName = NAME_None;
 private:
 	void InitializeCellDeposits();
+	UFUNCTION() void OnRep_CellDeposits();
 	
 	UPROPERTY(
 	VisibleInstanceOnly,
 	BlueprintReadOnly,
+	ReplicatedUsing = OnRep_CellDeposits,
 	Category = "Resource|Grid",
 	meta = (AllowPrivateAccess = true))
 	TArray<int32> CellDeposits;

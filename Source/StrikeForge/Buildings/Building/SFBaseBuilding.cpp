@@ -107,7 +107,20 @@ FSFSelectableInfo ASFBaseBuilding::GetSelectableInfo_Implementation()
 		BuildingInfo.BuffCompPtr = BuffComponent;
 	}
 
-	BuildingInfo.SelectableType = ESFSelectableType::None;
+	BuildingInfo.SelectableType = ESFSelectableType::NormalBuilding;
+	if (BuildingDefinition)
+	{
+		switch (BuildingDefinition->BuildingType)
+		{
+		case ESFBuildingType::Nexus: BuildingInfo.SelectableType = ESFSelectableType::MainBuilding; break;
+		case ESFBuildingType::MineralMine:
+		case ESFBuildingType::EtherMine: BuildingInfo.SelectableType = ESFSelectableType::ResourceBuilding; break;
+		case ESFBuildingType::Barracks:
+		case ESFBuildingType::RangedProduction:
+		case ESFBuildingType::SpecialProduction: BuildingInfo.SelectableType = ESFSelectableType::ProductionBuilding; break;
+		default: break;
+		}
+	}
 	BuildingInfo.Tier = CurrentTier + 1;
 	BuildingInfo.bShowAttackPower = false;
 	BuildingInfo.bShowMoveSpeed = false;
@@ -398,6 +411,12 @@ bool ASFBaseBuilding::TryStartConstruction()
 
 bool ASFBaseBuilding::CancelConstruction()
 {
+    if(GetNetMode()==NM_Client&&!HasAuthority())
+    {
+        if(auto* PC=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+            PC->ServerGameplayAction(ESFGameplayAction::CancelConstruction,{this},FVector::ZeroVector);
+        return true;
+    }
 	if (CurrentBuildingState != EBuildingState::UnderConstruction ||
 		bIsCancellingConstruction || IsActorBeingDestroyed() ||
 		!IsValid(ProgressComponent) || !IsValid(HealthComponent) ||
@@ -527,10 +546,7 @@ void ASFBaseBuilding::BeginConstruction()
 	//
 	if (IsValid(PendingTierAssets.ConstructionStartSound))
 	{
-		UGameplayStatics::PlaySoundAtLocation(
-			GetWorld(),
-			PendingTierAssets.ConstructionStartSound,
-			GetActorLocation());
+		if (HasAuthority()) MulticastOwnerBuildingSound(PendingTierAssets.ConstructionStartSound);
 	}
 	// 초기값이면 초기건설 = 업글x, 그외 = 전부 업글판정
 	// 이경우일때 만약 건물을 3티어부터 생산할수있게되면 오류가 날 수 있음
@@ -843,6 +859,12 @@ bool ASFBaseBuilding::HasNextUpgradeTier() const
 
 void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 {
+    if(GetNetMode()==NM_Client&&!HasAuthority())
+    {
+        if(auto* PC=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+            PC->ServerGameplayAction(ESFGameplayAction::Upgrade,{this},FVector::ZeroVector);
+        return;
+    }
 	if (bIsCancellingConstruction || IsActorBeingDestroyed()) return;
 	if (!USFTutorialSubsystem::IsBuildingTierUpgradeAllowed(this, this))
 	{
@@ -898,6 +920,19 @@ void ASFBaseBuilding::UpgradeBuilding(int32 UpgradeValue)
 	const FResources UpgradeCost =
 		GetUpgradeCost();
 	const int32 PayerTeam = GetTeamIndex();
+	if (SFGS->IsPVPMatch() && !BuildingDefinition->AreRuntimeAssetsLoaded(NextTier))
+	{
+		if (NetworkUpgradeRequest != INDEX_NONE) return;
+		NetworkUpgradeRequest=NextTier;
+		GetGameInstance()->GetSubsystem<USFBuildingAssetSubsystem>()->RequestBuildingAssetsAsync(
+			BuildingDefinition,NextTier,FSFOnBuildingAssetsReady::CreateWeakLambda(this,
+			[this,NextTier,UpgradeValue](USFBuildingDefinition*,int32,bool bOK)
+			{
+				NetworkUpgradeRequest=INDEX_NONE;
+				if (bOK && CurrentTier+UpgradeValue==NextTier) UpgradeBuilding(UpgradeValue);
+			}));
+		return;
+	}
 
 	if (!SFGS->CanAffordResource(
 		PayerTeam,
@@ -1021,6 +1056,11 @@ void ASFBaseBuilding::BeginPlay()
 
 	// delegate bind - healthcomp, progresscomp
 	BindComponentDelegates();
+    if(GetNetMode()==NM_Client&&!HasAuthority())
+    {
+        OnRep_NetworkView();
+        return;
+    }
 	// try take info at data table
 	if (!CacheLoadedDefinitionData())
 	{
@@ -1455,10 +1495,20 @@ void ASFBaseBuilding::PlayConstructionCompleteSound()
 		return;
 	}
 
-	UGameplayStatics::PlaySoundAtLocation(
-		GetWorld(),
-		ActiveTierAssets.ConstructionCompleteSound,
-		GetActorLocation());
+	if (HasAuthority()) MulticastOwnerBuildingSound(ActiveTierAssets.ConstructionCompleteSound);
+}
+
+void ASFBaseBuilding::MulticastOwnerBuildingSound_Implementation(USoundBase* Sound)
+{
+    if (!Sound || GetNetMode() == NM_DedicatedServer) return;
+    const auto* State = GetWorld()->GetGameState<ASFGameState>();
+    if (State && State->IsPVPMatch())
+    {
+        const auto* Combat = USFCombatSubsystem::Get(this);
+        UE_LOG(LogTemp,Display,TEXT("[PVPBuildingAudio] owner=%d local=%d audible=%d"),GetTeamIndex(),Combat?Combat->GetLocalPlayerTeam():-1,Combat&&GetTeamIndex()==Combat->GetLocalPlayerTeam());
+        if (!Combat || GetTeamIndex() != Combat->GetLocalPlayerTeam()) return;
+    }
+    UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation());
 }
 
 void ASFBaseBuilding::PlayDestroyEffect()

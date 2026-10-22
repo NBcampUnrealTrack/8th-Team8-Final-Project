@@ -354,20 +354,24 @@ bool ASFGameState::CanAffordPopulation(int32 TeamIndex, int32 InPopulationCost) 
 
 void ASFGameState::AddResource(int32 TeamIndex, EResourceType InResourceType, int32 InResourceAmount)
 {
+    if(IsPVPMatch()&&!HasAuthority())return;
 	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
 		Team->AddResource(InResourceType, InResourceAmount);
 }
 void ASFGameState::AddResourceIncomeRate(int32 TeamIndex, EResourceType InResourceType, float InIncomeRate)
 {
+    if(IsPVPMatch()&&!HasAuthority())return;
 	if (USFTeamState* Team = FindOrAddTeam(TeamIndex)) Team->AddResourceIncomeRate(InResourceType, InIncomeRate);
 }
 void ASFGameState::AddPopulation(int32 TeamIndex, int32 InMaximumPopulation)
 {
+    if(IsPVPMatch()&&!HasAuthority())return;
 if (USFTeamState* Team = FindOrAddTeam(TeamIndex)) Team->AddPopulation(InMaximumPopulation);
 }
 
 void ASFGameState::AddMaxPopulation(int32 TeamIndex, int32 InMaximumPopulation)
-{	// 최대인구 증가
+{
+    if(IsPVPMatch()&&!HasAuthority())return;	// 최대인구 증가
 	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
 		Team->AddMaxPopulation(InMaximumPopulation);
 }
@@ -375,13 +379,15 @@ void ASFGameState::AddMaxPopulation(int32 TeamIndex, int32 InMaximumPopulation)
 // Minus
 
 bool ASFGameState::TrySpendCost(int32 TeamIndex, const FResources& InResources)
-{	// 판단 + 소비까지
+{
+    if(IsPVPMatch()&&!HasAuthority())return false;	// 판단 + 소비까지
 	USFTeamState* Team = FindOrAddTeam(TeamIndex);
 	return Team ? Team->TrySpendCost(InResources) : false;
 }
 
 void ASFGameState::RefundCost(int32 TeamIndex, const FResources& InResources)
 {
+    if(IsPVPMatch()&&!HasAuthority())return;
 	if (USFTeamState* Team = FindOrAddTeam(TeamIndex))
 		Team->RefundCost(InResources);
 }

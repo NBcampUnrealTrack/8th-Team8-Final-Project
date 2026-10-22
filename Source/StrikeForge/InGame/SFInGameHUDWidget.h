@@ -57,6 +57,7 @@ UCLASS(Blueprintable)
 class STRIKEFORGE_API USFInGameHUDWidget
     : public UUserWidget
 {
+    friend struct FSFPVPTeamAudit;
     GENERATED_BODY()
     friend struct FSFForcedAttackTestAccess;
     UPROPERTY(Transient, BlueprintReadOnly, Category="SF|Stage Rewards", meta=(AllowPrivateAccess="true"))

@@ -1,10 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Interfaces/OnlineSessionInterface.h"
 #include "OnlineSessionSettings.h"
 #include "Interfaces/OnlineIdentityInterface.h"
+#include "Styling/SlateBrush.h"
 #include "SFPVPSessionSubsystem.generated.h"
 
 /** Steam Internet lobbies and Null LAN discovery, authentication and listen-server lifecycle. */
@@ -14,12 +15,13 @@ class STRIKEFORGE_API USFPVPSessionSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 public:
     static constexpr const TCHAR* LobbyMap = TEXT("/Game/Core/Levels/PVPLobby");
-    static constexpr const TCHAR* Protocol = TEXT("StrikeForge.Steam.4");
-    static constexpr const TCHAR* ProtocolVersion = TEXT("4");
+    static constexpr const TCHAR* Protocol = TEXT("StrikeForge.Steam.9");
+    static constexpr const TCHAR* ProtocolVersion = TEXT("9");
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
     void OpenBrowser();
     void Host(const FString& Name);
+    void HostPractice();
     void FindRooms();
     void JoinRoom(int32 Index);
     void ConnectAddress(const FString& Address);
@@ -42,7 +44,15 @@ public:
     void ShowSteamInvite();
     void RegisterRoomPlayer(APlayerController* Player);
     void UnregisterRoomPlayer(AController* Player);
+    void HideTravelLoading();
 private:
+    void BeginTravelLoading(const FString& Map);
+    void SeamlessTravelLoading(UWorld* World,const FString& Map);
+    TSharedRef<class SWidget> MakeTravelLoadingWidget();
+    UPROPERTY(Transient) TObjectPtr<class UTexture2D> TravelBackground;
+    FSlateBrush TravelBrush;
+    TSharedPtr<class SWidget> TravelOverlay;
+    FDelegateHandle PreLoadHandle,SeamlessLoadHandle;
     IOnlineIdentityPtr Identity() const;
     bool EnsureOnlineReady();
     void LoginCompleted(int32 LocalUser, bool bSuccess, const FUniqueNetId& Id, const FString& Error);

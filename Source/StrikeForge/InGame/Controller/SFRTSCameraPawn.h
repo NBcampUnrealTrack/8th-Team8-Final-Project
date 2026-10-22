@@ -31,6 +31,7 @@ public:
     void SetEdgeScrollEnabled(bool bEnabled);
 
     void FocusOnWorldLocation(const FVector& WorldLocation);
+    void ApplyPVPZoom();
 
     void SetStageCameraBounds(const FBox& NavigationBounds, float BoundaryThickness);
     void SetMinimapInteractionActive(bool bActive);

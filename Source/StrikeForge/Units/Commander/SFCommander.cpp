@@ -143,8 +143,7 @@ void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	EndPlayReason == EEndPlayReason::Destroyed)
 	{
 		if (ASFInGamePlayerController* SFPC =
-			GetWorld()->GetFirstPlayerController<
-				ASFInGamePlayerController>())
+			FindOwningPlayerController())
 		{
 			SFPC->ClearPendingBuildingRef();
 		}
@@ -156,6 +155,7 @@ void ASFCommander::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ASFCommander::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+    if(!HasAuthority())return;
 
 	if (CommandAction == ECommandAction::BUILD)
 	{
@@ -171,17 +171,18 @@ void ASFCommander::Tick(float DeltaSeconds)
 float ASFCommander::GetRespawnTimeRemaining() const
 {
 	return bAwaitingRespawn && GetWorld()
-		? FMath::Max(0.f, static_cast<float>(RespawnEndTime - GetWorld()->GetTimeSeconds())) : 0.f;
+		? FMath::Max(0.f, static_cast<float>(RespawnEndTime - (GetWorld()->GetGameState() ? GetWorld()->GetGameState()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()))) : 0.f;
 }
 
 void ASFCommander::HandleCommanderDeath()
 {
+    if(!HasAuthority()){bAwaitingRespawn=true;OnRep_NetworkRespawn();return;}
 	if (bAwaitingRespawn) return;
 	bAwaitingRespawn = true;
 	RespawnEndTime = GetWorld()->GetTimeSeconds() + RespawnDelaySeconds;
 	if (bMyCommander)
 	{
-		if (auto* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+		if (auto* PC = FindOwningPlayerController())
 			PC->ClearPendingBuildingRef();
 	}
 	StopMoving();
@@ -375,10 +376,16 @@ void ASFCommander::InitSkillAsset()
 
 void ASFCommander::LoadPlayerController()
 {
+	if(GetNetMode()==NM_Client)
+	{
+		const auto* Local=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>();
+		if(Local&&Local->GetMyTeamIndex()>=0&&Local->GetMyTeamIndex()!=CombatTargetComponent->GetTeamIndex())
+		{GetWorldTimerManager().ClearTimer(LoadPCTimer);return;}
+	}
 	SF_LOG(Log, "ASFCommander: LoadPlayerController()");
 	if (GetWorld() && GetWorld()->IsInitialized())
 	{
-		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+		if (ASFInGamePlayerController* SFPC = FindOwningPlayerController())
 		{
 			// add : cached commander
 			// IMovable called when clicked commander and clicked floor
@@ -395,7 +402,7 @@ void ASFCommander::MoveToBuild(FVector Center, FBoxSphereBounds Bounds, float Ro
 	if (bAwaitingRespawn)
 	{
 		if (bMyCommander)
-			if (auto* PC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>()) PC->ClearPendingBuildingRef();
+			if (auto* PC = FindOwningPlayerController()) PC->ClearPendingBuildingRef();
 		return;
 	}
 	float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
@@ -545,7 +552,7 @@ void ASFCommander::CheckFailMoving(const FPathFollowingResult& Result)
 	// 여기부터가 진짜 도달 실패 (경로 막힘 / NavMesh 밖)
 	PrintMessage(TEXT("Build Error!"));
 
-	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+	if (ASFInGamePlayerController* SFPC = FindOwningPlayerController())
 	{
 		SFPC->ClearPendingBuildingRef();
 	}
@@ -558,7 +565,7 @@ void ASFCommander::MoveToAction(FVector Dest, ECommandAction OutAction)
 	if (bAwaitingRespawn) return;
 	if (CommandAction == ECommandAction::BUILD && OutAction != ECommandAction::BUILD)
 	{
-		if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+		if (ASFInGamePlayerController* SFPC = FindOwningPlayerController())
 		{
 			SFPC->ClearPendingBuildingRef();
 		}
@@ -635,7 +642,7 @@ void ASFCommander::BeginBuild()
 	}
 
 	// Notify To Controller That Commander Arrived Location
-	if (ASFInGamePlayerController* SFPC = GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+	if (ASFInGamePlayerController* SFPC = FindOwningPlayerController())
 	{
 		// Begin Constructing Building in this Function
 		SFPC->NotifyBuilderArrived();
@@ -682,7 +689,7 @@ bool ASFCommander::IsSkillTierUnlocked(int32 SkillTier) const
 float ASFCommander::GetSkillCooldownRemaining(int32 SkillTier) const
 {
 	if (SkillTier < 1 || SkillTier > 3 || !GetWorld()) return 0.f;
-	return static_cast<float>(FMath::Max(0.0, SkillCooldownEnds[SkillTier - 1] - GetWorld()->GetTimeSeconds()));
+	return static_cast<float>(FMath::Max(0.0, SkillCooldownEnds[SkillTier - 1] - (GetWorld()->GetGameState() ? GetWorld()->GetGameState()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds())));
 }
 
 FText ASFCommander::GetSkillName(int32 SkillTier) const
@@ -749,6 +756,11 @@ FText ASFCommander::ReadSkillEffectDescription(int32 SkillTier)
 
 void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 {
+    if(!HasAuthority())
+    {
+        if(auto* PC=FindOwningPlayerController())PC->ServerGameplayAction(ESFGameplayAction::Skill,{this},FVector::ZeroVector,nullptr,NAME_None,SkillTier);
+        return;
+    }
 	if (!IsSkillTierUnlocked(SkillTier) || GetSkillCooldownRemaining(SkillTier) > 0.f
 		|| (HealthComponent && HealthComponent->GetIsDead())
 		|| !SkillAsset.IsValidIndex(SkillTier - 1)) return;
@@ -793,11 +805,12 @@ void ASFCommander::ActiveCommanderSkill(int32 SkillTier)
 		Anim->OnSkillActiveDelegate.BindDynamic(this, &ASFCommander::ActiveCommanderSkill_Ether);
 		break;
 	}
+    if(GetNetMode()!=NM_Standalone)MulticastSkillStarted(SkillTier);
 }
 
 void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
-	if (bAwaitingRespawn) return;
+	if (!HasAuthority() || bAwaitingRespawn) return;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
 
@@ -844,7 +857,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (TargetCombatComp.IsValid())
 				{
 					// 아군이고 커맨더 혹은 유닛이다.
-					if (TargetCombatComp->GetTeamIndex() == 0 &&
+					if (TargetCombatComp->GetTeamIndex() == CombatTargetComponent->GetTeamIndex() &&
 						(Cast<ASFCommander>(TG.ActorPtr) || Cast<AUnitBase>(TG.ActorPtr)))
 					{
 						IsTarget = true;
@@ -884,8 +897,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f};
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, true);
 			}
 		} while (false);
 		break;
@@ -925,7 +937,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (TargetCombatComp.IsValid())
 				{
 					// 아군이고 커맨더 혹은 유닛이다.
-					if (TargetCombatComp->GetTeamIndex() == 0 &&
+					if (TargetCombatComp->GetTeamIndex() == CombatTargetComponent->GetTeamIndex() &&
 						(Cast<ASFCommander>(TG.ActorPtr) || Cast<AUnitBase>(TG.ActorPtr)))
 					{
 						IsTarget = true;
@@ -970,7 +982,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f,SkillRadius / 100.f, 1.f };
-				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, false);
 			}
 		} while (false);
 		break;
@@ -1008,7 +1020,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 				if (TargetCombatComp.IsValid())
 				{
 					// 적이다.
-					if (TargetCombatComp->GetTeamIndex() != 0)
+					if (TargetCombatComp->GetTeamIndex() != CombatTargetComponent->GetTeamIndex())
 					{
 						IsTarget = true;
 					}
@@ -1047,8 +1059,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 			{
 				FVector ParticleScale = { SkillRadius / 100.f / GetActorScale().X,SkillRadius / 100.f / GetActorScale().X, 1.f };
 				//UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), SkillEffect1, GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, true);
 			}
 		} while (false);
 		break;
@@ -1057,7 +1068,7 @@ void ASFCommander::ActiveCommanderSkill_Beast(int32 SkillTier, UNiagaraSystem* C
 
 void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* CurrentSkillEffect, UNiagaraSystem* CurrentSkillHitEffect)
 {
-	if (bAwaitingRespawn) return;
+	if (!HasAuthority() || bAwaitingRespawn) return;
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillEffectWPtr(CurrentSkillEffect);
 	TWeakObjectPtr<UNiagaraSystem> CurrentSkillHitEffectWPtr(CurrentSkillHitEffect);
 
@@ -1104,7 +1115,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				if (TargetCombatComp.IsValid())
 				{
 					// 아군이고 커맨더 혹은 유닛이다.
-					if (TargetCombatComp->GetTeamIndex() == 0 &&
+					if (TargetCombatComp->GetTeamIndex() == CombatTargetComponent->GetTeamIndex() &&
 						(Cast<ASFCommander>(TG.ActorPtr) || Cast<AUnitBase>(TG.ActorPtr)))
 					{
 						IsTarget = true;
@@ -1146,7 +1157,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { SkillRadius / 100.f,SkillRadius / 100.f, 1.f };
-				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, false);
 			}
 		} while (false);
 		break;
@@ -1165,7 +1176,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 			//--------------------------------------------
 
 			const ASFInGamePlayerController* SFPC =
-					World->GetFirstPlayerController<ASFInGamePlayerController>();
+					FindOwningPlayerController();
 			if (!IsValid(SFPC)) return;
 			
 			const int32 CasterTeamIndex = SFPC->GetMyTeamIndex();
@@ -1191,7 +1202,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				{
 					// 아군 건물이다.
 					TWeakObjectPtr<UCombatTargetComponent> CTComp = TargetBuilding->GetComponentByClass<UCombatTargetComponent>();
-					if (CTComp.IsValid() && CTComp->GetTeamIndex() == 0)
+					if (CTComp.IsValid() && CTComp->GetTeamIndex() == CombatTargetComponent->GetTeamIndex())
 					{
 						IsTarget = true;
 					}
@@ -1229,8 +1240,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = { GetActorScale().X, GetActorScale().X, 1.f };
-				UNiagaraComponent* Particle = UNiagaraFunctionLibrary::SpawnSystemAttached(CurrentSkillEffectWPtr.Get(), RootComponent, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, ParticleScale, EAttachLocation::KeepRelativeOffset, true, ENCPoolMethod::AutoRelease);
-				Particle->SetUsingAbsoluteRotation(true);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, true);
 			}
 		} while (false);
 		break;
@@ -1268,7 +1278,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 				if (TargetCombatComp.IsValid())
 				{
 					// 아군이다.
-					if (TargetCombatComp->GetTeamIndex() == 0)
+					if (TargetCombatComp->GetTeamIndex() == CombatTargetComponent->GetTeamIndex())
 					{
 						IsTarget = true;
 					}
@@ -1307,7 +1317,7 @@ void ASFCommander::ActiveCommanderSkill_Ether(int32 SkillTier, UNiagaraSystem* C
 			if (CurrentSkillEffectWPtr.IsValid())
 			{
 				FVector ParticleScale = FVector::OneVector * SkillRadius / 100.f;
-				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World.Get(), CurrentSkillEffectWPtr.Get(), GetActorLocation(), FRotator::ZeroRotator, ParticleScale, true, true, ENCPoolMethod::AutoRelease);
+				MulticastSkillEffect(CurrentSkillEffectWPtr.Get(), GetActorLocation(), ParticleScale, false);
 			}
 		} while (false);
 		break;

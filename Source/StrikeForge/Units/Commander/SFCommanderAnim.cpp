@@ -3,8 +3,6 @@
 
 #include "Units/Commander/SFCommanderAnim.h"
 #include "Units/Commander/SFCommander.h"
-#include "Units/Unit/UnitAIController.h"
-#include "Kismet/GameplayStatics.h"
 
 void USFCommanderAnim::NativeInitializeAnimation()
 {
@@ -24,23 +22,8 @@ void USFCommanderAnim::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		return;
 	}
-	if (!UnitAIController.IsValid())
-	{
-		UnitAIController = Cast<AUnitAIController>(Commander->GetController());
-		if (!UnitAIController.IsValid())
-		{
-			return;
-		}
-	}
-
-	bMoving = UnitAIController->IsMoving();
-
-	if (Commander.IsValid())
-	{
-		FVector Velocity = Commander->GetVelocity();
-		Velocity.Z = 0.f;
-		float Scale = Commander->GetActorScale().X;
-
-		Speed = Velocity.Length() / Scale;
-	}
+    // AI controllers exist on the server; replicated velocity exists on both peers.
+    const float GroundSpeed=Commander->GetVelocity().Size2D();
+    Speed=GroundSpeed/FMath::Max(KINDA_SMALL_NUMBER,FMath::Abs(Commander->GetActorScale3D().X));
+    bMoving=GroundSpeed>3.f;
 }

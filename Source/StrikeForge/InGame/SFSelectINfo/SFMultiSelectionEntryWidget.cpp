@@ -18,14 +18,14 @@ int32 USFMultiSelectionEntryWidget::NativePaint(const FPaintArgs& Args, const FG
 {
     const int32 Top = Super::NativePaint(Args, Geometry, CullingRect, Elements, Layer, Style, bParentEnabled);
     if (!IsValid(RepresentedActor) || !EntryButton || !EntryButton->IsHovered()) return Top;
-    // The entry's layout reserves extra vertical space; outline the actual button.
-    // Converting its cached geometry also handles DPI and parent scaling.
-    const FGeometry& ButtonGeometry = EntryButton->GetCachedGeometry();
-    const FVector2D Origin = Geometry.AbsoluteToLocal(ButtonGeometry.LocalToAbsolute(FVector2D::ZeroVector));
-    const FVector2D End = Geometry.AbsoluteToLocal(ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize()));
+    // Tick/cached geometry includes the desktop window offset; NativePaint uses
+    // window paint space. Draw in the button's current paint geometry directly,
+    // so moving the window or changing DPI cannot displace the portrait outline.
+    const FGeometry& ButtonGeometry = EntryButton->GetPaintSpaceGeometry();
+    if (ButtonGeometry.GetLocalSize().IsNearlyZero()) return Top;
     const FLinearColor Color = (EntryButton->IsPressed()
         ? FLinearColor(1.f,.8f,.4f,.95f) : FLinearColor(.2f,.95f,.85f,.8f)) * Style.GetColorAndOpacityTint();
-    SFProductionPaint::Rim(Elements,Top+1,Geometry,Origin,End-Origin,Color,1.5f);
+    SFProductionPaint::Rim(Elements,Top+1,ButtonGeometry,FVector2D::ZeroVector,ButtonGeometry.GetLocalSize(),Color,1.5f);
     return Top+1;
 }
 

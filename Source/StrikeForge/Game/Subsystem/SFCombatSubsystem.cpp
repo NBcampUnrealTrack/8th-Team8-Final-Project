@@ -126,13 +126,16 @@ int32 USFCombatSubsystem::GetTeamOf(const AActor* InActor)
 
 int32 USFCombatSubsystem::GetLocalPlayerTeam() const
 {
-	const UWorld* World = GetWorld();
-	if (!IsValid(World)) return Targetable::NeutralTeam;
+	const auto* PC = GetLocalPlayerController();
+	return PC ? PC->GetMyTeamIndex() : Targetable::NeutralTeam;
+}
 
-	const ASFInGamePlayerController* PC = World->GetFirstPlayerController<ASFInGamePlayerController>();
-	if (!IsValid(PC)) return Targetable::NeutralTeam;
-
-	return PC->GetMyTeamIndex();
+ASFInGamePlayerController* USFCombatSubsystem::GetLocalPlayerController() const
+{
+	if (const UWorld* World = GetWorld())
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			if (auto* PC = Cast<ASFInGamePlayerController>(It->Get()); PC && PC->IsLocalController()) return PC;
+	return nullptr;
 }
 
 bool USFCombatSubsystem::IsHostileTeam(int32 InTeamA, int32 InTeamB)

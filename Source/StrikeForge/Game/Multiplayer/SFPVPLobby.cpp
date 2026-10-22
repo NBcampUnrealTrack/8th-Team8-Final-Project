@@ -28,6 +28,7 @@ void ASFPVPLobbyState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     DOREPLIFETIME(ASFPVPLobbyState, bInternetRoom);
     DOREPLIFETIME(ASFPVPLobbyState, bStarting);
     DOREPLIFETIME(ASFPVPLobbyState, StartError);
+    DOREPLIFETIME(ASFPVPLobbyState, bAIEnabled);
 }
 ASFPVPLobbyPlayerState* ASFPVPLobbyState::GetSeat(int32 Index) const
 {
@@ -74,7 +75,7 @@ void ASFPVPLobbyController::EndPlay(const EEndPlayReason::Type Reason)
 void ASFPVPLobbyController::ServerSetReady_Implementation(bool bReady)
 {
     if(auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();S&&S->bStarting)return;
-    if (GetNetMode() == NM_Standalone) return;
+    if (GetNetMode() == NM_Standalone && !GetWorld()->GetGameState<ASFPVPLobbyState>()->bAIEnabled) return;
     if (auto* P = GetPlayerState<ASFPVPLobbyPlayerState>())
     {
         P->bReady = bReady; P->ForceNetUpdate();
@@ -114,6 +115,39 @@ void ASFPVPLobbyMode::PreLogin(const FString& Options, const FString& Address, c
             ErrorMessage=TEXT("PVP_CONNECTION_MODE_MISMATCH");
     }
     if (GetNumPlayers() + GetNumSpectators() >= 2) ErrorMessage = TEXT("PVP_ROOM_FULL");
+    if (const auto* S=GetGameState<ASFPVPLobbyState>();S&&S->bAIEnabled)ErrorMessage=TEXT("PVP_ROOM_FULL");
+}
+
+void ASFPVPLobbyController::ServerSetAIOpponent_Implementation(bool bEnabled)
+{
+    const auto* P=GetPlayerState<ASFPVPLobbyPlayerState>();
+    if(P&&P->Seat==0)if(auto* Mode=GetWorld()->GetAuthGameMode<ASFPVPLobbyMode>())Mode->SetAIOpponent(bEnabled);
+}
+void ASFPVPLobbyController::ServerCycleAIRace_Implementation()
+{
+    auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();const auto* P=GetPlayerState<ASFPVPLobbyPlayerState>();
+    auto* Bot=S?S->GetSeat(1):nullptr;
+    if(!P||P->Seat!=0||!Bot||!Bot->IsABot()||S->bStarting)return;
+    if(Bot->bRandomRace){Bot->bRandomRace=false;Bot->Race=ESFRace::Human;}
+    else if(Bot->Race==ESFRace::Human)Bot->Race=ESFRace::Beast;
+    else Bot->bRandomRace=true;
+    Bot->ForceNetUpdate();if(auto* Host=S->GetSeat(0)){Host->bReady=false;Host->ForceNetUpdate();}
+}
+void ASFPVPLobbyMode::SetAIOpponent(bool bEnabled)
+{
+    auto* S=GetGameState<ASFPVPLobbyState>();if(!S||S->bStarting)return;
+    auto* Guest=S->GetSeat(1);
+    if(Guest&&!Guest->IsABot())return;
+    if(bEnabled&&!Guest)
+    {
+        Guest=GetWorld()->SpawnActor<ASFPVPLobbyPlayerState>();if(!Guest)return;
+        Guest->Seat=1;Guest->Race=ESFRace::Beast;Guest->bRandomRace=true;Guest->bReady=true;
+        Guest->SetIsABot(true);Guest->SetPlayerName(TEXT("AI 지휘관"));Guest->ForceNetUpdate();
+    }
+    if(!bEnabled&&Guest){Guest->Seat=INDEX_NONE;Guest->Destroy();}
+    S->bAIEnabled=bEnabled;S->StartError.Empty();S->ForceNetUpdate();
+    if(auto* Host=S->GetSeat(0)){Host->bReady=false;Host->ForceNetUpdate();}
+    UE_LOG(LogTemp,Display,TEXT("[PVPAI] lobby enabled=%d"),bEnabled);
 }
 
 void ASFPVPLobbyController::ServerStartBattle_Implementation()
@@ -122,8 +156,8 @@ void ASFPVPLobbyController::ServerStartBattle_Implementation()
     const auto* P=GetPlayerState<ASFPVPLobbyPlayerState>();
     if(!P||P->Seat!=0||!S||!S->AreBothReady()||S->bStarting)return;
     TArray<FString> Maps;
-    // Explicit PVP derivatives of the seven numbered campaign battlefields. Never the title/start map.
-    for(int32 I=1;I<=7;++I)
+    // Only the four approved battlefields participate in human and AI matches.
+    for(const int32 I : {1,2,4,7})
     {
         const FString Map=FString::Printf(TEXT("/Game/PVP/Maps/PVP_Stage%02d"),I);
         if(FPackageName::DoesPackageExist(Map))Maps.Add(Map);
@@ -135,13 +169,26 @@ void ASFPVPLobbyController::ServerStartBattle_Implementation()
     S->bStarting=true;S->StartError.Empty();S->ForceNetUpdate();
     GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->CloseJoining();
     UE_LOG(LogTemp,Display,TEXT("[PVP] Starting random battlefield: %s"),*Map);
-    if(!GetWorld()->ServerTravel(Map+TEXT("?game=/Script/StrikeForge.SFPVPBattleMode"),true))
+    const FString AIOptions=S->bAIEnabled?FString::Printf(TEXT("?SFAI=1?SFAIRace=%d"),int32(S->GetSeat(1)->Race)):FString();
+    if(!GetWorld()->ServerTravel(Map+TEXT("?game=/Script/StrikeForge.SFPVPBattleMode")+AIOptions,true))
     {S->bStarting=false;S->StartError=TEXT("전장 이동에 실패했습니다. 다시 시도해 주세요.");}
 }
 void ASFPVPLobbyMode::PostLogin(APlayerController* NewPlayer)
 {
     Super::PostLogin(NewPlayer);
     AssignSeat(NewPlayer);
+    if(UGameplayStatics::HasOption(OptionsString,TEXT("SFPractice")))SetAIOpponent(true);
+}
+void ASFPVPLobbyMode::GetSeamlessTravelActorList(bool bToTransition,TArray<AActor*>& Actors)
+{
+    // The retained GameState must not contain a bot state that is destroyed at the midpoint.
+    // Engine travel bookkeeping dereferences every PlayerArray entry at both checkpoints.
+    if(auto* S=GameState.Get())
+    {
+        const auto Players=S->PlayerArray;
+        for(APlayerState* P:Players)if(P&&P->IsABot())S->RemovePlayerState(P);
+    }
+    Super::GetSeamlessTravelActorList(bToTransition,Actors);
 }
 void ASFPVPLobbyMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {

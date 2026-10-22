@@ -145,6 +145,7 @@ void ASFRTSCameraPawn::BeginPlay()
 void ASFRTSCameraPawn::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+    if(GetNetMode()!=NM_Standalone && (!GetController()||!GetController()->IsLocalController()))return;
 
     HandleEdgeScroll();
     ClampCameraLocation();
@@ -157,6 +158,8 @@ void ASFRTSCameraPawn::SetupPlayerInputComponent(
 )
 {
     Super::SetupPlayerInputComponent(PlayerInputComponent);
+    if(!CameraMoveAction)CameraMoveAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Game/IN_UI/Input/Controll/IA_SFCameraMove.IA_SFCameraMove"));
+    if(!CameraZoomAction)CameraZoomAction=LoadObject<UInputAction>(nullptr,TEXT("/Game/Game/IN_UI/Input/Controll/IA_SFCameraZoom.IA_SFCameraZoom"));
 
     UEnhancedInputComponent* EnhancedInputComponent =
         Cast<UEnhancedInputComponent>(
@@ -265,6 +268,13 @@ void ASFRTSCameraPawn::ZoomCamera(
         SafeMaximumDistance
     );
     
+    PushOverheadUIScale();
+}
+
+void ASFRTSCameraPawn::ApplyPVPZoom()
+{
+    if (!SpringArm) return;
+    SpringArm->TargetArmLength = FMath::Clamp(InitialCameraDistance * 1.25f, MinimumCameraDistance, MaximumCameraDistance);
     PushOverheadUIScale();
 }
 

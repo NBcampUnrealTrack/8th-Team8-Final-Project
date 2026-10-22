@@ -41,7 +41,9 @@ public:
 	// getter
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Product")
 	// current ratio
-	FORCEINLINE float GetCurrentProductRatio() const { return Tracker.GetRatio(); }
+    float GetCurrentProductRatio() const;
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	// current product line
 	FORCEINLINE const TArray<FProductInfo>& GetProductLine() const { return ProductLine; }
 	// current product value
@@ -85,7 +87,10 @@ private:
 	UFUNCTION()
 	void HandlePopulationChanged(int32 NewCurrentPopulation, int32 NewMaximumPopulation);
 private:
-	TArray<FProductInfo> ProductLine;
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkQueue) TArray<FProductInfo> ProductLine;
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkRatio) float NetworkRatio=0;
+    UFUNCTION() void OnRep_NetworkQueue();
+    UFUNCTION() void OnRep_NetworkRatio();
 	/** ProgressComponent와 동일한 계산기를 재사용한다 */
 	UPROPERTY(BlueprintReadOnly, Category = "Product", meta = (AllowPrivateAccess = true))
 	FSFProgressTracker Tracker;
@@ -103,8 +108,8 @@ private:
 	bool bWaitingForPopulation = false;
 	
 	// 컨트롤러에서 값을 받으면 building이 여기로 저장
-	FVector AssemblePoint;
-	bool bSetAssemblePoint = false;
+    UPROPERTY(Replicated) FVector AssemblePoint;
+    UPROPERTY(Replicated) bool bSetAssemblePoint = false;
 public:
 	// product line changed
 	UPROPERTY(BlueprintAssignable)

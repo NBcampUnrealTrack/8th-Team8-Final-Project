@@ -11,6 +11,7 @@
 #include "Game/Subsystem/SFCombatSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "InGame/Controller/SFRTSCameraPawn.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -411,7 +412,7 @@ void USFFogOfWarSubsystem::UpdateTextures(int32 Team)
 void USFFogOfWarSubsystem::UpdatePresentation()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(SFFog_UpdatePresentation);
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	APlayerController* PC = USFCombatSubsystem::Get(this)->GetLocalPlayerController();
 	const int32 Team = USFCombatSubsystem::Get(this)->GetLocalPlayerTeam();
 	if (!PC || !PC->IsLocalController() || Team == INDEX_NONE) { RestorePresentation(); return; }
 	if (ViewingController.Get() != PC) RestorePresentation();

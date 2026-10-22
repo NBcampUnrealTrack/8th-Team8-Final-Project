@@ -19,7 +19,7 @@ class STRIKEFORGE_API UBuffData : public UObject
     GENERATED_BODY()
 public:
     UBuffData()
-        : KeyName(FString()), DisplayName(FText()), OnBuffTickEvent(FOnBuffEvent()), OnBuffBeginEvent(FOnBuffEvent()), OnBuffEndEvent(FOnBuffEvent()), InitialTime(-1.f), TickInterval(0.f) {
+        : InitialTime(-1.f), TickInterval(0.f) {
     }
 
     void ExecuteBuff(); // 버프 작동. 액터컴포넌트에서 AddBuff 시 함께 실행됨. 만지지 말 것
@@ -28,6 +28,7 @@ public:
     
     UFUNCTION(BlueprintCallable, BlueprintPure)
     const float GetTimeRate(); // 버프 남은시간 비율(0~1)로 가져오기.
+    virtual UWorld* GetWorld() const override { return GetOuter() ? GetOuter()->GetWorld() : nullptr; }
 
     UFUNCTION()
     void OnNiagaraFinished(UNiagaraComponent* PSystem);
@@ -45,7 +46,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
     TObjectPtr<UTexture2D> Image;
     UPROPERTY(BlueprintReadOnly, Category = "Buff|Info")
-    bool bIsBuff;  // 긍정적 효과인가? (false라면 부정적효과)
+    bool bIsBuff = true;  // 긍정적 효과인가? (false라면 부정적효과)
     UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
     float InitialTime;  // 지속시간 초기값. (음수라면 무한)
     UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
@@ -53,8 +54,13 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Buff|Value")
     TObjectPtr<UNiagaraComponent> ParticleComp; // 이펙트
 
-    float RemainTime;       // 현재 남은 시간
-    float RemainInterval;   // 현재 남은 주기
+    float RemainTime = 0.f;       // 현재 남은 시간
+    float RemainInterval = 0.f;   // 현재 남은 주기
+    bool bFinished = false;
+    bool bNetworkPresentation = false;
+    double NetworkEndTime = 0.;
+    UPROPERTY() TObjectPtr<UNiagaraSystem> ParticleAsset;
+    FVector ParticleScale = FVector::OneVector;
 
     FOnBuffEvent OnBuffTickEvent;
     FOnBuffEvent OnBuffBeginEvent;
@@ -108,12 +114,39 @@ enum class EBuffApply : uint8
 };
 ENUM_CLASS_FLAGS(EBuffApply);
 
+// Only presentation data crosses the network; gameplay callbacks stay on the server.
+USTRUCT()
+struct FSFBuffNetworkEntry
+{
+    GENERATED_BODY()
+    UPROPERTY() FString Key;
+    UPROPERTY() FText Name;
+    UPROPERTY() FString Description;
+    UPROPERTY() TObjectPtr<UTexture2D> Image;
+    UPROPERTY() TObjectPtr<UNiagaraSystem> Particle;
+    UPROPERTY() FVector Scale = FVector::OneVector;
+    UPROPERTY() float Duration = -1.f;
+    UPROPERTY() double Ends = 0.;
+    UPROPERTY() bool bPositive = true;
+};
+
+USTRUCT()
+struct FSFBuffNetworkStats
+{
+    GENERATED_BODY()
+    UPROPERTY() float Speed = 0.f;
+    UPROPERTY() float AttackMultiplier = 1.f;
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class STRIKEFORGE_API USFBuffComponent : public UActorComponent
 {
 	GENERATED_BODY()
+    friend struct FSFBuffLifecycleTestAccess;
 
 public:	
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
     // C++전용
     void AddBuff(const FInputBuffData& InputBuffData);
@@ -137,6 +170,13 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
     void RefreshBuffStats(float DeltaTime);
+    void RefreshNetworkBuffs();
+    void ApplyNetworkPresentation();
+    UFUNCTION() void OnRep_NetworkBuffs();
+    UFUNCTION() void OnRep_NetworkStats();
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkBuffs) TArray<FSFBuffNetworkEntry> NetworkBuffs;
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkStats) FSFBuffNetworkStats NetworkStats;
+    bool bNetworkPresentationPending = true;
 
 public:
     FStatusData Current_Status;

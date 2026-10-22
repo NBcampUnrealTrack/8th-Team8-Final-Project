@@ -14,6 +14,67 @@
 #include "Misc/CommandLine.h"
 #include "UI/SFTitlePresentation.h"
 #include "SFPVPLobby.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/Texture2D.h"
+#include "MoviePlayer.h"
+#include "UObject/UObjectGlobals.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Images/SThrobber.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Styling/CoreStyle.h"
+
+TSharedRef<SWidget> USFPVPSessionSubsystem::MakeTravelLoadingWidget()
+{
+    return SNew(SOverlay)
+        +SOverlay::Slot()[SNew(SImage).Image(&TravelBrush)]
+        +SOverlay::Slot()[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FLinearColor(.012f,.032f,.026f,.82f))]
+        +SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+        [SNew(SVerticalBox)
+            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(12)
+            [SNew(STextBlock).Text(FText::FromString(TEXT("STRIKEFORGE")))
+                .Font(FCoreStyle::GetDefaultFontStyle("Bold",44)).ColorAndOpacity(FLinearColor(.95f,.76f,.40f))]
+            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(12)
+            [SNew(SThrobber).NumPieces(5)]
+            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(12)
+            [SNew(STextBlock).Text(NSLOCTEXT("PVP","TravelLoading","전장을 준비하고 있습니다"))
+                .Font(FCoreStyle::GetDefaultFontStyle("Regular",24)).ColorAndOpacity(FLinearColor(.93f,.90f,.77f))]];
+}
+
+void USFPVPSessionSubsystem::SeamlessTravelLoading(UWorld* World,const FString& Map)
+{
+    if (!World || World->GetGameInstance()!=GetGameInstance() || !Map.Contains(TEXT("/PVP/Maps/"))) return;
+    if (auto* Viewport=GetGameInstance()->GetGameViewportClient(); Viewport && !TravelOverlay)
+    {
+        TravelOverlay=MakeTravelLoadingWidget();
+        Viewport->AddViewportWidgetContent(TravelOverlay.ToSharedRef(),10000);
+        UE_LOG(LogTemp,Display,TEXT("[PVPLoading] Seamless cover shown: %s"),*Map);
+    }
+}
+
+void USFPVPSessionSubsystem::BeginTravelLoading(const FString& Map)
+{
+    if (!Map.Contains(TEXT("/PVP/Maps/")) && !Map.Contains(TEXT("/Core/Levels/PVPLobby"))) return;
+    if (IsMoviePlayerEnabled())
+    {
+        FLoadingScreenAttributes Screen;
+        Screen.bAutoCompleteWhenLoadingCompletes=true;
+        Screen.MinimumLoadingScreenDisplayTime=0.f;
+        Screen.WidgetLoadingScreen=MakeTravelLoadingWidget();
+        GetMoviePlayer()->SetupLoadingScreen(Screen);
+    }
+}
+
+void USFPVPSessionSubsystem::HideTravelLoading()
+{
+    if (!TravelOverlay) return;
+    if (auto* Viewport=GetGameInstance()->GetGameViewportClient())Viewport->RemoveViewportWidgetContent(TravelOverlay.ToSharedRef());
+    TravelOverlay.Reset();
+    UE_LOG(LogTemp,Display,TEXT("[PVPLoading] Battlefield presentation ready; cover removed"));
+}
 
 bool USFPVPSessionSubsystem::IsInternetConfigured() const
 {
@@ -163,6 +224,10 @@ IOnlineSessionPtr USFPVPSessionSubsystem::Sessions()
 void USFPVPSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
+    TravelBackground=LoadObject<UTexture2D>(nullptr,TEXT("/Game/Core/UI/LobbyAtmosphere/T_LobbyLowPolyCamp.T_LobbyLowPolyCamp"));
+    TravelBrush.SetResourceObject(TravelBackground);TravelBrush.ImageSize=FVector2D(1920,1080);
+    PreLoadHandle=FCoreUObjectDelegates::PreLoadMap.AddUObject(this,&ThisClass::BeginTravelLoading);
+    SeamlessLoadHandle=FWorldDelegates::OnSeamlessTravelStart.AddUObject(this,&ThisClass::SeamlessTravelLoading);
     NetworkHandle = GEngine->OnNetworkFailure().AddUObject(this, &ThisClass::NetworkFailure);
     TravelHandle = GEngine->OnTravelFailure().AddUObject(this, &ThisClass::TravelFailure);
 }
@@ -180,6 +245,9 @@ void USFPVPSessionSubsystem::ClearSessionDelegates()
 }
 void USFPVPSessionSubsystem::Deinitialize()
 {
+    HideTravelLoading();
+    FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadHandle);
+    FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessLoadHandle);
     ClearSessionDelegates();
     if (GEngine) { GEngine->OnNetworkFailure().Remove(NetworkHandle); GEngine->OnTravelFailure().Remove(TravelHandle); }
     CachedSessions.Reset();
@@ -229,6 +297,12 @@ void USFPVPSessionSubsystem::Host(const FString& Name)
     bBusy = true; Status = TEXT("방을 만들고 있습니다...");
     CreateHandle = S->AddOnCreateSessionCompleteDelegate_Handle(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::Created));
     if (!S->CreateSession(0, NAME_GameSession, Settings)) Created(NAME_GameSession, false);
+}
+void USFPVPSessionSubsystem::HostPractice()
+{
+    if(bBusy||GetWorld()->GetNetMode()!=NM_Standalone)return;
+    RoomName=TEXT("AI 연습 대전");Status=TEXT("종족을 선택하고 준비한 뒤 전투를 시작하세요.");
+    UGameplayStatics::OpenLevel(this,FName(LobbyMap),true,TEXT("SFPractice=1?SFOnline=0"));
 }
 void USFPVPSessionSubsystem::Created(FName Name, bool bSuccess)
 {
@@ -334,6 +408,7 @@ void USFPVPSessionSubsystem::ConnectAddress(const FString& Address)
 }
 void USFPVPSessionSubsystem::LobbyArrived()
 {
+    HideTravelLoading();
     bBusy = false; bLeaving = false; bRecovering = false;
     if(GetWorld()->GetNetMode()!=NM_Standalone)if(const auto* State=GetWorld()->GetGameState<ASFPVPLobbyState>())
     {
@@ -342,6 +417,8 @@ void USFPVPSessionSubsystem::LobbyArrived()
     if (GetWorld()->GetNetMode() != NM_Standalone) Status = TEXT("종족을 선택하고 준비해 주세요.");
     else if (Status.IsEmpty() || Status == TEXT("종족을 선택하고 준비해 주세요."))Status=BrowserPrompt();
     ApplyLocalIdentity();
+    if(const auto* State=GetWorld()->GetGameState<ASFPVPLobbyState>();State&&State->bAIEnabled)
+    {Status=TEXT("AI와 연습 대전: 준비 완료 후 전투 시작을 눌러 주세요.");return;}
     if(bInternet&&GetWorld()->GetNetMode()==NM_Standalone&&IsInternetPlaySupported())
         FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this,[this](float){LoginInternet();return false;}),.1f);
 }

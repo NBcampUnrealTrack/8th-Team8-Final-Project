@@ -1,4 +1,4 @@
-#include "SFInGameHUDWidget.h"
+﻿#include "SFInGameHUDWidget.h"
 #include "Game/Subsystem/SFStageBuffSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
@@ -214,6 +214,11 @@ void USFInGameHUDWidget::NativeConstruct()
             )
         );
 
+    if (!IsValid(UnitPortraitActor) && PlayerController->IsPVPGameplay())
+    {
+        if (UClass* PortraitClass=LoadClass<ASFUnitPortraitActor>(nullptr,TEXT("/Game/Game/IN_UI/WorldFeedback/portrait/BP_SFUnitPortraitActor.BP_SFUnitPortraitActor_C")))
+            UnitPortraitActor=GetWorld()->SpawnActor<ASFUnitPortraitActor>(PortraitClass,FVector(100000,100000,0),FRotator::ZeroRotator);
+    }
     if (!IsValid(UnitPortraitActor))
     {
         SF_LOG(
@@ -851,6 +856,17 @@ void USFInGameHUDWidget::ApplySelectionUIData(
     AActor* SourceActor,
     FSFSelectableInfo& InOutSelectableInfo
 ) {
+    // Older building Blueprints can return an empty selection struct for team 1.
+    // Recover the same replicated definition/health data for either side.
+    if (InOutSelectableInfo.SelectableType == ESFSelectableType::None)
+    {
+        if (auto* Building = Cast<ASFBaseBuilding>(SourceActor))
+            InOutSelectableInfo = Building->ASFBaseBuilding::GetSelectableInfo_Implementation();
+        else if (auto* Commander = Cast<ASFCommander>(SourceActor))
+            InOutSelectableInfo = Commander->ASFCommander::GetSelectableInfo_Implementation();
+        else if (auto* Unit = Cast<AUnitBase>(SourceActor))
+            InOutSelectableInfo = Unit->AUnitBase::GetSelectableInfo_Implementation();
+    }
     if (InOutSelectableInfo.DataRowName.IsNone())
     {
         return;
@@ -2284,7 +2300,7 @@ void USFInGameHUDWidget::ToggleSettings()
     ActiveSettingsWidget->OnDeactivated().RemoveAll(this);
     ActiveSettingsWidget->OnDeactivated().AddUObject(this, &USFInGameHUDWidget::HandleSettingsDeactivated);
 
-    UGameplayStatics::SetGamePaused(this, true);
+    if(!GetWorld()->GetGameState<ASFGameState>() || !GetWorld()->GetGameState<ASFGameState>()->IsPVPMatch())UGameplayStatics::SetGamePaused(this, true);
 
     APlayerController* PlayerController = GetOwningPlayer();
 
@@ -2579,7 +2595,7 @@ void USFInGameHUDWidget::ShowEnemyHoverIndicator(AActor* Actor, bool bForceAttac
         : FMath::Clamp(FMath::Max(BoundsExtent.X, BoundsExtent.Y) * 0.85f, 40.f, 180.f);
     const FVector Location = SFCommandFeedback::GroundLocation(Actor);
     const bool bRed = bForceAttack || IsValidEnemyHoverTarget(Actor);
-    const FLinearColor Color = bRed ? FLinearColor::Red : FLinearColor(0.f, .55f, 1.f);
+    const FLinearColor Color = bRed ? FLinearColor::Red : FLinearColor(0.f, .85f, .78f);
     UMaterialInterface* RingMaterial = bRed ? EnemyHoverIndicatorMaterial : SelectionIndicatorMaterial;
     if (RingMaterial)
     {
@@ -3575,7 +3591,7 @@ bool USFInGameHUDWidget::IsOwnedByLocalPlayer(AActor* Actor) const
         return false;
     }
 
-    return CombatTarget->GetTeamIndex() == Targetable::PlayerTeam;
+    return CombatTarget->GetTeamIndex() == (PlayerController ? PlayerController->GetMyTeamIndex() : Targetable::PlayerTeam);
 }
 
 void USFInGameHUDWidget::ShowMoveDestinationIndicator(
@@ -3629,7 +3645,8 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName(bool bVictory) const
 
 bool USFInGameHUDWidget::TryStartVictoryEpilogue()
 {
-    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>(); State && State->IsClearedStageReplay())
+    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>();
+        State && (State->IsPVPMatch() || State->IsClearedStageReplay()))
         return false;
     if (!IsValid(StageIntroDataTable) || IsValid(ActiveStageIntroWidget))
     {
@@ -3718,7 +3735,8 @@ void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
 
 void USFInGameHUDWidget::TryStartStageIntro()
 {
-    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>(); State && State->IsClearedStageReplay())
+    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>();
+        State && (State->IsPVPMatch() || State->IsClearedStageReplay()))
         return;
     SF_LOG(Log, "[SFInGameHUDWidget] TryStartStageIntro called.");
 
@@ -3858,7 +3876,7 @@ bool USFInGameHUDWidget::OpenStageIntro(
 
     if (!bWasGamePausedBeforeStageIntro)
     {
-        UGameplayStatics::SetGamePaused(this, true);
+        if(!GetWorld()->GetGameState<ASFGameState>() || !GetWorld()->GetGameState<ASFGameState>()->IsPVPMatch())UGameplayStatics::SetGamePaused(this, true);
     }
 
     FInputModeGameAndUI InputMode;

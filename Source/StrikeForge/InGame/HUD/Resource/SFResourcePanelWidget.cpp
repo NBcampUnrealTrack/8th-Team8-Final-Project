@@ -70,6 +70,13 @@ void USFResourcePanelWidget::NativeConstruct()
     BindResourceData();
 }
 
+void USFResourcePanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+    Super::NativeTick(MyGeometry, InDeltaTime);
+    if (const auto* PC=Cast<ASFInGamePlayerController>(GetOwningPlayer());PC&&PC->GetMyTeamIndex()>=0&&
+        (!BoundGameState||CachedPlayerTeamIndex!=PC->GetMyTeamIndex()))BindResourceData();
+}
+
 void USFResourcePanelWidget::NativeDestruct()
 {
     UnbindResourceData();

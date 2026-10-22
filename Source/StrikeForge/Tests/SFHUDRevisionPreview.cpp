@@ -10,6 +10,11 @@
 #include "InGame/SFSelectINfo/SFMultiSelectionEntryWidget.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "Units/Commander/SFCommander.h"
+#include "Units/Unit/SFUnitSpawnLibrary.h"
+#include "Game/GameState/SFGameState.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
+#include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
+#include "Layout/WidgetPath.h"
 #include "UI/ResultWidget.h"
 #include "Components/Button.h"
 #include "Components/ProgressBar.h"
@@ -39,10 +44,24 @@ static FAutoConsoleCommandWithWorldAndArgs HUDRevisionQA(TEXT("SF.HUD.QA"),
             Params.EditorPlaySettings->CenterNewWindow=true;
             GEditor->RequestPlaySession(Params); return;
         }
-        if (!World || World->WorldType!=EWorldType::PIE) return;
-        auto* PC=World->GetFirstPlayerController<ASFInGamePlayerController>();
+        if (!World || !World->IsGameWorld()) return;
+        auto* PC=USFCombatSubsystem::Get(World)->GetLocalPlayerController();
         auto* HUD=PC?PC->GetInGameHUDWidget():nullptr;
         if (!HUD) return;
+        if (Mode==TEXT("selection"))
+        {
+            if(auto* State=World->GetGameState<ASFGameState>())
+                if(auto* Nexus=State->GetNexus(PC->GetMyTeamIndex()))
+                {
+                    for(const TCHAR* Row:{TEXT("Brawler"),TEXT("Berserker"),TEXT("Brawler"),TEXT("Brawler")})
+                        for(int32 Attempt=0;Attempt<12;++Attempt)
+                            if(USFUnitSpawnLibrary::SpawnUnitFromRow(Nexus,FName(Row),650,1400))break;
+                    HUD->SelectAllOwnedUnits();
+                }
+        }
+        if (Mode==TEXT("window") && Args.Num()>2)
+            if(auto Window=World->GetGameViewport()->GetWindow())
+                Window->MoveWindowTo(FVector2D(FCString::Atof(*Args[1]),FCString::Atof(*Args[2])));
         if (Mode==TEXT("armresult")) HUD->ArmResultPreviewForDebug();
         if (Mode==TEXT("click") && Args.Num()>1)
         {
@@ -64,6 +83,12 @@ static FAutoConsoleCommandWithWorldAndArgs HUDRevisionQA(TEXT("SF.HUD.QA"),
                 }
         }
         if (Mode==TEXT("resize") && Args.Num()>2)
+        {
+            if(World->WorldType!=EWorldType::PIE)
+            {
+                PC->ConsoleCommand(FString::Printf(TEXT("r.SetRes %dx%dw"),FCString::Atoi(*Args[1]),FCString::Atoi(*Args[2])),false);
+                return;
+            }
             if (auto Window=World->GetGameViewport()->GetWindow())
             {
                 const FVector2D Desired(FCString::Atoi(*Args[1]),FCString::Atoi(*Args[2]));
@@ -79,6 +104,7 @@ static FAutoConsoleCommandWithWorldAndArgs HUDRevisionQA(TEXT("SF.HUD.QA"),
                     return false;
                 }),.3f);
             }
+        }
         if (Mode==TEXT("space"))
         {
             FKeyEvent Key(EKeys::SpaceBar,FModifierKeysState(),0,false,0,0);
@@ -101,14 +127,23 @@ static FAutoConsoleCommandWithWorldAndArgs HUDRevisionQA(TEXT("SF.HUD.QA"),
         }
         if (Mode==TEXT("hover"))
             for (TObjectIterator<USFMultiSelectionEntryWidget> It;It;++It)
-                if (It->GetWorld()==World && It->GetRepresentedActor())
+                if (It->GetWorld()==World && It->GetRepresentedActor() && It->GetSelectionIndex()==(Args.Num()>1?FCString::Atoi(*Args[1]):0))
                     if (auto* Button=Cast<UButton>(It->GetWidgetFromName(TEXT("EntryButton"))))
                     {
                         const auto G=Button->GetCachedGeometry();
                         const FVector2D Cursor=G.LocalToAbsolute(G.GetLocalSize()*.5);
                         FSlateApplication::Get().SetCursorPos(Cursor);
                         FPointerEvent Move(0,Cursor,Cursor,FSlateApplication::Get().GetPressedMouseButtons(),EKeys::Invalid,0,FModifierKeysState());
-                        FSlateApplication::Get().ProcessMouseMoveEvent(Move); break;
+                        FWidgetPath Path;
+                        if(FSlateApplication::Get().GeneratePathToWidgetUnchecked(Button->TakeWidget(),Path))
+                        {
+                            TArray<FWidgetAndPointer> PointerWidgets;
+                            for(int32 I=0;I<Path.Widgets.Num();++I)
+                                PointerWidgets.Emplace(Path.Widgets[I],TOptional<FVirtualPointerPosition>());
+                            Path=FWidgetPath(MakeArrayView(PointerWidgets));
+                            FSlateApplication::Get().RoutePointerMoveEvent(Path,Move,false);
+                        }
+                        break;
                     }
         if (Mode==TEXT("win") || Mode==TEXT("lose"))
         {
@@ -140,6 +175,12 @@ static FAutoConsoleCommandWithWorldAndArgs HUDRevisionQA(TEXT("SF.HUD.QA"),
                         *It->GetRepresentedActor()->GetName(),Bar->GetPercent(),*Bar->GetFillColorAndOpacity().ToString(),
                         *Bar->GetWidgetStyle().FillImage.TintColor.GetSpecifiedColor().ToString(),Button->IsHovered(),
                         *Button->GetCachedGeometry().GetLocalSize().ToString(),*It->GetCachedGeometry().GetLocalSize().ToString());
+                    const auto& Paint=Button->GetPaintSpaceGeometry();
+                    const FVector2D P=Paint.LocalToAbsolute(FVector2D::ZeroVector);
+                    const FVector2D E=Paint.LocalToAbsolute(Paint.GetLocalSize());
+                    const FVector2D Tick=Button->GetTickSpaceGeometry().LocalToAbsolute(FVector2D::ZeroVector);
+                    Report+=FString::Printf(TEXT("bounds index=%d hover=%d paint=%.3f,%.3f,%.3f,%.3f tick=%.3f,%.3f\n"),
+                        It->GetSelectionIndex(),Button->IsHovered(),P.X,P.Y,E.X,E.Y,Tick.X,Tick.Y);
                 }
             FFileHelper::SaveStringToFile(Report,*(FPaths::ProjectSavedDir()/TEXT("HUDPolish")/(Args.Num()>1?FPaths::GetCleanFilename(Args[1])+TEXT(".txt"):TEXT("runtime.txt"))));
         }

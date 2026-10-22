@@ -2,6 +2,7 @@
 
 #include "ActorComponent/Combat/CoreObjectiveComponent.h"
 #include "Game/GameMode/SFGameMode.h"
+#include "Game/Multiplayer/SFPVPBattle.h"
 #include "Logging/SFLog.h"
 
 ASFNexusBuilding::ASFNexusBuilding(const FObjectInitializer& ObjectInitializer)
@@ -79,6 +80,10 @@ void ASFNexusBuilding::OnBuildingDestroyed()
 
 	// 연출 훅. 스테이지 종료 여부와 무관하게 항상 호출한다.
 	OnNexusDestroyed(DestroyedTeam);
+
+    if(!HasAuthority())return;
+    if(auto* PVP=GetWorld()->GetAuthGameMode<ASFPVPBattleMode>())
+    {PVP->NexusDestroyed(DestroyedTeam);return;}
 
 	if (!bFinishStageOnDestroyed)
 	{

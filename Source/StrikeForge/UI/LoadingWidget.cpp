@@ -9,6 +9,7 @@
 #include "Game/GameMode/SFGameMode.h"
 #include "Game/GameState/SFGameState.h"
 #include "Logging/SFLog.h"
+#include "Game/Multiplayer/SFPVPSessionSubsystem.h"
 
 void ULoadingWidget::NativeConstruct()
 {
@@ -193,6 +194,7 @@ void ULoadingWidget::HandleStageStateChanged(ESFStageState InGameState)
 {
 	if (InGameState == ESFStageState::ReadyToStart)
 	{
+		if(CachedGameState&&CachedGameState->IsPVPMatch())return;
 		SetProgress(1.f);
 		bWaitingForFullBar = true;
 		return;
@@ -207,6 +209,8 @@ void ULoadingWidget::HandleStageStateChanged(ESFStageState InGameState)
 	if (InGameState == ESFStageState::InitializationFailed)
 	{
 		StopBackgroundVideo();
+		if(CachedGameState&&CachedGameState->IsPVPMatch())
+		{GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->Leave(false);return;}
 
 		USFGameInstance* SFGameInstance = GetWorld()->GetGameInstance<USFGameInstance>();
 		if (!IsValid(SFGameInstance))

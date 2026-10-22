@@ -7,6 +7,7 @@
 
 class UCombatTargetComponent;
 class ALanePath;
+class ASFInGamePlayerController;
 
 /**
  * 대상 하나를 둘러싸는 공격 슬롯 링.
@@ -214,6 +215,8 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SF|Combat")
 	int32 GetLocalPlayerTeam() const;
+	/** A listen server's first controller can belong to the remote player after travel. */
+	ASFInGamePlayerController* GetLocalPlayerController() const;
 
 	// ── 공격 슬롯 ───────────────────────────────────────
 	//

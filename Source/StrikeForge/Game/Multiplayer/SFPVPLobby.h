@@ -1,7 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
-#include "GameFramework/GameStateBase.h"
+#include "Game/GameState/SFGameState.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/PlayerController.h"
 #include "Datas/Race/SFRaceType.h"
@@ -21,7 +21,7 @@ public:
 };
 
 UCLASS()
-class STRIKEFORGE_API ASFPVPLobbyState : public AGameStateBase
+class STRIKEFORGE_API ASFPVPLobbyState : public ASFGameState
 {
     GENERATED_BODY()
 public:
@@ -29,6 +29,7 @@ public:
     UPROPERTY(Replicated) bool bInternetRoom = false;
     UPROPERTY(Replicated) bool bStarting = false;
     UPROPERTY(Replicated) FString StartError;
+    UPROPERTY(Replicated) bool bAIEnabled = false;
     ASFPVPLobbyPlayerState* GetSeat(int32 Index) const;
     bool AreBothReady() const;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -45,6 +46,8 @@ public:
     UFUNCTION(Server, Reliable) void ServerSetReady(bool bReady);
     UFUNCTION(Server, Reliable) void ServerSetRandomRace();
     UFUNCTION(Server, Reliable) void ServerStartBattle();
+    UFUNCTION(Server, Reliable) void ServerSetAIOpponent(bool bEnabled);
+    UFUNCTION(Server, Reliable) void ServerCycleAIRace();
 private:
     UPROPERTY(Transient) TObjectPtr<class USFPVPLobbyWidget> LobbyWidget;
 };
@@ -60,6 +63,8 @@ public:
     virtual void PostLogin(APlayerController* NewPlayer) override;
     virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
     virtual void Logout(AController* Exiting) override;
+    virtual void GetSeamlessTravelActorList(bool bToTransition,TArray<AActor*>& Actors) override;
+    void SetAIOpponent(bool bEnabled);
 private:
     void AssignSeat(APlayerController* Player);
 };

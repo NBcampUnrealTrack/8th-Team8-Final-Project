@@ -32,6 +32,9 @@ public class StrikeForge : ModuleRules
 		// Deferred cleanup for the development-only menu screenshot renderer.
 		PrivateDependencyModuleNames.Add("RenderCore");
 		PrivateDependencyModuleNames.Add("ApplicationCore");
+		PrivateDependencyModuleNames.Add("MoviePlayer");
+		if (Target.Configuration != UnrealTargetConfiguration.Shipping && Target.Configuration != UnrealTargetConfiguration.Test)
+			PrivateDependencyModuleNames.AddRange(new[] { "MovieSceneCapture", "AudioMixer", "ImageCore" });
 		PublicDependencyModuleNames.AddRange(new string[] { "OnlineSubsystem", "OnlineSubsystemUtils" });
 		DynamicallyLoadedModuleNames.Add("OnlineSubsystemNull");
 		DynamicallyLoadedModuleNames.Add("OnlineSubsystemSteam");

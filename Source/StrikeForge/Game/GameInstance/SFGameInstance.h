@@ -6,11 +6,13 @@
 // 추가부분 26.08.10
 #include "Datas/Stage/SFStageData.h"
 #include "Datas/Race/SFRaceType.h"
+#include "Game/Save/SFPVEAchievement.h"
 
 #include "SFGameInstance.generated.h"
 // 수정부분
 class UWorld;
 class USFBuildingCatalog;
+DECLARE_MULTICAST_DELEGATE_OneParam(FSFPVEAchievementUnlocked, const FSFPVEAchievement&);
 
 UENUM(BlueprintType)
 enum class EDataTableType : uint8
@@ -26,6 +28,13 @@ class STRIKEFORGE_API USFGameInstance : public UGameInstance
 {
 	GENERATED_BODY()
 public:
+	virtual void Init() override;
+	virtual void Shutdown() override;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend struct FSFCampaignTestAccess;
+#endif
+
 	UDataTable* GetDataTableType(EDataTableType TableType) const;
 
 	// 추가한 부분
@@ -56,10 +65,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "SF|Stage")
 	int32 GetHighestClearedStageOrder() const { return HighestClearedStageOrder; }
+	/** Existing campaign saves also unlock their corresponding achievements. No timestamps. */
+	UFUNCTION(BlueprintPure, Category = "SF|Achievements")
+	TArray<FSFPVEAchievement> GetPVEAchievements() const;
+	FSFPVEAchievementUnlocked OnPVEAchievementUnlocked;
 	UFUNCTION(BlueprintPure, Category="SF|Story")
 	bool HasUnreadStoryUnlock() const { return bUnreadStoryUnlock; }
 	UFUNCTION(BlueprintCallable, Category="SF|Story")
-	void MarkStoryUnlockRead() { bUnreadStoryUnlock = false; }
+	void MarkStoryUnlockRead();
+
+	/** First uncleared canonical campaign stage; None once the campaign is complete. */
+	UFUNCTION(BlueprintPure, Category = "SF|Stage")
+	FName GetNextCampaignStageRowName() const;
 
 	// 스테이지 클리어 기록
 	UFUNCTION(BlueprintCallable, Category = "SF|Stage")
@@ -83,6 +100,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SF|Race")
 	FORCEINLINE ESFRace GetSelectedRace() const { return SelectedRace; }
 private:
+	void NotifyPVEAchievementUnlocked(FName StageRowName);
+	void LoadCampaignProgress();
+	bool SaveCampaignProgress();
+	int32 GetCampaignStageCount() const;
+	FString CampaignSaveSlotName = TEXT("SFCampaignProgress");
+	bool bCampaignProgressDirty = false;
+	bool bCampaignSaveWritable = true;
 	bool bUnreadStoryUnlock = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DataTable|UI", meta = (AllowPrivateAccess = true))
 	TObjectPtr<UDataTable> UIDataTable;

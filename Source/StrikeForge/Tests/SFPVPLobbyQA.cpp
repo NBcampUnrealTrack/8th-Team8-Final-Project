@@ -72,6 +72,7 @@ static FAutoConsoleCommandWithWorldAndArgs SFPVPQA(
                 else if(Op==TEXT("random")&&PC)PC->ServerSetRandomRace();
                 else if(Op==TEXT("ready")&&PC)PC->ServerSetReady(Value==TEXT("1"));
                 else if(Op==TEXT("start")&&PC)PC->ServerStartBattle();
+                else if(Op==TEXT("hudqa"))IConsoleManager::Get().ProcessUserConsoleInput(*(TEXT("SF.HUD.QA ")+Value),*GLog,W);
                 else if(SFPresentationQACommand(W,Op,Value)){}
                 else if(Op==TEXT("all")&&BattlePC)BattlePC->SelectAll();
                 else if(Op==TEXT("focus")&&BattlePC)BattlePC->FocusArmy();

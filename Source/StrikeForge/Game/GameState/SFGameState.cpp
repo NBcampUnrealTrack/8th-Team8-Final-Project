@@ -1,6 +1,7 @@
 ﻿// SFGameState.cpp
 #include "SFGameState.h"
 #include "Game/GameMode/SFGameMode.h"
+#include "Game/GameInstance/SFGameInstance.h"
 #include "Logging/SFLog.h"
 #include "Buildings/Building/HouseBuilding/Nexus/SFNexusBuilding.h"
 #include "Datas/Building/SFBuildingCatalog.h"
@@ -40,6 +41,9 @@ bool ASFGameState::InitializeStage(FName StageRowName,
 	}
 
 	CurrentStageRowName = StageRowName;
+	const USFGameInstance* Instance = GetGameInstance<USFGameInstance>();
+	bClearedStageReplay = GetNetMode() == NM_Standalone && Instance &&
+		Instance->GetStageProgressState(StageRowName) == ESFStageProgressState::Cleared;
 	CurrentStageBuildingRules =	InBuildingRules;
 	bBuildingRestrictionsReleasedAfterTutorial = false;
 	CompletedBuildingUnlocksByTeam.Reset();

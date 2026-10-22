@@ -13,6 +13,9 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Sound/SoundBase.h"
 #include "UI/MouseSensitivitySubsystem.h"
+#include "InGame/HUD/Settings/SFPauseMenuPresentation.h"
+#include "UI/SFOptionsPresentation.h"
+#include "Framework/Application/SlateApplication.h"
 
 static const TCHAR* ClickSoundPath = TEXT("/Game/Sound/INUI_soundEffect/Button/T_SFClick.T_SFClick");
 
@@ -24,28 +27,6 @@ void USettingWidget::NativeConstruct()
 	if (IsValid(BackUi_Btn))
 	{
 		BackUi_Btn->OnClicked.AddUniqueDynamic(this, &USettingWidget::OnBackUiButtonClicked);
-		// The caption is baked into the panel art, outside the icon button.
-		// Cover the caption with a transparent button using the same close action.
-		if (auto* Canvas = Cast<UCanvasPanel>(BackUi_Btn->GetParent()))
-		{
-			if (auto* IconSlot = Cast<UCanvasPanelSlot>(BackUi_Btn->Slot))
-			{
-				auto* CaptionButton = Cast<UButton>(GetWidgetFromName(TEXT("BackCaptionHitArea")));
-				if (!CaptionButton)
-				{
-					CaptionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("BackCaptionHitArea"));
-					FButtonStyle Style = BackUi_Btn->GetStyle();
-					Style.Normal.DrawAs = Style.Hovered.DrawAs = Style.Pressed.DrawAs = ESlateBrushDrawType::NoDrawType;
-					CaptionButton->SetStyle(Style);
-					UCanvasPanelSlot* CaptionSlot = Canvas->AddChildToCanvas(CaptionButton);
-					CaptionSlot->SetLayout(IconSlot->GetLayout());
-					CaptionSlot->SetPosition(IconSlot->GetPosition() + FVector2D(IconSlot->GetSize().X * .75f, 30.f));
-					CaptionSlot->SetSize(FVector2D(200.f, 95.f));
-					CaptionSlot->SetZOrder(IconSlot->GetZOrder() + 1);
-				}
-				CaptionButton->OnClicked.AddUniqueDynamic(this, &USettingWidget::OnBackUiButtonClicked);
-			}
-		}
 	}
 
 	GConfig->GetFloat(TEXT("Audio"), TEXT("MasterVolume"), CurrentMasterVolume, GGameUserSettingsIni);
@@ -107,11 +88,18 @@ void USettingWidget::NativeConstruct()
 		}
 	}
 
+	UpdateSettingsReadouts();
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void USettingWidget::OpenSetting()
 {
+	const double Now = FSlateApplication::Get().GetCurrentTime();
+	if (SettingsAtmosphere) SettingsAtmosphere->StartTime = Now;
+	if (SettingsPanelArt) SettingsPanelArt->StartTime = Now;
+	bSettingsOpening = true;
+	if (SettingsContent) SettingsContent->SetRenderOpacity(0.f);
+	UpdateSettingsReadouts();
 	SetVisibility(ESlateVisibility::Visible);
 	SetFocus();
 }
@@ -281,6 +269,7 @@ void USettingWidget::OnResolutionChanged(FString SelectedItem, ESelectInfo::Type
 
 void USettingWidget::OnMasterVolumeChanged(float Value)
 {
+	UpdateSettingsReadouts();
 	CurrentMasterVolume = Value;
 
 	if (auto* Settings = GetGameInstance()->GetSubsystem<UMouseSensitivitySubsystem>())
@@ -292,6 +281,7 @@ void USettingWidget::OnMasterVolumeChanged(float Value)
 
 void USettingWidget::OnBGMVolumeChanged(float Value)
 {
+	UpdateSettingsReadouts();
 	CurrentBGMVolume = Value;
 
 	if (MasterSoundMix && BGMSoundClass)
@@ -305,6 +295,7 @@ void USettingWidget::OnBGMVolumeChanged(float Value)
 
 void USettingWidget::OnSXVolumeChanged(float Value)
 {
+	UpdateSettingsReadouts();
 	CurrentSXVolume = Value;
 
 	if (MasterSoundMix && SXSoundClass)
@@ -318,6 +309,7 @@ void USettingWidget::OnSXVolumeChanged(float Value)
 
 void USettingWidget::OnMouseSensitivityChanged(float Value)
 {
+	UpdateSettingsReadouts();
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UMouseSensitivitySubsystem* MouseSensSubsystem = GI->GetSubsystem<UMouseSensitivitySubsystem>())

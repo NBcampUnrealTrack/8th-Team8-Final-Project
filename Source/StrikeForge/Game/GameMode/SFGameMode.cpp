@@ -38,6 +38,7 @@ ASFGameMode::ASFGameMode()
 	// GameMode가 사용할 GameState 클래스 지정
 	// World Setting에서 별도로 잘못 설정하는 상황 방지
 	GameStateClass = ASFGameState::StaticClass();
+	TutorialReplayDataTable = FSoftObjectPath(TEXT("/Game/Game/IN_UI/DT/DT_SFStageIntro.DT_SFStageIntro"));
 	EtherianCommanderClass = FSoftObjectPath(TEXT("/Game/Game/Race_Etherial/Character/Unit_Commander/BP_Ether_Commander.BP_Ether_Commander_C"));
 	BeastCommanderClass = FSoftObjectPath(TEXT("/Game/Game/Race_Beast/Character/Unit_Commander/BP_Beast_Commander.BP_Beast_Commander_C"));
 
@@ -427,7 +428,9 @@ bool ASFGameMode::SpawnBuildingAtAnchor(const ASFBuildingSpawnAnchor* InAnchor)
 			TeamIndex,
 			SpawnTransform,
 			ESFBuildingSpawnMode::ViewPortPlacedMode,
-			InAnchor->GetInitialTierIndex());
+			TeamIndex == PlayerTeamIndex && SFGameState->IsClearedStageReplay()
+				? TutorialReplayPlan.GetInitialTier(BuildingType, InAnchor->GetInitialTierIndex())
+				: InAnchor->GetInitialTierIndex());
 
 	if (!IsValid(SpawnedBuilding) ||
 		SpawnedBuilding->IsActorBeingDestroyed())
@@ -1040,7 +1043,23 @@ void ASFGameMode::BeginStageRenderPreparation()
 	 * 2. 생성된 건물의 BeginPlay 실행 완료
 	 * 3. 모든 원본 Anchor 제거 요청 완료
 	 */
-	if (!SpawnStageBuildingsFromAnchors())
+	if (SFGameState->IsClearedStageReplay())
+	{
+		const UDataTable* Table = TutorialReplayDataTable.LoadSynchronous();
+		if (!Table)
+		{
+			FailStageBootstrap();
+			return;
+		}
+		const USFGameInstance* Instance = GetGameInstance<USFGameInstance>();
+		const FName RowName = SFStageStory::ResolveRowName(Table, BootstrapStageRowName,
+			Instance ? Instance->GetSelectedRace() : ESFRace::None);
+		if (const FSFStageIntroDataRow* Row = Table->FindRow<FSFStageIntroDataRow>(RowName, TEXT("TutorialReplay"), false))
+			TutorialReplayPlan = FSFTutorialReplayPlan::FromRow(*Row);
+	}
+
+	if (!SpawnStageBuildingsFromAnchors() ||
+		(SFGameState->IsClearedStageReplay() && !TutorialReplayPlan.SpawnBuildings(GetWorld(), PlayerTeamIndex)))
 	{
 		FailStageBootstrap();
 		return;
@@ -1105,6 +1124,11 @@ void ASFGameMode::CompleteStageBootstrap()
 			Position.Y = Nexus->GetActorLocation().Y;
 			PC->GetPawn()->SetActorLocation(Position);
 		}
+	}
+	if (SFGameState->IsClearedStageReplay() && !TutorialReplayPlan.SpawnUnits(GetWorld(), PlayerTeamIndex))
+	{
+		FailStageBootstrap();
+		return;
 	}
 	SFGameState->SetStageLoadingProgress(1.f);
 
@@ -1258,6 +1282,7 @@ bool ASFGameMode::StartStage()
 	}
 
 	SF_SCREEN_LOG(Log, 5.0f, FColor::Green, "[SFGameMode] Stage started.");
+	if (SFGameState->IsClearedStageReplay()) TutorialReplayPlan.Complete(GetWorld());
 
 	// DT_SFStage의 해당 행에서 정한 시작 광물을 지급한다.
 	SFGameState->AddResource(

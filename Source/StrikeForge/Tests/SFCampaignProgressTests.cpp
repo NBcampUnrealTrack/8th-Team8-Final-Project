@@ -5,6 +5,7 @@
 #include "Game/GameInstance/SFGameInstance.h"
 #include "UI/LobbyWidget.h"
 #include "UObject/UnrealType.h"
+#include "Tests/SFCampaignTestAccess.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSFCampaignProgressTest, "StrikeForge.Campaign.ProgressAndRaceChoice",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -14,6 +15,8 @@ bool FSFCampaignProgressTest::RunTest(const FString& Parameters)
     UClass* Class = LoadClass<USFGameInstance>(nullptr, TEXT("/Game/Core/Blueprints/GameInstance/BP_SFGameInstance.BP_SFGameInstance_C"));
     if (!TestNotNull(TEXT("Campaign game instance"), Class)) return false;
     USFGameInstance* GI = NewObject<USFGameInstance>(GEngine, Class);
+    const FString Slot = TEXT("SFCampaignTest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+    FSFCampaignTestAccess::UseSlot(GI, Slot);
     GI->InitializeStandalone();
     UWorld* World = GI->GetWorld();
     TestEqual(TEXT("Stage05 starts locked"), GI->GetStageProgressState(TEXT("Stage05")), ESFStageProgressState::Locked);
@@ -48,6 +51,7 @@ bool FSFCampaignProgressTest::RunTest(const FString& Parameters)
     GI->Shutdown();
     World->DestroyWorld(false);
     GEngine->DestroyWorldContext(World);
+    FSFCampaignTestAccess::DeleteSlot(Slot);
     return true;
 }
 #endif

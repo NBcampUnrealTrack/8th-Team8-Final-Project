@@ -3645,7 +3645,9 @@ FName USFInGameHUDWidget::ResolveStageIntroRowName(bool bVictory) const
 
 bool USFInGameHUDWidget::TryStartVictoryEpilogue()
 {
-    if(const auto* GS=GetWorld()->GetGameState<ASFGameState>();GS&&GS->IsPVPMatch())return false;
+    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>();
+        State && (State->IsPVPMatch() || State->IsClearedStageReplay()))
+        return false;
     if (!IsValid(StageIntroDataTable) || IsValid(ActiveStageIntroWidget))
     {
         return false;
@@ -3733,7 +3735,9 @@ void USFInGameHUDWidget::HandleStageStateChanged(ESFStageState NewState)
 
 void USFInGameHUDWidget::TryStartStageIntro()
 {
-    if(const auto* GS=GetWorld()->GetGameState<ASFGameState>();GS&&GS->IsPVPMatch())return;
+    if (const ASFGameState* State = GetWorld()->GetGameState<ASFGameState>();
+        State && (State->IsPVPMatch() || State->IsClearedStageReplay()))
+        return;
     SF_LOG(Log, "[SFInGameHUDWidget] TryStartStageIntro called.");
 
     // 어느 행을 열지만 정하고, 실제로 여는 절차는 OpenStageIntro 가 전부 맡는다.

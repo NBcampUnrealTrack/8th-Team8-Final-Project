@@ -6,6 +6,7 @@
 #include "GameFramework/GameModeBase.h"
 
 #include "../GameState/SFGameState.h"
+#include "InGame/HUD/Tutorial/SFTutorialReplay.h"
 
 #include "SFGameMode.generated.h"
 
@@ -100,6 +101,10 @@ private:
 
 	bool bStageMusicStarted = false;
 	bool bFactionBases = false;
+	FSFTutorialReplayPlan TutorialReplayPlan;
+
+	UPROPERTY(EditDefaultsOnly, Category = "SF|Stage|Tutorial")
+	TSoftObjectPtr<UDataTable> TutorialReplayDataTable;
 	bool SpawnFactionCommander();
 
 	/** 레벨의 모든 BuildingSpawnAnchor를 조회하여 팀별 종족 건물을 생성한다. */

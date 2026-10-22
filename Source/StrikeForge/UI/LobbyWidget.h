@@ -11,6 +11,7 @@ class UTexture2D;
 class USFMenuAtmosphereWidget;
 class USFLobbyStagePresentation;
 class USFStoryWidget;
+class USFAchievementsWidget;
 class USFRaceSelectionWidget;
 class UBorder;
 UCLASS()
@@ -30,6 +31,8 @@ protected:
 	UFUNCTION()
 	void OnStoryButtonClicked();
 	UFUNCTION()
+	void OnAchievementsButtonClicked();
+	UFUNCTION()
 	void OnStage1Clicked();
 	UFUNCTION()
 	void OnStage2Clicked();
@@ -43,6 +46,8 @@ protected:
 	void OnStage6Clicked();
 	UFUNCTION()
 	void OnStage7Clicked();
+	UFUNCTION()
+	void OnContinueCampaignClicked();
 
 	void OpenStageLevel(int32 StageIndex);
 	// 26.08.11 추가
@@ -57,7 +62,15 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<USFStoryWidget> StoryWidget;
 	UPROPERTY(Transient)
+	TObjectPtr<USFAchievementsWidget> AchievementsWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> AchievementsButtonFrame;
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> AchievementsButton;
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> StoryUnlockNotice;
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> ContinueCampaignButton;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Story_Btn;
 	FOnButtonClickedEvent OriginalStoryClick;

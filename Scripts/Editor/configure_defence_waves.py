@@ -84,7 +84,7 @@ controller.set_editor_property('tags', [TAG])
 for prop, value in dict(spawners=spawners, unit_pool=pool, total_waves=5,
                         initial_preparation_duration=60., preparation_duration=180.,
                         wave_duration=300., spawn_interval=4., first_wave_copies_per_type=6,
-                        additional_copies_per_wave=3, spawn_count_multiplier=0.4 / 3.).items():
+                        additional_copies_per_wave=3, spawn_count_multiplier=0.28 / 3.).items():
     controller.set_editor_property(prop, value)
 assert unreal.EditorLoadingAndSavingUtils.save_current_level()
 
@@ -101,7 +101,7 @@ assert controller.get_editor_property('preparation_duration') == 180.
 assert controller.get_editor_property('initial_preparation_duration') == 60.
 assert controller.get_editor_property('total_waves') == 5
 assert controller.get_editor_property('wave_duration') == 300.
-assert abs(controller.get_editor_property('spawn_count_multiplier') - 0.4 / 3.) < 0.000001
+assert abs(controller.get_editor_property('spawn_count_multiplier') - 0.28 / 3.) < 0.000001
 assert [e.spawn_weight for e in controller.get_editor_property('unit_pool')] == [5, 3, 1, 5, 3, 1]
 assert [str(e.row_name) for e in controller.get_editor_property('unit_pool')] == [
     'Fighter', 'Warrior', 'Guardian', 'Shooter', 'Sharpshooter', 'Judicator']
@@ -123,8 +123,8 @@ assert not any(isinstance(a, unreal.SFBuildingSpawnAnchor) and a.get_editor_prop
                for a in saved), 'Defence enemies must have no production buildings'
 (folder / 'configuration.json').write_text(json.dumps(dict(
     map=MAP, initial_preparation_seconds=60, preparation_seconds=180, wave_seconds=300,
-    total_waves=5, wave_totals=[14, 22, 29, 36, 43],
-    first_wave_total=14, second_wave_total=22, spawn_count_multiplier=0.4 / 3.,
+    total_waves=5, wave_totals=[10, 15, 20, 25, 30],
+    first_wave_total=10, second_wave_total=15, spawn_count_multiplier=0.28 / 3.,
     tier_weights=[5, 3, 1], routes=report,
     units=['Fighter', 'Warrior', 'Guardian', 'Shooter', 'Sharpshooter', 'Judicator']), indent=2))
 unreal.log('DEFENCE_WAVES_VERIFIED: 3 standalone spawners, 5 waves, preparation 60/180s, tier weights 5:3:1')

@@ -21,6 +21,7 @@ UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API USFSelectionPanelWidget
     : public UUserWidget
 {
+    friend struct FSFPVPTeamAudit;
     GENERATED_BODY()
 
     // 함수 영역

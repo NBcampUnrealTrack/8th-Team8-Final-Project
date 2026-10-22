@@ -11,7 +11,7 @@ class STRIKEFORGE_API USFUnitVoiceSubsystem : public UWorldSubsystem
 {
     GENERATED_BODY()
 public:
-    void RequestVoice(AActor* Speaker, USoundBase* Sound, bool bCommand = false);
+    void RequestVoice(AActor* Speaker, USoundBase* Sound, bool bCommand = false, bool bNetworkResponse = false);
     virtual void Deinitialize() override;
     UFUNCTION(BlueprintPure) UAudioComponent* GetActiveVoice() const { return ActiveVoice; }
 private:

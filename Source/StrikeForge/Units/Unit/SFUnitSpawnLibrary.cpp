@@ -1,4 +1,5 @@
 ﻿#include "SFUnitSpawnLibrary.h"
+#include "Game/GameState/SFGameState.h"
 
 #include "UnitBase.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
@@ -257,7 +258,13 @@ AUnitBase* USFUnitSpawnLibrary::SpawnUnitFromRow(
 		Combat->SetTeamIndex(TeamIndex);
 	}
 
-	Unit->InitStatFromTable(InUnitRowName);
+	if(const auto* GS=World->GetGameState<ASFGameState>();GS&&GS->IsPVPMatch())
+    {
+        Unit->SetReplicates(true);Unit->SetReplicateMovement(true);Unit->bAlwaysRelevant=true;
+        Unit->SetNetUpdateFrequency(30.f);Unit->PVPUnitId=Unit->GetUniqueID();
+        Unit->SetAdvanceMode(EUnitAdvanceMode::HoldPosition);
+    }
+    Unit->InitStatFromTable(InUnitRowName);
 
 	UGameplayStatics::FinishSpawningActor(Unit, SpawnTM);
 

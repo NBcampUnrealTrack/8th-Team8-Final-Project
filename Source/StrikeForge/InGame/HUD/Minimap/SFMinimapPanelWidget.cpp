@@ -11,6 +11,7 @@
 #include "Game/Subsystem/SFDataTableManager.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "InGame/Controller/SFRTSCameraPawn.h"
+#include "Units/Commander/SFCommander.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Buildings/Building/SFBaseBuilding.h"
@@ -116,6 +117,13 @@ FVector2D USFMinimapPanelWidget::WorldToMinimapPosition(
 void USFMinimapPanelWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    if (const auto* State=GetWorld()->GetGameState<ASFGameState>(); State && State->IsPVPMatch())
+    {
+        AllyMarkerColor=CommanderMarkerColor=FLinearColor(.04f,.88f,.82f,1.f);
+        EnemyMarkerColor=FLinearColor(1.f,.045f,.025f,1.f);
+        // Keep the campaign UI material, its frame and the render target it samples.
+        if (!MinimapRenderTarget)MinimapRenderTarget=LoadObject<UTextureRenderTarget2D>(nullptr,TEXT("/Game/Game/IN_UI/WorldFeedback/MiniMap/RT_SFMinimap.RT_SFMinimap"));
+    }
 
     if (IsValid(CombatDangerOverlay))
     {
@@ -567,6 +575,11 @@ void USFMinimapPanelWidget::CreateRuntimeMinimapCapture(
 
 void USFMinimapPanelWidget::CaptureMinimapScene()
 {
+    if (const auto* State=GetWorld()->GetGameState<ASFGameState>(); State && State->IsPVPMatch() && !State->IsStagePlaying())
+    {
+        GetWorld()->GetTimerManager().SetTimer(MinimapCaptureTimerHandle,this,&ThisClass::CaptureMinimapScene,.25f,false);
+        return;
+    }
     if (!IsValid(RuntimeMinimapCaptureActor))
     {
         return;
@@ -1036,11 +1049,13 @@ ESFMinimapMarkerType USFMinimapPanelWidget::ResolveMarkerType(AActor* Actor) con
     if (!IsValid(Actor)) return ESFMinimapMarkerType::None;
     const UCombatTargetComponent* Combat = USFCombatSubsystem::FindTargetComponent(Actor);
     if (Combat && !Combat->IsAlive()) return ESFMinimapMarkerType::None;
-    if (Actor->ActorHasTag(CommanderMarkerActorTag)) return ESFMinimapMarkerType::Commander;
     const USFCombatSubsystem* CombatSystem = USFCombatSubsystem::Get(this);
     const int32 LocalTeam = CombatSystem ? CombatSystem->GetLocalPlayerTeam() : INDEX_NONE;
-    if (Actor->ActorHasTag(BuildingMarkerActorTag))
+    if (Actor->ActorHasTag(CommanderMarkerActorTag) || Actor->IsA<ASFCommander>())
+        return Combat && Combat->GetTeamIndex()!=LocalTeam ? ESFMinimapMarkerType::Enemy : ESFMinimapMarkerType::Commander;
+    if (Actor->ActorHasTag(BuildingMarkerActorTag) || Actor->IsA<ASFBaseBuilding>())
     {
+        if (const auto* Building=Cast<ASFBaseBuilding>(Actor);Building && !Building->ProvidesVision())return ESFMinimapMarkerType::None;
         const int32 Team = Combat ? Combat->GetTeamIndex() : INDEX_NONE;
         if (Team == INDEX_NONE) return ESFMinimapMarkerType::Building;
         return Team == LocalTeam ? ESFMinimapMarkerType::AllyBuilding : ESFMinimapMarkerType::EnemyBuilding;
@@ -1066,6 +1081,7 @@ void USFMinimapPanelWidget::ProcessPendingMarkers()
         if (!IsValid(Actor)) { It.RemoveCurrent(); continue; }
         // Spawn notifications can precede deferred construction and BeginPlay tags.
         if (!Actor->HasActorBegunPlay()) continue;
+        if (const auto* Building=Cast<ASFBaseBuilding>(Actor);Building && !Building->ProvidesVision())continue;
         CreateMarkerForActor(Actor, ResolveMarkerType(Actor));
         It.RemoveCurrent();
     }

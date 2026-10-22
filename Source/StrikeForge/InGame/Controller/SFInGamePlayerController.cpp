@@ -299,6 +299,7 @@ void ASFInGamePlayerController::RegisterCommander(ASFCommander* InCommander)
 void ASFInGamePlayerController::BeginPlay()
 {
     Super::BeginPlay();
+    if (!IsLocalController()) return;
 
     ConfigureMouseInput();
     RegisterBaseMappingContext();
@@ -873,6 +874,17 @@ void ASFInGamePlayerController::HandleConfirmBuildInput()
         return;
     }
 
+    if (IsPVPGameplay())
+    {
+        if (!PlacementComponent->TryConfirmPlacementMode()) return;
+        const FName Id=SpawnedBuildingRef->GetBuildingDefinition()->BuildingId;
+        const FTransform Transform=SpawnedBuildingRef->GetActorTransform();
+        ClearSpawnedBuildingRef();
+        SetSFControlMode(ESFControlMode::Gameplay);
+        ServerPlaceGameplayBuilding(Id,Transform);
+        return;
+    }
+
     ASFCommander* Commander = MyCommander.Get();
     if (!IsValid(Commander))
     {
@@ -1014,6 +1026,8 @@ void ASFInGamePlayerController::HandleStageResultChanged(
 
 void ASFInGamePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (InGameHUDWidget) InGameHUDWidget->RemoveFromParent();
+    GetWorldTimerManager().ClearTimer(ForcedMoveGroupCheckTimer);
     if (IsValid(SFGameState))
     {
         SFGameState->OnStageResultChanged.RemoveDynamic(
@@ -1085,6 +1099,13 @@ void ASFInGamePlayerController::IssueMoveCommand(const FVector& Destination)
     }
 
     const bool bAppendToQueue = IsShiftCommandModifierDown();
+
+    if (IsPVPGameplay())
+    {
+        ServerGameplayAction(ESFGameplayAction::Move,Commandables,Destination,nullptr,NAME_None,0,bAppendToQueue);
+        if(InGameHUDWidget)InGameHUDWidget->ShowMoveDestinationIndicator(Destination,false);
+        return;
+    }
 
     // 선택된 유닛 중 한 기라도 교전 또는 추격 중이면,
     // 이번 우클릭은 선택 부대 전체의 강제 이동으로 처리한다.
@@ -1346,6 +1367,12 @@ void ASFInGamePlayerController::StopSelectedUnits()
 
     PendingUnitCommandMode = ESFUnitCommandMode::None;
 
+    if(IsPVPGameplay())
+    {
+        ServerGameplayAction(ESFGameplayAction::Stop,Commandables,FVector::ZeroVector);
+        return;
+    }
+
     for (AActor* Actor : Commandables)
     {
         if (!IsValid(Actor))
@@ -1468,6 +1495,11 @@ void ASFInGamePlayerController::HandleMoveCommandModeInput()
 void ASFInGamePlayerController::HandleSkillCommandInput(int32 Tier)
 {
     if (CurrentControlMode != ESFControlMode::Gameplay || IsPaused()) return;
+    if(IsPVPGameplay())
+    {
+        if(MyCommander.IsValid())ServerGameplayAction(ESFGameplayAction::Skill,{MyCommander.Get()},FVector::ZeroVector,nullptr,NAME_None,Tier);
+        return;
+    }
     SF_LOG(Log, "Commander Skill: Tier%d", Tier);
 
     OnSkillInput.Broadcast(Tier);
@@ -1683,6 +1715,13 @@ void ASFInGamePlayerController::ExecuteUnitCommandForActor(
 {
     if (!IsValid(Actor) || !IsLocallyControllableActor(Actor))
     {
+        return;
+    }
+
+    if (IsPVPGameplay())
+    {
+        ServerGameplayAction(CommandMode==ESFUnitCommandMode::Attack?ESFGameplayAction::Attack:ESFGameplayAction::Move,
+            {Actor},Location,Target,NAME_None,0,bAppendToQueue);
         return;
     }
 
@@ -1944,6 +1983,11 @@ bool ASFInGamePlayerController::ExecutePendingRallyPointUnderCursor()
 
 void ASFInGamePlayerController::PlaySelectionSound(AActor* SelectedTarget)
 {
+    if (IsPVPGameplay())
+    {
+        const auto* Target = IsValid(SelectedTarget) ? SelectedTarget->FindComponentByClass<UCombatTargetComponent>() : nullptr;
+        if (!Target || Target->GetTeamIndex() != GetMyTeamIndex()) return;
+    }
     // 소리는 내 컴퓨터에서만 들려야함. 멀티가 아니라서 상관없지만 논리상 IsLocalController 조건추가
     if (!IsLocalController() ||
         !IsValid(SelectedTarget) ||

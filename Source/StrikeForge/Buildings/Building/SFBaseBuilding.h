@@ -93,6 +93,20 @@ struct FBuildingTierRuntimeAssets
 	}
 };
 
+USTRUCT()
+struct FSFNetworkBuildingView
+{
+    GENERATED_BODY()
+    UPROPERTY() TObjectPtr<USFBuildingDefinition> Definition;
+    UPROPERTY() TObjectPtr<UStaticMesh> Mesh;
+    UPROPERTY() TObjectPtr<UStaticMesh> CompletedMesh;
+    UPROPERTY() FName SelectionRow;
+    UPROPERTY() int32 Team=INDEX_NONE;
+    UPROPERTY() int32 Tier=0;
+    UPROPERTY() EBuildingState State=EBuildingState::None;
+    UPROPERTY() float Progress=0;
+};
+
 UCLASS(Abstract, Blueprintable)
 class STRIKEFORGE_API ASFBaseBuilding
 	: public ASFRootBase
@@ -202,6 +216,9 @@ public:
 	 * SpawnLibrary에서 호출되며 BeginPlay의 PrepareLoadedTier로 이어진다.
 	 */
 	bool SetInitialTier(int32 InTierIndex);
+    bool ReserveNetworkPlacement();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+    virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	
 	UPROPERTY(BlueprintAssignable,Category = "SF|Building")
 	FSFOnBuildingTierActivated OnBuildingTierActivated;
@@ -248,6 +265,10 @@ protected:
 	bool TryRegisterInitialGrid();
 	bool bGridRegistered = false;
 private:
+    UPROPERTY(ReplicatedUsing=OnRep_NetworkView) FSFNetworkBuildingView NetworkView;
+    UFUNCTION() void OnRep_NetworkView();
+    UFUNCTION(NetMulticast, Unreliable) void MulticastOwnerBuildingSound(USoundBase* Sound);
+    int32 NetworkUpgradeRequest=INDEX_NONE;
 	// 건설 또는 업그레이드 비용을 지불한 팀. 완료 또는 취소 시 비운다.
 	int32 ConstructionPayerTeam = INDEX_NONE;
 	// 업그레이드 취소 시 현재 체력은 유지하고 이 최대 체력으로 제한한다.

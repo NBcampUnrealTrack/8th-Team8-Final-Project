@@ -64,6 +64,7 @@ class STRIKEFORGE_API ASFGameState : public AGameStateBase
 
 public:
     ASFGameState();
+    virtual bool IsPVPMatch() const { return false; }
 
     // GamaMode가 현재 선택된 스테이지 ID를 전달
     bool InitializeStage(FName StageRowName,const TArray<FSFStageBuildingRule>& InBuildingRules);

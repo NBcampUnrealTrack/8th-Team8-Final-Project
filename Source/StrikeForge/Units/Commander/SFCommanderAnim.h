@@ -7,7 +7,6 @@
 #include "SFCommanderAnim.generated.h"
 
 class ASFCommander;
-class AUnitAIController;
 class UNiagaraSystem;
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FSkillActiveDelegate, int32, SkillTier, UNiagaraSystem*, CurrentSkillEffect, UNiagaraSystem*, CurrentSkillHitEffect);
@@ -35,5 +34,4 @@ public:
 
 protected:
 	TWeakObjectPtr<ASFCommander> Commander;
-	TWeakObjectPtr<AUnitAIController> UnitAIController;
 };

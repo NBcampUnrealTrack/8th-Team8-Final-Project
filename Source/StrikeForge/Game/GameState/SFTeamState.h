@@ -59,6 +59,7 @@ class STRIKEFORGE_API USFTeamState : public UObject
 	bool IsNexus(const ASFNexusBuilding* InNexus) const;
 
 	void SetPlayer(ASFInGamePlayerController* InPlayer);
+    void ApplyNetworkValues(int32 InMineral,int32 InEther,float InMineralRate,float InEtherRate,int32 InPopulation,int32 InCapacity);
 private:
 	void SetMineral(int32 NewMineral);
 	void SetEther(int32 NewEther);

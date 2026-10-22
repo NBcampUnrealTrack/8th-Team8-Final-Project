@@ -1,6 +1,7 @@
 ﻿#include "ProductComponent.h"
 
 #include "Buildings/Building/SFBaseBuilding.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "Buildings/SFRootBase.h"
 #include "Datas/Building/SFBuildingDefinition.h"
 #include "Datas/Unit/UnitStatData.h"
@@ -15,6 +16,7 @@
 UProductComponent::UProductComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+    SetIsReplicatedByDefault(true);
 
 }
 
@@ -69,6 +71,12 @@ void UProductComponent::AddProductInLine(const FName& InProductName)
 
 void UProductComponent::RemoveProductInLine(int32 InProductLineIndex)
 {
+    if(GetOwner()&&!GetOwner()->HasAuthority())
+    {
+        if(auto* PC=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+            PC->ServerGameplayAction(ESFGameplayAction::CancelProduct,{GetOwner()},FVector::ZeroVector,nullptr,NAME_None,InProductLineIndex);
+        return;
+    }
 	if (!ProductLine.IsValidIndex(InProductLineIndex)) return;
 	
 	const FName RemovedRowName = ProductLine[InProductLineIndex].RowName;
@@ -132,6 +140,7 @@ void UProductComponent::PauseProductLine()
 
 void UProductComponent::ResumeProductLine()
 {
+    if(GetOwner()&&!GetOwner()->HasAuthority())return;
 	if (!bProductionPaused) return;
 	bProductionPaused = false;
 

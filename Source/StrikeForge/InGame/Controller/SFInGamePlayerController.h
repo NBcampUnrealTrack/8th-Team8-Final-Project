@@ -33,6 +33,11 @@ enum class ESFUnitCommandMode : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSFOnSelectInput);
+UENUM()
+enum class ESFGameplayAction : uint8
+{
+    Move, Attack, Stop, Skill, Produce, CancelProduct, Upgrade, CancelConstruction, Rally
+};
 //DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 //    FSFOnMoveInput,
 //    FVector,
@@ -125,6 +130,15 @@ public:
     }
 
     void IssueMoveCommand(const FVector& Destination);
+    bool IsPVPGameplay() const;
+    UFUNCTION(Client,Reliable) void ClientGameplayMoveVoice(const TArray<AActor*>& Speakers);
+    UFUNCTION(Server, Reliable)
+    void ServerGameplayAction(ESFGameplayAction Action, const TArray<AActor*>& Actors, FVector_NetQuantize Location,
+        AActor* Target = nullptr, FName Row = NAME_None, int32 Index = 0, bool bAppend = false);
+    UFUNCTION(Server, Reliable)
+    void ServerPlaceGameplayBuilding(FName BuildingId, FTransform Transform);
+    /** Shared authoritative placement path for player requests and the practice opponent. */
+    ASFBaseBuilding* TryPlaceGameplayBuilding(FName BuildingId, FTransform Transform);
 
     /** Consume a pending A/M command on the minimap. */
     bool ExecutePendingUnitCommandAtLocation(const FVector& Destination);
@@ -156,6 +170,7 @@ public:
     void PlaySelectionSound(AActor* SelectedTarget);
 
 protected:
+    void ConfigurePVEGameplayProfile();
     virtual void BeginPlay() override;
 
     virtual void EndPlay(

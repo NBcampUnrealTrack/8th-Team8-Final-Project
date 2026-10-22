@@ -18,30 +18,99 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Styling/CoreStyle.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
+#include "Textures/SlateShaderResource.h"
+#include "Game/Subsystem/SFBuildingAssetSubsystem.h"
+#include "Datas/Building/SFBuildingCatalog.h"
+#include "Datas/Building/SFBuildingDefinition.h"
 
 namespace SFPVPUI
 {
-    const FLinearColor Gold(.64f,.44f,.21f), Cream(.94f,.89f,.76f), Teal(.29f,.79f,.69f), Muted(.48f,.59f,.53f);
+    const FLinearColor Gold(.78f,.53f,.23f), Cream(.98f,.90f,.70f), Teal(.21f,.83f,.78f), Muted(.64f,.66f,.53f);
+
+    static void Polygon(const FGeometry& G,FSlateWindowElementList& Out,int32 Layer,const TArray<FVector2D>& Points,FLinearColor Color)
+    {
+        const auto Resource=FSlateApplication::Get().GetRenderer()->GetResourceHandle(*FCoreStyle::Get().GetBrush("WhiteBrush"));
+        const auto* Proxy=Resource.GetResourceProxy();const FVector2f UV=Proxy?Proxy->StartUV+Proxy->SizeUV*.5f:FVector2f(.5f,.5f);
+        TArray<FSlateVertex> Vertices;TArray<SlateIndex> Indices;
+        for(const auto P:Points)Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(G.GetAccumulatedRenderTransform(),FVector2f(P),UV,Color.ToFColor(true)));
+        for(int32 I=1;I+1<Vertices.Num();++I)Indices.Append({0,static_cast<SlateIndex>(I),static_cast<SlateIndex>(I+1)});
+        FSlateDrawElement::MakeCustomVerts(Out,Layer,Resource,Vertices,Indices,nullptr,0,0);
+    }
+    static TArray<FVector2D> Bevel(FVector2D Size,float Inset,float Cut)
+    {
+        const float R=Size.X-Inset,B=Size.Y-Inset;
+        return {{Inset+Cut,Inset},{R-Cut,Inset},{R,Inset+Cut},{R,B-Cut},{R-Cut,B},{Inset+Cut,B},{Inset,B-Cut},{Inset,Inset+Cut}};
+    }
+    static void Gem(const FGeometry& G,FSlateWindowElementList& Out,int32 Layer,FVector2D C,float R,FLinearColor Tint)
+    {
+        Polygon(G,Out,Layer,{C+FVector2D(0,-R-3),C+FVector2D(R+3,0),C+FVector2D(0,R+3),C+FVector2D(-R-3,0)},Gold*Tint);
+        Polygon(G,Out,Layer+1,{C+FVector2D(0,-R),C+FVector2D(R,0),C+FVector2D(0,R),C+FVector2D(-R,0)},FLinearColor(.015f,.21f,.22f)*Tint);
+        Polygon(G,Out,Layer+2,{C+FVector2D(0,-R),C+FVector2D(R*.65f,0),C,C+FVector2D(-R,0)},FLinearColor(.34f,.98f,.94f)*Tint);
+        Polygon(G,Out,Layer+2,{C,C+FVector2D(R*.65f,0),C+FVector2D(0,R),C+FVector2D(-R,0)},Teal*Tint);
+    }
+
+    // Match the campaign's carved gold bevels and ether inlays at each button's real size.
+    class SForgeButton : public SButton
+    {
+    public:
+        using FArguments=SButton::FArguments;
+        void Construct(const FArguments& Args)
+        {
+            Face=Args._ButtonStyle->Normal.TintColor.GetSpecifiedColor();
+            Transparent=*Args._ButtonStyle;
+            Transparent.Normal.DrawAs=Transparent.Hovered.DrawAs=Transparent.Pressed.DrawAs=Transparent.Disabled.DrawAs=ESlateBrushDrawType::NoDrawType;
+            auto Clean=Args;Clean.ButtonStyle(&Transparent);SButton::Construct(Clean);
+        }
+        virtual int32 OnPaint(const FPaintArgs& Args,const FGeometry& G,const FSlateRect& Clip,FSlateWindowElementList& Out,int32 Layer,const FWidgetStyle& WidgetStyle,bool ParentEnabled) const override
+        {
+            const FVector2D Size=G.GetLocalSize();const bool Enabled=ParentEnabled&&IsEnabled();
+            FLinearColor Tint=WidgetStyle.GetColorAndOpacityTint();if(!Enabled)Tint.A*=.42f;
+            const float Cut=FMath::Min(10.f,Size.Y*.18f);
+            Polygon(G,Out,Layer,Bevel(Size,0,Cut),FLinearColor(.12f,.052f,.015f)*Tint);
+            Polygon(G,Out,Layer+1,Bevel(Size,1.5f,Cut),Gold*Tint);
+            Polygon(G,Out,Layer+2,Bevel(Size,4.5f,Cut*.75f),(IsHovered()&&Enabled?FLinearColor(.035f,.15f,.13f):Face)*Tint);
+            const FLinearColor Light=IsPressed()?FLinearColor(.55f,.33f,.12f):FLinearColor(1.f,.82f,.46f);
+            FSlateDrawElement::MakeLines(Out,Layer+3,G.ToPaintGeometry(),TArray<FVector2D>{{3,Cut+1},{Cut+1,3},{Size.X-Cut-1,3},{Size.X-3,Cut+1}},ESlateDrawEffect::None,Light*Tint,true,1.5f);
+            FSlateDrawElement::MakeLines(Out,Layer+3,G.ToPaintGeometry(),TArray<FVector2D>{{Cut,Size.Y-3},{Size.X-Cut,Size.Y-3},{Size.X-3,Size.Y-Cut}},ESlateDrawEffect::None,FLinearColor(.36f,.19f,.055f)*Tint,true,2.f);
+            if(Size.Y>43&&Size.X>115)
+            {Gem(G,Out,Layer+3,FVector2D(10,Size.Y*.5),3.5f,Tint);Gem(G,Out,Layer+3,FVector2D(Size.X-10,Size.Y*.5),3.5f,Tint);}
+            return SButton::OnPaint(Args,G,Clip,Out,Layer+6,WidgetStyle,ParentEnabled);
+        }
+    private:
+        FButtonStyle Transparent;FLinearColor Face;
+    };
 
     // One geometric inlay language throughout the lobby; no stretched raster frames.
     class STrim : public SLeafWidget
     {
     public:
-        SLATE_BEGIN_ARGS(STrim) : _Accent(Gold) {}
+        SLATE_BEGIN_ARGS(STrim) : _Accent(Gold), _FullFrame(false) {}
             SLATE_ARGUMENT(FLinearColor, Accent)
+            SLATE_ARGUMENT(bool, FullFrame)
         SLATE_END_ARGS()
-        void Construct(const FArguments& Args) { Accent=Args._Accent; SetVisibility(EVisibility::HitTestInvisible); }
+        void Construct(const FArguments& Args) { Accent=Args._Accent; bFullFrame=Args._FullFrame; SetVisibility(EVisibility::HitTestInvisible); }
         virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(32); }
         virtual int32 OnPaint(const FPaintArgs&,const FGeometry& G,const FSlateRect&,FSlateWindowElementList& Out,int32 Layer,const FWidgetStyle& Style,bool) const override
         {
             const FVector2D Size=G.GetLocalSize();
             const FLinearColor Tint=Style.GetColorAndOpacityTint();
+            if(bFullFrame)
+            {
+                auto Rail=Bevel(Size,4,16);const FVector2D First=Rail[0];Rail.Add(First);
+                FSlateDrawElement::MakeLines(Out,Layer,G.ToPaintGeometry(),Rail,ESlateDrawEffect::None,FLinearColor(.12f,.052f,.018f)*Tint,true,11.f);
+                FSlateDrawElement::MakeLines(Out,Layer+1,G.ToPaintGeometry(),Rail,ESlateDrawEffect::None,Gold*Tint,true,5.f);
+                FSlateDrawElement::MakeLines(Out,Layer+2,G.ToPaintGeometry(),TArray<FVector2D>{{7,21},{21,7},{Size.X-21,7},{Size.X-7,21}},ESlateDrawEffect::None,FLinearColor(1,.83f,.48f)*Tint,true,1.8f);
+                for(const FVector2D C:{FVector2D(20,20),FVector2D(Size.X-20,20),FVector2D(20,Size.Y-20),Size-FVector2D(20)})Gem(G,Out,Layer+3,C,7,Tint);
+                return Layer+6;
+            }
             for(int32 X=0;X<2;++X) for(int32 Y=0;Y<2;++Y)
             {
                 TArray<FVector2D> Points;
                 for(const FVector2D P : {FVector2D(9,35),FVector2D(9,18),FVector2D(18,9),FVector2D(35,9)})
                     Points.Add(FVector2D(X?Size.X-P.X:P.X,Y?Size.Y-P.Y:P.Y));
-                FSlateDrawElement::MakeLines(Out,Layer,G.ToPaintGeometry(),Points,ESlateDrawEffect::None,Accent*Tint,true,1.5f);
+                FSlateDrawElement::MakeLines(Out,Layer,G.ToPaintGeometry(),Points,ESlateDrawEffect::None,Accent*Tint,true,2.f);
             }
             const float C=Size.X*.5f;
             TArray<FVector2D> Diamond={{C,5},{C+4,9},{C,13},{C-4,9},{C,5}};
@@ -50,6 +119,7 @@ namespace SFPVPUI
         }
     private:
         FLinearColor Accent;
+        bool bFullFrame=false;
     };
 
     class SRune : public SLeafWidget
@@ -134,7 +204,11 @@ USFPVPLobbyWidget::USFPVPLobbyWidget(const FObjectInitializer& Initializer) : Su
 }
 
 USFPVPSessionSubsystem* USFPVPLobbyWidget::Sessions() const { return GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>(); }
-bool USFPVPLobbyWidget::InRoom() const { return GetWorld() && GetWorld()->GetNetMode()!=NM_Standalone; }
+bool USFPVPLobbyWidget::InRoom() const
+{
+    const auto* State=GetWorld()?GetWorld()->GetGameState<ASFPVPLobbyState>():nullptr;
+    return GetWorld()&&(GetWorld()->GetNetMode()!=NM_Standalone||(State&&State->bAIEnabled));
+}
 
 TSharedRef<SWidget> USFPVPLobbyWidget::Label(const FString& Text,int32 Size,FLinearColor Color) const
 {
@@ -153,12 +227,13 @@ TSharedRef<SWidget> USFPVPLobbyWidget::PlayerCard(int32 Seat)
             +SVerticalBox::Slot().AutoHeight()
             [SNew(SHorizontalBox)
                 +SHorizontalBox::Slot().FillWidth(1)
-                [SNew(STextBlock).Font(FSlateFontInfo(Font,19)).ColorAndOpacity(Muted).Text(FText::FromString(Seat==0?TEXT("01  /  방장"):TEXT("02  /  도전자")))]
+                [SNew(STextBlock).Font(FSlateFontInfo(Font,19)).ColorAndOpacity(Muted)
+                    .Text_Lambda([Player,Seat]{const auto* P=Player();return FText::FromString(Seat==0?TEXT("01  /  방장"):P&&P->IsABot()?TEXT("02  /  인공지능"):TEXT("02  /  도전자"));})]
                 +SHorizontalBox::Slot().AutoWidth()
                 [SNew(STextBlock).Font(FSlateFontInfo(Font,17)).ColorAndOpacity(Teal).Text_Lambda([this,Seat]
                 {const auto* PC=GetOwningPlayer();const auto* P=PC?PC->GetPlayerState<ASFPVPLobbyPlayerState>():nullptr;return FText::FromString(P&&P->Seat==Seat?TEXT("내 자리"):TEXT(""));})]]
-            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0,8)
-            [SNew(SBox).WidthOverride(116).HeightOverride(116)
+            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0,4)
+            [SNew(SBox).WidthOverride(94).HeightOverride(94)
                 [SNew(SOverlay)
                     +SOverlay::Slot()[SNew(SBorder).BorderImage(&InsetBrush).Padding(8)
                         [SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
@@ -180,7 +255,21 @@ TSharedRef<SWidget> USFPVPLobbyWidget::PlayerCard(int32 Seat)
             [SNew(SBorder).BorderImage(&InsetBrush).Padding(FMargin(18,5))
                 [SNew(STextBlock).Font(FSlateFontInfo(Font,18)).Justification(ETextJustify::Center)
                     .ColorAndOpacity_Lambda([Player]{const auto* P=Player();return P&&P->bReady?Teal:Muted;})
-                    .Text_Lambda([Player]{const auto* P=Player();return FText::FromString(!P?TEXT("빈 자리"):P->bReady?TEXT("준비 완료"):TEXT("준비 중"));})]]]]
+                            .Text_Lambda([Player]{const auto* P=Player();return FText::FromString(!P?TEXT("빈 자리"):P->bReady?TEXT("준비 완료"):TEXT("준비 중"));})]]
+            +SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0,6,0,0)
+            [SNew(SHorizontalBox).Visibility_Lambda([this,Seat,Player]
+                {const auto* P=GetOwningPlayer()->GetPlayerState<ASFPVPLobbyPlayerState>();const auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();const auto* G=Player();
+                return Seat==1&&P&&P->Seat==0&&S&&!S->bStarting&&(!G||G->IsABot())?EVisibility::Visible:EVisibility::Collapsed;})
+                +SHorizontalBox::Slot().AutoWidth()
+                [SNew(SFPVPUI::SForgeButton).ButtonStyle(&SmallButtonStyle).ContentPadding(FMargin(12,5))
+                    .OnClicked_Lambda([this,Player]{if(auto* PC=Cast<ASFPVPLobbyController>(GetOwningPlayer()))PC->ServerSetAIOpponent(!Player());return FReply::Handled();})
+                    [SNew(STextBlock).Font(FSlateFontInfo(Font,16)).ColorAndOpacity(Teal)
+                        .Text_Lambda([Player]{return FText::FromString(Player()?TEXT("AI 제거"):TEXT("AI 추가"));})]]
+                +SHorizontalBox::Slot().AutoWidth().Padding(8,0,0,0)
+                [SNew(SFPVPUI::SForgeButton).ButtonStyle(&SmallButtonStyle).ContentPadding(FMargin(12,5))
+                    .Visibility_Lambda([Player]{return Player()?EVisibility::Visible:EVisibility::Collapsed;})
+                    .OnClicked_Lambda([this]{if(auto* PC=Cast<ASFPVPLobbyController>(GetOwningPlayer()))PC->ServerCycleAIRace();return FReply::Handled();})
+                    [Label(TEXT("AI 종족 변경"),16,Cream)]]]]]
     +SOverlay::Slot()[SNew(STrim).Accent(Seat==0?Teal:Gold)];
 }
 
@@ -191,17 +280,18 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
     EtherBrush.ImageSize=BeastBrush.ImageSize=FVector2D(190);
     CampBrush.SetResourceObject(CampArt); CampBrush.ImageSize=FVector2D(1672,941);
     LogoBrush.SetResourceObject(Wordmark); LogoBrush.ImageSize=FVector2D(1050,350);
-    PanelBrush=FSlateRoundedBoxBrush(FLinearColor(.012f,.028f,.023f,.96f),8.f,FLinearColor(.32f,.29f,.18f,.85f),1.f);
-    InsetBrush=FSlateRoundedBoxBrush(FLinearColor(.009f,.019f,.016f,.92f),4.f,FLinearColor(.19f,.27f,.22f,.75f),1.f);
-    CardBrush=FSlateRoundedBoxBrush(FLinearColor(.025f,.052f,.041f,.96f),6.f,FLinearColor(.23f,.31f,.24f),1.f);
+    PanelBrush=FSlateRoundedBoxBrush(FLinearColor(.028f,.031f,.022f,.97f),8.f,FLinearColor(.38f,.24f,.10f,.95f),1.f);
+    InsetBrush=FSlateRoundedBoxBrush(FLinearColor(.009f,.025f,.022f,.95f),4.f,FLinearColor(.32f,.24f,.12f,.85f),1.f);
+    CardBrush=FSlateRoundedBoxBrush(FLinearColor(.023f,.044f,.034f,.97f),6.f,FLinearColor(.50f,.35f,.16f),1.5f);
     ButtonStyle=FButtonStyle()
-        .SetNormal(FSlateRoundedBoxBrush(FLinearColor(.045f,.074f,.058f),4.f,FLinearColor(.29f,.34f,.25f),1.f))
+        .SetNormal(FSlateRoundedBoxBrush(FLinearColor(.016f,.039f,.033f),4.f,Gold,1.f))
         .SetHovered(FSlateRoundedBoxBrush(FLinearColor(.075f,.16f,.125f),4.f,Teal,1.f))
         .SetPressed(FSlateRoundedBoxBrush(FLinearColor(.025f,.07f,.055f),4.f,Teal,1.f))
         .SetDisabled(FSlateRoundedBoxBrush(FLinearColor(.025f,.035f,.03f),4.f,FLinearColor(.1f,.14f,.11f),1.f))
         .SetNormalPadding(FMargin(22,12)).SetPressedPadding(FMargin(22,13,22,11));
     PrimaryButtonStyle=ButtonStyle;
-    PrimaryButtonStyle.SetNormal(FSlateRoundedBoxBrush(FLinearColor(.065f,.24f,.18f),4.f,FLinearColor(.36f,.66f,.49f),1.f))
+    SmallButtonStyle=ButtonStyle;SmallButtonStyle.SetNormalPadding(FMargin(0)).SetPressedPadding(FMargin(0,1,0,0));
+    PrimaryButtonStyle.SetNormal(FSlateRoundedBoxBrush(FLinearColor(.028f,.13f,.10f),4.f,Gold,1.f))
         .SetHovered(FSlateRoundedBoxBrush(FLinearColor(.10f,.34f,.26f),4.f,Teal,1.5f));
     TabButtonStyle=ButtonStyle;
     TabButtonStyle.SetNormal(FSlateRoundedBoxBrush(FLinearColor(.025f,.047f,.038f),3.f,FLinearColor(.17f,.24f,.19f),1.f))
@@ -214,11 +304,11 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
         .SetBackgroundImageReadOnly(InsetBrush).SetPadding(FMargin(16,10));
 
     const auto Button=[this](const TCHAR* Text,TFunction<void()> Action,bool bPrimary=false,bool bNeedsLogin=false) -> TSharedRef<SWidget>
-    {return SNew(SButton).ButtonStyle(bPrimary?&PrimaryButtonStyle:&ButtonStyle).HAlign(HAlign_Center).VAlign(VAlign_Center)
+    {return SNew(SFPVPUI::SForgeButton).ButtonStyle(bPrimary?&PrimaryButtonStyle:&ButtonStyle).HAlign(HAlign_Center).VAlign(VAlign_Center)
         .IsEnabled_Lambda([this,bNeedsLogin]{return !Sessions()->IsBusy()&&(!bNeedsLogin||!Sessions()->IsInternetMode()||Sessions()->IsInternetLoggedIn());})
         .OnClicked_Lambda([Action]{Action();return FReply::Handled();})[Label(Text,21,Cream)];};
     const auto Tab=[this](const TCHAR* Text,bool bInternet) -> TSharedRef<SWidget>
-    {return SNew(SButton).ButtonStyle(&TabButtonStyle).IsEnabled_Lambda([this]{return !Sessions()->IsBusy();})
+    {return SNew(SFPVPUI::SForgeButton).ButtonStyle(&TabButtonStyle).IsEnabled_Lambda([this]{return !Sessions()->IsBusy();})
         .OnClicked_Lambda([this,bInternet]{Sessions()->SetInternetMode(bInternet);return FReply::Handled();})
         [SNew(SVerticalBox)
             +SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Text)).Font(FSlateFontInfo(Font,20))
@@ -257,8 +347,9 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                     [SNew(SHorizontalBox)
                         +SHorizontalBox::Slot().AutoWidth()[Tab(TEXT("인터넷 대전"),true)]
                         +SHorizontalBox::Slot().AutoWidth().Padding(8,0,0,0)[Tab(TEXT("같은 네트워크"),false)]
+                        +SHorizontalBox::Slot().AutoWidth().Padding(12,0,0,0)[Button(TEXT("AI 연습"),[this]{Sessions()->HostPractice();},true)]
                         +SHorizontalBox::Slot().FillWidth(1).HAlign(HAlign_Right).VAlign(VAlign_Center)
-                        [SNew(SButton).ButtonStyle(&TabButtonStyle)
+                        [SNew(SFPVPUI::SForgeButton).ButtonStyle(&TabButtonStyle)
                             .Visibility_Lambda([this]{return Sessions()->IsInternetMode()?EVisibility::Visible:EVisibility::Collapsed;})
                             .IsEnabled_Lambda([this]{return !Sessions()->IsBusy()&&Sessions()->IsInternetConfigured()&&Sessions()->IsInternetPlaySupported()&&!Sessions()->IsInternetLoggedIn();})
                             .OnClicked_Lambda([this]{Sessions()->LoginInternet();return FReply::Handled();})
@@ -279,8 +370,8 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                                     +SHorizontalBox::Slot().FillWidth(1)[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(&EtherBrush)]]
                                     +SHorizontalBox::Slot().FillWidth(1).Padding(-16,0,0,0)[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)[SNew(SImage).Image(&BeastBrush)]]]]
                             +SVerticalBox::Slot().AutoHeight().Padding(0,10)[Label(TEXT("무작위 전장"),24,Teal)]
-                            +SVerticalBox::Slot().AutoHeight()[Label(TEXT("7개의 전장 중 한 곳에서\n상대와 전투를 시작합니다."),17,Muted)]
-                            +SVerticalBox::Slot().AutoHeight().Padding(0,18,0,4)[Label(TEXT("스타트맵 제외  /  1대1"),15,Gold)]]]
+                            +SVerticalBox::Slot().AutoHeight()[Label(TEXT("4개의 전장 중 한 곳에서\n상대와 전투를 시작합니다."),17,Muted)]
+                            +SVerticalBox::Slot().AutoHeight().Padding(0,18,0,4)[Label(TEXT("1 · 2 · 4 · 7번 전장"),15,Gold)]]]
                         +SHorizontalBox::Slot().FillWidth(1)
                         [SNew(SVerticalBox)
                             +SVerticalBox::Slot().AutoHeight().Padding(0,0,0,8)
@@ -328,7 +419,7 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                             .OverflowPolicy(ETextOverflowPolicy::Ellipsis)
                             .Text_Lambda([this]{const auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();return FText::FromString(!S?TEXT("접속 중"):S->RoomName.IsEmpty()?TEXT("친선 결투"):S->RoomName);})]
                         +SHorizontalBox::Slot().AutoWidth().Padding(18,0,0,0)
-                            [SNew(SBox).Visibility_Lambda([this]{return Sessions()->IsInternetMode()?EVisibility::Visible:EVisibility::Collapsed;})
+                            [SNew(SBox).Visibility_Lambda([this]{const auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();return Sessions()->IsInternetMode()&&S&&!S->bAIEnabled?EVisibility::Visible:EVisibility::Collapsed;})
                                 [Button(TEXT("Steam 친구 초대"),[this]{Sessions()->ShowSteamInvite();})]]]
                     +SVerticalBox::Slot().FillHeight(1)
                     [SNew(SHorizontalBox)
@@ -346,7 +437,7 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                         +SHorizontalBox::Slot().AutoWidth()[Button(TEXT("랜덤"),[this]{if(auto* PC=Cast<ASFPVPLobbyController>(GetOwningPlayer()))PC->ServerSetRandomRace();})]
                         +SHorizontalBox::Slot().FillWidth(1).HAlign(HAlign_Right)
                         [SNew(SBox).MinDesiredWidth(180)
-                            [SNew(SButton).ButtonStyle(&PrimaryButtonStyle).HAlign(HAlign_Center)
+                            [SNew(SFPVPUI::SForgeButton).ButtonStyle(&PrimaryButtonStyle).HAlign(HAlign_Center)
                                 .OnClicked_Lambda([this]{auto* PC=Cast<ASFPVPLobbyController>(GetOwningPlayer());auto* P=PC?PC->GetPlayerState<ASFPVPLobbyPlayerState>():nullptr;if(P)PC->ServerSetReady(!P->bReady);return FReply::Handled();})
                                 [SNew(STextBlock).Font(FSlateFontInfo(Font,21)).ColorAndOpacity(Cream)
                                     .Text_Lambda([this]{const auto* P=GetOwningPlayer()->GetPlayerState<ASFPVPLobbyPlayerState>();return FText::FromString(P&&P->bReady?TEXT("준비 취소"):TEXT("준비 완료"));})]]]]
@@ -357,10 +448,11 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                             const auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();
                             if(S&&!S->StartError.IsEmpty())return FText::FromString(S->StartError);
                             if(S&&S->bStarting)return FText::FromString(TEXT("무작위 전장으로 함께 이동하고 있습니다."));
+                            if(S&&S->bAIEnabled)return FText::FromString(S->AreBothReady()?TEXT("AI가 준비되었습니다. 전투 시작을 눌러 주세요."):TEXT("AI와 연습합니다. 종족을 선택하고 준비 완료를 눌러 주세요."));
                             if(S&&(!S->GetSeat(0)||!S->GetSeat(1)))return FText::FromString(TEXT("도전자가 입장하면 준비 후 무작위 전장으로 출전합니다."));
                             return FText::FromString(S&&S->AreBothReady()?TEXT("두 플레이어가 준비되었습니다. 방장이 전투를 시작하세요."):TEXT("종족 또는 랜덤을 선택한 뒤 준비해 주세요."));
                         })]]]]
-            +SOverlay::Slot()[SNew(STrim)]]
+            +SOverlay::Slot()[SNew(STrim).FullFrame(true)]]
         +SVerticalBox::Slot().AutoHeight().Padding(2,16,2,0)
         [SNew(SHorizontalBox)
             +SHorizontalBox::Slot().AutoWidth()[Button(TEXT("돌아가기"),[this]{Sessions()->Leave(!InRoom());})]
@@ -369,7 +461,7 @@ TSharedRef<SWidget> USFPVPLobbyWidget::RebuildWidget()
                 .Text_Lambda([this]{return FText::FromString(Sessions()->GetStatus());})]
             +SHorizontalBox::Slot().AutoWidth()
             [SNew(SBox).MinDesiredWidth(204)
-            [SNew(SButton).ButtonStyle(&PrimaryButtonStyle).HAlign(HAlign_Center)
+            [SNew(SFPVPUI::SForgeButton).ButtonStyle(&PrimaryButtonStyle).HAlign(HAlign_Center)
                 .Visibility_Lambda([this]{const auto* PC=GetOwningPlayer();const auto* P=PC?PC->GetPlayerState<ASFPVPLobbyPlayerState>():nullptr;return InRoom()&&P&&P->Seat==0?EVisibility::Visible:EVisibility::Collapsed;})
                 .IsEnabled_Lambda([this]{const auto* S=GetWorld()->GetGameState<ASFPVPLobbyState>();return S&&S->AreBothReady()&&!S->bStarting;})
                 .OnClicked_Lambda([this]{if(auto* PC=Cast<ASFPVPLobbyController>(GetOwningPlayer()))PC->ServerStartBattle();return FReply::Handled();})
@@ -386,7 +478,7 @@ void USFPVPLobbyWidget::RefreshRooms()
     RoomSignature=Signature; RoomList->ClearChildren();
     for(int32 I=0;I<S->GetRooms().Num();++I)
         RoomList->AddSlot().AutoHeight().Padding(0,0,0,8)
-        [SNew(SButton).ButtonStyle(&ButtonStyle).HAlign(HAlign_Fill)
+        [SNew(SFPVPUI::SForgeButton).ButtonStyle(&ButtonStyle).HAlign(HAlign_Fill)
             .IsEnabled_Lambda([this,I]{const auto* Sub=Sessions();return !Sub->IsBusy()&&Sub->GetRooms().IsValidIndex(I)&&Sub->GetRooms()[I].Session.NumOpenPublicConnections>0;})
             .OnClicked_Lambda([this,I]{Sessions()->JoinRoom(I);return FReply::Handled();})
             [SNew(SHorizontalBox)
@@ -406,7 +498,23 @@ void USFPVPLobbyWidget::NativeTick(const FGeometry& Geometry,float DeltaTime)
     {
         Signature=FString::Printf(TEXT("%d:%s:%s:"),State->bStarting,*State->StartError,*State->RoomName);
         for(int32 Seat=0;Seat<2;++Seat)if(const auto* PS=State->GetSeat(Seat))
+        {
             Signature+=FString::Printf(TEXT("%d:%d:%d:%d:%s;"),Seat,int32(PS->Race),PS->bRandomRace,PS->bReady,*PS->GetPlayerName());
+            for (const ESFRace Race : {ESFRace::Human,ESFRace::Beast})
+            {
+                if ((!PS->bRandomRace && PS->Race!=Race) || WarmedRaces.Contains(uint8(Race)))continue;
+                WarmedRaces.Add(uint8(Race));
+                auto* Assets=GetGameInstance()->GetSubsystem<USFBuildingAssetSubsystem>();
+                Assets->RequestRaceDataAsync(Race,FSFOnRaceBuildingDataReady::CreateWeakLambda(Assets,
+                    [Assets](ESFRace LoadedRace,bool bOK)
+                    {
+                        auto* Catalog=Assets->GetLoadedCatalog(LoadedRace);if(!bOK||!Catalog)return;
+                        TArray<FSoftObjectPath> Paths;Catalog->GetDefinitionPaths(Paths);
+                        for(const auto& Path:Paths)if(auto* Def=Cast<USFBuildingDefinition>(Path.ResolveObject()))
+                            Assets->RequestBuildingAssetsAsync(Def,0,FSFOnBuildingAssetsReady());
+                    }));
+            }
+        }
     }
     if(const auto* PC=GetOwningPlayer())if(const auto* LocalState=PC->GetPlayerState<ASFPVPLobbyPlayerState>())Signature+=FString::FromInt(LocalState->Seat);
     if(Signature!=PlayerSignature)

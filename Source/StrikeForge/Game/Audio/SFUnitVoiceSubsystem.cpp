@@ -7,11 +7,17 @@
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "InGame/Controller/SFInGamePlayerController.h"
 #include "ActorComponent/Stat/HealthComponent.h"
+#include "Game/GameState/SFGameState.h"
+#include "Game/Subsystem/SFCombatSubsystem.h"
 
-void USFUnitVoiceSubsystem::RequestVoice(AActor* Speaker, USoundBase* Sound, bool bCommand)
+void USFUnitVoiceSubsystem::RequestVoice(AActor* Speaker, USoundBase* Sound, bool bCommand, bool bNetworkResponse)
 {
+    // A PVP command is acknowledged to its issuing player, including the listen host.
+    // Suppress the old server-local response to avoid duplicates and wrong-team filtering.
+    const auto* State=GetWorld()->GetGameState<ASFGameState>();
+    if(bCommand&&State&&State->IsPVPMatch()&&!bNetworkResponse)return;
     const auto* Target = IsValid(Speaker) ? Speaker->FindComponentByClass<UCombatTargetComponent>() : nullptr;
-    const auto* PC = Cast<ASFInGamePlayerController>(GetWorld()->GetFirstPlayerController());
+    const auto* PC = USFCombatSubsystem::Get(this)->GetLocalPlayerController();
     if ((!Cast<AUnitBase>(Speaker) && !Cast<ASFCommander>(Speaker)) || !Target || !Sound || !PC || !PC->IsLocalController() ||
         Target->GetTeamIndex() != PC->GetMyTeamIndex() || !Target->IsAlive()) return;
     // A busy response consumes no future input: the player must click again after it ends.

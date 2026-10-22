@@ -119,6 +119,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	UFUNCTION(NetMulticast, Unreliable) void MulticastAttackAnimation();
 	UPROPERTY(Replicated) int32 PVPUnitId = INDEX_NONE;
+    USoundBase* GetMoveCommandSound() const { return CachedMoveCommandSound; }
 	
 	void SetUnitRowName(const FName& InRowName) { UnitRowName = InRowName; };
 

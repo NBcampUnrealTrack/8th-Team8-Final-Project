@@ -1,5 +1,6 @@
 ﻿#include "SFProductionBuilding.h"
 #include "ActorComponent/Product/ProductComponent.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "ActorComponent/UI/SFOverheadStatusComponent.h"
 #include "Datas/Building/BuildingDefinition/SFProductionBuildingDefinition.h"
 #include "InGame/HUD/Tutorial/SFTutorialSubsystem.h"
@@ -69,6 +70,12 @@ void ASFProductionBuilding::OnBuildingDestroyed()
 
 void ASFProductionBuilding::ProductUnits_Implementation(FName InUnitName)
 {
+    if(GetNetMode()==NM_Client&&!HasAuthority())
+    {
+        if(auto* PC=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+            PC->ServerGameplayAction(ESFGameplayAction::Produce,{this},FVector::ZeroVector,nullptr,InUnitName);
+        return;
+    }
 	if (!USFTutorialSubsystem::IsUnitProductionAllowed(this, this, InUnitName))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[%s] 현재 튜토리얼 임무에서는 광전사만 생산할 수 있습니다."), *GetName());
@@ -109,6 +116,12 @@ FSFSelectableInfo ASFProductionBuilding::GetSelectableInfo_Implementation()
 
 void ASFProductionBuilding::SetAssembleVectorPoint(const FVector& InAssemblePoint)
 {
+    if(GetNetMode()==NM_Client&&!HasAuthority())
+    {
+        if(auto* PC=GetWorld()->GetFirstPlayerController<ASFInGamePlayerController>())
+            PC->ServerGameplayAction(ESFGameplayAction::Rally,{this},InAssemblePoint);
+        return;
+    }
 	ProductComponent->SetAssemblePoint(InAssemblePoint);
 }
 

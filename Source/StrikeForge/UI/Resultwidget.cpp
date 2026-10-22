@@ -1,5 +1,7 @@
-#include "ResultWidget.h"
+﻿#include "ResultWidget.h"
 #include "SFResultPresentation.h"
+#include "Game/GameState/SFGameState.h"
+#include "Game/Multiplayer/SFPVPSessionSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
@@ -137,7 +139,7 @@ void UResultWidget::SetResultState(bool bIsWin)
         if(EtherPreviewAudio){EtherPreviewAudio->SetUISound(true);EtherPreviewAudio->Play();}
     }
     // Pause the simulation; Slate's real-time clock drives the presentation.
-    UGameplayStatics::SetGamePaused(this,true);
+    if(!GetWorld()->GetGameState<ASFGameState>() || !GetWorld()->GetGameState<ASFGameState>()->IsPVPMatch())UGameplayStatics::SetGamePaused(this,true);
     if (auto* PC=GetOwningPlayer())
     {
         FInputModeUIOnly Input;
@@ -193,6 +195,8 @@ void UResultWidget::NativeTick(const FGeometry& Geometry,float Delta)
 
 void UResultWidget::OnExitButtonClicked()
 {
+    if(const auto* GS=GetWorld()->GetGameState<ASFGameState>();GS&&GS->IsPVPMatch())
+    {GetGameInstance()->GetSubsystem<USFPVPSessionSubsystem>()->Leave(false);return;}
     USFGameInstance* Instance=GetGameInstance<USFGameInstance>();
     if (!Instance) return;
     UGameplayStatics::SetGamePaused(this,false);

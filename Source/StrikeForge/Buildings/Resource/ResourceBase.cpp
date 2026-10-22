@@ -2,6 +2,7 @@
 #include "Components/BoxComponent.h"
 #include "Game/Subsystem/SFBuildingGridSubsystem.h"
 #include "Logging/SFLog.h"
+#include "Net/UnrealNetwork.h"
 #if WITH_EDITOR
 #include "EngineUtils.h"
 #include "Game/Spawn/SFBuildingSpawnAnchor.h"
@@ -48,6 +49,21 @@ AResourceBase::AResourceBase()
 	GridPreviewComponent->SetLineThickness(5.0f);
 
 #endif
+}
+
+void AResourceBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AResourceBase, ResourceDeposit);
+	DOREPLIFETIME(AResourceBase, CellDeposits);
+}
+
+void AResourceBase::OnRep_CellDeposits()
+{
+	if (!bResourceGridRegistered) return;
+	if (auto* Grid = GetWorld()->GetSubsystem<USFBuildingGridSubsystem>())
+		for (int32 I = 0; I < CellDeposits.Num(); ++I)
+			if (CellDeposits[I] <= 0) Grid->UnregisterResourceCell(this, RegisteredResourceGridInfo, I);
 }
 
 void AResourceBase::InitializeCellDeposits()
@@ -119,6 +135,7 @@ int32 AResourceBase::ExtractFromCell(
 	int32 ResourceCellIndex,
 	int32 ExtractAmount)
 {
+	if (!HasAuthority()) return 0;
 	if (ExtractAmount <= 0 || ResourceDeposit <= 0 ||
 		!CellDeposits.IsValidIndex(ResourceCellIndex))
 	{
@@ -184,6 +201,7 @@ int32 AResourceBase::ExtractFromCell(
 
 int32 AResourceBase::Extract(int32 InDigAmount)
 {
+	if (!HasAuthority()) return 0;
 	if (InDigAmount <= 0 || ResourceDeposit <= 0)
 	{
 		return 0;

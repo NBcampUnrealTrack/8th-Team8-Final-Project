@@ -1,4 +1,5 @@
 #include "ActorComponent/UI/SFUnitHealthBarComponent.h"
+#include "InGame/Controller/SFInGamePlayerController.h"
 #include "ActorComponent/Stat/HealthComponent.h"
 #include "ActorComponent/Combat/CombatTargetComponent.h"
 #include "Blueprint/WidgetTree.h"
@@ -114,7 +115,7 @@ void USFUnitHealthBarComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 void USFUnitHealthBarComponent::RefreshLayout()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	APlayerController* PC = USFCombatSubsystem::Get(this)->GetLocalPlayerController();
 	if (!Character || !Health) return;
 	const UCapsuleComponent* Capsule = Character->GetCapsuleComponent();
 	const float Radius = Capsule->GetScaledCapsuleRadius();
